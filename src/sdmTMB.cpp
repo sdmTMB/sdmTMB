@@ -246,6 +246,15 @@ Type objective_function<Type>::operator()()
   DATA_IVECTOR(spatial_only); // !spatial_only means include spatiotemporal(!)
   DATA_INTEGER(spatial_covariate); // include SVC?
 
+  // Covariate diffusion data
+  DATA_INTEGER(covariate_diffusion);           // flag: 0=off, 1=on
+  DATA_MATRIX(vertex_cov_raw);                 // interpolated covariates at mesh vertices (n_s x n_cov_diffusion)
+  DATA_INTEGER(n_cov_diffusion);               // number of diffused covariates  
+  DATA_IVECTOR(diffusion_col_indices);         // which columns in X_ij correspond to diffused covariates
+  DATA_SPARSE_MATRIX(invM0);                   // SPDE matrix for diffusion (inverse of M0)
+  DATA_SPARSE_MATRIX(invsqrtM0);               // SPDE matrix for diffusion (inverse sqrt of M0)
+  DATA_SPARSE_MATRIX(M1);                      // SPDE matrix for diffusion
+
   DATA_VECTOR(X_threshold);
   DATA_VECTOR(proj_X_threshold);
   DATA_INTEGER(threshold_func);
@@ -297,6 +306,8 @@ Type objective_function<Type>::operator()()
   PARAMETER_ARRAY(omega_s);    // spatial effects; n_s length
   PARAMETER_ARRAY(zeta_s);    // spatial effects on covariate; n_s length, n_z cols, n_m
   PARAMETER_ARRAY(epsilon_st);  // spatio-temporal effects; n_s by n_t by n_m array
+  PARAMETER_VECTOR(ln_tau_diffusion);          // diffusion precision parameters (length n_cov_diffusion)
+  // PARAMETER_ARRAY(diffused_cov_s);             // diffused covariate values at vertices (n_s x n_cov_diffusion)
   PARAMETER_ARRAY(b_threshold);  // coefficients for threshold relationship (3) // DELTA TODO
   PARAMETER_VECTOR(b_epsilon); // slope coefficient for log-linear model on epsilon
   PARAMETER_VECTOR(ln_epsilon_re_sigma);
@@ -738,6 +749,30 @@ Type objective_function<Type>::operator()()
     REPORT(sigma_V);
     ADREPORT(sigma_V); // time-varying SD
   }
+  
+  // ------------------ Covariate diffusion (deterministic) --------------------
+  
+  // Apply deterministic diffusion transformation to covariates
+  array<Type> diffused_cov_s(vertex_cov_raw.rows(), n_cov_diffusion);
+  diffused_cov_s.setZero();
+  if (covariate_diffusion) {
+    for (int c = 0; c < n_cov_diffusion; c++) {
+      // Set up sparse LU solver
+      Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> > lu;
+      
+      // Build inverse diffusion matrix: I + exp(-2*ln_tau_diffusion) * (invM0 * M1)
+      Eigen::SparseMatrix<Type> I_ss(vertex_cov_raw.rows(), vertex_cov_raw.rows());
+      I_ss.setIdentity();
+      Eigen::SparseMatrix<Type> invD = I_ss + exp(-2.0 * ln_tau_diffusion(c)) * (invM0 * M1);
+      
+      // Solve: invD * diffused_cov = original_cov
+      // So: diffused_cov = invD^(-1) * original_cov
+      lu.compute(invD);
+      matrix<Type> diffused_cov_matrix = lu.solve(vertex_cov_raw.col(c).matrix());
+      diffused_cov_s.col(c) = diffused_cov_matrix.col(0); // convert matrix to vector
+    }
+  }
+  
   // ------------------ INLA projections ---------------------------------------
 
   // Here we are projecting the spatiotemporal and spatial random effects to the
@@ -746,10 +781,12 @@ Type objective_function<Type>::operator()()
   array<Type> zeta_s_A(n_i, n_z, n_m);
   array<Type> epsilon_st_A(n_i, n_t, n_m);
   array<Type> epsilon_st_A_vec(n_i, n_m);
+  array<Type> diffused_cov_A(n_i, n_cov_diffusion);
   omega_s_A.setZero();
   zeta_s_A.setZero();
   epsilon_st_A.setZero();
   epsilon_st_A_vec.setZero();
+  diffused_cov_A.setZero();
 
   if (!no_spatial) {
     for (int m = 0; m < n_m; m++) {
@@ -760,14 +797,39 @@ Type objective_function<Type>::operator()()
       for (int z = 0; z < n_z; z++)
         zeta_s_A.col(m).col(z) = A_st * vector<Type>(zeta_s.col(m).col(z));
     }
+    
+    // Project diffused covariates to observation locations
+    if (covariate_diffusion) {
+      for (int c = 0; c < n_cov_diffusion; c++) {
+        diffused_cov_A.col(c) = A_st * vector<Type>(diffused_cov_s.col(c));
+      }
+    }
   }
 
   // ------------------ Linear predictor ---------------------------------------
 
   array<Type> eta_fixed_i(n_i, n_m);
   for (int m = 0; m < n_m; m++) {
-    if (m == 0) eta_fixed_i.col(m) = X_ij(m) * b_j;
-    if (m == 1) eta_fixed_i.col(m) = X_ij(m) * b_j2;
+    if (covariate_diffusion) {
+      // Create modified model matrix with diffused covariate values
+      matrix<Type> X_modified = X_ij(m);
+      
+      // Replace diffused covariate columns with projected diffused values
+      for (int c = 0; c < n_cov_diffusion; c++) {
+        int col_idx = diffusion_col_indices(c);
+        for (int i = 0; i < n_i; i++) {
+          X_modified(i, col_idx) = diffused_cov_A(i, c);
+        }
+      }
+      
+      // Apply coefficients to modified matrix
+      if (m == 0) eta_fixed_i.col(m) = X_modified * b_j;
+      if (m == 1) eta_fixed_i.col(m) = X_modified * b_j2;
+    } else {
+      // Original unchanged code
+      if (m == 0) eta_fixed_i.col(m) = X_ij(m) * b_j;
+      if (m == 1) eta_fixed_i.col(m) = X_ij(m) * b_j2;
+    }
   }
 
   // FIXME delta must be same in 2 components:
@@ -1224,10 +1286,48 @@ Type objective_function<Type>::operator()()
     int n_p_mesh = proj_mesh.rows(); // n 'p'redicted mesh (less than n_p if duplicate locations)
     array<Type> proj_fe(n_p, n_m);
 
+    // Project diffused covariates to prediction locations  
+    array<Type> proj_diffused_cov_A_unique(n_p_mesh, n_cov_diffusion);
+    array<Type> proj_diffused_cov_A(n_p, n_cov_diffusion);
+    proj_diffused_cov_A_unique.setZero();
+    proj_diffused_cov_A.setZero();
+
+    if (covariate_diffusion && !no_spatial) {
+      // Project to unique mesh locations
+      for (int c = 0; c < n_cov_diffusion; c++) {
+        proj_diffused_cov_A_unique.col(c) = proj_mesh * vector<Type>(diffused_cov_s.col(c));
+      }
+      
+      // Expand to full prediction grid
+      for (int c = 0; c < n_cov_diffusion; c++) {
+        for (int i = 0; i < n_p; i++) {
+          proj_diffused_cov_A(i, c) = proj_diffused_cov_A_unique(proj_spatial_index(i), c);
+        }
+      }
+    }
+
     for (int m = 0; m < n_m; m++) {
-      if (m == 0) proj_fe.col(m) = proj_X_ij(m) * b_j;
+      if (covariate_diffusion) {
+        // Create modified projection matrix
+        matrix<Type> proj_X_modified = proj_X_ij(m);
+        
+        // Replace diffused covariate columns
+        for (int c = 0; c < n_cov_diffusion; c++) {
+          int col_idx = diffusion_col_indices(c);
+          for (int i = 0; i < n_p; i++) {
+            proj_X_modified(i, col_idx) = proj_diffused_cov_A(i, c);
+          }
+        }
+        
+        // Apply coefficients
+        if (m == 0) proj_fe.col(m) = proj_X_modified * b_j;
+        if (m == 1) proj_fe.col(m) = proj_X_modified * b_j2 + proj_offset_i;
+      } else {
+        // Original code
+        if (m == 0) proj_fe.col(m) = proj_X_ij(m) * b_j;
+        if (m == 1) proj_fe.col(m) = proj_X_ij(m) * b_j2 + proj_offset_i;
+      }
       if (n_m == 1) proj_fe.col(m) += proj_offset_i;
-      if (m == 1) proj_fe.col(m) = proj_X_ij(m) * b_j2 + proj_offset_i;
     }
 
     // add threshold effect if specified

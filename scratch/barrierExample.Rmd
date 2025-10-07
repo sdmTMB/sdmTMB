@@ -613,13 +613,11 @@ Now let's compare the key parameters between inlabru and sdmTMB:
 ```{r}
 # Extract key parameters from inlabru results
 cat("inlabru results:\n")
-
-cat("\nHyperparameters (transformed):\n")
-# Transform hyperparameters from internal scale
 sigma_e_inla <- exp(-result$internal.marginals.hyperpar[[1]][,"x"]/2)
 range_inla <- exp(result$internal.marginals.hyperpar[[2]][,"x"])  
 sigma_inla <- exp(result$internal.marginals.hyperpar[[3]][,"x"])
 
+cat("inlabru results:\n")
 cat("residual SD", mean(sigma_e_inla), "\n")
 cat("spatial SD:", mean(sigma_inla), "\n")
 cat("range:", mean(range_inla), "\n") 
@@ -688,15 +686,17 @@ cat("Correlation between inlabru and sdmTMB predictions (without barrier model):
     cor(pred_grid$inlabru_mean, pred_grid$sdmTMB_est_no_barrier, use = "complete.obs"), "\n")
 
 # Plot predictions against each other
-ggplot(pred_grid, aes(inlabru_mean, sdmTMB_est)) +
+p1 <- ggplot(pred_grid, aes(inlabru_mean, sdmTMB_est)) +
   geom_point(alpha = 0.5) +
   geom_abline(slope = 1, intercept = 0, color = "red") +
   labs(x = "inlabru predictions", y = "sdmTMB predictions") +
   theme_minimal()
 
-ggplot(pred_grid, aes(inlabru_mean, sdmTMB_est_no_barrier)) +
+p2 <- ggplot(pred_grid, aes(inlabru_mean, sdmTMB_est_no_barrier)) +
   geom_point(alpha = 0.5) +
   geom_abline(slope = 1, intercept = 0, color = "red") +
   labs(x = "inlabru predictions", y = "sdmTMB predictions without barrier model") +
   theme_minimal()
+
+p1 / p2
 ```
