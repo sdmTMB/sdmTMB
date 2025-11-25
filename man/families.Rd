@@ -173,6 +173,11 @@ Stacy, E.W. 1962. A Generalization of the Gamma Distribution. The Annals of
 Mathematical Statistics 33(3): 1187–1192. Institute of Mathematical
 Statistics.
 
+Dunic, J.C., Conner, J., Anderson, S.C., and Thorson, J.T. 2025. The
+generalized gamma is a flexible distribution that outperforms alternatives
+when modelling catch rate data. ICES Journal of Marine Science 82(4):
+fsaf040. \doi{10.1093/icesjms/fsaf040}.
+
 \emph{Families ending in \verb{_mix()}}:
 
 Thorson, J.T., Stewart, I.J., and Punt, A.E. 2011. Accounting for fish shoals

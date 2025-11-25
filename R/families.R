@@ -100,6 +100,11 @@ lognormal <- function(link = "log") {
 #' Stacy, E.W. 1962. A Generalization of the Gamma Distribution. The Annals of
 #' Mathematical Statistics 33(3): 1187–1192. Institute of Mathematical
 #' Statistics.
+#'
+#' Dunic, J.C., Conner, J., Anderson, S.C., and Thorson, J.T. 2025. The
+#' generalized gamma is a flexible distribution that outperforms alternatives
+#' when modelling catch rate data. ICES Journal of Marine Science 82(4):
+#' fsaf040. \doi{10.1093/icesjms/fsaf040}.
 
 gengamma <- function(link = "log") {
   linktemp <- substitute(link)
@@ -415,6 +420,7 @@ censored_poisson <- function(link = "log") {
 #' biomass sampling data, and a computationally efficient alternative. Canadian
 #' Journal of Fisheries and Aquatic Sciences, 75(9), 1369-1382.
 #' \doi{10.1139/cjfas-2017-0266}
+
 delta_gamma <- function(link1,
   link2 = "log", type = c("standard", "poisson-link")) {
   type <- match.arg(type)
