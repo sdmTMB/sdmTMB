@@ -542,9 +542,9 @@ fit
 \references{
 \strong{Main reference introducing the package to cite when using sdmTMB:}
 
-Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett. 2022. sdmTMB: an R
-package for fast, flexible, and user-friendly generalized linear mixed effects
-models with spatial and spatiotemporal random fields.
+Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett, J.T. Thorson. 2024.
+sdmTMB: an R package for fast, flexible, and user-friendly generalized linear
+mixed effects models with spatial and spatiotemporal random fields.
 bioRxiv 2022.03.24.485545; \doi{10.1101/2022.03.24.485545}.
 
 \emph{Reference for local trends:}
