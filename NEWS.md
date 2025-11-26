@@ -52,7 +52,7 @@
 * Add vignette demonstrating how to fit zero-one-inflated beta (ZOIB) models
   by fitting three separate model components and combining predictions. #440 #441
 
-* Add argument to fix probability of extreme events for `*_mix()` familes.
+* Add argument to fix probability of extreme events for `*_mix()` families.
   Note that the internal parameter name has also changed from `p_mix` to
   `p_extreme` and from `logit_p_mix` to `logit_p_extreme`. #318 #474
 

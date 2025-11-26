@@ -177,7 +177,7 @@ prob_north <- mean(shifts > 0)
 cat("Probability of northward shift:", round(prob_north * 100, 1), "%\n")
 ```
 
-We can plot that distibution:
+We can plot that distribution:
 
 ```{r prob-shift-hist}
 ggplot(data.frame(shifts = shifts), aes(shifts)) + geom_histogram()
