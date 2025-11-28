@@ -1,5 +1,8 @@
 # sdmTMB (development version)
 
+* Fix error when parsing model when including `extra_time` in delta-family models
+  with a list formula. #493
+
 # sdmTMB 0.8.0
 
 ## New features

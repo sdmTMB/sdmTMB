@@ -751,8 +751,12 @@ sdmTMB <- function(
       msg = "Specified `time` column can't be coerced to a numeric value or contains NAs. Please remove any NAs in the time column."
     )
     if (!is.null(extra_time)) { # 320 protect against factor(time), extra_time clash
-      if (!is.list(formula)) .form <- list(formula)
-      x <- unlist(lapply(list(formula), \(x) attr(stats::terms(x), "term.labels")))
+      if (!is.list(formula)) {
+        .form <- list(formula)
+      } else {
+        .form <- formula
+      }
+      x <- unlist(lapply(.form, \(x) attr(stats::terms(x), "term.labels")))
       xf <- x[grep("factor\\(", x)]
       if (any(c(grep(time, xf), grep(paste0("^", time, "$"), x)))) {
         cli::cli_warn("Detected potential formula-time column clash. E.g., assuming 'year' is your time column: `formula = ... + factor(year)` combined with `time = 'year'`, and 'extra_time' specified. This can produce a non-identiable model because extra factor levels for the missing time slices will be created. To avoid this, rename your factor time column used in your formula. E.g. create a new column 'year_factor' in your data and use that in the formula. See issue https://github.com/sdmTMB/sdmTMB/issues/320.")

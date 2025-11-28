@@ -204,6 +204,38 @@ test_that("factor year extra time clash is detected and warned about", {
   )
 })
 
+test_that("extra_time works with delta models using formula lists", {
+  skip_on_cran()
+  mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 20)
+
+  # Test with formula list and extra_time (this was the bug in issue #493)
+  fit <- sdmTMB(
+    formula = list(density ~ depth_scaled, density ~ poly(depth_scaled, 2)),
+    time = "year",
+    extra_time = c(2006, 2008, 2010, 2012, 2014, 2016),
+    data = pcod,
+    mesh = mesh,
+    family = delta_gamma(),
+    spatial = list("off", "on"),
+    spatiotemporal = list("off", "AR1"),
+    do_fit = FALSE
+  )
+  expect_s3_class(fit, "sdmTMB")
+
+  # Test that warning still works for factor(time) in formula list
+  expect_warning({
+    fit2 <- sdmTMB(
+      formula = list(density ~ as.factor(year), density ~ depth_scaled),
+      time = "year",
+      extra_time = 2030,
+      data = pcod,
+      mesh = mesh,
+      family = delta_gamma(),
+      do_fit = FALSE
+    )
+  }, regexp = "rename")
+})
+
 test_that("update() works on an extra_time model", {
   skip_on_cran()
   pcod$os <- rep(log(0.01), nrow(pcod)) # offset check
