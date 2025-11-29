@@ -1,5 +1,10 @@
 # sdmTMB (development version)
 
+* Dramatically improve `print()` performance for models with large embedded
+  objects in calls (e.g., cross-validation scenarios with replicated data).
+  The fix avoids expensive `deparse()` operations on large data frames and
+  mesh objects by extracting only the argument names needed for display. #492
+
 * Fix error when parsing model when including `extra_time` in delta-family models
   with a list formula. #493
 

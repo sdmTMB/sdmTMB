@@ -28,22 +28,19 @@ print_model_info <- function(x) {
   # covariance <- paste0("Covariance: ", if (aniso) "anisotropic" else "isotropic", "\n")
   covariance <- paste0(if (aniso) "anisotropic" else "isotropic")
 
-  formula <- paste0("Formula: ", deparse(x$call$formula), "\n")
+  formula <- paste0("Formula: ", extract_call_name(x$call$formula), "\n")
 
-  if (deparse(x$call$time) != "NULL") {
-    time <- paste0("Time column: ", deparse(x$call$time), "\n")
+  time_name <- extract_call_name(x$call$time)
+  if (!is.null(time_name) && time_name != "NULL") {
+    time <- paste0("Time column: ", time_name, "\n")
     time <- gsub('\\"', "", time)
     time <- gsub("\\'", "", time)
   } else {
     time <- NULL
   }
 
-  mesh <- paste0("Mesh: ", deparse(x$call$mesh), " (", covariance, " covariance)\n")
-  data <- paste0("Data: ", deparse(x$call$data), "\n")
-
-  # From sdmTMB_cv():
-  if (length(mesh) > 1L) mesh <- NULL
-  if (length(data) > 1L) data <- NULL
+  mesh <- paste0("Mesh: ", extract_call_name(x$call$mesh), " (", covariance, " covariance)\n")
+  data <- paste0("Data: ", extract_call_name(x$call$data), "\n")
 
   if ("clean_name" %in% names(x$family)) {
     overall_family <- x$family$clean_name

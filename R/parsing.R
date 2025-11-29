@@ -6,10 +6,6 @@ barnames <- function(bars) {
   vapply(bars, function(x) safe_deparse(x[[3]]), "")
 }
 
-safe_deparse <- function(x, collapse = " ") {
-  paste(deparse(x, 500L), collapse = collapse)
-}
-
 # make_indices is an internal function to build lower triangular matrices for
 # correlated random effects
 # @param vec Vector of indices to generate row and col positions for

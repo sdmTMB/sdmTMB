@@ -281,6 +281,32 @@ safe_deparse <- function (x, collapse = " ") {
   paste(deparse(x, 500L), collapse = collapse)
 }
 
+# Extract a short name from a call element without expensive deparse
+extract_call_name <- function(call_element, max_width = 80) {
+  if (is.null(call_element)) {
+    return(NULL)
+  }
+
+  # Fast path for symbols (most common case: mesh_obj)
+  if (is.symbol(call_element)) {
+    return(as.character(call_element))
+  }
+
+  # Fast path for function calls (e.g., make_mesh(...))
+  if (is.call(call_element)) {
+    # Use deparse1 (available in R >= 4.0.0, package requires >= 4.1.0)
+    deparsed <- deparse1(call_element, width.cutoff = max_width)
+    # If still too long after width cutoff, truncate and add ellipsis
+    if (nchar(deparsed) > max_width) {
+      deparsed <- paste0(substr(deparsed, 1, max_width - 3), "...")
+    }
+    return(deparsed)
+  }
+
+  obj_class <- class(call_element)[1]
+  return(obj_class)
+}
+
 barnames <- function (bars) {
   vapply(bars, function(x) safe_deparse(x[[3]]), "")
 }
