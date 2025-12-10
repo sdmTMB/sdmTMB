@@ -46,6 +46,18 @@ jobs:
             any::textshaping
           needs: check
 
+      - name: Install yaml with GitHub fallback
+        run: |
+          if (!require("yaml", quietly = TRUE)) {
+            tryCatch({
+              install.packages("yaml")
+            }, error = function(e) {
+              message("CRAN installation failed, trying GitHub...")
+              remotes::install_github("r-lib/r-yaml")
+            })
+          }
+        shell: Rscript {0}
+
       - uses: r-lib/actions/check-r-package@v2
         with:
           upload-snapshots: true
