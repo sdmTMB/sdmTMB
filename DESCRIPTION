@@ -72,6 +72,7 @@ Imports:
     generics,
     graphics,
     lifecycle,
+    lme4,
     Matrix,
     methods,
     mgcv,
