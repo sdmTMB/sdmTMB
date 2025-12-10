@@ -1,0 +1,1095 @@
+# sdmTMB
+
+> Spatial and spatiotemporal GLMMs with TMB
+
+sdmTMB is an R package that fits spatial and spatiotemporal GLMMs
+(Generalized Linear Mixed Effects Models) using Template Model Builder
+([TMB](https://github.com/kaskr/adcomp)),
+[fmesher](https://github.com/inlabru-org/fmesher), and Gaussian Markov
+random fields. One common application is for species distribution models
+(SDMs). See the [documentation site](https://sdmTMB.github.io/sdmTMB/)
+and a preprint:
+
+Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett, J.T. Thorson.
+2024. sdmTMB: an R package for fast, flexible, and user-friendly
+generalized linear mixed effects models with spatial and spatiotemporal
+random fields. bioRxiv 2022.03.24.485545; doi:
+<https://doi.org/10.1101/2022.03.24.485545>
+
+## Table of contents
+
+- [Installation](#installation)
+- [Overview](#overview)
+- [Getting help](#getting-help)
+- [Citation](#citation)
+- [Basic use](#basic-use)
+- [Advanced functionality](#advanced-functionality)
+  - [Time-varying coefficients](#time-varying-coefficients)
+  - [Spatially varying coefficients
+    (SVC)](#spatially-varying-coefficients-svc)
+  - [Random intercepts](#random-intercepts)
+  - [Breakpoint and threshold
+    effects](#breakpoint-and-threshold-effects)
+  - [Simulating data](#simulating-data)
+  - [Sampling from the joint precision
+    matrix](#sampling-from-the-joint-precision-matrix)
+  - [Calculating uncertainty on spatial
+    predictions](#calculating-uncertainty-on-spatial-predictions)
+  - [Cross validation](#cross-validation)
+  - [Priors](#priors)
+  - [Bayesian MCMC sampling with
+    Stan](#bayesian-mcmc-sampling-with-stan)
+  - [Turning off random fields](#turning-off-random-fields)
+  - [Using a custom fmesher mesh](#using-a-custom-fmesher-mesh)
+  - [Barrier meshes](#barrier-meshes)
+- [Related software](#related-software)
+
+## Installation
+
+sdmTMB can be installed from CRAN:
+
+``` r
+install.packages("sdmTMB", dependencies = TRUE)
+```
+
+Assuming you have a [C++
+compiler](https://support.posit.co/hc/en-us/articles/200486498-Package-Development-Prerequisites)
+installed, the development version is recommended and can be installed:
+
+``` r
+# install.packages("pak")
+pak::pak("sdmTMB/sdmTMB", dependencies = TRUE)
+```
+
+There are some extra utilities in the
+[sdmTMBextra](https://github.com/sdmTMB/sdmTMBextra) package.
+
+For large models, it is recommended to use an optimized BLAS library,
+which will result in major speed improvements for TMB (and other) models
+in R (e.g., often 8-fold speed increases for sdmTMB models). Suggested
+installation instructions for [Mac
+users](https://www.mail-archive.com/r-sig-mac@r-project.org/msg06199.html)
+(other than R 4.5.0) or [with OpenBLAS on a
+Mac](https://gist.github.com/seananderson/3c6cbf640ba566ce936c79442b9a6068),
+[Linux users](https://prdm0.github.io/ropenblas/), [Windows
+users](https://github.com/david-cortes/R-openblas-in-windows), and
+[Windows users without admin
+privileges](https://gist.github.com/seananderson/08a51e296a854f227a908ddd365fb9c1).
+To check that you’ve successfully linked the optimized BLAS, start a new
+session and run:
+
+``` r
+m <- 1e4; n <- 1e3; k <- 3e2
+X <- matrix(rnorm(m*k), nrow=m); Y <- matrix(rnorm(n*k), ncol=n)
+system.time(X %*% Y)
+```
+
+The result (‘elapsed’) should take a fraction of a second (e.g., 0.03
+s), not \> 1 second.
+
+## Overview
+
+Analyzing geostatistical data (coordinate-referenced observations from
+some underlying spatial process) is becoming increasingly common in many
+fields. sdmTMB implements geostatistical spatial and spatiotemporal
+GLMMs using [TMB](https://cran.r-project.org/package=TMB) for model
+fitting and [fmesher](https://CRAN.R-project.org/package=fmesher) to set
+up SPDE matrices (for the [stochastic partial differential equation
+approach](https://doi.org/10.1111/j.1467-9868.2011.00777.x); a
+computationally efficient method for modeling spatial correlation). One
+common application is for species distribution models (SDMs), hence the
+package name. The goal of sdmTMB is to provide a fast, flexible, and
+user-friendly interface—similar to the popular R package glmmTMB—but
+with a focus on spatial and spatiotemporal models with an SPDE approach.
+We extend common generalized linear mixed models (GLMMs) to include the
+following optional features:
+
+- spatial random fields
+- spatiotemporal random fields that may be independent by year or
+  modelled with random walks or autoregressive processes
+- smooth terms for covariates, using the familiar `s()` notation from
+  mgcv
+- breakpoint (hockey-stick) or logistic covariates
+- time-varying covariates (coefficients modelled as random walks)
+- spatially varying coefficient models (SVCs)
+- interpolation or forecasting over missing or future time slices
+- a wide range of families: all standard R families plus
+  [`tweedie()`](https://sdmTMB.github.io/sdmTMB/reference/families.md),
+  [`nbinom1()`](https://sdmTMB.github.io/sdmTMB/reference/families.md),
+  [`nbinom2()`](https://sdmTMB.github.io/sdmTMB/reference/families.md),
+  [`lognormal()`](https://sdmTMB.github.io/sdmTMB/reference/families.md),
+  [`student()`](https://sdmTMB.github.io/sdmTMB/reference/families.md),
+  [`gengamma()`](https://sdmTMB.github.io/sdmTMB/reference/families.md),
+  plus some truncated and censored families
+- delta/hurdle models including
+  [`delta_gamma()`](https://sdmTMB.github.io/sdmTMB/reference/families.md),
+  [`delta_lognormal()`](https://sdmTMB.github.io/sdmTMB/reference/families.md),
+  and
+  [`delta_truncated_nbinom2()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+
+Estimation is via maximum marginal likelihood (with random effects
+integrated out) with the objective function calculated in
+[TMB](https://cran.r-project.org/package=TMB) and minimized in R via
+[`stats::nlminb()`](https://rdrr.io/r/stats/nlminb.html) with the random
+effects integrated over via the Laplace approximation. The sdmTMB
+package also allows for models to be passed to Stan via
+[tmbstan](https://cran.r-project.org/package=tmbstan), allowing for
+Bayesian model estimation.
+
+See [`?sdmTMB`](https://sdmTMB.github.io/sdmTMB/reference/sdmTMB.html)
+and
+[`?predict.sdmTMB`](https://sdmTMB.github.io/sdmTMB/reference/predict.sdmTMB.html)
+for the most complete examples. Also see the vignettes (‘Articles’) on
+the [documentation site](https://sdmTMB.github.io/sdmTMB/index.html) and
+the [preprint](https://doi.org/10.1101/2022.03.24.485545) listed below.
+
+## Getting help
+
+For questions about how to use sdmTMB or interpret the models, please
+post on the [discussion
+board](https://github.com/sdmTMB/sdmTMB/discussions). If you
+[email](https://github.com/sdmTMB/sdmTMB/blob/main/DESCRIPTION) a
+question, we are likely to respond on the [discussion
+board](https://github.com/sdmTMB/sdmTMB/discussions) with an anonymized
+version of your question (and without data) if we think it could be
+helpful to others. Please let us know if you don’t want us to do that.
+
+For bugs or feature requests, please post in the [issue
+tracker](https://github.com/sdmTMB/sdmTMB/issues).
+
+There have been several [past sdmTMB
+workshops](https://github.com/sdmTMB/sdmTMB-teaching). Slides and
+exercises from the latest workshop are available
+[here](https://github.com/sdmTMB/sdmTMB-TESA-2025).
+[Recordings](https://www.youtube.com/channel/UCYoFG51RjJVx7m9mZGaj-Ng/videos)
+from an older workshop are also available.
+
+## Citation
+
+To cite sdmTMB in publications, please use:
+
+``` r
+citation("sdmTMB")
+```
+
+Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett., J.T. Thorson.
+2025. sdmTMB: an R package for fast, flexible, and user-friendly
+generalized linear mixed effects models with spatial and spatiotemporal
+random fields. In press at Journal of Statistical Software. bioRxiv
+preprint: <https://doi.org/10.1101/2022.03.24.485545>.
+
+A list of known publications that use sdmTMB can be found
+[here](https://github.com/sdmTMB/sdmTMB/tree/main/scratch/citations).
+Please use the above citation so we can track publications.
+
+## Basic use
+
+An sdmTMB model requires a data frame that contains a response column,
+columns for any predictors, and columns for spatial coordinates. It
+usually makes sense to convert the spatial coordinates to an equidistant
+projection such as UTMs such that 1 km remains the same distance
+throughout the study region (unlike latitude/longitude) \[e.g., using
+[`sf::st_transform()`](https://r-spatial.github.io/sf/reference/st_transform.html)\].
+Here, we illustrate a spatial model fit to Pacific cod (*Gadus
+macrocephalus*) trawl survey data from Queen Charlotte Sound, BC,
+Canada. Our model contains a main effect of depth as a penalized
+smoother, a spatial random field, and Tweedie observation error. Our
+data frame `pcod` (built into the package) has a column `year` for the
+year of the survey, `density` for density of Pacific cod in a given
+survey tow, `present` for whether `density > 0`, `depth` for depth in
+meters of that tow, and spatial coordinates `X` and `Y`, which are UTM
+coordinates in kilometres.
+
+``` r
+library(dplyr)
+library(ggplot2)
+library(sdmTMB)
+head(pcod)
+```
+
+``` R
+#> # A tibble: 3 × 6
+#>    year density present depth     X     Y
+#>   <int>   <dbl>   <dbl> <dbl> <dbl> <dbl>
+#> 1  2003   113.        1   201  446. 5793.
+#> 2  2003    41.7       1   212  446. 5800.
+#> 3  2003     0         0   220  449. 5802.
+```
+
+We start by creating a mesh object that contains a triangular network
+used to approximate the spatial field (a “finite element mesh”).
+
+``` r
+mesh <- make_mesh(pcod, xy_cols = c("X", "Y"), cutoff = 10)
+```
+
+Here, `cutoff` defines the minimum allowed distance between mesh
+vertices in the units of `X` and `Y` (km). Smaller values create finer
+meshes but increase computation time. Alternatively, we could have
+created a mesh via the fmesher or INLA packages and supplied it to
+[`make_mesh()`](https://sdmTMB.github.io/sdmTMB/reference/make_mesh.md).
+We can inspect our mesh object with the associated plotting method
+`plot(mesh)`.
+
+Fit a spatial model with a smoother for depth:
+
+``` r
+fit <- sdmTMB(
+  density ~ s(depth),
+  data = pcod,
+  mesh = mesh,
+  family = tweedie(link = "log"),
+  spatial = "on"
+)
+```
+
+Print the model fit:
+
+``` r
+fit
+#> Spatial model fit by ML ['sdmTMB']
+#> Formula: density ~ s(depth)
+#> Mesh: mesh (isotropic covariance)
+#> Data: pcod
+#> Family: tweedie(link = 'log')
+#>  
+#> Conditional model:
+#>             coef.est coef.se
+#> (Intercept)     2.37    0.21
+#> sdepth          0.62    2.53
+#> 
+#> Smooth terms:
+#>              Std. Dev.
+#> sd__s(depth)     13.93
+#> 
+#> Dispersion parameter: 12.69
+#> Tweedie p: 1.58
+#> Matérn range: 16.39
+#> Spatial SD: 1.86
+#> ML criterion at convergence: 6402.136
+#> 
+#> See ?tidy.sdmTMB to extract these values as a data frame.
+```
+
+The output shows our model was fit by maximum marginal likelihood
+(`ML`), followed by the formula, mesh, data, and family. The main
+effects section includes the linear component of the depth smoother
+(`sdepth`) and the standard deviation on the smoother weights
+(`sds(depth)`). The Tweedie dispersion (`phi`) and power parameters
+control the distribution’s mean-variance relationship. The Matérn range
+is the distance at which spatial correlation becomes negligible (~0.13
+correlation). The marginal spatial field standard deviation (`sigma_O`)
+represents unexplained spatial variation. The log likelihood represents
+the objective function value at convergence.
+
+We can extract parameters as a data frame:
+
+``` r
+tidy(fit, conf.int = TRUE)
+#> # A tibble: 2 × 5
+#>   term        estimate std.error conf.low conf.high
+#>   <chr>          <dbl>     <dbl>    <dbl>     <dbl>
+#> 1 (Intercept)     2.37     0.215     1.95      2.79
+#> 2 sdepth          0.62     2.53     -4.34      5.58
+tidy(fit, effects = "ran_pars", conf.int = TRUE)
+#> # A tibble: 5 × 5
+#>   term         estimate std.error conf.low conf.high
+#>   <chr>           <dbl>     <dbl>    <dbl>     <dbl>
+#> 1 range           16.4    4.47        9.60     28.0 
+#> 2 phi             12.7    0.406      11.9      13.5 
+#> 3 sigma_O          1.86   0.218       1.48      2.34
+#> 4 tweedie_p        1.58   0.00998     1.56      1.60
+#> 5 sd__s(depth)    13.9   NA           7.54     25.7
+```
+
+Run some basic sanity checks on our model:
+
+``` r
+sanity(fit)
+#> ✔ Non-linear minimizer suggests successful convergence
+#> ✔ Hessian matrix is positive definite
+#> ✔ No extreme or very small eigenvalues detected
+#> ✔ No gradients with respect to fixed effects are >= 0.001
+#> ✔ No fixed-effect standard errors are NA
+#> ✔ No standard errors look unreasonably large
+#> ✔ No sigma parameters are < 0.01
+#> ✔ No sigma parameters are > 100
+#> ✔ Range parameter doesn't look unreasonably large
+```
+
+Use the [ggeffects](https://github.com/strengejacke/ggeffects) package
+to plot the smoother effect:
+
+``` r
+ggeffects::ggpredict(fit, "depth [50:400, by=2]") |> plot()
+```
+
+![](reference/figures/README-plot-ggpredict-link-1.png)
+
+If the depth effect was parametric and not a penalized smoother, we
+could have alternatively used
+[`ggeffects::ggeffect()`](https://strengejacke.github.io/ggeffects/reference/ggpredict.html)
+for a fast marginal effect plot.
+
+Next, we can predict on new data. We will use a data frame `qcs_grid`
+from the package, which contains all the locations (and covariates) at
+which we wish to predict. Here, these `newdata` are a grid, or raster,
+covering our survey.
+
+``` r
+p <- predict(fit, newdata = qcs_grid)
+```
+
+``` r
+head(p)
+```
+
+``` R
+#> # A tibble: 3 × 7
+#>       X     Y depth   est est_non_rf est_rf omega_s
+#>   <dbl> <dbl> <dbl> <dbl>      <dbl>  <dbl>   <dbl>
+#> 1   456  5636  347. -3.06      -3.08 0.0172  0.0172
+#> 2   458  5636  223.  2.03       1.99 0.0460  0.0460
+#> 3   460  5636  204.  2.89       2.82 0.0747  0.0747
+```
+
+We exponentiate the predictions with
+[`exp()`](https://rdrr.io/r/base/Log.html) to transform from log-link
+space back to the density scale:
+
+``` r
+ggplot(p, aes(X, Y, fill = exp(est))) + geom_raster() +
+  scale_fill_viridis_c(trans = "sqrt")
+```
+
+![](reference/figures/README-plot-predictions-1.png)
+
+We could switch to a presence-absence model by changing the response
+column and family:
+
+``` r
+fit <- sdmTMB(
+  present ~ s(depth),
+  data = pcod, 
+  mesh = mesh,
+  family = binomial(link = "logit")
+)
+```
+
+Or a hurdle/delta model by changing the family:
+
+``` r
+fit <- sdmTMB(
+  density ~ s(depth),
+  data = pcod,
+  mesh = mesh,
+  family = delta_gamma(link1 = "logit", link2 = "log"),
+)
+```
+
+We could instead fit a spatiotemporal model by specifying the `time`
+column and a spatiotemporal structure:
+
+``` r
+fit_spatiotemporal <- sdmTMB(
+  density ~ s(depth, k = 5), 
+  data = pcod, 
+  mesh = mesh,
+  time = "year",
+  family = tweedie(link = "log"), 
+  spatial = "off", 
+  spatiotemporal = "ar1"
+)
+```
+
+If we wanted to create an area-weighted standardized population index (a
+time series of abundance accounting for spatial variation in sampling),
+we could predict on a grid covering the entire survey (`qcs_grid`) with
+grid cell area 4 km² (2 x 2 km) and pass the predictions to
+[`get_index()`](https://sdmTMB.github.io/sdmTMB/reference/get_index.md):
+
+``` r
+grid_yrs <- replicate_df(qcs_grid, "year", unique(pcod$year))
+p_st <- predict(fit_spatiotemporal, newdata = grid_yrs, 
+  return_tmb_object = TRUE)
+index <- get_index(p_st, area = rep(4, nrow(grid_yrs)))
+ggplot(index, aes(year, est)) +
+  geom_ribbon(aes(ymin = lwr, ymax = upr), fill = "grey90") +
+  geom_line(lwd = 1, colour = "grey30") +
+  labs(x = "Year", y = "Biomass (kg)")
+```
+
+![](reference/figures/README-plot-index-1.png)
+
+Or the center of gravity (mean location of the population, useful for
+detecting distributional shifts):
+
+``` r
+cog <- get_cog(p_st, format = "wide")
+ggplot(cog, aes(est_x, est_y, colour = year)) +
+  geom_pointrange(aes(xmin = lwr_x, xmax = upr_x)) +
+  geom_pointrange(aes(ymin = lwr_y, ymax = upr_y)) +
+  scale_colour_viridis_c()
+```
+
+![](reference/figures/README-plot-cog-1.png)
+
+For more on these basic features, see the vignettes [Intro to modelling
+with sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/basic-intro.html)
+and [Index standardization with
+sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/index-standardization.html).
+
+## Advanced functionality
+
+### Time-varying coefficients
+
+Time-varying coefficients allow parameters to change over time as random
+walks. This is useful when relationships may shift gradually (e.g., due
+to environmental change).
+
+Time-varying intercept:
+
+``` r
+fit <- sdmTMB(
+  density ~ 0 + s(depth, k = 5), 
+  time_varying = ~ 1, 
+  data = pcod, mesh = mesh,
+  time = "year",  
+  family = tweedie(link = "log"),
+  silent = FALSE # see progress
+)
+```
+
+Time-varying (random walk) effect of depth:
+
+``` r
+fit <- sdmTMB(
+  density ~ 1, 
+  time_varying = ~ 0 + depth_scaled + depth_scaled2,
+  data = pcod, mesh = mesh,
+  time = "year",
+  family = tweedie(link = "log"),
+  spatial = "off",
+  spatiotemporal = "ar1",
+  silent = FALSE
+)
+```
+
+See the vignette [Intro to modelling with
+sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/basic-intro.html) for
+more details.
+
+### Spatially varying coefficients (SVC)
+
+Spatially varying coefficients allow the effect of a predictor to differ
+across space, revealing spatial heterogeneity in relationships (e.g.,
+trends that are positive in some areas and negative in others).
+
+Spatially varying effect of time:
+
+``` r
+pcod$year_scaled <- as.numeric(scale(pcod$year))
+fit <- sdmTMB(
+  density ~ s(depth, k = 5) + year_scaled,
+  spatial_varying = ~ year_scaled, 
+  data = pcod, mesh = mesh, 
+  time = "year",
+  family = tweedie(link = "log"),
+  spatiotemporal = "off"
+)
+```
+
+See `zeta_s` in the output, which represents spatial variation in the
+coefficient. Ensure the SVC covariate is centered (mean ≈ 0) and include
+it in the main formula too so that `zeta_s` represents deviations from
+the average effect.
+
+``` r
+grid_yrs <- replicate_df(qcs_grid, "year", unique(pcod$year))
+grid_yrs$year_scaled <- (grid_yrs$year - mean(pcod$year)) / sd(pcod$year)
+p <- predict(fit, newdata = grid_yrs) %>% 
+  subset(year == 2011) # any year
+ggplot(p, aes(X, Y, fill = zeta_s_year_scaled)) + geom_raster() +
+  scale_fill_gradient2()
+```
+
+![](reference/figures/README-plot-zeta-1.png)
+
+See the vignette on [Fitting spatial trend models with
+sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/spatial-trend-models.html)
+for more details.
+
+### Random intercepts
+
+We can use the same syntax (`1 | group`) as lme4 or glmmTMB to fit
+random intercepts:
+
+``` r
+pcod$year_factor <- as.factor(pcod$year)
+fit <- sdmTMB(
+  density ~ s(depth, k = 5) + (1 | year_factor),
+  data = pcod, mesh = mesh,
+  time = "year",
+  family = tweedie(link = "log")
+)
+```
+
+### Breakpoint and threshold effects
+
+``` r
+fit <- sdmTMB(
+  present ~ 1 + breakpt(depth_scaled), 
+  data = pcod, mesh = mesh,
+  family = binomial(link = "logit")
+)
+```
+
+``` r
+fit <- sdmTMB(
+  present ~ 1 + logistic(depth_scaled), 
+  data = pcod, mesh = mesh,
+  family = binomial(link = "logit")
+)
+```
+
+See the vignette on [Threshold modeling with
+sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/threshold-models.html)
+for more details.
+
+### Simulating data
+
+#### Simulating data from scratch
+
+``` r
+predictor_dat <- expand.grid(
+  X = seq(0, 1, length.out = 100), Y = seq(0, 1, length.out = 100)
+)
+mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.05)
+sim_dat <- sdmTMB_simulate(
+  formula = ~ 1,
+  data = predictor_dat,
+  mesh = mesh,
+  family = poisson(link = "log"),
+  range = 0.3,
+  sigma_O = 0.4,
+  seed = 1,
+  B = 1 # B0 = intercept
+)
+head(sim_dat)
+#> # A tibble: 6 × 7
+#>        X     Y omega_s    mu   eta observed `(Intercept)`
+#>    <dbl> <dbl>   <dbl> <dbl> <dbl>    <dbl>         <dbl>
+#> 1 0          0  -0.154  2.33 0.846        1             1
+#> 2 0.0101     0  -0.197  2.23 0.803        0             1
+#> 3 0.0202     0  -0.240  2.14 0.760        2             1
+#> 4 0.0303     0  -0.282  2.05 0.718        2             1
+#> 5 0.0404     0  -0.325  1.96 0.675        3             1
+#> 6 0.0505     0  -0.367  1.88 0.633        2             1
+
+# sample 200 points for fitting:
+set.seed(1)
+sim_dat_obs <- sim_dat[sample(seq_len(nrow(sim_dat)), 200), ]
+```
+
+``` r
+ggplot(sim_dat, aes(X, Y)) +
+  geom_raster(aes(fill = exp(eta))) + # mean without observation error
+  geom_point(aes(size = observed), data = sim_dat_obs, pch = 21) +
+  scale_fill_viridis_c() +
+  scale_size_area() +
+  coord_cartesian(expand = FALSE)
+```
+
+![](reference/figures/README-plot-sim-dat-1.png)
+
+Fit to the simulated data:
+
+``` r
+mesh <- make_mesh(sim_dat_obs, xy_cols = c("X", "Y"), cutoff = 0.05)
+fit <- sdmTMB(
+  observed ~ 1,
+  data = sim_dat_obs,
+  mesh = mesh,
+  family = poisson()
+)
+```
+
+See
+[`?sdmTMB_simulate`](https://sdmTMB.github.io/sdmTMB/reference/sdmTMB_simulate.html)
+for more details.
+
+#### Simulating from an existing fit
+
+``` r
+s <- simulate(fit, nsim = 500)
+dim(s)
+#> [1] 969 500
+s[1:3,1:4]
+#>      [,1]     [,2]     [,3]     [,4]
+#> [1,]    0 59.40310 83.20888  0.00000
+#> [2,]    0 34.56408  0.00000 19.99839
+#> [3,]    0  0.00000  0.00000  0.00000
+```
+
+See the vignette on [Residual checking with
+sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/residual-checking.html),
+[`?simulate.sdmTMB`](https://sdmTMB.github.io/sdmTMB/reference/simulate.sdmTMB.html),
+and
+[`?dharma_residuals`](https://sdmTMB.github.io/sdmTMB/reference/dharma_residuals.html)
+for more details.
+
+### Sampling from the joint precision matrix
+
+We can take samples from the implied parameter distribution assuming an
+MVN covariance matrix on the internal parameterization:
+
+``` r
+samps <- gather_sims(fit, nsim = 1000)
+ggplot(samps, aes(.value)) + geom_histogram() +
+  facet_wrap(~.variable, scales = "free_x")
+#> `stat_bin()` using `bins = 30`. Pick better value `binwidth`.
+```
+
+![](reference/figures/README-plot-mvn-1.png)
+
+See
+[`?gather_sims`](https://sdmTMB.github.io/sdmTMB/reference/gather_sims.html)
+and
+[`?get_index_sims`](https://sdmTMB.github.io/sdmTMB/reference/get_index_sims.html)
+for more details.
+
+### Calculating uncertainty on spatial predictions
+
+The fastest way to get point-wise prediction uncertainty is to use the
+MVN samples:
+
+``` r
+p <- predict(fit, newdata = predictor_dat, nsim = 500)
+predictor_dat$se <- apply(p, 1, sd)
+ggplot(predictor_dat, aes(X, Y, fill = se)) +
+  geom_raster() +
+  scale_fill_viridis_c(option = "A") +
+  coord_cartesian(expand = FALSE)
+```
+
+![](reference/figures/README-plot-pred-mvn-1.png)
+
+### Cross validation
+
+sdmTMB has built-in functionality for cross-validation. If we were to
+set a
+[`future::plan()`](https://future.futureverse.org/reference/plan.html),
+the folds would be fit in parallel:
+
+``` r
+mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 10)
+## Set parallel processing if desired:
+# library(future)
+# plan(multisession)
+m_cv <- sdmTMB_cv(
+  density ~ s(depth, k = 5),
+  data = pcod, mesh = mesh,
+  family = tweedie(link = "log"), k_folds = 2
+)
+#> Running fits with `future.apply()`.
+#> Set a parallel `future::plan()` to use parallel processing.
+# Sum of log likelihoods of left-out data:
+m_cv$sum_loglik
+#> [1] -7219.976
+```
+
+See
+[`?sdmTMB_cv`](https://sdmTMB.github.io/sdmTMB/reference/sdmTMB_cv.html)
+for more details.
+
+### Priors
+
+Priors/penalties can be placed on most parameters. For example, here we
+place a PC (penalized complexity) prior on the Matérn random field
+parameters, a standard normal prior on the effect of depth, a Normal(0,
+10^2) prior on the intercept, and a half-normal prior on the Tweedie
+dispersion parameter (`phi`):
+
+``` r
+mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 10)
+fit <- sdmTMB(
+  density ~ depth_scaled,
+  data = pcod, mesh = mesh,
+  family = tweedie(),
+  priors = sdmTMBpriors(
+    matern_s = pc_matern(range_gt = 10, sigma_lt = 5),
+    b = normal(c(0, 0), c(1, 10)),
+    phi = halfnormal(0, 15)
+  )
+)
+```
+
+We can visualize the PC Matérn prior:
+
+``` r
+plot_pc_matern(range_gt = 10, sigma_lt = 5)
+```
+
+![](reference/figures/README-plot-pc-matern-1.png)
+
+See
+[`?sdmTMBpriors`](https://sdmTMB.github.io/sdmTMB/reference/priors.html)
+for more details.
+
+### Bayesian MCMC sampling with Stan
+
+The fitted model can be passed to the tmbstan package to sample from the
+posterior with Stan. See the [Bayesian
+vignette](https://sdmTMB.github.io/sdmTMB/articles/bayesian.html).
+
+### Turning off random fields
+
+We can turn off the random fields for model comparison:
+
+``` r
+fit_sdmTMB <- sdmTMB(
+  present ~ poly(depth_scaled, 2),
+  data = pcod, mesh = mesh,
+  spatial = "off",
+  family = binomial()
+)
+fit_glm <- glm(
+  present ~ poly(depth_scaled, 2),
+  data = pcod,
+  family = binomial()
+)
+
+tidy(fit_sdmTMB)
+#> # A tibble: 3 × 5
+#>   term                   estimate std.error conf.low conf.high
+#>   <chr>                     <dbl>     <dbl>    <dbl>     <dbl>
+#> 1 (Intercept)              -0.426    0.0573   -0.538    -0.314
+#> 2 poly(depth_scaled, 2)1  -31.7      3.03    -37.6     -25.8  
+#> 3 poly(depth_scaled, 2)2  -66.9      4.09    -74.9     -58.9
+broom::tidy(fit_glm)
+#> # A tibble: 3 × 5
+#>   term                   estimate std.error statistic  p.value
+#>   <chr>                     <dbl>     <dbl>     <dbl>    <dbl>
+#> 1 (Intercept)              -0.426    0.0573     -7.44 1.03e-13
+#> 2 poly(depth_scaled, 2)1  -31.7      3.03      -10.5  1.20e-25
+#> 3 poly(depth_scaled, 2)2  -66.9      4.09      -16.4  3.50e-60
+```
+
+### Using a custom fmesher mesh
+
+Defining a mesh directly with INLA:
+
+``` r
+bnd <- INLA::inla.nonconvex.hull(cbind(pcod$X, pcod$Y), convex = -0.1)
+mesh_inla <- INLA::inla.mesh.2d(
+  boundary = bnd,
+  max.edge = c(25, 50)
+)
+mesh <- make_mesh(pcod, c("X", "Y"), mesh = mesh_inla)
+plot(mesh)
+```
+
+![](reference/figures/README-inla-mesh-1.png)
+
+``` r
+fit <- sdmTMB(
+  density ~ s(depth, k = 5),
+  data = pcod, mesh = mesh,
+  family = tweedie(link = "log")
+)
+```
+
+### Barrier meshes
+
+A barrier mesh limits correlation across barriers (e.g., land or water).
+See
+[`add_barrier_mesh()`](https://sdmTMB.github.io/sdmTMB/reference/add_barrier_mesh.md)
+in [sdmTMBextra](https://github.com/sdmTMB/sdmTMBextra).
+
+## Related software
+
+sdmTMB is heavily inspired by the
+[VAST](https://github.com/James-Thorson-NOAA/VAST) and the
+[glmmTMB](https://github.com/glmmTMB/glmmTMB) R packages.
+
+The newer [tinyVAST](https://github.com/vast-lib/tinyVAST) R package can
+fit many of the models that VAST and sdmTMB can with an interface
+similar to sdmTMB. Generally, we recommend tinyVAST for multivariate
+applications or for (dynamic) structural equation modelling with
+optional spatial and/or spatiotemporal components.
+
+[INLA](https://www.r-inla.org/) and
+[inlabru](https://sites.google.com/inlabru.org/inlabru) can fit many of
+the same models as sdmTMB (and more) in an approximate Bayesian
+inference framework.
+
+[mgcv](https://cran.r-project.org/package=mgcv) can fit similar
+SPDE-based Gaussian Markov random field models with code included in
+[Miller et al. (2019)](https://doi.org/10.1007/s13253-019-00377-z), but
+this will be slower for large spatial datasets.
+
+A table in the [sdmTMB
+preprint](https://doi.org/10.1101/2022.03.24.485545) describes
+functionality and timing comparisons between sdmTMB, VAST, INLA/inlabru,
+and mgcv and the discussion makes suggestions about when you might
+choose one package over another.
+
+# Package index
+
+## Mesh construction
+
+Tools for converting coordinates into UTMs, constructing SPDE meshes
+prior to model fitting, and adding correlation barriers.
+
+- [`add_utm_columns()`](https://sdmTMB.github.io/sdmTMB/reference/add_utm_columns.md)
+  [`get_crs()`](https://sdmTMB.github.io/sdmTMB/reference/add_utm_columns.md)
+  : Add UTM coordinates to a data frame
+- [`make_mesh()`](https://sdmTMB.github.io/sdmTMB/reference/make_mesh.md)
+  [`plot(`*`<sdmTMBmesh>`*`)`](https://sdmTMB.github.io/sdmTMB/reference/make_mesh.md)
+  : Construct an SPDE mesh for sdmTMB
+- [`add_barrier_mesh()`](https://sdmTMB.github.io/sdmTMB/reference/add_barrier_mesh.md)
+  : Transform a mesh object into a mesh with correlation barriers
+
+## Fitting and predicting
+
+Core tools for model fitting, prediction, and inspection.
+
+- [`sdmTMB()`](https://sdmTMB.github.io/sdmTMB/reference/sdmTMB.md) :
+  Fit a spatial or spatiotemporal GLMM with TMB
+
+- [`sanity()`](https://sdmTMB.github.io/sdmTMB/reference/sanity.md) :
+  Sanity check of an sdmTMB model
+
+- [`tidy(`*`<sdmTMB>`*`)`](https://sdmTMB.github.io/sdmTMB/reference/tidy.sdmTMB.md)
+  [`tidy(`*`<sdmTMB_cv>`*`)`](https://sdmTMB.github.io/sdmTMB/reference/tidy.sdmTMB.md)
+  : Turn sdmTMB model output into a tidy data frame
+
+- [`predict(`*`<sdmTMB>`*`)`](https://sdmTMB.github.io/sdmTMB/reference/predict.sdmTMB.md)
+  : Predict from an sdmTMB model
+
+- [`residuals(`*`<sdmTMB>`*`)`](https://sdmTMB.github.io/sdmTMB/reference/residuals.sdmTMB.md)
+  : Residuals method for sdmTMB models
+
+- [`update(`*`<sdmTMB>`*`)`](https://sdmTMB.github.io/sdmTMB/reference/update.sdmTMB.md)
+  : Update an sdmTMB model
+
+- [`dharma_residuals()`](https://sdmTMB.github.io/sdmTMB/reference/dharma_residuals.md)
+  : DHARMa residuals
+
+- [`sdmTMBcontrol()`](https://sdmTMB.github.io/sdmTMB/reference/sdmTMBcontrol.md)
+  : Optimization control options
+
+- [`run_extra_optimization()`](https://sdmTMB.github.io/sdmTMB/reference/run_extra_optimization.md)
+  **\[experimental\]** : Run extra optimization on an already fitted
+  object
+
+- [`replicate_df()`](https://sdmTMB.github.io/sdmTMB/reference/replicate_df.md)
+  : Replicate a prediction data frame over time
+
+- [`set_delta_model()`](https://sdmTMB.github.io/sdmTMB/reference/set_delta_model.md)
+  :
+
+  Set delta model for
+  [`ggeffects::ggpredict()`](https://strengejacke.github.io/ggeffects/reference/ggpredict.html)
+
+- [`make_category_svc()`](https://sdmTMB.github.io/sdmTMB/reference/make_category_svc.md)
+  : Set up spatially varying coefficients for category composition
+  models
+
+- [`coef(`*`<sdmTMB>`*`)`](https://sdmTMB.github.io/sdmTMB/reference/coef.sdmTMB.md)
+  : Get fixed-effect coefficients
+
+- [`sigma(`*`<sdmTMB>`*`)`](https://sdmTMB.github.io/sdmTMB/reference/sigma.sdmTMB.md)
+  : Extract residual standard deviation or dispersion parameter
+
+- [`cAIC()`](https://sdmTMB.github.io/sdmTMB/reference/cAIC.md) :
+  Calculate conditional AIC
+
+## Families
+
+Additional families beyond the standard R families.
+
+- [`Beta()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`lognormal()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`gengamma()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`gamma_mix()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`lognormal_mix()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`nbinom2_mix()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`nbinom2()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`nbinom1()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`truncated_nbinom2()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`truncated_nbinom1()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`student()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`tweedie()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`censored_poisson()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`delta_gamma()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`delta_gamma_mix()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`delta_gengamma()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`delta_lognormal()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`delta_lognormal_mix()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`delta_truncated_nbinom2()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`delta_truncated_nbinom1()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`delta_poisson_link_gamma()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`delta_poisson_link_lognormal()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`betabinomial()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  [`delta_beta()`](https://sdmTMB.github.io/sdmTMB/reference/families.md)
+  : Additional families
+
+## Priors
+
+Optional priors or penalties on parameters.
+
+- [`sdmTMBpriors()`](https://sdmTMB.github.io/sdmTMB/reference/priors.md)
+  [`normal()`](https://sdmTMB.github.io/sdmTMB/reference/priors.md)
+  [`halfnormal()`](https://sdmTMB.github.io/sdmTMB/reference/priors.md)
+  [`gamma_cv()`](https://sdmTMB.github.io/sdmTMB/reference/priors.md)
+  [`mvnormal()`](https://sdmTMB.github.io/sdmTMB/reference/priors.md)
+  [`pc_matern()`](https://sdmTMB.github.io/sdmTMB/reference/priors.md)
+  **\[experimental\]** : Prior distributions
+- [`plot_pc_matern()`](https://sdmTMB.github.io/sdmTMB/reference/plot_pc_matern.md)
+  : Plot PC Matérn priors
+
+## Simulation
+
+Simulating new data with an sdmTMB model.
+
+- [`simulate(`*`<sdmTMB>`*`)`](https://sdmTMB.github.io/sdmTMB/reference/simulate.sdmTMB.md)
+  : Simulate from a fitted sdmTMB model
+
+- [`sdmTMB_simulate()`](https://sdmTMB.github.io/sdmTMB/reference/sdmTMB_simulate.md)
+  : Simulate from a spatial/spatiotemporal model
+
+- [`project()`](https://sdmTMB.github.io/sdmTMB/reference/project.md)
+  **\[experimental\]** :
+
+  Project from an sdmTMB model using simulation
+
+## Plotting
+
+Functions for plotting.
+
+- [`plot_anisotropy()`](https://sdmTMB.github.io/sdmTMB/reference/plot_anisotropy.md)
+  [`plot_anisotropy2()`](https://sdmTMB.github.io/sdmTMB/reference/plot_anisotropy.md)
+  : Plot anisotropy from an sdmTMB model
+
+- [`plot_smooth()`](https://sdmTMB.github.io/sdmTMB/reference/plot_smooth.md)
+  : Plot a smooth term from an sdmTMB model
+
+- [`plot_pc_matern()`](https://sdmTMB.github.io/sdmTMB/reference/plot_pc_matern.md)
+  : Plot PC Matérn priors
+
+- [`visreg_delta()`](https://sdmTMB.github.io/sdmTMB/reference/visreg_delta.md)
+  [`visreg2d_delta()`](https://sdmTMB.github.io/sdmTMB/reference/visreg_delta.md)
+  :
+
+  Plot sdmTMB models with the visreg package
+
+## Cross validation
+
+Functions related to cross validation.
+
+- [`sdmTMB_cv()`](https://sdmTMB.github.io/sdmTMB/reference/sdmTMB_cv.md)
+  : Cross validation with sdmTMB models
+
+- [`sdmTMB_stacking()`](https://sdmTMB.github.io/sdmTMB/reference/sdmTMB_stacking.md)
+  **\[experimental\]** :
+
+  Perform stacking with log scores on
+  [`sdmTMB_cv()`](https://sdmTMB.github.io/sdmTMB/reference/sdmTMB_cv.md)
+  output
+
+- [`cv_to_waywiser()`](https://sdmTMB.github.io/sdmTMB/reference/cv_to_waywiser.md)
+  **\[experimental\]** :
+
+  Convert
+  [`sdmTMB_cv()`](https://sdmTMB.github.io/sdmTMB/reference/sdmTMB_cv.md)
+  objects to sf format for spatial assessment with waywiser
+
+## Derived quantities
+
+Derived quantities that can be calculated from sdmTMB models.
+
+- [`get_index()`](https://sdmTMB.github.io/sdmTMB/reference/get_index.md)
+  [`get_index_split()`](https://sdmTMB.github.io/sdmTMB/reference/get_index.md)
+  [`get_cog()`](https://sdmTMB.github.io/sdmTMB/reference/get_index.md)
+  [`get_weighted_average()`](https://sdmTMB.github.io/sdmTMB/reference/get_index.md)
+  [`get_eao()`](https://sdmTMB.github.io/sdmTMB/reference/get_index.md)
+  : Extract a relative biomass/abundance index, center of gravity,
+  effective area occupied, or weighted average
+- [`get_index_sims()`](https://sdmTMB.github.io/sdmTMB/reference/get_index_sims.md)
+  **\[experimental\]** : Calculate a population index via simulation
+  from the joint precision matrix
+- [`get_range_edge()`](https://sdmTMB.github.io/sdmTMB/reference/get_range_edge.md)
+  **\[experimental\]** : Calculate range edges via simulation from the
+  joint precision matrix
+
+## Miscellaneous parameter extraction
+
+Functions for calculating effect sizes or extracting parameter samples.
+
+- [`Effect.sdmTMB()`](https://sdmTMB.github.io/sdmTMB/reference/Effect.sdmTMB.md)
+  : Calculate effects
+
+- [`emmeans.sdmTMB`](https://sdmTMB.github.io/sdmTMB/reference/emmeans.sdmTMB.md)
+  :
+
+  Estimated marginal means with the emmeans package with sdmTMB
+
+- [`spread_sims()`](https://sdmTMB.github.io/sdmTMB/reference/gather_sims.md)
+  [`gather_sims()`](https://sdmTMB.github.io/sdmTMB/reference/gather_sims.md)
+  : Extract parameter simulations from the joint precision matrix
+
+# Articles
+
+### Getting Started
+
+- [sdmTMB model
+  description](https://sdmTMB.github.io/sdmTMB/articles/model-description.md):
+- [Introduction to modelling with
+  sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/basic-intro.md):
+
+### Model Types and Families
+
+- [Fitting delta (hurdle) models with
+  sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/delta-models.md):
+- [Poisson-link delta
+  models](https://sdmTMB.github.io/sdmTMB/articles/poisson-link.md):
+- [Threshold modeling with
+  sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/threshold-models.md):
+- [Zero-one-inflated beta (ZOIB) models with
+  sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/zoib.md):
+- [Fitting multispecies models with
+  sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/multispecies.md):
+- [Area-weighted age composition standardization with
+  sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/age-composition.md):
+- [Spatial Modeling of Presence-Only Data with
+  sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/presence-only.md):
+
+### Model Estimation and Inference
+
+- [Residual checking with
+  sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/residual-checking.md):
+- [Cross-validation for model evaluation and
+  comparison](https://sdmTMB.github.io/sdmTMB/articles/cross-validation.md):
+- [Bayesian estimation with
+  sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/bayesian.md):
+
+### Predictions and Applications
+
+- [Index standardization with
+  sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/index-standardization.md):
+- [Forecasting with
+  sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/forecasting.md):
+- [Fitting spatial trend models with
+  sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/spatial-trend-models.md):
+- [Calculating range
+  edges](https://sdmTMB.github.io/sdmTMB/articles/range-edges.md):
+
+### Visualization
+
+- [Visualizing sdmTMB conditional effects using
+  visreg](https://sdmTMB.github.io/sdmTMB/articles/visreg.md):
+- [Visualizing marginal effects in sdmTMB models with
+  ggeffects](https://sdmTMB.github.io/sdmTMB/articles/ggeffects.md):
+- [Making pretty maps with sdmTMB
+  output](https://sdmTMB.github.io/sdmTMB/articles/pretty-plots.md):
