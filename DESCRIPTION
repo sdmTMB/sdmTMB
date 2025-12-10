@@ -1,7 +1,7 @@
 Type: Package
 Package: sdmTMB
 Title: Spatial and Spatiotemporal SPDE-Based GLMMs with 'TMB'
-Version: 0.8.0.9002
+Version: 0.8.0.9003
 Authors@R: c(
     person(c("Sean", "C."), "Anderson", , "sean@seananderson.ca",
            role = c("aut", "cre"),
@@ -72,12 +72,12 @@ Imports:
     generics,
     graphics,
     lifecycle,
-    lme4,
     Matrix,
     methods,
     mgcv,
     mvtnorm,
     nlme,
+    reformulas,
     rlang,
     stats,
     TMB (>= 1.8.0)

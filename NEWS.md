@@ -1,5 +1,18 @@
 # sdmTMB (development version)
 
+* Switch from `lme4` to `reformulas` package for random effects parsing functions
+  (`findbars()`, `nobars()`, `subbars()`, `mkReTrms()`). The `lme4` maintainers
+  moved these formula utilities to the separate `reformulas` package.
+
+* Fix `predict()` with `se_fit = TRUE` for delta models to correctly return
+  standard errors on combined predictions when `model = NA` (default). Previously,
+  standard errors were only calculated for the first component (`est1`) instead
+  of the combined estimate (`est`). #496
+
+* Fix typo in `predict()` for delta models that incorrectly calculated combined
+  predictions as `p1 * p1` instead of `p1 * p2` in the specific case of
+  `re_form = NA` and `link = "link"`. #496
+
 * Dramatically improve `print()` performance for models with large embedded
   objects in calls (e.g., cross-validation scenarios with replicated data).
   The fix avoids expensive `deparse()` operations on large data frames and

@@ -1417,6 +1417,21 @@ Type objective_function<Type>::operator()()
       if (calc_se) ADREPORT(proj_rf_delta);
     }
 
+    if (n_m > 1 && !pop_pred) { // grab SE on full predictions combined if delta model:
+      Type t1, t2;
+      vector<Type> proj_eta_delta(n_p);
+      for (int i = 0; i < n_p; i++) {
+        if (poisson_link_delta) {
+          proj_eta_delta(i) = proj_eta(i,0) + proj_eta(i,1);
+        } else {
+          t1 = InverseLink(proj_eta(i,0), link(0));
+          t2 = InverseLink(proj_eta(i,1), link(1));
+          proj_eta_delta(i) = Link(t1 * t2, link(1));
+        }
+      }
+      if (calc_se) ADREPORT(proj_eta_delta);
+    }
+
     // FIXME save memory by not reporting all these or optionally so for MVN/Bayes?
     REPORT(proj_fe);            // fixed effect projections
     REPORT(proj_omega_s_A);     // spatial random effect projections

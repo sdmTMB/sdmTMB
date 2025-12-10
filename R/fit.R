@@ -878,7 +878,7 @@ sdmTMB <- function(
     split_formula[[ii]] <- parse_formula(formula_no_sm, data)
 
     # save formula with no bars (but with smoothers)
-    formula_no_bars <- lme4::nobars(formula[ii][[1]])
+    formula_no_bars <- reformulas::nobars(formula[ii][[1]])
     formula_no_bars_no_sm <- remove_s_and_t2(formula_no_bars)
     X_ij[[ii]] <- model.matrix(formula_no_bars_no_sm, data)
     mf[[ii]] <- model.frame(formula_no_bars_no_sm, data)

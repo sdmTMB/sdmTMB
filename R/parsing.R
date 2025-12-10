@@ -31,9 +31,9 @@ make_indices <- function(vec) {
 # @param f formula object
 # @param data data frame used to build the random effects
 parse_formula <- function(f, data) {
-  b <- lme4::findbars(f) # find expressions separated by |, NULL if no RE
+  b <- reformulas::findbars(f) # find expressions separated by |, NULL if no RE
   bn <- barnames(b) # names of groups
-  fe_form <- lme4::nobars(f) # fixed effect formula, no bars
+  fe_form <- reformulas::nobars(f) # fixed effect formula, no bars
   re_cov_terms <- NULL
 
   re_cov_terms <- list(
@@ -69,8 +69,8 @@ parse_formula <- function(f, data) {
   var_indx_vector <- 0
 
   if (length(bn) > 0) {
-    mf <- model.frame(lme4::subbars(f), data)
-    re_cov_terms <- lme4::mkReTrms(b, mf,
+    mf <- model.frame(reformulas::subbars(f), data)
+    re_cov_terms <- reformulas::mkReTrms(b, mf,
       drop.unused.levels = TRUE,
       reorder.terms = FALSE, # default is true, reorder based on dec levels
       reorder.vars = FALSE
