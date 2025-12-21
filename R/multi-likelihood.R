@@ -78,3 +78,57 @@
 
   out
 }
+
+.parse_multi_family <- function(family, data, distribution_column) {
+  multi_family <- is.list(family) && !inherits(family, "family")
+  family_list <- NULL
+  multi_info <- NULL
+  family_names <- NULL
+  link_names <- NULL
+  e_i <- NULL
+
+  if (multi_family) {
+    if (is.null(distribution_column)) {
+      cli_abort("`distribution_column` must be supplied when `family` is a named list.")
+    }
+    family_list <- family
+    multi_info <- .validate_multi_family_list(
+      family_list,
+      data = data,
+      distribution_column = distribution_column
+    )
+    family_names <- vapply(family_list, function(x) x$family[1], character(1))
+    link_names <- vapply(family_list, function(x) x$link[1], character(1))
+    if (any(vapply(family_list, function(x) length(x$family) > 1L, logical(1)))) {
+      cli_abort("Multi-likelihood models do not support multi-component families yet.")
+    }
+    if (any(vapply(family_list, function(x) isTRUE(x$delta), logical(1)))) {
+      cli_abort("Delta families are not supported in multi-likelihood models yet.")
+    }
+    allowed_families <- c("gaussian", "poisson", "binomial")
+    if (any(!family_names %in% allowed_families)) {
+      bad <- family_names[!family_names %in% allowed_families]
+      cli_abort(paste0(
+        "Only gaussian, poisson, and binomial are supported in multi-likelihood models for now. ",
+        "Unsupported families: ", paste(unique(bad), collapse = ", ")
+      ))
+    }
+    e_i <- as.integer(multi_info$e_i) - 1L
+    family <- family_list[[1]]
+  } else {
+    if (!is.null(distribution_column)) {
+      cli_abort("`distribution_column` is reserved for multi-likelihood models and is not yet supported.")
+    }
+  }
+
+  list(
+    multi_family = multi_family,
+    family_list = family_list,
+    multi_info = multi_info,
+    family_names = family_names,
+    link_names = link_names,
+    e_i = e_i,
+    family = family,
+    family_input = if (multi_family) family_list else family
+  )
+}

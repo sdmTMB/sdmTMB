@@ -75,7 +75,8 @@ See the \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-
 details. For binomial family options, see 'Binomial families' in the Details
 section below.}
 
-\item{distribution_column}{Reserved for future multi-likelihood models.
+\item{distribution_column}{For multi-likelihood models, the name of the column
+in \code{data} mapping each row to a family in the named \code{family} list.
 Currently unsupported and will error if supplied.}
 
 \item{spatial}{Estimate spatial random fields? Options are \code{'on'} / \code{'off'}

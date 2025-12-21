@@ -222,6 +222,10 @@ Type objective_function<Type>::operator()()
   DATA_IVECTOR(family);
   DATA_IVECTOR(link);
   DATA_VECTOR(size); // binomial, via glmmTMB
+  DATA_INTEGER(multi_family);
+  DATA_IVECTOR(e_i);
+  DATA_IVECTOR(family_e);
+  DATA_IVECTOR(link_e);
 
   // SPDE objects from R-INLA
   DATA_STRUCT(spde_aniso, spde_aniso_t);
@@ -835,6 +839,13 @@ Type objective_function<Type>::operator()()
     }
 
     for (int i = 0; i < n_i; i++) {
+      int fam_i = family(m);
+      int link_i = link(m);
+      if (multi_family) {
+        int fam_index = e_i(i);
+        fam_i = family_e(fam_index);
+        link_i = link_e(fam_index);
+      }
       eta_i(i,m) = eta_fixed_i(i,m) + eta_smooth_i(i,m);
       if ((n_m == 2 && m == 1) || n_m == 1) {
         if (!poisson_link_delta) eta_i(i,m) += offset_i(i);
@@ -858,8 +869,8 @@ Type objective_function<Type>::operator()()
       eta_i(i,m) += epsilon_st_A_vec(i,m); // spatiotemporal
 
       eta_i(i,m) += eta_iid_re_i(i,m);
-      if (family(m) == binomial_family && !poisson_link_delta) { // regular binomial
-        mu_i(i,m) = LogitInverseLink(eta_i(i,m), link(m));
+      if (fam_i == binomial_family && !poisson_link_delta) { // regular binomial
+        mu_i(i,m) = LogitInverseLink(eta_i(i,m), link_i);
       } else if (poisson_link_delta) { // a tweak on cloglog:
         // eta_i(i,0) = log numbers density
         // eta_i(i,1) = log average weight
@@ -880,7 +891,7 @@ Type objective_function<Type>::operator()()
         }
         if (m == 1) mu_i(i,1) = exp(offset_i(i) + eta_i(i,0) + eta_i(i,1) - log_p);
       } else { // all the regular stuff:
-        mu_i(i,m) = InverseLink(eta_i(i,m), link(m));
+        mu_i(i,m) = InverseLink(eta_i(i,m), link_i);
       }
     }
   }
@@ -923,7 +934,12 @@ Type objective_function<Type>::operator()()
   if (!sim_obs) {
     for (int m = 0; m < n_m; m++) {
       for (int i = 0; i < n_i; i++) {
-        if (family(m) == binomial_family && !poisson_link_delta) {
+        int fam_i = family(m);
+        if (multi_family) {
+          int fam_index = e_i(i);
+          fam_i = family_e(fam_index);
+        }
+        if (fam_i == binomial_family && !poisson_link_delta) {
           y_i(i,m) = invlogit(mu_i(i,m)) * size(i); // hardcoded invlogit b/c mu_i in logit space
         } else {
           y_i(i,m) = mu_i(i,m);
@@ -938,7 +954,14 @@ Type objective_function<Type>::operator()()
   for (int m = 0; m < n_m; m++) PARALLEL_REGION {
     for (int i = 0; i < n_i; i++) {
       bool notNA = !sdmTMB::isNA(y_i(i,m));
-        switch (family(m)) {
+        int fam_i = family(m);
+        int link_i = link(m);
+        if (multi_family) {
+          int fam_index = e_i(i);
+          fam_i = family_e(fam_index);
+          link_i = link_e(fam_index);
+        }
+        switch (fam_i) {
           case gaussian_family: {
             if (notNA) tmp_ll = dnorm(y_i(i,m), mu_i(i,m), phi(m), true);
             if (sim_obs) SIMULATE{y_i(i,m) = rnorm(mu_i(i,m), phi(m));}
@@ -973,7 +996,7 @@ Type objective_function<Type>::operator()()
           }
           case betabinomial_family: {
             // Transform to logit scale independent of link
-            s3 = LogitInverseLink(eta_i(i,m), link(m)); // logit(p)
+            s3 = LogitInverseLink(eta_i(i,m), link_i); // logit(p)
             s1 = log(InverseLink(s3, logit_link)) + log(phi(m)); // log(mu*phi)
             s2 = log(InverseLink(-s3, logit_link)) + log(phi(m)); // log((1-mu)*phi)
             if (notNA) tmp_ll = sdmTMB::dbetabinom_robust(y_i(i,m), s1, s2, size(i), true);
@@ -1682,17 +1705,33 @@ Type objective_function<Type>::operator()()
   } else {
     phi_model = 0;
   }
-  switch (family(phi_model)) {
-    case binomial_family:
-    case poisson_family:
-      break;
-    default:
-      ADREPORT(phi);
-      REPORT(phi);
+  bool phi_used = true;
+  if (multi_family) {
+    phi_used = false;
+    for (int k = 0; k < family_e.size(); k++) {
+      int fam = family_e(k);
+      if (fam != binomial_family && fam != poisson_family && fam != censored_poisson_family) {
+        phi_used = true;
+        break;
+      }
+    }
+  } else {
+    switch (family(phi_model)) {
+      case binomial_family:
+      case poisson_family:
+        phi_used = false;
+        break;
+      default:
+        phi_used = true;
+    }
+  }
+  if (phi_used) {
+    ADREPORT(phi);
+    REPORT(phi);
   }
 
-  if (family(0) == tweedie_family) ADREPORT(tweedie_p); // #302
-  if (family(0) == student_family) {
+  if (!multi_family && family(0) == tweedie_family) ADREPORT(tweedie_p); // #302
+  if (!multi_family && family(0) == student_family) {
     Type student_df = exp(ln_student_df) + Type(1.0);
     ADREPORT(student_df);
   }
