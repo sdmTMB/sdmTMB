@@ -624,6 +624,15 @@ sdmTMB <- function(
   multi_info <- multi$multi_info
   family_names <- multi$family_names
   link_names <- multi$link_names
+  family_names2 <- multi$family_names2
+  link_names2 <- multi$link_names2
+  delta_family <- multi$delta_family
+  poisson_link_delta <- multi$poisson_link_delta
+  family_enum1 <- multi$family_enum1
+  family_enum2 <- multi$family_enum2
+  link_enum1 <- multi$link_enum1
+  link_enum2 <- multi$link_enum2
+  has_delta <- isTRUE(multi$has_delta)
   e_i <- multi$e_i
   family <- multi$family
   family_input <- multi$family_input
@@ -634,7 +643,7 @@ sdmTMB <- function(
   }
 
   delta <- isTRUE(family$delta)
-  if (multi_family) delta <- FALSE
+  if (multi_family) delta <- has_delta
   n_m <- if (delta) 2L else 1L
 
   if (!missing(spatial)) {
@@ -1063,7 +1072,8 @@ sdmTMB <- function(
     }
   } else {
     e_i_idx <- e_i + 1L
-    binom_rows <- family_names[e_i_idx] == "binomial"
+    non_delta_rows <- !delta_family[e_i_idx]
+    binom_rows <- non_delta_rows & family_names[e_i_idx] == "binomial"
     if (any(binom_rows)) {
       y_binom <- y_i[binom_rows]
       y_binom <- y_binom[!is.na(y_binom)]
@@ -1071,11 +1081,11 @@ sdmTMB <- function(
         cli_abort("Binomial rows must have numeric 0/1 response values in multi-likelihood models.")
       }
     }
-    log_link_rows <- link_names[e_i_idx] == "log"
+    log_link_rows <- non_delta_rows & link_names[e_i_idx] == "log"
     if (any(log_link_rows) && min(y_i[log_link_rows], na.rm = TRUE) < 0) {
       cli_abort("`link = 'log'` but the response data include values < 0.")
     }
-    positive_only_rows <- family_names[e_i_idx] %in% c("Gamma", "lognormal")
+    positive_only_rows <- non_delta_rows & family_names[e_i_idx] %in% c("Gamma", "lognormal")
     if (any(positive_only_rows) && min(y_i[positive_only_rows], na.rm = TRUE) <= 0) {
       cli_abort("Gamma and lognormal rows must have response values > 0.")
     }
@@ -1186,7 +1196,13 @@ sdmTMB <- function(
   }
 
   if (!"A_st" %in% names(spde)) cli_abort("`mesh` was created with an old version of `make_mesh()`.")
-  if (delta) y_i <- cbind(ifelse(y_i > 0, 1, 0), ifelse(y_i > 0, y_i, NA_real_))
+  if (delta) {
+    if (multi_family) {
+      y_i <- .multi_family_build_response(y_i, e_i, delta_family)
+    } else {
+      y_i <- cbind(ifelse(y_i > 0, 1, 0), ifelse(y_i > 0, y_i, NA_real_))
+    }
+  }
   if (!delta) y_i <- matrix(y_i, ncol = 1L)
 
   # TODO: make this cleaner
@@ -1266,13 +1282,17 @@ sdmTMB <- function(
     spde_barrier = make_barrier_spde(spde),
     barrier_scaling = if (barrier) spde$barrier_scaling else c(1, 1),
     anisotropy = as.integer(anisotropy),
-    family = .valid_family[family$family],
+    family = if (multi_family && delta) rep(.valid_family["binomial"], n_m) else .valid_family[family$family],
     size = c(size),
-    link = .valid_link[family$link],
+    link = if (multi_family && delta) rep(.valid_link["logit"], n_m) else .valid_link[family$link],
     multi_family = as.integer(multi_family),
     e_i = if (multi_family) as.integer(e_i) else integer(0),
-    family_e = if (multi_family) as.integer(unlist(multi_info$family_enum)) else integer(0),
-    link_e = if (multi_family) as.integer(unlist(multi_info$link_enum)) else integer(0),
+    family_e1 = if (multi_family) as.integer(family_enum1) else integer(0),
+    family_e2 = if (multi_family) as.integer(family_enum2) else integer(0),
+    link_e1 = if (multi_family) as.integer(link_enum1) else integer(0),
+    link_e2 = if (multi_family) as.integer(link_enum2) else integer(0),
+    delta_family_e = if (multi_family) as.integer(delta_family) else integer(0),
+    poisson_link_delta_e = if (multi_family) as.integer(poisson_link_delta) else integer(0),
     ln_phi_start = if (multi_family) multi_offsets$ln_phi$start else integer(0),
     ln_phi_len = if (multi_family) multi_offsets$ln_phi$len else integer(0),
     thetaf_start = if (multi_family) multi_offsets$thetaf$start else integer(0),
@@ -1294,7 +1314,7 @@ sdmTMB <- function(
     has_smooths = as.integer(sm$has_smooths),
     upr = upr,
     lwr = 0L, # in case we want to reintroduce this
-    poisson_link_delta = as.integer(isTRUE(family$type == "poisson_link_delta")),
+    poisson_link_delta = if (multi_family) 0L else as.integer(isTRUE(family$type == "poisson_link_delta")),
     stan_flag = as.integer(bayesian),
     no_spatial = no_spatial,
     re_cov_df_map = as.matrix(re_cov_df_map), # dataframe used to map parameters to cov matrices,
@@ -1362,7 +1382,7 @@ sdmTMB <- function(
   tmb_map$b_j <- NULL
   if (delta) tmb_map$b_j2 <- NULL
   if (multi_family) {
-    tmb_map$ln_phi <- factor(NA)
+    tmb_map$ln_phi <- factor(rep(NA, n_m))
     tmb_map$thetaf <- factor(NA)
     tmb_map$ln_student_df <- factor(NA)
     tmb_map$gengamma_Q <- factor(NA)
@@ -1373,7 +1393,7 @@ sdmTMB <- function(
   } else {
     if (family$family[[1]] == "tweedie") tmb_map$thetaf <- NULL
     if (family$family[[1]] == "student") {
-      if (estimate_student_df) {
+      if (is.null(family$df)) {
         tmb_map$ln_student_df <- NULL  # estimate
       } else {
         tmb_map$ln_student_df <- factor(NA)  # fix at initial value
@@ -1383,9 +1403,7 @@ sdmTMB <- function(
     }
     if ("gengamma" %in% family$family) tmb_map$gengamma_Q <- factor(NA)
   }
-  if (multi_family) {
-    tmb_map$ln_phi <- factor(NA)
-  } else {
+  if (!multi_family) {
     tmb_map$ln_phi <- rep(1, n_m)
     if (family$family[[1]] %in% c("binomial", "poisson", "censored_poisson")) {
       tmb_map$ln_phi[1] <- factor(NA)
@@ -1398,6 +1416,9 @@ sdmTMB <- function(
       }
     }
     tmb_map$ln_phi <- as.factor(tmb_map$ln_phi)
+  }
+  if (!multi_family && family$family[[1]] == "student" && is.null(family$df)) {
+    tmb_map$ln_student_df <- NULL
   }
   if (!is.null(thresh[[1]]$threshold_parameter)) tmb_map$b_threshold <- NULL
 

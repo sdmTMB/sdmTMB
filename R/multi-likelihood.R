@@ -86,6 +86,15 @@
   family_names <- NULL
   link_names <- NULL
   e_i <- NULL
+  delta_family <- NULL
+  poisson_link_delta <- NULL
+  family_names2 <- NULL
+  link_names2 <- NULL
+  family_enum1 <- NULL
+  family_enum2 <- NULL
+  link_enum1 <- NULL
+  link_enum2 <- NULL
+  has_delta <- FALSE
 
   if (multi_family) {
     if (is.null(distribution_column)) {
@@ -99,11 +108,34 @@
     )
     family_names <- vapply(family_list, function(x) x$family[1], character(1))
     link_names <- vapply(family_list, function(x) x$link[1], character(1))
-    if (any(vapply(family_list, function(x) length(x$family) > 1L, logical(1)))) {
-      cli_abort("Multi-likelihood models do not support multi-component families yet.")
+    family_names2 <- vapply(
+      family_list,
+      function(x) if (length(x$family) > 1L) x$family[2] else NA_character_,
+      character(1)
+    )
+    link_names2 <- vapply(
+      family_list,
+      function(x) if (length(x$link) > 1L) x$link[2] else NA_character_,
+      character(1)
+    )
+    delta_family <- vapply(family_list, function(x) isTRUE(x$delta), logical(1))
+    poisson_link_delta <- vapply(
+      family_list,
+      function(x) isTRUE(x$type == "poisson_link_delta"),
+      logical(1)
+    )
+    has_delta <- any(delta_family)
+    if (any(vapply(family_list, function(x) length(x$family) > 2L, logical(1)))) {
+      cli_abort("Multi-likelihood families with more than 2 components are not supported.")
     }
-    if (any(vapply(family_list, function(x) isTRUE(x$delta), logical(1)))) {
-      cli_abort("Delta families are not supported in multi-likelihood models yet.")
+    if (any(!delta_family & vapply(family_list, function(x) length(x$family) > 1L, logical(1)))) {
+      cli_abort("Multi-component families are only supported for delta families.")
+    }
+    if (any(delta_family & vapply(family_list, function(x) length(x$family) != 2L, logical(1)))) {
+      cli_abort("Delta families must include exactly 2 components.")
+    }
+    if (any(delta_family & family_names != "binomial")) {
+      cli_abort("Delta families must use binomial for the first component.")
     }
     allowed_families <- c(
       "gaussian", "poisson", "binomial",
@@ -111,14 +143,30 @@
       "lognormal", "tweedie", "student",
       "gengamma"
     )
-    if (any(!family_names %in% allowed_families)) {
-      bad <- family_names[!family_names %in% allowed_families]
+    family_names_all <- c(family_names, family_names2)
+    family_names_all <- family_names_all[!is.na(family_names_all)]
+    if (any(!family_names_all %in% allowed_families)) {
+      bad <- family_names_all[!family_names_all %in% allowed_families]
       cli_abort(paste0(
-        "Only gaussian, poisson, and binomial are supported in multi-likelihood models for now. ",
-        "Unsupported families: ", paste(unique(bad), collapse = ", ")
+        "Unsupported families in multi-likelihood models: ",
+        paste(unique(bad), collapse = ", ")
       ))
     }
     e_i <- as.integer(multi_info$e_i) - 1L
+    family_enum1 <- as.integer(vapply(multi_info$family_enum, function(x) x[1], numeric(1)))
+    link_enum1 <- as.integer(vapply(multi_info$link_enum, function(x) x[1], numeric(1)))
+    family_enum2 <- vapply(
+      seq_along(multi_info$family_enum),
+      function(i) if (delta_family[i]) multi_info$family_enum[[i]][2] else -1,
+      numeric(1)
+    )
+    link_enum2 <- vapply(
+      seq_along(multi_info$link_enum),
+      function(i) if (delta_family[i]) multi_info$link_enum[[i]][2] else -1,
+      numeric(1)
+    )
+    family_enum2 <- as.integer(family_enum2)
+    link_enum2 <- as.integer(link_enum2)
     family <- family_list[[1]]
   } else {
     if (!is.null(distribution_column)) {
@@ -132,6 +180,15 @@
     multi_info = multi_info,
     family_names = family_names,
     link_names = link_names,
+    family_names2 = family_names2,
+    link_names2 = link_names2,
+    delta_family = delta_family,
+    poisson_link_delta = poisson_link_delta,
+    family_enum1 = family_enum1,
+    family_enum2 = family_enum2,
+    link_enum1 = link_enum1,
+    link_enum2 = link_enum2,
+    has_delta = has_delta,
     e_i = e_i,
     family = family,
     family_input = if (multi_family) family_list else family
@@ -140,11 +197,18 @@
 
 .multi_family_param_offsets <- function(family_list) {
   n_fam <- length(family_list)
-  family_names <- vapply(family_list, function(x) x$family[1], character(1))
+  family_names <- vapply(
+    family_list,
+    function(x) if (isTRUE(x$delta)) x$family[2] else x$family[1],
+    character(1)
+  )
 
   student_fixed <- vapply(
     family_list,
-    function(x) identical(x$family[1], "student") && !is.null(x$df),
+    function(x) {
+      target_family <- if (isTRUE(x$delta)) x$family[2] else x$family[1]
+      identical(target_family, "student") && !is.null(x$df)
+    },
     logical(1)
   )
   if (any(student_fixed)) {
@@ -174,4 +238,12 @@
     ln_student_df = make_offsets(uses_student_df),
     gengamma_Q = make_offsets(uses_gengamma_Q)
   )
+}
+
+.multi_family_build_response <- function(y_i, e_i, delta_family) {
+  idx <- e_i + 1L
+  delta_rows <- delta_family[idx]
+  y1 <- ifelse(delta_rows, ifelse(y_i > 0, 1, 0), y_i)
+  y2 <- ifelse(delta_rows & y_i > 0, y_i, NA_real_)
+  cbind(y1, y2)
 }

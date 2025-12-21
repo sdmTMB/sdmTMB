@@ -224,8 +224,12 @@ Type objective_function<Type>::operator()()
   DATA_VECTOR(size); // binomial, via glmmTMB
   DATA_INTEGER(multi_family);
   DATA_IVECTOR(e_i);
-  DATA_IVECTOR(family_e);
-  DATA_IVECTOR(link_e);
+  DATA_IVECTOR(family_e1);
+  DATA_IVECTOR(family_e2);
+  DATA_IVECTOR(link_e1);
+  DATA_IVECTOR(link_e2);
+  DATA_IVECTOR(delta_family_e);
+  DATA_IVECTOR(poisson_link_delta_e);
   DATA_IVECTOR(ln_phi_start);
   DATA_IVECTOR(ln_phi_len);
   DATA_IVECTOR(thetaf_start);
@@ -860,14 +864,19 @@ Type objective_function<Type>::operator()()
     for (int i = 0; i < n_i; i++) {
       int fam_i = family(m);
       int link_i = link(m);
+      bool delta_row = false;
+      bool poisson_link_delta_row = poisson_link_delta;
       if (multi_family) {
         int fam_index = e_i(i);
-        fam_i = family_e(fam_index);
-        link_i = link_e(fam_index);
+        delta_row = delta_family_e(fam_index);
+        poisson_link_delta_row = delta_row && poisson_link_delta_e(fam_index);
+        if (!delta_row && m == 1) continue;
+        fam_i = (m == 0) ? family_e1(fam_index) : family_e2(fam_index);
+        link_i = (m == 0) ? link_e1(fam_index) : link_e2(fam_index);
       }
       eta_i(i,m) = eta_fixed_i(i,m) + eta_smooth_i(i,m);
       if ((n_m == 2 && m == 1) || n_m == 1) {
-        if (!poisson_link_delta) eta_i(i,m) += offset_i(i);
+        if (!poisson_link_delta_row) eta_i(i,m) += offset_i(i);
       }
       if (random_walk == 1 || ar1_time || random_walk == 2) {
         for (int k = 0; k < X_rw_ik.cols(); k++) {
@@ -888,9 +897,9 @@ Type objective_function<Type>::operator()()
       eta_i(i,m) += epsilon_st_A_vec(i,m); // spatiotemporal
 
       eta_i(i,m) += eta_iid_re_i(i,m);
-      if (fam_i == binomial_family && !poisson_link_delta) { // regular binomial
+      if (fam_i == binomial_family && !poisson_link_delta_row) { // regular binomial
         mu_i(i,m) = LogitInverseLink(eta_i(i,m), link_i);
-      } else if (poisson_link_delta) { // a tweak on cloglog:
+      } else if (poisson_link_delta_row) { // a tweak on cloglog:
         // eta_i(i,0) = log numbers density
         // eta_i(i,1) = log average weight
         // mu_i(i,0) = probability of occurrence
@@ -954,11 +963,16 @@ Type objective_function<Type>::operator()()
     for (int m = 0; m < n_m; m++) {
       for (int i = 0; i < n_i; i++) {
         int fam_i = family(m);
+        bool delta_row = false;
+        bool poisson_link_delta_row = poisson_link_delta;
         if (multi_family) {
           int fam_index = e_i(i);
-          fam_i = family_e(fam_index);
+          delta_row = delta_family_e(fam_index);
+          poisson_link_delta_row = delta_row && poisson_link_delta_e(fam_index);
+          if (!delta_row && m == 1) continue;
+          fam_i = (m == 0) ? family_e1(fam_index) : family_e2(fam_index);
         }
-        if (fam_i == binomial_family && !poisson_link_delta) {
+        if (fam_i == binomial_family && !poisson_link_delta_row) {
           y_i(i,m) = invlogit(mu_i(i,m)) * size(i); // hardcoded invlogit b/c mu_i in logit space
         } else {
           y_i(i,m) = mu_i(i,m);
@@ -972,32 +986,37 @@ Type objective_function<Type>::operator()()
 
   for (int m = 0; m < n_m; m++) PARALLEL_REGION {
     for (int i = 0; i < n_i; i++) {
-      bool notNA = !sdmTMB::isNA(y_i(i,m));
-        int fam_i = family(m);
-        int link_i = link(m);
-        Type phi_val = phi(m);
-        Type ln_phi_val = ln_phi(m);
-        Type thetaf_val = thetaf;
-        Type ln_student_df_val = ln_student_df;
-        Type gengamma_Q_val = gengamma_Q;
-        if (multi_family) {
-          int fam_index = e_i(i);
-          fam_i = family_e(fam_index);
-          link_i = link_e(fam_index);
-          if (ln_phi_len(fam_index) > 0) {
-            ln_phi_val = get_param(ln_phi_e, ln_phi_start, ln_phi_len, fam_index);
-            phi_val = exp(ln_phi_val);
-          }
-          if (thetaf_len(fam_index) > 0) {
-            thetaf_val = get_param(thetaf_e, thetaf_start, thetaf_len, fam_index);
-          }
-          if (ln_student_df_len(fam_index) > 0) {
-            ln_student_df_val = get_param(ln_student_df_e, ln_student_df_start, ln_student_df_len, fam_index);
-          }
-          if (gengamma_Q_len(fam_index) > 0) {
-            gengamma_Q_val = get_param(gengamma_Q_e, gengamma_Q_start, gengamma_Q_len, fam_index);
-          }
+      int fam_i = family(m);
+      int link_i = link(m);
+      bool delta_row = false;
+      bool poisson_link_delta_row = poisson_link_delta;
+      Type phi_val = phi(m);
+      Type ln_phi_val = ln_phi(m);
+      Type thetaf_val = thetaf;
+      Type ln_student_df_val = ln_student_df;
+      Type gengamma_Q_val = gengamma_Q;
+      if (multi_family) {
+        int fam_index = e_i(i);
+        delta_row = delta_family_e(fam_index);
+        poisson_link_delta_row = delta_row && poisson_link_delta_e(fam_index);
+        if (!delta_row && m == 1) continue;
+        fam_i = (m == 0) ? family_e1(fam_index) : family_e2(fam_index);
+        link_i = (m == 0) ? link_e1(fam_index) : link_e2(fam_index);
+        if (ln_phi_len(fam_index) > 0) {
+          ln_phi_val = get_param(ln_phi_e, ln_phi_start, ln_phi_len, fam_index);
+          phi_val = exp(ln_phi_val);
         }
+        if (thetaf_len(fam_index) > 0) {
+          thetaf_val = get_param(thetaf_e, thetaf_start, thetaf_len, fam_index);
+        }
+        if (ln_student_df_len(fam_index) > 0) {
+          ln_student_df_val = get_param(ln_student_df_e, ln_student_df_start, ln_student_df_len, fam_index);
+        }
+        if (gengamma_Q_len(fam_index) > 0) {
+          gengamma_Q_val = get_param(gengamma_Q_e, gengamma_Q_start, gengamma_Q_len, fam_index);
+        }
+      }
+      bool notNA = !sdmTMB::isNA(y_i(i,m));
         switch (fam_i) {
           case gaussian_family: {
             if (notNA) tmp_ll = dnorm(y_i(i,m), mu_i(i,m), phi_val, true);
@@ -1020,7 +1039,7 @@ Type objective_function<Type>::operator()()
             break;
           }
           case binomial_family: {
-            if (poisson_link_delta) {
+            if (poisson_link_delta_row) {
               if (notNA) tmp_ll = poisson_link_m0_ll(i); // needed for robustness; must be first model component
               if (sim_obs) SIMULATE{y_i(i,m) = rbinom(size(i), mu_i(i,m));}
             } else {
@@ -1745,9 +1764,16 @@ Type objective_function<Type>::operator()()
   bool phi_used = true;
   if (multi_family) {
     phi_used = false;
-    for (int k = 0; k < family_e.size(); k++) {
-      int fam = family_e(k);
-      if (fam != binomial_family && fam != poisson_family && fam != censored_poisson_family) {
+    for (int k = 0; k < family_e1.size(); k++) {
+      int fam1 = family_e1(k);
+      int fam2 = family_e2(k);
+      if (fam1 >= 0 &&
+          fam1 != binomial_family && fam1 != poisson_family && fam1 != censored_poisson_family) {
+        phi_used = true;
+        break;
+      }
+      if (fam2 >= 0 &&
+          fam2 != binomial_family && fam2 != poisson_family && fam2 != censored_poisson_family) {
         phi_used = true;
         break;
       }

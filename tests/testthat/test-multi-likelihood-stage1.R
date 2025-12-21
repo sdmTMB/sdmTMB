@@ -20,7 +20,7 @@ test_that("Stage 1 multi-likelihood builds TMB data", {
   expect_identical(fit$tmb_data$multi_family, 1L)
   expect_equal(fit$tmb_data$e_i, c(0L, 1L, 2L, 0L, 1L, 2L))
   expect_equal(
-    fit$tmb_data$family_e,
+    fit$tmb_data$family_e1,
     c(
       sdmTMB:::.enum_family("gaussian"),
       sdmTMB:::.enum_family("poisson"),
@@ -28,13 +28,16 @@ test_that("Stage 1 multi-likelihood builds TMB data", {
     )
   )
   expect_equal(
-    fit$tmb_data$link_e,
+    fit$tmb_data$link_e1,
     c(
       sdmTMB:::.enum_link("identity"),
       sdmTMB:::.enum_link("log"),
       sdmTMB:::.enum_link("logit")
     )
   )
+  expect_equal(fit$tmb_data$family_e2, rep(-1L, 3))
+  expect_equal(fit$tmb_data$link_e2, rep(-1L, 3))
+  expect_equal(fit$tmb_data$delta_family_e, rep(0L, 3))
 })
 
 test_that("Stage 1 multi-likelihood can fit a simple model", {

@@ -78,7 +78,7 @@ test_that("Student-t df parameter (fixed vs estimated)", {
     )
   )
   # Check that ln_student_df is not mapped (estimated)
-  expect_null(m_est_default$tmb_map$ln_student_df)
+  expect_null(m_est_default$tmb_map[["ln_student_df"]])
   # Check tidy output shows estimated df with std.error
   tidy_est_default <- tidy(m_est_default, "ran_pars")
   df_row_est_default <- tidy_est_default[tidy_est_default$term == "student_df", ]
@@ -119,7 +119,7 @@ test_that("Student-t df parameter (fixed vs estimated)", {
     )
   )
   # Check that ln_student_df is not mapped (estimated)
-  expect_null(m_est_explicit$tmb_map$ln_student_df)
+  expect_null(m_est_explicit$tmb_map[["ln_student_df"]])
   # Check tidy output shows estimated df with std.error
   tidy_est_explicit <- tidy(m_est_explicit, "ran_pars")
   df_row_est_explicit <- tidy_est_explicit[tidy_est_explicit$term == "student_df", ]
