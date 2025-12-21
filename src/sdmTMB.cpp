@@ -224,6 +224,7 @@ Type objective_function<Type>::operator()()
   DATA_VECTOR(size); // binomial, via glmmTMB
   DATA_INTEGER(multi_family);
   DATA_IVECTOR(e_i);
+  DATA_IVECTOR(e_g);
   DATA_IVECTOR(family_e1);
   DATA_IVECTOR(family_e2);
   DATA_IVECTOR(link_e1);

@@ -288,6 +288,16 @@ predict.sdmTMB <- function(object, newdata = NULL,
   }
   model <- model[[1]]
   type <- match.arg(type)
+  multi_family <- isTRUE(object$tmb_data$multi_family == 1L)
+  has_delta_multi <- multi_family && any(object$tmb_data$delta_family_e == 1L)
+  dist_col <- NULL
+  if (multi_family) {
+    dist_col <- object$distribution_column
+    if (is.null(dist_col) && "distribution_column" %in% names(object$call)) {
+      dist_col <- object$call$distribution_column
+    }
+    if (!is.null(dist_col)) dist_col <- as.character(dist_col)
+  }
   # FIXME parallel setup here?
 
   if (is.null(re_form) && isTRUE(se_fit)) {
@@ -301,7 +311,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
   # places where we force newdata:
   nd_arg_was_null <- FALSE
   if (is.null(newdata)) {
-    if (is_delta(object) || nsim > 0 || type == "response" || !is.null(mcmc_samples) || se_fit || !is.null(re_form) || !is.null(re_form_iid) || !is.null(offset) || isTRUE(object$family$delta)) {
+    if (is_delta(object) || nsim > 0 || type == "response" || !is.null(mcmc_samples) || se_fit || !is.null(re_form) || !is.null(re_form_iid) || !is.null(offset) || isTRUE(object$family$delta) || multi_family) {
       newdata <- object$data
       nd_arg_was_null <- TRUE # will be used to carry over the offset
     }
@@ -405,6 +415,14 @@ predict.sdmTMB <- function(object, newdata = NULL,
         newdata[[xy_cols[2]]] <- NA_real_ # fake
       }
       newdata[["sdm_spatial_id"]] <- rep(0L, nrow(newdata)) # fake
+    }
+
+    e_g <- NULL
+    if (multi_family) {
+      if (is.null(dist_col)) {
+        cli_abort("`distribution_column` is missing from the fitted model; please refit or use the original column name in `newdata`.")
+      }
+      e_g <- .multi_family_predict_e_g(object, newdata, dist_col)
     }
 
     if (length(object$formula) == 1L) {
@@ -566,6 +584,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
       }
     }
     tmb_data$epsilon_predictor <- epsilon_covariate
+    tmb_data$e_g <- if (multi_family) as.integer(e_g) else integer(0)
 
     if (return_tmb_data) {
       return(tmb_data)
@@ -624,6 +643,15 @@ predict.sdmTMB <- function(object, newdata = NULL,
         sims_var)
       out <- lapply(r, `[[`, .var)
 
+      if (multi_family && sims_var == "est" && has_delta_multi) {
+        if (type == "response") {
+          cli_abort("`type = 'response'` is not supported for simulated multi-likelihood delta predictions yet. Use `type = 'link'` and transform manually.")
+        }
+        if (is.na(model)) {
+          cli_abort("Combined delta simulations are not supported for multi-likelihood models yet. Use `model = 1` or `model = 2`.")
+        }
+      }
+
       predtype <- as.integer(model[[1]])
       if (isTRUE(object$family$delta) && sims_var == "est") {
         if (predtype %in% c(1L, NA)) {
@@ -674,7 +702,18 @@ predict.sdmTMB <- function(object, newdata = NULL,
           cli_abort("Too many dimensions returned from model. Try `return_tmb_report = TRUE` and parse the output yourself.")
         }
 
-        if (type == "response") out <- object$family$linkinv(out)
+        if (type == "response") {
+          if (multi_family && sims_var == "est") {
+            fam_index <- e_g + 1L
+            for (k in seq_along(object$family)) {
+              idx <- fam_index == k
+              if (!any(idx)) next
+              out[idx, ] <- object$family[[k]]$linkinv(out[idx, , drop = FALSE])
+            }
+          } else {
+            out <- object$family$linkinv(out)
+          }
+        }
       }
 
       if (sims_var == "est") {
@@ -707,7 +746,30 @@ predict.sdmTMB <- function(object, newdata = NULL,
     if (return_tmb_report) return(r)
 
     if (isFALSE(pop_pred)) {
-      if (isTRUE(object$family$delta)) {
+      if (multi_family) {
+        fam_index <- e_g + 1L
+        pred_vals <- .multi_family_predict_est(
+          eta1 = r$proj_eta[,1],
+          eta2 = if (has_delta_multi) r$proj_eta[,2] else NULL,
+          family_list = object$family,
+          fam_index = fam_index,
+          delta_family = object$tmb_data$delta_family_e,
+          poisson_link_delta = object$tmb_data$poisson_link_delta_e,
+          type = type
+        )
+        nd$est <- pred_vals$est
+        nd$est_non_rf <- r$proj_fe[,1]
+        nd$est_rf <- r$proj_rf[,1]
+        nd$omega_s <- r$proj_omega_s_A[,1]
+        for (z in seq_len(dim(r$proj_zeta_s_A)[2])) { # SVC:
+          nd[[paste0("zeta_s_", object$spatial_varying[z])]] <- r$proj_zeta_s_A[,z,1]
+        }
+        nd$epsilon_st <- r$proj_epsilon_st_A_vec[,1]
+        if (has_delta_multi) {
+          nd$est1 <- pred_vals$est1
+          nd$est2 <- pred_vals$est2
+        }
+      } else if (isTRUE(object$family$delta)) {
         nd$est1 <- r$proj_eta[,1]
         nd$est2 <- r$proj_eta[,2]
         nd$est_non_rf1 <- r$proj_fe[,1]
@@ -799,7 +861,23 @@ predict.sdmTMB <- function(object, newdata = NULL,
     }
 
     if (pop_pred) {
-      if (isTRUE(object$family$delta)) {
+      if (multi_family) {
+        fam_index <- e_g + 1L
+        pred_vals <- .multi_family_predict_est(
+          eta1 = r$proj_fe[,1],
+          eta2 = if (has_delta_multi) r$proj_fe[,2] else NULL,
+          family_list = object$family,
+          fam_index = fam_index,
+          delta_family = object$tmb_data$delta_family_e,
+          poisson_link_delta = object$tmb_data$poisson_link_delta_e,
+          type = type
+        )
+        nd$est <- pred_vals$est
+        if (has_delta_multi) {
+          nd$est1 <- pred_vals$est1
+          nd$est2 <- pred_vals$est2
+        }
+      } else if (isTRUE(object$family$delta)) {
         if (type == "response") {
           nd$est1 <- object$family[[1]]$linkinv(r$proj_fe[,1])
           nd$est2 <- object$family[[2]]$linkinv(r$proj_fe[,2])

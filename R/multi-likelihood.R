@@ -247,3 +247,88 @@
   y2 <- ifelse(delta_rows & y_i > 0, y_i, NA_real_)
   cbind(y1, y2)
 }
+
+.multi_family_predict_e_g <- function(object, newdata, distribution_column) {
+  if (is.null(distribution_column)) {
+    cli_abort("`distribution_column` must be supplied for multi-likelihood predictions.")
+  }
+  if (!is.list(object$family) || inherits(object$family, "family")) {
+    cli_abort("Multi-likelihood predictions require a named family list on the fitted object.")
+  }
+  info <- .validate_multi_family_list(
+    object$family,
+    data = newdata,
+    distribution_column = distribution_column
+  )
+  as.integer(info$e_i) - 1L
+}
+
+.multi_family_predict_est <- function(
+  eta1,
+  eta2,
+  family_list,
+  fam_index,
+  delta_family,
+  poisson_link_delta,
+  type = c("link", "response")
+) {
+  type <- match.arg(type)
+  n <- length(eta1)
+  est <- eta1
+  est1 <- rep(NA_real_, n)
+  est2 <- rep(NA_real_, n)
+  delta_rows <- delta_family[fam_index]
+
+  if (type == "link") {
+    est1 <- eta1
+    if (!is.null(eta2)) est2[delta_rows] <- eta2[delta_rows]
+    if (any(delta_rows)) {
+      plink <- delta_rows & poisson_link_delta[fam_index]
+      if (any(plink)) {
+        est[plink] <- eta1[plink] + eta2[plink]
+      }
+      standard <- delta_rows & !plink
+      if (any(standard)) {
+        for (k in seq_along(family_list)) {
+          idx <- standard & fam_index == k
+          if (!any(idx)) next
+          fam <- family_list[[k]]
+          p1 <- fam[[1]]$linkinv(eta1[idx])
+          p2 <- fam[[2]]$linkinv(eta2[idx])
+          est[idx] <- fam[[2]]$linkfun(p1 * p2)
+        }
+      }
+    }
+  } else {
+    for (k in seq_along(family_list)) {
+      idx <- fam_index == k
+      if (!any(idx)) next
+      fam <- family_list[[k]]
+      if (isTRUE(fam$delta)) {
+        est1[idx] <- fam[[1]]$linkinv(eta1[idx])
+        est2[idx] <- fam[[2]]$linkinv(eta2[idx])
+      } else {
+        est1[idx] <- fam$linkinv(eta1[idx])
+      }
+    }
+    est <- est1
+    if (any(delta_rows)) {
+      plink <- delta_rows & poisson_link_delta[fam_index]
+      if (any(plink)) {
+        n_val <- est1[plink]
+        p <- 1 - exp(-n_val)
+        w <- est2[plink]
+        r <- (n_val * w) / p
+        est1[plink] <- p
+        est2[plink] <- r
+        est[plink] <- n_val * w
+      }
+      standard <- delta_rows & !plink
+      if (any(standard)) {
+        est[standard] <- est1[standard] * est2[standard]
+      }
+    }
+  }
+
+  list(est = est, est1 = est1, est2 = est2)
+}
