@@ -105,7 +105,12 @@
     if (any(vapply(family_list, function(x) isTRUE(x$delta), logical(1)))) {
       cli_abort("Delta families are not supported in multi-likelihood models yet.")
     }
-    allowed_families <- c("gaussian", "poisson", "binomial")
+    allowed_families <- c(
+      "gaussian", "poisson", "binomial",
+      "nbinom1", "nbinom2", "Gamma",
+      "lognormal", "tweedie", "student",
+      "gengamma"
+    )
     if (any(!family_names %in% allowed_families)) {
       bad <- family_names[!family_names %in% allowed_families]
       cli_abort(paste0(
@@ -130,5 +135,43 @@
     e_i = e_i,
     family = family,
     family_input = if (multi_family) family_list else family
+  )
+}
+
+.multi_family_param_offsets <- function(family_list) {
+  n_fam <- length(family_list)
+  family_names <- vapply(family_list, function(x) x$family[1], character(1))
+
+  student_fixed <- vapply(
+    family_list,
+    function(x) identical(x$family[1], "student") && !is.null(x$df),
+    logical(1)
+  )
+  if (any(student_fixed)) {
+    cli_abort("Fixed student df is not supported in multi-likelihood models yet.")
+  }
+
+  uses_phi <- family_names %in% c(
+    "gaussian", "Gamma", "lognormal", "nbinom1", "nbinom2",
+    "tweedie", "student", "gengamma"
+  )
+  uses_thetaf <- family_names %in% "tweedie"
+  uses_student_df <- family_names %in% "student"
+  uses_gengamma_Q <- family_names %in% "gengamma"
+
+  make_offsets <- function(uses) {
+    len <- ifelse(uses, 1L, 0L)
+    start <- rep(-1L, n_fam)
+    if (any(uses)) {
+      start[uses] <- seq_len(sum(uses)) - 1L
+    }
+    list(start = start, len = len, total = sum(len))
+  }
+
+  list(
+    ln_phi = make_offsets(uses_phi),
+    thetaf = make_offsets(uses_thetaf),
+    ln_student_df = make_offsets(uses_student_df),
+    gengamma_Q = make_offsets(uses_gengamma_Q)
   )
 }

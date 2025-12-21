@@ -627,6 +627,11 @@ sdmTMB <- function(
   e_i <- multi$e_i
   family <- multi$family
   family_input <- multi$family_input
+  multi_offsets <- if (multi_family) {
+    .multi_family_param_offsets(family_list)
+  } else {
+    NULL
+  }
 
   delta <- isTRUE(family$delta)
   if (multi_family) delta <- FALSE
@@ -1070,6 +1075,10 @@ sdmTMB <- function(
     if (any(log_link_rows) && min(y_i[log_link_rows], na.rm = TRUE) < 0) {
       cli_abort("`link = 'log'` but the response data include values < 0.")
     }
+    positive_only_rows <- family_names[e_i_idx] %in% c("Gamma", "lognormal")
+    if (any(positive_only_rows) && min(y_i[positive_only_rows], na.rm = TRUE) <= 0) {
+      cli_abort("Gamma and lognormal rows must have response values > 0.")
+    }
   }
 
   if (is.null(offset)) offset <- rep(0, length(y_i))
@@ -1264,6 +1273,14 @@ sdmTMB <- function(
     e_i = if (multi_family) as.integer(e_i) else integer(0),
     family_e = if (multi_family) as.integer(unlist(multi_info$family_enum)) else integer(0),
     link_e = if (multi_family) as.integer(unlist(multi_info$link_enum)) else integer(0),
+    ln_phi_start = if (multi_family) multi_offsets$ln_phi$start else integer(0),
+    ln_phi_len = if (multi_family) multi_offsets$ln_phi$len else integer(0),
+    thetaf_start = if (multi_family) multi_offsets$thetaf$start else integer(0),
+    thetaf_len = if (multi_family) multi_offsets$thetaf$len else integer(0),
+    ln_student_df_start = if (multi_family) multi_offsets$ln_student_df$start else integer(0),
+    ln_student_df_len = if (multi_family) multi_offsets$ln_student_df$len else integer(0),
+    gengamma_Q_start = if (multi_family) multi_offsets$gengamma_Q$start else integer(0),
+    gengamma_Q_len = if (multi_family) multi_offsets$gengamma_Q$len else integer(0),
     spatial_only = as.integer(spatial_only),
     spatial_covariate = as.integer(!is.null(spatial_varying)),
     calc_quadratic_range = as.integer(quadratic_roots),
@@ -1313,6 +1330,10 @@ sdmTMB <- function(
     logit_p_extreme = 0,
     log_ratio_mix = -1, # ratio is 1 + exp(log_ratio_mix) so 0 would start fairly high
     ln_phi = rep(0, n_m),
+    ln_phi_e = if (multi_family) rep(0, multi_offsets$ln_phi$total) else numeric(0),
+    thetaf_e = if (multi_family) rep(0, multi_offsets$thetaf$total) else numeric(0),
+    ln_student_df_e = if (multi_family) rep(log(2), multi_offsets$ln_student_df$total) else numeric(0),
+    gengamma_Q_e = if (multi_family) rep(0.5, multi_offsets$gengamma_Q$total) else numeric(0),
     ln_tau_V = matrix(0, ncol(X_rw_ik), n_m),
     rho_time_unscaled = matrix(0, ncol(X_rw_ik), n_m),
     ar1_phi = rep(0, n_m),
@@ -1340,23 +1361,32 @@ sdmTMB <- function(
   tmb_map <- map_all_params(tmb_params)
   tmb_map$b_j <- NULL
   if (delta) tmb_map$b_j2 <- NULL
-  if (!multi_family && family$family[[1]] == "tweedie") tmb_map$thetaf <- NULL
-  if (!multi_family && family$family[[1]] == "student") {
-    if (estimate_student_df) {
-      tmb_map$ln_student_df <- NULL  # estimate
-    } else {
-      tmb_map$ln_student_df <- factor(NA)  # fix at initial value
-    }
-  } else {
-    tmb_map$ln_student_df <- factor(NA)  # not student family, fix at 0
-  }
-  if (!multi_family && "gengamma" %in% family$family) tmb_map$gengamma_Q <- factor(NA)
-  tmb_map$ln_phi <- rep(1, n_m)
   if (multi_family) {
-    if (!any(family_names == "gaussian")) {
-      tmb_map$ln_phi[1] <- factor(NA)
-    }
+    tmb_map$ln_phi <- factor(NA)
+    tmb_map$thetaf <- factor(NA)
+    tmb_map$ln_student_df <- factor(NA)
+    tmb_map$gengamma_Q <- factor(NA)
+    tmb_map$ln_phi_e <- NULL
+    tmb_map$thetaf_e <- NULL
+    tmb_map$ln_student_df_e <- NULL
+    tmb_map$gengamma_Q_e <- NULL
   } else {
+    if (family$family[[1]] == "tweedie") tmb_map$thetaf <- NULL
+    if (family$family[[1]] == "student") {
+      if (estimate_student_df) {
+        tmb_map$ln_student_df <- NULL  # estimate
+      } else {
+        tmb_map$ln_student_df <- factor(NA)  # fix at initial value
+      }
+    } else {
+      tmb_map$ln_student_df <- factor(NA)  # not student family, fix at 0
+    }
+    if ("gengamma" %in% family$family) tmb_map$gengamma_Q <- factor(NA)
+  }
+  if (multi_family) {
+    tmb_map$ln_phi <- factor(NA)
+  } else {
+    tmb_map$ln_phi <- rep(1, n_m)
     if (family$family[[1]] %in% c("binomial", "poisson", "censored_poisson")) {
       tmb_map$ln_phi[1] <- factor(NA)
     }
@@ -1367,8 +1397,8 @@ sdmTMB <- function(
         tmb_map$ln_phi[2] <- 2
       }
     }
+    tmb_map$ln_phi <- as.factor(tmb_map$ln_phi)
   }
-  tmb_map$ln_phi <- as.factor(tmb_map$ln_phi)
   if (!is.null(thresh[[1]]$threshold_parameter)) tmb_map$b_threshold <- NULL
 
   if (est_epsilon_re == 1L) {
