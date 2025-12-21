@@ -46,6 +46,8 @@ NULL
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html) for
 #'   details. For binomial family options, see 'Binomial families' in the Details
 #'   section below.
+#' @param distribution_column Reserved for future multi-likelihood models.
+#'   Currently unsupported and will error if supplied.
 #' @param spatial Estimate spatial random fields? Options are `'on'` / `'off'`
 #'   or `TRUE` / `FALSE`. Optionally, a list for delta models, e.g. `list('on',
 #'   'off')`.
@@ -586,6 +588,7 @@ sdmTMB <- function(
     mesh,
     time = NULL,
     family = gaussian(link = "identity"),
+    distribution_column = NULL,
     spatial = c("on", "off"),
     spatiotemporal = c("iid", "ar1", "rw", "off"),
     share_range = TRUE,
@@ -609,6 +612,10 @@ sdmTMB <- function(
     index_args = NULL,
     experimental = NULL) {
   data <- droplevels(data) # if data was subset, strips absent factors
+
+  if (!is.null(distribution_column)) {
+    cli_abort("`distribution_column` is reserved for multi-likelihood models and is not yet supported.")
+  }
 
   delta <- isTRUE(family$delta)
   n_m <- if (delta) 2L else 1L

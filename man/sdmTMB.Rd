@@ -10,6 +10,7 @@ sdmTMB(
   mesh,
   time = NULL,
   family = gaussian(link = "identity"),
+  distribution_column = NULL,
   spatial = c("on", "off"),
   spatiotemporal = c("iid", "ar1", "rw", "off"),
   share_range = TRUE,
@@ -73,6 +74,9 @@ Delta/hurdle models (for zero-inflated data) include:
 See the \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-model vignette} for
 details. For binomial family options, see 'Binomial families' in the Details
 section below.}
+
+\item{distribution_column}{Reserved for future multi-likelihood models.
+Currently unsupported and will error if supplied.}
 
 \item{spatial}{Estimate spatial random fields? Options are \code{'on'} / \code{'off'}
 or \code{TRUE} / \code{FALSE}. Optionally, a list for delta models, e.g. \code{list('on', 'off')}.}

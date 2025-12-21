@@ -27,3 +27,11 @@
   inverse  = 3,
   cloglog  = 4
 )
+
+.enum_family <- function(family) {
+  unname(.valid_family[family])
+}
+
+.enum_link <- function(link) {
+  unname(.valid_link[link])
+}
