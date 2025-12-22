@@ -400,7 +400,13 @@ print_anisotropy <- function(x, m = 1L, digits = 1L, return_dat = FALSE) {
   aniso_df$degree <- aniso_df$angle * 180 / pi
   aniso_df_st <- aniso_df_sp <- NULL
 
-  if (isTRUE(x$family$delta)) {
+  multi_family <- isTRUE(x$tmb_data$multi_family == 1L)
+  delta <- if (multi_family) {
+    any(x$tmb_data$delta_family_e == 1L)
+  } else {
+    isTRUE(x$family$delta)
+  }
+  if (delta) {
     aniso_df_sp <- aniso_df[aniso_df$random_field == "spatial" &
         aniso_df$model_num == m, ][1, c("a", "b", "degree")]
     aniso_df_st <- aniso_df[aniso_df$random_field == "spatiotemporal" &
@@ -453,6 +459,15 @@ print_anisotropy <- function(x, m = 1L, digits = 1L, return_dat = FALSE) {
 
 print_other_parameters <- function(x, m = 1L) {
   b <- tidy(x, "ran_pars", model = m, silent = TRUE)
+  multi_family <- isTRUE(x$tmb_data$multi_family == 1L)
+
+  multi_term_text <- function(prefix, pretext) {
+    idx <- grepl(paste0("^", prefix), b$term)
+    if (!any(idx)) return("")
+    vals <- mround(b$estimate[idx], 2L)
+    names(vals) <- sub(prefix, "", b$term[idx])
+    paste0(pretext, ": ", paste(paste0(names(vals), "=", vals), collapse = ", "), "\n")
+  }
 
   get_term_text <- function(term_name = "", pretext = "") {
     b2 <- as.list(x$sd_report, what = "Estimate")
@@ -468,12 +483,19 @@ print_other_parameters <- function(x, m = 1L) {
     a
   }
 
-  phi <- get_term_text("phi", "Dispersion parameter")
-  tweedie_p <- get_term_text("tweedie_p", "Tweedie p")
-  student_df <- get_term_text("student_df", "Student-t df")
-  gengamma_par <- if ('gengamma' %in% family(x)[[m]]) {
-    get_term_text("gengamma_Q", "Generalized gamma Q")
-    } else ""
+  if (multi_family) {
+    phi <- multi_term_text("phi_", "Dispersion parameter (phi)")
+    tweedie_p <- multi_term_text("tweedie_p_", "Tweedie p")
+    student_df <- multi_term_text("student_df_", "Student-t df")
+    gengamma_par <- multi_term_text("gengamma_Q_", "Generalized gamma Q")
+  } else {
+    phi <- get_term_text("phi", "Dispersion parameter")
+    tweedie_p <- get_term_text("tweedie_p", "Tweedie p")
+    student_df <- get_term_text("student_df", "Student-t df")
+    gengamma_par <- if ('gengamma' %in% family(x)[[m]]) {
+      get_term_text("gengamma_Q", "Generalized gamma Q")
+      } else ""
+  }
   sigma_O <- get_term_text("sigma_O", "Spatial SD")
   xtra <- if (x$spatiotemporal[m] == "ar1") "marginal " else ""
   sigma_E <- get_term_text("sigma_E",
@@ -583,13 +605,12 @@ print.sdmTMB <- function(x, ...) {
   r <- x$tmb_obj$report(lp)
 
   multi_family <- isTRUE(x$tmb_data$multi_family == 1L)
-  delta <- isTRUE(x$family$delta)
-  print_header(x)
-  if (multi_family) {
-    cat("\nMulti-likelihood model: fixed-effect summaries will be added in a future update.\n\n")
-    print_footer(x)
-    return(invisible(x))
+  delta <- if (multi_family) {
+    any(x$tmb_data$delta_family_e == 1L)
+  } else {
+    isTRUE(x$family$delta)
   }
+  print_header(x)
   if (delta) cat("\nDelta/hurdle model 1: -----------------------------------\n")
   print_one_model(x, 1, ...)
   if (delta) {

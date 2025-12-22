@@ -65,7 +65,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
 
   reinitialize(x)
 
-  delta <- isTRUE(x$family$delta)
+  multi_family <- isTRUE(x$tmb_data$multi_family == 1L)
+  has_delta_multi <- multi_family && any(x$tmb_data$delta_family_e == 1L)
+  delta <- if (multi_family) has_delta_multi else isTRUE(x$family$delta)
   assert_that(is.numeric(model))
   assert_that(length(model) == 1L)
   if (delta) assert_that(model %in% c(1, 2), msg = "`model` must be 1 or 2.")
@@ -110,14 +112,18 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     p$sigma_Z <- as.numeric(p$sigma_Z[,model])
 
     # if delta, a single AR1 -> rho_time_unscaled is a 1x2 matrix
-    p$rho_time <- 2 * plogis(p$rho_time_unscaled[,model]) - 1
+    if (!is.null(p$rho_time_unscaled) && length(p$rho_time_unscaled) > 0L) {
+      p$rho_time <- 2 * plogis(p$rho_time_unscaled[,model]) - 1
+    } else {
+      p$rho_time <- numeric(0)
+    }
     p
   }
 
   est <- subset_pars(est, model)
   se <- subset_pars(se, model)
 
-  if (x$family$family[[model]] %in% c("binomial", "poisson")) {
+  if (!multi_family && x$family$family[[model]] %in% c("binomial", "poisson")) {
     se$ln_phi <- NULL
     est$ln_phi <- NULL
     se$phi <- NULL
@@ -181,7 +187,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   out_re <- list()
   log_name <- c("log_range")
   name <- c("range")
-  if (!isTRUE(is.na(x$tmb_map$ln_phi))) {
+  if (!multi_family && !isTRUE(is.na(x$tmb_map$ln_phi))) {
     log_name <- c(log_name, "ln_phi")
     name <- c(name, "phi")
   }
@@ -253,7 +259,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   discard <- unlist(lapply(out_re, function(x) length(x) == 1L)) # e.g. old models and phi
   out_re[discard] <- NULL
 
-  if ("tweedie" %in% x$family$family) {
+  if (!multi_family && "tweedie" %in% x$family$family) {
     out_re$tweedie_p <- data.frame(
       term = "tweedie_p", estimate = plogis(est$thetaf) + 1,
       std.error = se$tweedie_p, stringsAsFactors = FALSE)
@@ -262,7 +268,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     ii <- ii + 1
   }
 
-  if ("student" %in% x$family$family) {
+  if (!multi_family && "student" %in% x$family$family) {
     # Check if df was fixed (mapped to NA) or estimated
     df_fixed <- !is.null(x$tmb_map[["ln_student_df"]]) &&
       is.na(x$tmb_map[["ln_student_df"]][1])
@@ -306,6 +312,84 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
 
   out_re <- do.call("rbind", out_re)
   row.names(out_re) <- NULL
+
+  if (multi_family) {
+    family_names <- names(x$family)
+    delta_family <- x$tmb_data$delta_family_e == 1L
+    include_family <- if (!has_delta_multi) {
+      rep(TRUE, length(family_names))
+    } else if (model == 1L) {
+      !delta_family
+    } else {
+      delta_family
+    }
+    multi_param_df <- function(prefix, start, len, est_vec, se_vec,
+      transform, se_transform) {
+      rows <- vector("list", length(family_names))
+      for (i in seq_along(family_names)) {
+        if (!include_family[i] || len[i] <= 0L) next
+        idx <- start[i] + 1L
+        est_val <- est_vec[idx]
+        se_val <- if (!is.null(se_vec) && length(se_vec) >= idx) se_vec[idx] else NA_real_
+        est_tr <- transform(est_val)
+        se_tr <- if (is.na(se_val)) NA_real_ else se_transform(est_val, se_val)
+        conf_low <- if (is.na(se_val)) NA_real_ else transform(est_val - crit * se_val)
+        conf_high <- if (is.na(se_val)) NA_real_ else transform(est_val + crit * se_val)
+        rows[[i]] <- data.frame(
+          term = paste0(prefix, family_names[i]),
+          estimate = est_tr,
+          std.error = se_tr,
+          conf.low = conf_low,
+          conf.high = conf_high,
+          stringsAsFactors = FALSE
+        )
+      }
+      do.call(rbind, rows)
+    }
+    phi_df <- multi_param_df(
+      "phi_",
+      x$tmb_data$ln_phi_start,
+      x$tmb_data$ln_phi_len,
+      est$ln_phi_e,
+      se$ln_phi_e,
+      transform = exp,
+      se_transform = function(val, se_val) exp(val) * se_val
+    )
+    tweedie_df <- multi_param_df(
+      "tweedie_p_",
+      x$tmb_data$thetaf_start,
+      x$tmb_data$thetaf_len,
+      est$thetaf_e,
+      se$thetaf_e,
+      transform = function(x) stats::plogis(x) + 1,
+      se_transform = function(val, se_val) {
+        p <- stats::plogis(val)
+        p * (1 - p) * se_val
+      }
+    )
+    student_df <- multi_param_df(
+      "student_df_",
+      x$tmb_data$ln_student_df_start,
+      x$tmb_data$ln_student_df_len,
+      est$ln_student_df_e,
+      se$ln_student_df_e,
+      transform = function(x) exp(x) + 1,
+      se_transform = function(val, se_val) exp(val) * se_val
+    )
+    gengamma_df <- multi_param_df(
+      "gengamma_Q_",
+      x$tmb_data$gengamma_Q_start,
+      x$tmb_data$gengamma_Q_len,
+      est$gengamma_Q_e,
+      se$gengamma_Q_e,
+      transform = identity,
+      se_transform = function(val, se_val) se_val
+    )
+    extra_rows <- rbind(phi_df, tweedie_df, student_df, gengamma_df)
+    if (!is.null(extra_rows) && nrow(extra_rows) > 0) {
+      out_re <- rbind(out_re, extra_rows)
+    }
+  }
 
   if (identical(est$ln_tau_E, 0)) out_re <- out_re[out_re$term != "sigma_E", ]
   if (identical(est$ln_tau_V, 0)) out_re <- out_re[out_re$term != "sigma_V", ]
