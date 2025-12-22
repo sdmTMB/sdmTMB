@@ -876,9 +876,16 @@ Type objective_function<Type>::operator()()
         link_i = (m == 0) ? link_e1(fam_index) : link_e2(fam_index);
       }
       eta_i(i,m) = eta_fixed_i(i,m) + eta_smooth_i(i,m);
-      if ((n_m == 2 && m == 1) || n_m == 1) {
-        if (!poisson_link_delta_row) eta_i(i,m) += offset_i(i);
+      bool add_offset = false;
+      if (n_m == 1) {
+        add_offset = true;
+      } else if (m == 1) {
+        add_offset = true;
+      } else if (multi_family && !delta_row && m == 0) {
+        // Non-delta families should still get the main offset in component 1.
+        add_offset = true;
       }
+      if (add_offset && !poisson_link_delta_row) eta_i(i,m) += offset_i(i);
       if (random_walk == 1 || ar1_time || random_walk == 2) {
         for (int k = 0; k < X_rw_ik.cols(); k++) {
           eta_rw_i(i,m) += X_rw_ik(i, k) * b_rw_t(year_i(i), k, m); // record it
@@ -1311,8 +1318,31 @@ Type objective_function<Type>::operator()()
 
     for (int m = 0; m < n_m; m++) {
       if (m == 0) proj_fe.col(m) = proj_X_ij(m) * b_j;
-      if (n_m == 1) proj_fe.col(m) += proj_offset_i;
-      if (m == 1) proj_fe.col(m) = proj_X_ij(m) * b_j2 + proj_offset_i;
+      if (m == 1) proj_fe.col(m) = proj_X_ij(m) * b_j2;
+      if (!multi_family) {
+        if (n_m == 1) proj_fe.col(m) += proj_offset_i;
+        if (m == 1) proj_fe.col(m) += proj_offset_i;
+      }
+    }
+    if (multi_family) {
+      for (int i = 0; i < n_p; i++) {
+        int fam_index = e_g(i);
+        bool delta_row = delta_family_e(fam_index);
+        bool poisson_link_delta_row = delta_row && poisson_link_delta_e(fam_index);
+        if (n_m == 1) {
+          if (!poisson_link_delta_row) proj_fe(i,0) += proj_offset_i(i);
+        } else {
+          if (!delta_row) {
+            if (!poisson_link_delta_row) proj_fe(i,0) += proj_offset_i(i);
+          } else {
+            if (poisson_link_delta_row) {
+              proj_fe(i,0) += proj_offset_i(i);
+            } else {
+              proj_fe(i,1) += proj_offset_i(i);
+            }
+          }
+        }
+      }
     }
 
     // add threshold effect if specified
