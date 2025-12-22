@@ -12,6 +12,7 @@ named_list <- function(...) {
 }
 
 print_model_info <- function(x) {
+  multi_family <- isTRUE(x$tmb_data$multi_family == 1L)
   delta <- isTRUE(x$family$delta)
   spatial_only <- as.logical(x$tmb_data$spatial_only)
   fit_by <- if (isTRUE(x$reml)) "REML" else "ML"
@@ -42,19 +43,53 @@ print_model_info <- function(x) {
   mesh <- paste0("Mesh: ", extract_call_name(x$call$mesh), " (", covariance, " covariance)\n")
   data <- paste0("Data: ", extract_call_name(x$call$data), "\n")
 
-  if ("clean_name" %in% names(x$family)) {
-    overall_family <- x$family$clean_name
-  } else {
-    overall_family <- paste0(x$family$family[1], "(link = '", x$family$link[1], "')")
-  }
-  overall_family <- paste0("Family: ", overall_family, "\n")
-
-  if (delta) {
-    family1 <- paste0("Family: ", x$family$family[1], "(link = '", x$family$link[1], "')")
-    family2 <- paste0("Family: ", x$family$family[2], "(link = '", x$family$link[2], "')")
-  } else {
+  if (multi_family) {
+    dist_col <- x$distribution_column
+    if (is.null(dist_col) && "distribution_column" %in% names(x$call)) {
+      dist_col <- x$call$distribution_column
+    }
+    dist_col <- as.character(dist_col)
+    family_desc <- vapply(names(x$family), function(name) {
+      fam <- x$family[[name]]
+      desc <- if (!is.null(fam$clean_name)) {
+        fam$clean_name
+      } else {
+        base <- paste0(fam$family[1], "(link = '", fam$link[1], "')")
+        if (length(fam$family) > 1L) {
+          base <- paste0(
+            base, " + ", fam$family[2],
+            "(link = '", fam$link[2], "')"
+          )
+        }
+        base
+      }
+      paste0(name, ": ", desc)
+    }, character(1))
+    dist_line <- ""
+    if (!is.na(dist_col) && nzchar(dist_col)) {
+      dist_line <- paste0(" (distribution_column = '", dist_col, "')")
+    }
+    overall_family <- paste0(
+      "Family: multi-likelihood", dist_line, "\n  ",
+      paste(family_desc, collapse = ", "), "\n"
+    )
     family1 <- NULL
     family2 <- NULL
+  } else {
+    if ("clean_name" %in% names(x$family)) {
+      overall_family <- x$family$clean_name
+    } else {
+      overall_family <- paste0(x$family$family[1], "(link = '", x$family$link[1], "')")
+    }
+    overall_family <- paste0("Family: ", overall_family, "\n")
+
+    if (delta) {
+      family1 <- paste0("Family: ", x$family$family[1], "(link = '", x$family$link[1], "')")
+      family2 <- paste0("Family: ", x$family$family[2], "(link = '", x$family$link[2], "')")
+    } else {
+      family1 <- NULL
+      family2 <- NULL
+    }
   }
 
   criterion <- paste0(fit_by, " criterion at convergence: ", mround(x$model$objective, 3), "\n")
@@ -547,8 +582,14 @@ print.sdmTMB <- function(x, ...) {
   lp <- x$tmb_obj$env$last.par.best
   r <- x$tmb_obj$report(lp)
 
+  multi_family <- isTRUE(x$tmb_data$multi_family == 1L)
   delta <- isTRUE(x$family$delta)
   print_header(x)
+  if (multi_family) {
+    cat("\nMulti-likelihood model: fixed-effect summaries will be added in a future update.\n\n")
+    print_footer(x)
+    return(invisible(x))
+  }
   if (delta) cat("\nDelta/hurdle model 1: -----------------------------------\n")
   print_one_model(x, 1, ...)
   if (delta) {

@@ -401,6 +401,13 @@ residuals.sdmTMB <- function(object,
   }
   # need to re-attach environment if in fresh session
   reinitialize(object)
+  if (isTRUE(object$tmb_data$multi_family == 1L)) {
+    msg <- c(
+      "Standard residuals are not available for multi-likelihood models.",
+      "Use `simulate(fit, type = 'mle-mvn')` with `dharma_residuals()` instead."
+    )
+    cli_abort(msg)
+  }
 
   fam <- object$family$family
   nd <- NULL

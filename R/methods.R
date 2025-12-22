@@ -28,6 +28,10 @@ fitted.sdmTMB <- function(object, ...) {
 
   if (!"offset" %in% names(object))
     cli_abort("It looks like this was fit with an older version of sdmTMB. Try sdmTMB:::update_version(fit).")
+  if (isTRUE(object$tmb_data$multi_family == 1L)) {
+    pred <- predict(object, newdata = object$data, type = "response", offset = object$offset)
+    return(pred$est)
+  }
   if (isTRUE(object$family$delta)) {
     inv1 <- object$family[[1]]$linkinv
     p <- predict(object, type = "link", offset = object$offset)

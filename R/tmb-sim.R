@@ -586,6 +586,17 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
         cli_abort("`model` argument isn't valid; should be NA, 1, or 2.")
       }
     }
+    if (isTRUE(object$tmb_data$multi_family == 1L) &&
+        any(object$tmb_data$delta_family_e == 1L)) {
+      fam_index <- tmb_dat$e_i + 1L
+      delta_rows <- tmb_dat$delta_family_e[fam_index] == 1L
+      ret <- lapply(ret, function(.x) {
+        if (!is.matrix(.x) || ncol(.x) < 2L) return(.x)
+        out <- .x[, 1]
+        out[delta_rows] <- .x[delta_rows, 1] * .x[delta_rows, 2]
+        out
+      })
+    }
 
     ret <- do.call(cbind, ret)
 
