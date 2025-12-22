@@ -645,10 +645,10 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
       if (multi_family && sims_var == "est" && has_delta_multi) {
         if (type == "response") {
-          cli_abort("`type = 'response'` is not supported for simulated multi-likelihood delta predictions yet. Use `type = 'link'` and transform manually.")
+          cli_abort("`type = 'response'` is not supported for simulated multi-family delta predictions yet. Use `type = 'link'` and transform manually.")
         }
         if (is.na(model)) {
-          cli_abort("Combined delta simulations are not supported for multi-likelihood models yet. Use `model = 1` or `model = 2`.")
+          cli_abort("Combined delta simulations are not supported for multi-family models yet. Use `model = 1` or `model = 2`.")
         }
       }
 

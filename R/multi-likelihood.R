@@ -1,6 +1,6 @@
 .validate_multi_family_list <- function(family, data = NULL, distribution_column = NULL) {
   if (!is.list(family)) {
-    cli_abort("`family` must be a named list of family objects for multi-likelihood models.")
+    cli_abort("`family` must be a named list of family objects for multi-family models.")
   }
   if (length(family) == 0L) {
     cli_abort("`family` must contain at least one family object.")
@@ -23,7 +23,7 @@
   )
   if (any(has_mix)) {
     cli_abort(paste0(
-      "Families ending in `_mix` are not supported in multi-likelihood mode: ",
+      "Families ending in `_mix` are not supported in multi-family mode: ",
       paste(names(family)[has_mix], collapse = ", ")
     ))
   }
@@ -126,7 +126,7 @@
     )
     has_delta <- any(delta_family)
     if (any(vapply(family_list, function(x) length(x$family) > 2L, logical(1)))) {
-      cli_abort("Multi-likelihood families with more than 2 components are not supported.")
+      cli_abort("Multi-family models with families that have more than 2 components are not supported.")
     }
     if (any(!delta_family & vapply(family_list, function(x) length(x$family) > 1L, logical(1)))) {
       cli_abort("Multi-component families are only supported for delta families.")
@@ -141,14 +141,14 @@
       "gaussian", "poisson", "binomial",
       "nbinom1", "nbinom2", "Gamma",
       "lognormal", "tweedie", "student",
-      "gengamma"
+      "gengamma", "Beta", "betabinomial"
     )
     family_names_all <- c(family_names, family_names2)
     family_names_all <- family_names_all[!is.na(family_names_all)]
     if (any(!family_names_all %in% allowed_families)) {
       bad <- family_names_all[!family_names_all %in% allowed_families]
       cli_abort(paste0(
-        "Unsupported families in multi-likelihood models: ",
+        "Unsupported families in multi-family models: ",
         paste(unique(bad), collapse = ", ")
       ))
     }
@@ -170,7 +170,7 @@
     family <- family_list[[1]]
   } else {
     if (!is.null(distribution_column)) {
-      cli_abort("`distribution_column` is reserved for multi-likelihood models and is not yet supported.")
+      cli_abort("`distribution_column` is only supported for multi-family models (named `family` list).")
     }
   }
 
@@ -212,12 +212,12 @@
     logical(1)
   )
   if (any(student_fixed)) {
-    cli_abort("Fixed student df is not supported in multi-likelihood models yet.")
+    cli_abort("Fixed student df is not supported in multi-family models yet.")
   }
 
   uses_phi <- family_names %in% c(
     "gaussian", "Gamma", "lognormal", "nbinom1", "nbinom2",
-    "tweedie", "student", "gengamma"
+    "tweedie", "student", "gengamma", "Beta", "betabinomial"
   )
   uses_thetaf <- family_names %in% "tweedie"
   uses_student_df <- family_names %in% "student"
@@ -248,12 +248,103 @@
   cbind(y1, y2)
 }
 
+.multi_family_process_response <- function(
+  y_i,
+  size,
+  weights,
+  e_i,
+  family_names,
+  link_names,
+  delta_family
+) {
+  e_i_idx <- e_i + 1L
+  non_delta_rows <- !delta_family[e_i_idx]
+  binom_rows <- non_delta_rows & family_names[e_i_idx] == "binomial"
+  betabinom_rows <- non_delta_rows & family_names[e_i_idx] == "betabinomial"
+
+  process_binomial_like <- function(rows, family_label, allow_counts) {
+    if (!any(rows)) return(list(y_i = y_i, size = size, weights = weights))
+    y_vals <- y_i[rows]
+    y_vals <- y_vals[!is.na(y_vals)]
+    if (!is.numeric(y_vals)) {
+      cli_abort(paste0(family_label, " rows must have numeric response values in multi-family models."))
+    }
+    if (any(y_vals < 0)) {
+      cli_abort(paste0(family_label, " rows must have non-negative response values in multi-family models."))
+    }
+    if (!allow_counts && any(y_vals > 1)) {
+      cli_abort("Binomial rows must have values between 0 and 1 in multi-family models.")
+    }
+    counts_rows <- if (allow_counts) rows & !is.na(y_i) & y_i > 1 else rep(FALSE, length(rows))
+    prop_rows <- rows & !is.na(y_i) & y_i > 0 & y_i < 1
+    if (any(counts_rows) || any(prop_rows)) {
+      if (is.null(weights)) {
+        suffix <- if (allow_counts) "proportions or counts" else "proportions"
+        cli_abort(paste0(
+          family_label, " rows with ", suffix,
+          " require `weights` to supply the binomial size in multi-family models."
+        ))
+      }
+      weights_vec <- weights
+      if (anyNA(weights_vec[counts_rows | prop_rows])) {
+        cli_abort(paste0(
+          "`weights` must not contain missing values for ",
+          tolower(family_label), " rows in multi-family models."
+        ))
+      }
+      if (any(weights_vec[counts_rows | prop_rows] <= 0)) {
+        cli_abort(paste0(
+          "`weights` must be > 0 for ",
+          tolower(family_label), " rows in multi-family models."
+        ))
+      }
+      if (any(counts_rows)) {
+        if (any(weights_vec[counts_rows] < y_i[counts_rows], na.rm = TRUE)) {
+          cli_abort(paste0(
+            family_label, " counts must be <= `weights` (binomial size) in multi-family models."
+          ))
+        }
+        size[counts_rows] <- weights_vec[counts_rows]
+        weights_vec[counts_rows] <- 1
+      }
+      if (any(prop_rows)) {
+        size[prop_rows] <- weights_vec[prop_rows]
+        y_i[prop_rows] <- y_i[prop_rows] * weights_vec[prop_rows]
+        weights_vec[prop_rows] <- 1
+      }
+      weights <- weights_vec
+    }
+    list(y_i = y_i, size = size, weights = weights)
+  }
+
+  out <- process_binomial_like(binom_rows, "Binomial", allow_counts = FALSE)
+  y_i <- out$y_i
+  size <- out$size
+  weights <- out$weights
+
+  out <- process_binomial_like(betabinom_rows, "Betabinomial", allow_counts = TRUE)
+  y_i <- out$y_i
+  size <- out$size
+  weights <- out$weights
+
+  log_link_rows <- non_delta_rows & link_names[e_i_idx] == "log"
+  if (any(log_link_rows) && min(y_i[log_link_rows], na.rm = TRUE) < 0) {
+    cli_abort("`link = 'log'` but the response data include values < 0.")
+  }
+  positive_only_rows <- non_delta_rows & family_names[e_i_idx] %in% c("Gamma", "lognormal")
+  if (any(positive_only_rows) && min(y_i[positive_only_rows], na.rm = TRUE) <= 0) {
+    cli_abort("Gamma and lognormal rows must have response values > 0.")
+  }
+
+  list(y_i = y_i, size = size, weights = weights)
+}
+
 .multi_family_predict_e_g <- function(object, newdata, distribution_column) {
   if (is.null(distribution_column)) {
-    cli_abort("`distribution_column` must be supplied for multi-likelihood predictions.")
+    cli_abort("`distribution_column` must be supplied for multi-family predictions.")
   }
   if (!is.list(object$family) || inherits(object$family, "family")) {
-    cli_abort("Multi-likelihood predictions require a named family list on the fitted object.")
+    cli_abort("Multi-family predictions require a named family list on the fitted object.")
   }
   info <- .validate_multi_family_list(
     object$family,

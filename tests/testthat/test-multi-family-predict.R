@@ -1,4 +1,4 @@
-test_that("Multi-likelihood prediction requires distribution_column and maps e_g", {
+test_that("Multi-family prediction requires distribution_column and maps e_g", {
   dat <- data.frame(
     y = c(1, 2, 0, 3),
     dist = c("poisson", "gaussian", "poisson", "gaussian")
@@ -33,7 +33,7 @@ test_that("Multi-likelihood prediction requires distribution_column and maps e_g
   )
 })
 
-test_that("Multi-likelihood predictions transform per-family links", {
+test_that("Multi-family predictions transform per-family links", {
   dat <- data.frame(
     y = c(1, 2, 0, 3),
     dist = c("poisson", "gaussian", "poisson", "gaussian")
@@ -58,7 +58,7 @@ test_that("Multi-likelihood predictions transform per-family links", {
   expect_equal(pred$data$est, expected, tolerance = 1e-6)
 })
 
-test_that("Multi-likelihood predictions handle delta families", {
+test_that("Multi-family predictions handle delta families", {
   dat <- data.frame(
     y = c(0, 2, 0, 3, 1, 0, 5),
     dist = c(

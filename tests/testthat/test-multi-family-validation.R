@@ -1,4 +1,4 @@
-test_that("Multi-likelihood family list validation works", {
+test_that("Multi-family family list validation works", {
   fam <- list(
     gauss = gaussian(),
     pois = poisson(link = "log")
@@ -9,7 +9,7 @@ test_that("Multi-likelihood family list validation works", {
   expect_equal(res$link_enum[[2]], sdmTMB:::.enum_link("log"))
 })
 
-test_that("Multi-likelihood family list validation rejects mix families", {
+test_that("Multi-family family list validation rejects mix families", {
   fam <- list(mix = gamma_mix())
   expect_error(
     sdmTMB:::.validate_multi_family_list(fam),
@@ -17,7 +17,7 @@ test_that("Multi-likelihood family list validation rejects mix families", {
   )
 })
 
-test_that("Multi-likelihood family list validation requires names", {
+test_that("Multi-family family list validation requires names", {
   fam <- list(gaussian(), poisson())
   expect_error(
     sdmTMB:::.validate_multi_family_list(fam),
@@ -25,7 +25,7 @@ test_that("Multi-likelihood family list validation requires names", {
   )
 })
 
-test_that("Multi-likelihood distribution_column maps to e_i", {
+test_that("Multi-family distribution_column maps to e_i", {
   fam <- list(
     gaussian = gaussian(),
     poisson = poisson(),

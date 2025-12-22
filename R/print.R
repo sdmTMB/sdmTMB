@@ -66,11 +66,11 @@ print_model_info <- function(x) {
       paste0(name, ": ", desc)
     }, character(1))
     dist_line <- ""
-    if (!is.na(dist_col) && nzchar(dist_col)) {
+    if (length(dist_col) > 0 && !is.na(dist_col) && nzchar(dist_col)) {
       dist_line <- paste0(" (distribution_column = '", dist_col, "')")
     }
     overall_family <- paste0(
-      "Family: multi-likelihood", dist_line, "\n  ",
+      "Family: multi-family", dist_line, "\n  ",
       paste(family_desc, collapse = ", "), "\n"
     )
     family1 <- NULL

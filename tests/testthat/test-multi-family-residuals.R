@@ -1,4 +1,4 @@
-test_that("Multi-likelihood residuals are blocked", {
+test_that("Multi-family residuals are blocked", {
   dat <- data.frame(
     y = c(1, 0, 2, 0),
     dist = c("poisson", "binomial", "poisson", "binomial")
@@ -18,11 +18,11 @@ test_that("Multi-likelihood residuals are blocked", {
   )
   expect_error(
     residuals(fit),
-    regexp = "multi-likelihood"
+    regexp = "multi-family"
   )
 })
 
-test_that("Multi-likelihood delta simulations return combined responses", {
+test_that("Multi-family delta simulations return combined responses", {
   dat <- data.frame(
     y = c(0, 2, 0, 3, 1, 0, 5),
     dist = c(

@@ -46,9 +46,9 @@ NULL
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html) for
 #'   details. For binomial family options, see 'Binomial families' in the Details
 #'   section below.
-#' @param distribution_column For multi-likelihood models, the name of the column
-#'   in `data` mapping each row to a family in the named `family` list.
-#'   Currently unsupported and will error if supplied.
+#' @param distribution_column For multi-family models, the name of the column
+#'   in `data` mapping each row to a family in the named `family` list. Required
+#'   when `family` is a named list.
 #' @param spatial Estimate spatial random fields? Options are `'on'` / `'off'`
 #'   or `TRUE` / `FALSE`. Optionally, a list for delta models, e.g. `list('on',
 #'   'off')`.
@@ -1071,24 +1071,18 @@ sdmTMB <- function(
       cli_abort("`link = 'log'` but the reponse data include values < 0.")
     }
   } else {
-    e_i_idx <- e_i + 1L
-    non_delta_rows <- !delta_family[e_i_idx]
-    binom_rows <- non_delta_rows & family_names[e_i_idx] == "binomial"
-    if (any(binom_rows)) {
-      y_binom <- y_i[binom_rows]
-      y_binom <- y_binom[!is.na(y_binom)]
-      if (!is.numeric(y_binom) || any(!y_binom %in% c(0, 1))) {
-        cli_abort("Binomial rows must have numeric 0/1 response values in multi-likelihood models.")
-      }
-    }
-    log_link_rows <- non_delta_rows & link_names[e_i_idx] == "log"
-    if (any(log_link_rows) && min(y_i[log_link_rows], na.rm = TRUE) < 0) {
-      cli_abort("`link = 'log'` but the response data include values < 0.")
-    }
-    positive_only_rows <- non_delta_rows & family_names[e_i_idx] %in% c("Gamma", "lognormal")
-    if (any(positive_only_rows) && min(y_i[positive_only_rows], na.rm = TRUE) <= 0) {
-      cli_abort("Gamma and lognormal rows must have response values > 0.")
-    }
+    resp <- .multi_family_process_response(
+      y_i = y_i,
+      size = size,
+      weights = weights,
+      e_i = e_i,
+      family_names = family_names,
+      link_names = link_names,
+      delta_family = delta_family
+    )
+    y_i <- resp$y_i
+    size <- resp$size
+    weights <- resp$weights
   }
 
   if (is.null(offset)) offset <- rep(0, length(y_i))

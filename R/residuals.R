@@ -403,7 +403,7 @@ residuals.sdmTMB <- function(object,
   reinitialize(object)
   if (isTRUE(object$tmb_data$multi_family == 1L)) {
     msg <- c(
-      "Standard residuals are not available for multi-likelihood models.",
+      "Standard residuals are not available for multi-family models.",
       "Use `simulate(fit, type = 'mle-mvn')` with `dharma_residuals()` instead."
     )
     cli_abort(msg)

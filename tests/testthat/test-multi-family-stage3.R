@@ -1,4 +1,4 @@
-test_that("Stage 3 multi-likelihood supports delta families", {
+test_that("Stage 3 multi-family supports delta families", {
   dat <- data.frame(
     y = c(0, 2, 0, 3, 1, 0, 5),
     dist = c(

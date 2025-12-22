@@ -1,4 +1,4 @@
-test_that("tidy works for multi-likelihood models", {
+test_that("tidy works for multi-family models", {
   dat <- data.frame(
     y = c(1, 2.5, 1, 3.2),
     dist = c("poisson", "gaussian", "poisson", "gaussian")
