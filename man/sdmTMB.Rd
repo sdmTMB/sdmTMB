@@ -76,8 +76,8 @@ details. For binomial family options, see 'Binomial families' in the Details
 section below.}
 
 \item{distribution_column}{For multi-family models, the name of the column
-in \code{data} mapping each row to a family in the named \code{family} list.
-Required when \code{family} is a named list.}
+in \code{data} mapping each row to a family in the named \code{family} list. Required
+when \code{family} is a named list.}
 
 \item{spatial}{Estimate spatial random fields? Options are \code{'on'} / \code{'off'}
 or \code{TRUE} / \code{FALSE}. Optionally, a list for delta models, e.g. \code{list('on', 'off')}.}

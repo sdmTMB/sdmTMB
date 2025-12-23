@@ -1584,12 +1584,55 @@ Type objective_function<Type>::operator()()
       Type t2;
       int link_tmp;
 
+      vector<int> link_by_time;
+      vector<int> link1_g;
+      vector<int> link2_g;
+      vector<int> delta_g;
+      vector<int> plink_g;
+      vector<int> link_choice_g;
+      if (multi_family) {
+        link1_g = vector<int>(n_p);
+        link2_g = vector<int>(n_p);
+        delta_g = vector<int>(n_p);
+        plink_g = vector<int>(n_p);
+        link_choice_g = vector<int>(n_p);
+        for (int i = 0; i < n_p; i++) {
+          int fam_index = e_g(i);
+          int delta_row = delta_family_e(fam_index);
+          int poisson_link_delta_row = delta_row && poisson_link_delta_e(fam_index);
+          int link1 = link_e1(fam_index);
+          int link2 = link_e2(fam_index);
+          link1_g(i) = link1;
+          link2_g(i) = link2;
+          delta_g(i) = delta_row;
+          plink_g(i) = poisson_link_delta_row;
+          link_choice_g(i) = delta_row ? link2 : link1;
+        }
+      }
+
+      if (multi_family && calc_index_totals) {
+        link_by_time = vector<int>(n_t);
+        link_by_time.setConstant(-1);
+      }
+
       for (int i = 0; i < n_p; i++) {
-        if (n_m > 1) { // delta model
+        int link_choice = link(0);
+        if (multi_family) {
+          if (delta_g(i)) {
+            if (plink_g(i)) {
+              mu_combined(i) = exp(proj_eta(i,0) + proj_eta(i,1));
+            } else {
+              t1 = InverseLink(proj_eta(i,0), link1_g(i));
+              t2 = InverseLink(proj_eta(i,1), link2_g(i));
+              mu_combined(i) = t1 * t2;
+            }
+          } else {
+            mu_combined(i) = InverseLink(proj_eta(i,0), link1_g(i));
+          }
+          link_choice = link_choice_g(i);
+        } else if (n_m > 1) { // delta model
           if (poisson_link_delta) {
-            // Type R1 = Type(1.) - exp(-exp(proj_eta(i,0)));
-            // Type R2 = exp(proj_eta(i,0)) / R1 * exp(proj_eta(i,1))
-            mu_combined(i) = exp(proj_eta(i,0) + proj_eta(i,1)); // prevent numerical issues
+            mu_combined(i) = exp(proj_eta(i,0) + proj_eta(i,1));
           } else if (truncated_dist) {
             t1 = InverseLink(proj_eta(i,0), link(0));
             // convert from mean of *un-truncated* to mean of *truncated* distribution
@@ -1601,7 +1644,7 @@ Type objective_function<Type>::operator()()
             t2 = InverseLink(proj_eta(i,1), link(1));
             mu_combined(i) = t1 * t2;
           }
-          total(proj_year(i)) += mu_combined(i) * area_i(i);
+          link_choice = link(1);
         } else { // non-delta model
           if (truncated_dist) {
             // convert from mean of *un-truncated* to mean of *truncated* distribution
@@ -1610,17 +1653,37 @@ Type objective_function<Type>::operator()()
           } else  {
             mu_combined(i) = InverseLink(proj_eta(i,0), link(0));
           }
-          total(proj_year(i)) += mu_combined(i) * area_i(i);
+          link_choice = link(0);
+        }
+
+        total(proj_year(i)) += mu_combined(i) * area_i(i);
+
+        if (multi_family && calc_index_totals) {
+          int time_index = proj_year(i);
+          if (link_by_time(time_index) < 0) {
+            link_by_time(time_index) = link_choice;
+          } else if (link_by_time(time_index) != link_choice) {
+            error("get_index requires a single family/link in prediction data for multi-family models.");
+          }
         }
       }
       vector<Type> link_total(n_t);
-      if (n_m > 1) {
-        link_tmp = link(1); // 2nd link should always be log/exp in this case
+      if (multi_family && calc_index_totals) {
+        for (int i = 0; i < n_t; i++) {
+          int this_link = link_by_time(i);
+          // If a time slice has no prediction rows, fall back to the default link.
+          if (this_link < 0) this_link = link(0);
+          link_total(i) = Link(total(i), this_link);
+        }
       } else {
-        link_tmp = link(0);
-      }
-      for (int i = 0; i < n_t; i++) {
-        link_total(i) = Link(total(i), link_tmp);
+        if (n_m > 1) {
+          link_tmp = link(1); // 2nd link should always be log/exp in this case
+        } else {
+          link_tmp = link(0);
+        }
+        for (int i = 0; i < n_t; i++) {
+          link_total(i) = Link(total(i), link_tmp);
+        }
       }
       if (calc_index_totals) {
         REPORT(link_total);

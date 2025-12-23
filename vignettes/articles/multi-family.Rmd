@@ -1,0 +1,144 @@
+---
+title: "Fitting multiple data types at once with sdmTMB"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Fitting multiple data types at once with sdmTMB}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  echo = TRUE,
+  error = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+# Overview
+
+This vignette shows how to fit a **multi-family** model where each row can use
+a different likelihood family. We will use the built-in `dogfish` dataset as an
+example but we'll turn some rows into encounter/non-encounter and some into a 
+count, just for the sake of this example. In reality, these are intended to come 
+from different surveys or data sources.
+
+We will:
+
+1. Start with the `dogfish` dataset (catch weight),
+2. Create three response types (binary, counts, and continuous),
+3. Fit a multi-family model with `binomial(cloglog)`, `nbinom2()`, and
+   `delta_lognormal(type = "poisson-link")`,
+4. Use `log(area_swept)` as an offset.
+
+# Data prep
+
+```{r}
+library(dplyr)
+library(sdmTMB)
+library(ggplot2)
+
+set.seed(123)
+data(dogfish, package = "sdmTMB")
+dat <- dogfish |>
+  mutate(
+    log_depth = log(depth),
+    data_type = sample(
+      c("binomial", "nbinom2", "delta_lognormal"),
+      size = n(),
+      replace = TRUE
+    )
+  )
+
+# Start from catch_weight and create:
+# - binomial encounter indicator (0/1)
+# - nbinom2 counts (scaled from catch_weight)
+# - delta_lognormal response (raw catch_weight)
+dat <- dat |>
+  mutate(
+    response = catch_weight,
+    present_binom = as.integer(catch_weight > 0),
+    response = ifelse(
+      data_type == "binomial",
+      present_binom,
+      response
+    ),
+    response = ifelse(
+      data_type == "nbinom2",
+      pmax(0L, round(catch_weight / 10)),
+      response
+    )
+  )
+
+dat |>
+  count(data_type)
+```
+
+# Model fit
+
+We fit a multi-family model by passing a named list of families and a
+`distribution_column` that maps each row to a family name.
+
+```{r}
+family_list <- list(
+  binomial = binomial(link = "cloglog"),
+  nbinom2 = nbinom2(),
+  delta_lognormal = delta_lognormal(type = "poisson-link")
+)
+
+mesh <- make_mesh(dat, c("X", "Y"), cutoff = 10)
+
+fit <- sdmTMB(
+  formula = response ~ 0 + as.factor(year) + s(log_depth, k = 3),
+  data = dat,
+  family = family_list,
+  distribution_column = "data_type",
+  offset = log(dat$area_swept),
+  spatial = "on",
+  spatiotemporal = "off", # just for vignette speed
+  time = "year",
+  mesh = mesh
+)
+
+fit
+```
+
+# Prediction grid and index
+
+We can make predictions on the `wcvi_grid` and calculate an annual index with
+`get_index()`. For a multi-family model, `newdata` must include the
+`distribution_column` to indicate which family to use for each row. 
+We should use a single family for the index so that we are calculating the
+index for one data type. Here we calculate the index for the delta-lognormal component.
+I.e., we are calculating a biomass index.
+
+```{r}
+years <- sort(unique(dat$year))
+
+nd <- replicate_df(wcvi_grid, "year", years) |>
+  mutate(
+    log_depth = log(depth),
+    data_type = "delta_lognormal",
+    area_swept = 1, # 1 km^2, i.e. offset = log(1) = 0
+    cell_area = 4 # 2 km x 2 km here
+  )
+
+pred <- predict(
+  fit,
+  newdata = nd,
+  offset = log(nd$area_swept),
+  return_tmb_object = TRUE
+)
+
+index <- get_index(pred, area = "cell_area")
+head(index)
+
+ggplot(index, aes(year, est)) +
+  geom_pointrange(aes(ymin = lwr, ymax = upr))
+```

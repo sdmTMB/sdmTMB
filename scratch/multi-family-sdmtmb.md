@@ -295,6 +295,9 @@ Implement incrementally with testing at each stage to avoid getting overwhelmed.
 - Add examples to help files
 - Create comprehensive integration tests
 
+**Progress (Stage 7):**
+- Drafted `vignettes/articles/multi-family-dogfish.Rmd` using the `dogfish` dataset with binomial (cloglog), nbinom2, and delta_lognormal (poisson-link) families and `log(area_swept)` offset.
+
 ### Handoff notes for Stage 2+
 - Binomial rows allow 0/1 or proportions with `weights` supplying size; cbind responses and binomial counts are not supported in multi-family mode.
 - `print()`/`tidy()` currently break for multi-family objects; update these once core fitting is stable.
