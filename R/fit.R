@@ -201,7 +201,7 @@ NULL
 #' vignette for mathematical details and the paper: \doi{10.1101/2022.03.24.485545}
 #'
 #' **Binomial families**
-#'
+#' 
 #' Following the structure of [stats::glm()] and \pkg{glmmTMB}, a binomial
 #' family can be specified in one of 4 ways: (1) the response may be a factor
 #' (and the model classifies the first level versus all others), (2) the
@@ -209,6 +209,13 @@ NULL
 #' `cbind(success, failure)`, and (4) the response may be the observed
 #' proportions, and the 'weights' argument is used to specify the Binomial size
 #' (N) parameter (`prob ~ ..., weights = N`).
+#'
+#' **Multi-family models**
+#'
+#' Multi-family models are specified by passing a named list of families to
+#' `family` and mapping each row to a family name with `distribution_column`.
+#' See the [multi-family vignette](https://sdmTMB.github.io/sdmTMB/articles/multi-family.html)
+#' for a complete example.
 #'
 #' **Smooth terms**
 #'

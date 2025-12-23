@@ -243,6 +243,14 @@ response may be binomial (0/1), (3) the response can be a matrix of form
 proportions, and the 'weights' argument is used to specify the Binomial size
 (N) parameter (\verb{prob ~ ..., weights = N}).
 
+\strong{Multi-family models}
+
+Multi-family models are specified by passing a named list of families to
+\code{family} and mapping each row to a family name with
+\code{distribution_column}. See the
+\href{https://sdmTMB.github.io/sdmTMB/articles/multi-family.html}{multi-family vignette}
+for a complete example.
+
 \strong{Smooth terms}
 
 Smooth terms can be included following GAMs (generalized additive models)
