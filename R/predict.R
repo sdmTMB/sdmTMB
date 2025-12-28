@@ -13,11 +13,14 @@
 #'   column (if this is a spatiotemporal model) with the same name as in the
 #'   fitted data.
 #' @param type Should the `est` column be in link (default) or response space?
+#'   For multi-family models, response space is not supported when `se_fit = TRUE`.
 #' @param se_fit Should standard errors on predictions be calculated? Warning:
 #'   can be slow for large datasets or high-resolution projections when random
 #'   fields are included. For faster uncertainty estimation, either use
 #'   `re_form = NA` to exclude random fields or use the `nsim` argument to
-#'   simulate from the joint precision matrix.
+#'   simulate from the joint precision matrix. For multi-family models, standard
+#'   errors are computed for each row accounting for the family-specific
+#'   transformation. See the multi-family vignette for details.
 #' @param return_tmb_object Logical. If `TRUE`, will include the TMB object in a
 #'   list format output. Necessary for the [get_index()] or [get_cog()]
 #'   functions.
@@ -826,6 +829,11 @@ predict.sdmTMB <- function(object, newdata = NULL,
         model <- 1L
     }
 
+    # Initialize flags for combined predictions (used later)
+    use_combined_delta <- FALSE
+    use_combined_mf <- FALSE
+    use_combined_mf_pop <- FALSE
+
     if (se_fit) {
       sr <- TMB::sdreport(new_tmb_obj, bias.correct = FALSE)
       sr_est_rep <- as.list(sr, "Estimate", report = TRUE)
@@ -839,11 +847,29 @@ predict.sdmTMB <- function(object, newdata = NULL,
       }
 
       # For delta models with model = NA, use combined predictions
-      if (isTRUE(object$family$delta) && is.na(model) && !pop_pred &&
-          "proj_eta_delta" %in% names(sr_est_rep)) {
+      # Check for regular delta models
+      use_combined_delta <- isTRUE(object$family$delta) && is.na(model) && !pop_pred &&
+        "proj_eta_delta" %in% names(sr_est_rep)
+
+      # Check for multi-family combined predictions
+      use_combined_mf <- multi_family && is.na(model) && !pop_pred &&
+        "proj_eta_mf_combined" %in% names(sr_est_rep)
+
+      use_combined_mf_pop <- multi_family && is.na(model) && pop_pred &&
+        "proj_rf_mf_combined" %in% names(sr_est_rep)
+
+      # Extract estimates and SEs based on model type
+      if (use_combined_delta) {
         nd$est <- sr_est_rep[["proj_eta_delta"]]
         nd$est_se <- sr_se_rep[["proj_eta_delta"]]
+      } else if (use_combined_mf) {
+        nd$est <- sr_est_rep[["proj_eta_mf_combined"]]
+        nd$est_se <- sr_se_rep[["proj_eta_mf_combined"]]
+      } else if (use_combined_mf_pop) {
+        nd$est <- sr_est_rep[["proj_rf_mf_combined"]]
+        nd$est_se <- sr_se_rep[["proj_rf_mf_combined"]]
       } else {
+        # Component-specific or non-delta: use original logic
         if (is.na(model)) model_temp <- 1L else model_temp <- model
         proj_eta <- proj_eta[,model_temp,drop=TRUE]
         se <- se[,model_temp,drop=TRUE]
@@ -852,6 +878,12 @@ predict.sdmTMB <- function(object, newdata = NULL,
       }
     }
     if (type == "response" && se_fit) {
+      if (multi_family) {
+        cli_abort(c(
+          "x" = "`type = 'response'` with `se_fit = TRUE` is not supported for multi-family predictions.",
+          "i" = "Use `type = 'link'`, or set `se_fit = FALSE` and transform per family."
+        ))
+      }
       est_name <- if (isTRUE(object$family$delta)) "'est1' and 'est2'" else "'est'"
       msg <- paste0("predict(..., type = 'response', se_fit = TRUE) detected; ",
         "returning the prediction ", est_name, " in link space because the standard errors ",
@@ -862,20 +894,42 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
     if (pop_pred) {
       if (multi_family) {
-        fam_index <- e_g + 1L
-        pred_vals <- .multi_family_predict_est(
-          eta1 = r$proj_fe[,1],
-          eta2 = if (has_delta_multi) r$proj_fe[,2] else NULL,
-          family_list = object$family,
-          fam_index = fam_index,
-          delta_family = object$tmb_data$delta_family_e,
-          poisson_link_delta = object$tmb_data$poisson_link_delta_e,
-          type = type
-        )
-        nd$est <- pred_vals$est
-        if (has_delta_multi) {
-          nd$est1 <- pred_vals$est1
-          nd$est2 <- pred_vals$est2
+        # For component-specific predictions (model = 1 or 2), handle separately
+        if (!is.na(model)) {
+          # Component-specific: just set est1/est2, est already set from SE extraction
+          if (has_delta_multi) {
+            # Link space
+            nd$est1 <- r$proj_fe[,1]
+            nd$est2 <- r$proj_fe[,2]
+          }
+        } else if (!use_combined_mf_pop) {
+          # Combined predictions, but no SE or se_fit = FALSE
+          fam_index <- e_g + 1L
+          pred_vals <- .multi_family_predict_est(
+            eta1 = r$proj_fe[,1],
+            eta2 = if (has_delta_multi) r$proj_fe[,2] else NULL,
+            family_list = object$family,
+            fam_index = fam_index,
+            delta_family = object$tmb_data$delta_family_e,
+            poisson_link_delta = object$tmb_data$poisson_link_delta_e,
+            type = type
+          )
+          nd$est <- pred_vals$est
+          if (has_delta_multi) {
+            nd$est1 <- pred_vals$est1
+            nd$est2 <- pred_vals$est2
+          }
+        } else {
+          # Combined est already set from C++; just need component estimates
+          # Always set est1 (link space)
+          nd$est1 <- r$proj_fe[,1]
+          # For delta families, also set est2 (but only for delta rows)
+          if (has_delta_multi) {
+            # Check which rows use delta families
+            fam_index <- e_g + 1L  # R indexing
+            is_delta_row <- object$tmb_data$delta_family_e[fam_index]
+            nd$est2 <- ifelse(is_delta_row, r$proj_fe[,2], NA)
+          }
         }
       } else if (isTRUE(object$family$delta)) {
         if (type == "response") {

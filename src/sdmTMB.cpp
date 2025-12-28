@@ -1542,6 +1542,61 @@ Type objective_function<Type>::operator()()
       if (calc_se) ADREPORT(proj_eta_delta);
     }
 
+    // Multi-family combined predictions with SEs:
+    if (multi_family && pop_pred) { // grab SE on fixed effects combined for multi-family:
+      Type t1, t2;
+      vector<Type> proj_rf_mf_combined(n_p);
+      for (int i = 0; i < n_p; i++) {
+        int fam_index = e_g(i);
+        bool delta_row = delta_family_e(fam_index);
+
+        if (!delta_row) {
+          // Non-delta family: use eta1 directly
+          proj_rf_mf_combined(i) = proj_fe(i,0);
+        } else {
+          // Delta family: combine eta1 and eta2
+          bool poisson_link = poisson_link_delta_e(fam_index);
+          if (poisson_link) {
+            // Poisson-link delta: additive in log space
+            proj_rf_mf_combined(i) = proj_fe(i,0) + proj_fe(i,1);
+          } else {
+            // Standard delta: product in link space
+            t1 = InverseLink(proj_fe(i,0), link_e1(fam_index));
+            t2 = InverseLink(proj_fe(i,1), link_e2(fam_index));
+            proj_rf_mf_combined(i) = Link(t1 * t2, link_e2(fam_index));
+          }
+        }
+      }
+      if (calc_se) ADREPORT(proj_rf_mf_combined);
+    }
+
+    if (multi_family && !pop_pred) { // grab SE on full predictions combined for multi-family:
+      Type t1, t2;
+      vector<Type> proj_eta_mf_combined(n_p);
+      for (int i = 0; i < n_p; i++) {
+        int fam_index = e_g(i);
+        bool delta_row = delta_family_e(fam_index);
+
+        if (!delta_row) {
+          // Non-delta family: use eta1 directly
+          proj_eta_mf_combined(i) = proj_eta(i,0);
+        } else {
+          // Delta family: combine eta1 and eta2
+          bool poisson_link = poisson_link_delta_e(fam_index);
+          if (poisson_link) {
+            // Poisson-link delta: additive in log space
+            proj_eta_mf_combined(i) = proj_eta(i,0) + proj_eta(i,1);
+          } else {
+            // Standard delta: product in link space
+            t1 = InverseLink(proj_eta(i,0), link_e1(fam_index));
+            t2 = InverseLink(proj_eta(i,1), link_e2(fam_index));
+            proj_eta_mf_combined(i) = Link(t1 * t2, link_e2(fam_index));
+          }
+        }
+      }
+      if (calc_se) ADREPORT(proj_eta_mf_combined);
+    }
+
     // FIXME save memory by not reporting all these or optionally so for MVN/Bayes?
     REPORT(proj_fe);            // fixed effect projections
     REPORT(proj_omega_s_A);     // spatial random effect projections

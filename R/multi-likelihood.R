@@ -368,7 +368,7 @@
   est <- eta1
   est1 <- rep(NA_real_, n)
   est2 <- rep(NA_real_, n)
-  delta_rows <- delta_family[fam_index]
+  delta_rows <- as.logical(delta_family[fam_index])
 
   if (type == "link") {
     est1 <- eta1

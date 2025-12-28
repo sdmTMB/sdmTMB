@@ -30,13 +30,16 @@ frame with the same predictor columns as in the fitted data and a time
 column (if this is a spatiotemporal model) with the same name as in the
 fitted data.}
 
-\item{type}{Should the \code{est} column be in link (default) or response space?}
+\item{type}{Should the \code{est} column be in link (default) or response space?
+For multi-family models, response space is not supported when \code{se_fit = TRUE}.}
 
 \item{se_fit}{Should standard errors on predictions be calculated? Warning:
 can be slow for large datasets or high-resolution projections when random
 fields are included. For faster uncertainty estimation, either use
 \code{re_form = NA} to exclude random fields or use the \code{nsim} argument to
-simulate from the joint precision matrix.}
+simulate from the joint precision matrix. For multi-family models, standard
+errors are computed for each row accounting for the family-specific
+transformation. See the multi-family vignette for details.}
 
 \item{re_form}{\code{NULL} to include all spatial/spatiotemporal random fields in
 predictions. \code{~0} or \code{NA} for population-level predictions (predictions
