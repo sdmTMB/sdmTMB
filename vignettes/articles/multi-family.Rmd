@@ -82,7 +82,7 @@ dat |>
 
 # Model fit
 
-We fit a multi-family model by passing a named list of families and a `distribution_column` that maps each row to a family name. Binomial would typically use a complementary log-log link for these types of integrated models. We also include a survey catchability effect (`survey`) as a fixed effect, following the integrated monitoring programs approach described in Grüss and Thorson (2019).
+We fit a multi-family model by passing a named list of families and a `distribution_column` that maps each row to a family name. Binomial would typically use a complementary log-log link for these types of integrated models. We also include a monitoring-program catchability effect using `factor(data_type)` in the first linear predictor, following the integrated monitoring programs approach described in Grüss and Thorson (2019).
 
 Note that only `delta_lognormal()` has 2nd linear predictor, so we drop `factor(data_type)` in the 2nd set of main effects:
 
@@ -98,7 +98,7 @@ mesh <- make_mesh(dat, c("X", "Y"), cutoff = 10)
 fit <- sdmTMB(
   formula = list(
     response ~ factor(data_type) + as.factor(year) + poly(log_depth, 2),
-    response ~ factor(year) + poly(log_depth, 2) # dropping factor(data_type) here, see note above
+    response ~ factor(year) + poly(log_depth, 2) # omit factor(data_type) for the delta-positive component
   ),
   data = dat,
   family = family_list,
@@ -197,7 +197,7 @@ ggplot(pred_mixed, aes(log_depth, est)) +
   supported because standard errors are computed in link space.
 
 - **Link space**: Standard errors are always in link space. For non-multi-family models,
-  `type = "response"` with `se_fit = TRUE` will warn and return predictions in link space.
+  `type = "response"` with `se_fit = TRUE` will return an error with a message.
 
 - **Different link spaces per row**: When your prediction grid contains multiple families,
   the `est_se` column contains SEs in potentially different link spaces (e.g., logit for
