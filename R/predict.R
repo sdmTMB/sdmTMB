@@ -392,7 +392,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
       cli_abort(c("There is at least one NA value in the time column.",
         "Please remove it."))
 
-    newdata$sdm_orig_id <- seq(1L, nrow(newdata))
+    newdata$sdm_orig_id <- seq_len(nrow(newdata))
 
     if (!no_spatial) {
       if (requireNamespace("dplyr", quietly = TRUE)) { # faster
@@ -400,7 +400,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
       } else {
         unique_newdata <- unique(newdata[, xy_cols, drop = FALSE])
       }
-      unique_newdata[["sdm_spatial_id"]] <- seq(1, nrow(unique_newdata)) - 1L
+      unique_newdata[["sdm_spatial_id"]] <- seq_len(nrow(unique_newdata)) - 1L
 
       if (requireNamespace("dplyr", quietly = TRUE)) { # much faster
         newdata <- dplyr::left_join(newdata, unique_newdata, by = xy_cols)

@@ -23,11 +23,9 @@ knitr::opts_chunk$set(
 
 # Overview
 
-This vignette shows how to fit a **multi-family** model where each row can use
-a different likelihood family. We will use the built-in `dogfish` dataset as an
-example but we'll turn some rows into encounter/non-encounter and some into a 
-count, just for the sake of this example. In reality, these are intended to come 
-from different surveys or data sources.
+This vignette shows how to fit a **multi-family** model where each row can use a different likelihood family. See Grüss and Thorson (2019).
+
+We will use the built-in `dogfish` dataset as an example but we'll turn some rows into encounter/non-encounter and some into a count, just for the sake of this example. In reality, these are intended to come  from different surveys or data sources.
 
 We will:
 
@@ -38,6 +36,8 @@ We will:
 4. Use `log(area_swept)` as an offset.
 
 # Data prep
+
+Here we'll create some fake count and encounter data from a dataset of catch weight for dogfish.
 
 ```{r}
 library(dplyr)
@@ -82,8 +82,9 @@ dat |>
 
 # Model fit
 
-We fit a multi-family model by passing a named list of families and a
-`distribution_column` that maps each row to a family name.
+We fit a multi-family model by passing a named list of families and a `distribution_column` that maps each row to a family name. Binomial would typically use a complementary log-log link for these types of integrated models. We also include a survey catchability effect (`survey`) as a fixed effect, following the integrated monitoring programs approach described in Grüss and Thorson (2019).
+
+Note that only `delta_lognormal()` has 2nd linear predictor, so we drop `factor(data_type)` in the 2nd set of main effects:
 
 ```{r}
 family_list <- list(
@@ -95,13 +96,16 @@ family_list <- list(
 mesh <- make_mesh(dat, c("X", "Y"), cutoff = 10)
 
 fit <- sdmTMB(
-  formula = response ~ 0 + as.factor(year) + s(log_depth, k = 3),
+  formula = list(
+    response ~ factor(data_type) + as.factor(year) + poly(log_depth, 2),
+    response ~ factor(year) + poly(log_depth, 2) # dropping factor(data_type) here, see note above
+  ),
   data = dat,
   family = family_list,
   distribution_column = "data_type",
   offset = log(dat$area_swept),
-  spatial = "on",
-  spatiotemporal = "off", # just for vignette speed
+  spatial = "off",
+  spatiotemporal = "off", # just for vignette building speed
   time = "year",
   mesh = mesh
 )
@@ -115,7 +119,8 @@ We can make predictions on the `wcvi_grid` and calculate an annual index with
 `get_index()`. For a multi-family model, `newdata` must include the
 `distribution_column` to indicate which family to use for each row. 
 We should use a single family for the index so that we are calculating the
-index for one data type. Here we calculate the index for the delta-lognormal component.
+index for one data type/survey.
+Here we calculate the index for the delta-lognormal component.
 I.e., we are calculating a biomass index.
 
 ```{r}
@@ -142,3 +147,68 @@ head(index)
 ggplot(index, aes(year, est)) +
   geom_pointrange(aes(ymin = lwr, ymax = upr))
 ```
+
+# Prediction standard errors
+
+Multi-family models support standard errors via `se_fit = TRUE` when making predictions.
+Standard errors are computed for each row using TMB's delta method in link space.
+
+You can get standard errors when the prediction grid contains multiple families.
+Each row's SE corresponds to that row's specific prediction and family:
+
+```{r}
+# Prediction grid with mixed families
+nd <- data.frame(log_depth = seq(
+  log(min(dogfish$depth)),
+  log(max(dogfish$depth)),
+length.out = 100
+))
+nd$year <- dogfish$year[1] # pick a year here
+
+nd_mixed <- replicate_df(
+  nd, "data_type",
+  c("binomial", "nbinom2", "delta_lognormal")
+)
+
+pred_mixed <- predict(
+  fit,
+  newdata = nd_mixed,
+  re_form = NA,
+  se_fit = TRUE,
+  type = "link"
+)
+
+head(pred_mixed)
+```
+
+SEs are computed for each row according to its family
+
+```{r}
+ggplot(pred_mixed, aes(log_depth, est)) +
+  geom_ribbon(aes(ymin = est - 2 * est_se, ymax = est + 2 * est_se), fill = "grey80") +
+  geom_line() +
+  facet_wrap(~data_type)
+```
+
+## Important notes on standard errors
+
+- **Response scale**: `predict(..., type = "response")` is supported for multi-family
+  models when `se_fit = FALSE`. When `se_fit = TRUE`, response-scale predictions are not
+  supported because standard errors are computed in link space.
+
+- **Link space**: Standard errors are always in link space. For non-multi-family models,
+  `type = "response"` with `se_fit = TRUE` will warn and return predictions in link space.
+
+- **Different link spaces per row**: When your prediction grid contains multiple families,
+  the `est_se` column contains SEs in potentially different link spaces (e.g., logit for
+  binomial rows, log for count families). This is fine because the SEs are row-specific
+  and correspond to each row's prediction.
+
+- **Delta families**: For delta family rows, the combined prediction `est` has a standard
+  error that accounts for uncertainty in both the encounter and positive components,
+  computed using TMB's delta method. This SE is generally different from either
+  component's SE alone (`est1_se` or `est2_se`). The `est` is presented in log space.
+
+# References
+
+Grüss, A., and Thorson, J.T. 2019. Developing spatio-temporal models using multiple data types for evaluating population trends and habitat usage. ICES Journal of Marine Science 76(6): 1748–1761. \doi{10.1093/icesjms/fsz075}.
