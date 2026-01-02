@@ -1,4 +1,8 @@
-# sdmTMB (development version)
+# sdmTMB 0.8.1
+
+## Minor improvements and fixes
+
+* Optimize memory usage and speed of `get_range_edge()`.
 
 * Remove extraDistr import to avoid CRAN warning. 
 
@@ -7,7 +11,7 @@
   moved these formula utilities to the separate `reformulas` package.
 
 * Fix `predict()` with `se_fit = TRUE` for delta models to correctly return
-  standard errors on combined predictions when `model = NA` (default). Previously,
+  standard errors on combined predictions when `model = NA`. Previously,
   standard errors were only calculated for the first component (`est1`) instead
   of the combined estimate (`est`). #496
 
