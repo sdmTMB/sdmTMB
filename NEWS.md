@@ -1,5 +1,7 @@
 # sdmTMB (development version)
 
+* Remove extraDistr import to avoid CRAN warning. 
+
 * Switch from `lme4` to `reformulas` package for random effects parsing functions
   (`findbars()`, `nobars()`, `subbars()`, `mkReTrms()`). The `lme4` maintainers
   moved these formula utilities to the separate `reformulas` package.

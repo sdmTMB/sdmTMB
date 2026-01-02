@@ -1,7 +1,7 @@
 Type: Package
 Package: sdmTMB
 Title: Spatial and Spatiotemporal SPDE-Based GLMMs with 'TMB'
-Version: 0.8.0.9003
+Version: 0.8.0.9004
 Authors@R: c(
     person(c("Sean", "C."), "Anderson", , "sean@seananderson.ca",
            role = c("aut", "cre"),
@@ -66,7 +66,6 @@ Imports:
     assertthat,
     abind,
     cli,
-    extraDistr,
     fmesher,
     fishMod,
     generics,
