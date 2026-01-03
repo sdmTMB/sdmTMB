@@ -232,10 +232,28 @@ get_cog <- function(obj, bias_correct = FALSE, level = 0.95, format = c("long", 
   if (bias_correct && sum(!fitted_time %in% pred_time) > 0L)
     cli_abort("Please include all time elements in the prediction data frame if using bias_correct = TRUE with get_cog().")
 
-  d <- get_generic(obj, value_name = c("cog_x", "cog_y"),
-    bias_correct = bias_correct, level = level, trans = I, area = area, ...)
-  d <- d[, names(d) != "trans_est", drop = FALSE]
-  d$coord <- c(rep("X", each = nrow(d)/2), rep("Y", each = nrow(d)/2))
+  xy_cols <- obj$fit_obj$spde$xy_cols
+  if (all(xy_cols %in% names(obj$data))) {
+    x_vec <- obj$data[[xy_cols[[1]]]]
+    y_vec <- obj$data[[xy_cols[[2]]]]
+  } else if (!is.null(obj$pred_tmb_data$proj_lon) &&
+             !is.null(obj$pred_tmb_data$proj_lat)) {
+    x_vec <- obj$pred_tmb_data$proj_lon
+    y_vec <- obj$pred_tmb_data$proj_lat
+  } else {
+    cli_abort("Prediction data must include the x/y columns used for the model.")
+  }
+  d_x <- get_generic(obj, value_name = "weighted_avg",
+    bias_correct = bias_correct, level = level, trans = I, area = area,
+    vector = x_vec, ...)
+  d_y <- get_generic(obj, value_name = "weighted_avg",
+    bias_correct = bias_correct, level = level, trans = I, area = area,
+    vector = y_vec, ...)
+  d_x <- d_x[, names(d_x) != "trans_est", drop = FALSE]
+  d_y <- d_y[, names(d_y) != "trans_est", drop = FALSE]
+  d_x$coord <- "X"
+  d_y$coord <- "Y"
+  d <- rbind(d_x, d_y)
   format <- match.arg(format)
   if (format == "wide") {
     x <- d[d$coord == "X", c("est", "lwr", "upr", "se"),drop=FALSE]
@@ -312,7 +330,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
 
   reinitialize(obj$fit_obj)
 
-  if ((!isTRUE(obj$do_index) && value_name[1] == "link_total") || value_name[1] == "cog_x" || value_name[[1]] == "log_eao" || value_name[1] == "weighted_avg") {
+  if ((!isTRUE(obj$do_index) && value_name[1] == "link_total") || value_name[[1]] == "log_eao" || value_name[1] == "weighted_avg") {
     if (is.null(obj[["obj"]])) {
       cli_abort(paste0("`obj` needs to be created with ",
         "`predict(..., return_tmb_object = TRUE).`"))
@@ -355,8 +373,6 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     tmb_data$area_i <- area
     if (value_name[1] == "link_total")
       tmb_data$calc_index_totals <- 1L
-    if (value_name[1] == "cog_x")
-      tmb_data$calc_cog <- 1L
     if (value_name[1] == "log_eao")
       tmb_data$calc_eao <- 1L
     if (value_name[1] == "weighted_avg") {
@@ -399,10 +415,9 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
   }
   sr_est <- as.list(sr, "Estimate", report = TRUE)
 
-  if (bias_correct && value_name[[1]] %in% c("link_total", "cog_x", "weighted_avg", "log_eao")) {
+  if (bias_correct && value_name[[1]] %in% c("link_total", "weighted_avg", "log_eao")) {
     # extract and modify parameters
     if (value_name[[1]] == "link_total") .n <- length(sr_est$total)
-    if (value_name[[1]] == "cog_x") .n <- length(sr_est$cog_x) * 2 # 2 b/c x and y
     if (value_name[[1]] == "weighted_avg") .n <- length(sr_est$weighted_avg)
     if (value_name[[1]] == "log_eao") .n <- length(sr_est$eao)
     pars[[eps_name]] <- rep(0, .n)
@@ -423,7 +438,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     gradient <- new_obj2$gr(fixed)
     corrected_vals <- gradient[names(fixed) == eps_name]
   } else {
-    if (value_name[[1]] == "link_total" || value_name[[1]] == "cog_x" || value_name[[1]] == "weighted_avg" || value_name[[1]] == "log_eao")
+    if (value_name[[1]] == "link_total" || value_name[[1]] == "weighted_avg" || value_name[[1]] == "log_eao")
       cli_inform(c("Bias correction is turned off.", "
         It is recommended to turn this on for final inference."))
   }
@@ -434,7 +449,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
   time_name <- obj$fit_obj$time
   names(d) <- c("trans_est", "se")
   if (bias_correct) {
-    if (value_name[[1]] == "cog_x" || value_name[[1]] == "weighted_avg") {
+    if (value_name[[1]] == "weighted_avg") {
       d$trans_est <- corrected_vals
     } else {
       d$trans_est <- log(corrected_vals)

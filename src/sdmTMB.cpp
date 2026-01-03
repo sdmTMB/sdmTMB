@@ -193,7 +193,6 @@ Type objective_function<Type>::operator()()
   DATA_INTEGER(pop_pred);
   // Calculate total summed by year (e.g. biomass)?
   DATA_INTEGER(calc_index_totals);
-  DATA_INTEGER(calc_cog);
   DATA_INTEGER(calc_eao);
   DATA_INTEGER(calc_weighted_avg);
   // DATA_INTEGER(calc_quadratic_range); // DELTA TODO
@@ -214,8 +213,6 @@ Type objective_function<Type>::operator()()
   DATA_INTEGER(exclude_RE); // DELTA TODO currently shared...
   DATA_INTEGER(no_spatial); // omit all spatial calculations
 
-  DATA_VECTOR(proj_lon);
-  DATA_VECTOR(proj_lat);
   DATA_VECTOR(proj_vector);  // User-provided vector for weighted average
 
   // Distribution
@@ -1468,10 +1465,10 @@ Type objective_function<Type>::operator()()
         break;
     }
 
-    if (calc_index_totals || calc_cog || calc_eao || calc_weighted_avg) {
+    if (calc_index_totals || calc_eao || calc_weighted_avg) {
       // ------------------ Derived quantities ---------------------------------
       // Single declaration for low-rank sparse Hessian bias correction
-      // (used by index, cog, weighted_avg, and eao)
+      // (used by index, weighted_avg, and eao)
       PARAMETER_VECTOR(eps_index);
       Type t1;
       Type t2;
@@ -1520,28 +1517,6 @@ Type objective_function<Type>::operator()()
         ADREPORT(link_total);
         ADREPORT(total);
         jnll = sdmTMB::add_lowrank_bias_correction(total, eps_index, 0, jnll);
-      }
-
-      if (calc_cog) {
-        // Centre of gravity:
-        vector<Type> cog_x(n_t);
-        vector<Type> cog_y(n_t);
-        cog_x.setZero();
-        cog_y.setZero();
-        for (int i = 0; i < n_p; i++) {
-          cog_x(proj_year(i)) += proj_lon(i) * mu_combined(i) * area_i(i);
-          cog_y(proj_year(i)) += proj_lat(i) * mu_combined(i) * area_i(i);
-        }
-        for (int t = 0; t < n_t; t++) {
-          cog_x(t) /= total(t);
-          cog_y(t) /= total(t);
-        }
-        REPORT(cog_x);
-        ADREPORT(cog_x);
-        REPORT(cog_y);
-        ADREPORT(cog_y);
-        jnll = sdmTMB::add_lowrank_bias_correction(cog_x, eps_index, 0, jnll);
-        jnll = sdmTMB::add_lowrank_bias_correction(cog_y, eps_index, n_t, jnll);
       }
 
       if (calc_weighted_avg) {
