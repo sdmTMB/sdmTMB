@@ -92,6 +92,8 @@ test_that("get_index works with subsets of years", {
   index_2 <- get_index(p_2, bias_correct = TRUE)
   index_3 <- get_index(p_3, bias_correct = TRUE)
   cog <- get_cog(p_full)
+  cog_bias <- get_cog(p_full, bias_correct = TRUE)
+  expect_equal(cog$est, cog$est) # no random effects so equal
 
   expect_equal(index_2011$est, subset(index_full, year == 2011)$est)
   expect_equal(index_2$est, subset(index_full, year %in% c(2011, 2013))$est)
@@ -106,7 +108,9 @@ test_that("get_index works with subsets of years", {
   expect_equal(index_apply, index_full)
 
   cog <- get_cog(p_full)
-  eao <- get_eao(p_full)
+  eao <- get_eao(p_full, bias_correct = FALSE)
+  eao_bias <- get_eao(p_full, bias_correct = TRUE)
+  expect_equal(eao$est, eao_bias$est) # no random effects so equal
   cog2011 <- get_cog(p_2011)
   eao2011 <- get_eao(p_2011)
   expect_equal(eao2011$est, eao$est[eao$year == 2011])

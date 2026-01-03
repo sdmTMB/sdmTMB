@@ -290,6 +290,11 @@ get_eao <- function(obj,
     area <- obj$data[[area]]
   }
 
+  pred_time <- sort(unique(obj$data[[obj$fit_obj$time]]))
+  fitted_time <- obj$fit_obj$fitted_time
+  if (bias_correct && sum(!fitted_time %in% pred_time) > 0L)
+    cli_abort("Please include all time elements in the prediction data frame if using bias_correct = TRUE with get_eao().")
+
   d <- get_generic(obj, value_name = c("log_eao"),
     bias_correct = bias_correct, level = level, trans = exp, area = area, ...)
   names(d)[names(d) == "trans_est"] <- "log_est"
@@ -394,11 +399,12 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
   }
   sr_est <- as.list(sr, "Estimate", report = TRUE)
 
-  if (bias_correct && value_name[[1]] %in% c("link_total", "cog_x", "weighted_avg")) {
+  if (bias_correct && value_name[[1]] %in% c("link_total", "cog_x", "weighted_avg", "log_eao")) {
     # extract and modify parameters
     if (value_name[[1]] == "link_total") .n <- length(sr_est$total)
     if (value_name[[1]] == "cog_x") .n <- length(sr_est$cog_x) * 2 # 2 b/c x and y
     if (value_name[[1]] == "weighted_avg") .n <- length(sr_est$weighted_avg)
+    if (value_name[[1]] == "log_eao") .n <- length(sr_est$eao)
     pars[[eps_name]] <- rep(0, .n)
     new_values <- rep(0, .n)
     names(new_values) <- rep(eps_name, length(new_values))
@@ -417,7 +423,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     gradient <- new_obj2$gr(fixed)
     corrected_vals <- gradient[names(fixed) == eps_name]
   } else {
-    if (value_name[[1]] == "link_total" || value_name[[1]] == "cog_x" || value_name[[1]] == "weighted_avg")
+    if (value_name[[1]] == "link_total" || value_name[[1]] == "cog_x" || value_name[[1]] == "weighted_avg" || value_name[[1]] == "log_eao")
       cli_inform(c("Bias correction is turned off.", "
         It is recommended to turn this on for final inference."))
   }
