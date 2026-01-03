@@ -259,6 +259,11 @@ get_weighted_average <- function(obj, vector, bias_correct = FALSE, level = 0.95
     area <- obj$data[[area]]
   }
 
+  pred_time <- sort(unique(obj$data[[obj$fit_obj$time]]))
+  fitted_time <- obj$fit_obj$fitted_time
+  if (bias_correct && sum(!fitted_time %in% pred_time) > 0L)
+    cli_abort("Please include all time elements in the prediction data frame if using bias_correct = TRUE with get_weighted_average().")
+
   if (is.null(vector)) {
     cli_abort("A vector must be provided for weighted average calculation.")
   }
