@@ -134,11 +134,6 @@
 #' }
 #' @export
 get_index <- function(obj, bias_correct = TRUE, level = 0.95, area = 1, silent = TRUE, ...)  {
-  # if offset is a character vector, use the value in the dataframe
-  if (is.character(area)) {
-    area <- obj$data[[area]]
-  }
-
   d <- get_generic(obj, value_name = "link_total",
     bias_correct = bias_correct, level = level, trans = exp, area = area, ...)
   names(d)[names(d) == "trans_est"] <- "log_est"
@@ -219,18 +214,27 @@ get_index_split <- function(
   do.call(rbind, index_list)
 }
 
+# shared bias-correction time check for derived quantities
+check_bias_time <- function(obj, bias_correct, fn_name) {
+  if (!bias_correct) {
+    return(invisible(NULL))
+  }
+  pred_time <- sort(unique(obj$data[[obj$fit_obj$time]]))
+  fitted_time <- obj$fit_obj$fitted_time
+  if (sum(!fitted_time %in% pred_time) > 0L) {
+    cli_abort(paste0(
+      "Please include all time elements in the prediction data frame if using bias_correct = TRUE with ",
+      fn_name,
+      "()."
+    ))
+  }
+}
+
 #' @rdname get_index
 #' @param format Long or wide.
 #' @export
 get_cog <- function(obj, bias_correct = FALSE, level = 0.95, format = c("long", "wide"), area = 1, silent = TRUE, ...)  {
-  # if offset is a character vector, use the value in the dataframe
-  if (is.character(area)) {
-    area <- obj$data[[area]]
-  }
-  pred_time <- sort(unique(obj$data[[obj$fit_obj$time]]))
-  fitted_time <- obj$fit_obj$fitted_time
-  if (bias_correct && sum(!fitted_time %in% pred_time) > 0L)
-    cli_abort("Please include all time elements in the prediction data frame if using bias_correct = TRUE with get_cog().")
+  check_bias_time(obj, bias_correct, "get_cog")
 
   xy_cols <- obj$fit_obj$spde$xy_cols
   if (all(xy_cols %in% names(obj$data))) {
@@ -272,19 +276,7 @@ get_cog <- function(obj, bias_correct = FALSE, level = 0.95, format = c("long", 
 #' @export
 get_weighted_average <- function(obj, vector, bias_correct = FALSE, level = 0.95,
   area = 1, silent = TRUE, ...)  {
-  # if offset is a character vector, use the value in the dataframe
-  if (is.character(area)) {
-    area <- obj$data[[area]]
-  }
-
-  pred_time <- sort(unique(obj$data[[obj$fit_obj$time]]))
-  fitted_time <- obj$fit_obj$fitted_time
-  if (bias_correct && sum(!fitted_time %in% pred_time) > 0L)
-    cli_abort("Please include all time elements in the prediction data frame if using bias_correct = TRUE with get_weighted_average().")
-
-  if (is.null(vector)) {
-    cli_abort("A vector must be provided for weighted average calculation.")
-  }
+  check_bias_time(obj, bias_correct, "get_weighted_average")
 
   d <- get_generic(obj, value_name = "weighted_avg",
     bias_correct = bias_correct, level = level, trans = I, area = area,
@@ -303,15 +295,7 @@ get_eao <- function(obj,
   silent = TRUE,
   ...
 )  {
-  # if offset is a character vector, use the value in the dataframe
-  if (is.character(area)) {
-    area <- obj$data[[area]]
-  }
-
-  pred_time <- sort(unique(obj$data[[obj$fit_obj$time]]))
-  fitted_time <- obj$fit_obj$fitted_time
-  if (bias_correct && sum(!fitted_time %in% pred_time) > 0L)
-    cli_abort("Please include all time elements in the prediction data frame if using bias_correct = TRUE with get_eao().")
+  check_bias_time(obj, bias_correct, "get_eao")
 
   d <- get_generic(obj, value_name = c("log_eao"),
     bias_correct = bias_correct, level = level, trans = exp, area = area, ...)
