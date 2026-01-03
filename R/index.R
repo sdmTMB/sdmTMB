@@ -407,7 +407,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       DLL = "sdmTMB",
       silent = silent,
       intern = FALSE, # tested as faster for most models
-      inner.control = list(sparse = TRUE, lowrank = TRUE, trace = TRUE)
+      inner.control = list(sparse = TRUE, lowrank = TRUE, trace = FALSE)
     )
     gradient <- new_obj2$gr(fixed)
     corrected_vals <- gradient[names(fixed) == eps_name]
