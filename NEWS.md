@@ -2,6 +2,10 @@
 
 ## Minor improvements and fixes
 
+* Refactor `get_cog()`, `get_weighted_average()`, and `get_eao()`. 
+  `get_cog()` should be more memory efficient and bias correction is now
+  enabled for `get_eao()` and `get_weighted_average()`.
+
 * Optimize memory usage and speed of `get_range_edge()`.
 
 * Remove extraDistr import to avoid CRAN warning. 
