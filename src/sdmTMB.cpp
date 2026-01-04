@@ -197,6 +197,7 @@ Type objective_function<Type>::operator()()
   DATA_INTEGER(calc_weighted_avg);
   // DATA_INTEGER(calc_quadratic_range); // DELTA TODO
   DATA_VECTOR(area_i); // area per prediction grid cell for index standardization
+  DATA_IVECTOR(proj_time_include); // which time steps are present in predictions
 
   DATA_VECTOR(priors_b_mean);
   DATA_MATRIX(priors_b_Sigma); // beta priors matrix
@@ -1516,7 +1517,7 @@ Type objective_function<Type>::operator()()
         REPORT(link_total);
         ADREPORT(link_total);
         ADREPORT(total);
-        jnll = sdmTMB::add_lowrank_bias_correction(total, eps_index, 0, jnll);
+        jnll = sdmTMB::add_lowrank_bias_correction(total, eps_index, proj_time_include, 0, jnll);
       }
 
       if (calc_weighted_avg) {
@@ -1527,11 +1528,15 @@ Type objective_function<Type>::operator()()
           weighted_avg(proj_year(i)) += proj_vector(i) * mu_combined(i) * area_i(i);
         }
         for (int t = 0; t < n_t; t++) {
-          weighted_avg(t) /= total(t);
+          if (proj_time_include(t) == 0 || total(t) == 0) {
+            weighted_avg(t) = Type(0);
+          } else {
+            weighted_avg(t) /= total(t);
+          }
         }
         REPORT(weighted_avg);
         ADREPORT(weighted_avg);
-        jnll = sdmTMB::add_lowrank_bias_correction(weighted_avg, eps_index, 0, jnll);
+        jnll = sdmTMB::add_lowrank_bias_correction(weighted_avg, eps_index, proj_time_include, 0, jnll);
       }
 
       if (calc_eao) { // effective area occupied: Thorson et al. 2016 doi:10.1098/rspb.2016.1853
@@ -1550,14 +1555,19 @@ Type objective_function<Type>::operator()()
           mean_dens(proj_year(i)) += mu_combined(i) * mu_combined(i) / sum_dens(proj_year(i));
         }
         for (int t = 0; t < n_t; t++) {
-          eao(t) = total(t) / mean_dens(t);
-          log_eao(t) = log(eao(t));
+          if (proj_time_include(t) == 0 || mean_dens(t) == 0) {
+            eao(t) = Type(0);
+            log_eao(t) = Type(0);
+          } else {
+            eao(t) = total(t) / mean_dens(t);
+            log_eao(t) = log(eao(t));
+          }
         }
         REPORT(eao);
         REPORT(mean_dens);
         ADREPORT(log_eao);
         ADREPORT(eao);
-        jnll = sdmTMB::add_lowrank_bias_correction(eao, eps_index, 0, jnll);
+        jnll = sdmTMB::add_lowrank_bias_correction(eao, eps_index, proj_time_include, 0, jnll);
       }
     }
   }

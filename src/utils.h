@@ -521,13 +521,16 @@ template <class Type>
 Type add_lowrank_bias_correction(
     const vector<Type>& values,
     const vector<Type>& eps_index,
+    const vector<int>& include,
     int offset,
     Type jnll
 ) {
   if (eps_index.size() > 0) {
     for (int t = 0; t < values.size(); t++) {
-      Type S = newton::Tag(values(t));
-      jnll += eps_index(t + offset) * S;
+      if (include.size() == 0 || include(t) != 0) {
+        Type S = newton::Tag(values(t));
+        jnll += eps_index(t + offset) * S;
+      }
     }
   }
   return jnll;

@@ -4,7 +4,9 @@
 
 * Refactor `get_cog()`, `get_weighted_average()`, and `get_eao()`. 
   `get_cog()` should be more memory efficient and bias correction is now
-  enabled for `get_eao()` and `get_weighted_average()`.
+  enabled for `get_eao()` and `get_weighted_average()`. These all now work
+  with subsets of the full set of fitted time elements as `get_index()` has
+  for a while.
 
 * Optimize memory usage and speed of `get_range_edge()`.
 

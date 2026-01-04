@@ -214,27 +214,9 @@ get_index_split <- function(
   do.call(rbind, index_list)
 }
 
-# shared bias-correction time check for derived quantities
-check_bias_time <- function(obj, bias_correct, fn_name) {
-  if (!bias_correct) {
-    return(invisible(NULL))
-  }
-  pred_time <- sort(unique(obj$data[[obj$fit_obj$time]]))
-  fitted_time <- obj$fit_obj$fitted_time
-  if (sum(!fitted_time %in% pred_time) > 0L) {
-    cli_abort(paste0(
-      "Please include all time elements in the prediction data frame if using bias_correct = TRUE with ",
-      fn_name,
-      "()."
-    ))
-  }
-}
-
-#' @rdname get_index
 #' @param format Long or wide.
 #' @export
 get_cog <- function(obj, bias_correct = FALSE, level = 0.95, format = c("long", "wide"), area = 1, silent = TRUE, ...)  {
-  check_bias_time(obj, bias_correct, "get_cog")
 
   xy_cols <- obj$fit_obj$spde$xy_cols
   if (all(xy_cols %in% names(obj$data))) {
@@ -276,7 +258,6 @@ get_cog <- function(obj, bias_correct = FALSE, level = 0.95, format = c("long", 
 #' @export
 get_weighted_average <- function(obj, vector, bias_correct = FALSE, level = 0.95,
   area = 1, silent = TRUE, ...)  {
-  check_bias_time(obj, bias_correct, "get_weighted_average")
 
   d <- get_generic(obj, value_name = "weighted_avg",
     bias_correct = bias_correct, level = level, trans = I, area = area,
@@ -295,7 +276,6 @@ get_eao <- function(obj,
   silent = TRUE,
   ...
 )  {
-  check_bias_time(obj, bias_correct, "get_eao")
 
   d <- get_generic(obj, value_name = c("log_eao"),
     bias_correct = bias_correct, level = level, trans = exp, area = area, ...)
@@ -324,7 +304,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     nr2 <- nrow(obj$pred_tmb_data$proj_X_ij[[1]])
     if (nr1 != nr2) {
       cli_abort(c("Predicted data appears to be modified after prediction",
-        "i" ="Please filter `newdata` before predicting."))
+        "i" = "Please filter `newdata` before predicting."))
     }
 
     if (!"report" %in% names(obj$obj)) {
@@ -354,6 +334,9 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       area <- rep(area, nrow(obj$pred_tmb_data$proj_X_ij[[1]]))
 
     tmb_data <- obj$pred_tmb_data
+    if (is.null(tmb_data$proj_time_include)) {
+      cli_abort("Missing `proj_time_include` in prediction data. Please re-run `predict(..., return_tmb_object = TRUE)` with the current sdmTMB version.")
+    }
     tmb_data$area_i <- area
     if (value_name[1] == "link_total")
       tmb_data$calc_index_totals <- 1L
@@ -394,6 +377,9 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     sr <- obj$sd_report # already done in sdmTMB(do_index = TRUE)
     pars <- get_pars(obj)
     tmb_data <- obj$tmb_data
+    if (is.null(tmb_data$proj_time_include)) {
+      cli_abort("Missing `proj_time_include` in fitted data. Please refit or re-run with the current sdmTMB version.")
+    }
     obj <- list(fit_obj = obj) # to match regular format
     eps_name <- "eps_index"
   }
@@ -451,15 +437,27 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     d$se_natural <- as.numeric(.total[,1])
   }
 
-  if ("pred_tmb_data" %in% names(obj)) { # standard case
-    ii <- sort(unique(obj$pred_tmb_data$proj_year))
-  } else { # fit with do_index = TRUE
-    ii <- sort(unique(obj$fit_obj$tmb_data$proj_year))
+  time_include <- NULL
+  if (!is.null(tmb_data) && "proj_time_include" %in% names(tmb_data)) {
+    time_include <- as.integer(tmb_data$proj_time_include)
   }
-  d <- d[d$est != 0, ,drop=FALSE] # these were not predicted on
-  d <- d[!is.na(d$est), ,drop=FALSE] # these were not predicted on
   lu <- obj$fit_obj$time_lu
-  tt <- lu$time_from_data[match(ii, lu$year_i)]
+  if (!is.null(time_include) && length(time_include) == nrow(d)) {
+    tt <- lu$time_from_data[time_include != 0]
+    d <- d[time_include != 0, ,drop=FALSE]
+    keep <- !is.na(d$est)
+    d <- d[keep, ,drop=FALSE]
+    tt <- tt[keep]
+  } else {
+    if ("pred_tmb_data" %in% names(obj)) { # standard case
+      ii <- sort(unique(obj$pred_tmb_data$proj_year))
+    } else { # fit with do_index = TRUE
+      ii <- sort(unique(obj$fit_obj$tmb_data$proj_year))
+    }
+    d <- d[d$est != 0, ,drop=FALSE] # these were not predicted on
+    d <- d[!is.na(d$est), ,drop=FALSE] # these were not predicted on
+    tt <- lu$time_from_data[match(ii, lu$year_i)]
+  }
   if (nrow(d) == 0L) {
     msg <- c(
       "There were no results returned by TMB.",

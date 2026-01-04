@@ -13,6 +13,9 @@ test_that("get_index works", {
   predictions <- predict(m, newdata = nd, return_tmb_object = TRUE)
   ind <- get_index(predictions, bias_correct = FALSE)
   ind
+  expect_equal(ind$est, c(231093.53593233, 496535.536294892, 448246.178485261,
+    123741.27252067, 186757.491613366, 354408.827465818, 319877.944093621,
+    363284.968094093, 191744.545097374), tolerance = 1e-5)
   expect_s3_class(ind, "data.frame")
 
   indsp <- get_index_split(m, nd, nsplit = 2, bias_correct = FALSE)
@@ -26,6 +29,9 @@ test_that("get_index works", {
 
   ind <- get_index(predictions, bias_correct = TRUE)
   expect_s3_class(ind, "data.frame")
+  expect_equal(ind$est, c(247806.62874544, 532445.863555338, 480664.134071607,
+    132690.459974602, 200264.123368708, 380040.300035246, 343012.082168642,
+    389558.378836063, 205611.849371771), tolerance = 1e-5)
 
   cog <- get_cog(predictions)
   cog
@@ -62,6 +68,44 @@ test_that("get_index works", {
   expect_equal(ind, indsp)
 })
 
+test_that("get_cog works with subsets of years", {
+  skip_on_cran()
+  skip_on_ci()
+  d <- pcod_2011[pcod_2011$year %in% c(2011, 2013, 2015), ,drop=FALSE]
+  mesh <- make_mesh(d, c("X", "Y"), mesh = pcod_mesh_2011$mesh)
+
+  m <- sdmTMB(
+    density ~ 0 + as.factor(year),
+    data = d,
+    time = "year",
+    spatiotemporal = "iid",
+    spatial = 'off',
+    mesh = mesh,
+    family = tweedie()
+  )
+  nd <- replicate_df(qcs_grid, "year", unique(d$year))
+  p_full <- predict(m, newdata = nd, return_tmb_object = TRUE)
+
+  nd_2011 <- replicate_df(qcs_grid, "year", 2011)
+  p_2011 <- predict(m, newdata = nd_2011, return_tmb_object = TRUE)
+
+  nd_2 <- replicate_df(qcs_grid, "year", c(2011, 2013))
+  p_2 <- predict(m, newdata = nd_2, return_tmb_object = TRUE)
+
+  nd_3 <- replicate_df(qcs_grid, "year", c(2015, 2011))
+  p_3 <- predict(m, newdata = nd_3, return_tmb_object = TRUE)
+
+  cog_full <- get_cog(p_full, bias_correct = TRUE)
+  expect_equal(cog_full$est, c(465.937297088344, 473.391667509379, 463.328781317731, 5745.8242683174,
+    5736.42839736821, 5744.96479356155), tolerance = 1e-5)
+  cog_2011 <- get_cog(p_2011, bias_correct = TRUE)
+  cog_2 <- get_cog(p_2, bias_correct = TRUE)
+  cog_3 <- get_cog(p_3, bias_correct = TRUE)
+  expect_equal(cog_2011$est, subset(cog_full, year == 2011)$est)
+  expect_equal(cog_2$est, subset(cog_full, year %in% c(2011, 2013))$est)
+  expect_equal(cog_3$est, subset(cog_full, year %in% c(2015, 2011))$est)
+})
+
 test_that("get_index works with subsets of years", {
   skip_on_cran()
 
@@ -87,7 +131,11 @@ test_that("get_index works with subsets of years", {
   p_3 <- predict(m, newdata = nd_3, return_tmb_object = TRUE)
 
   index_full <- get_index(p_full, bias_correct = TRUE)
-  expect_equal(index_full$est, c(322529.7268, 293854.3696, 390942.2649, 184368.2756), tolerance = 0.01)
+  expect_equal(index_full$est, c(322529.726849684, 293854.369632378, 390942.264920706, 184368.275544616), tolerance = 1e-4)
+
+  index_full_no_bias_correction <- get_index(p_full, bias_correct = FALSE)
+  expect_equal(index_full_no_bias_correction$est, c(322529.726849684, 293854.369632378, 390942.264920706, 184368.275544616), tolerance = 1e-4)
+
   index_2011 <- get_index(p_2011, bias_correct = TRUE)
   index_2 <- get_index(p_2, bias_correct = TRUE)
   index_3 <- get_index(p_3, bias_correct = TRUE)
