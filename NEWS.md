@@ -23,7 +23,7 @@
 
 * Fix typo in `predict()` for delta models that incorrectly calculated combined
   predictions as `p1 * p1` instead of `p1 * p2` in the specific case of
-  `re_form = NA` and `link = "link"`. #496
+  `re_form = NA` and `type = "link"`. #496
 
 * Dramatically improve `print()` performance for models with large embedded
   objects in calls (e.g., cross-validation scenarios with replicated data).
