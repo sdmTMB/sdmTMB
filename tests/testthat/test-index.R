@@ -95,12 +95,12 @@ test_that("get_cog works with subsets of years", {
   nd_3 <- replicate_df(qcs_grid, "year", c(2015, 2011))
   p_3 <- predict(m, newdata = nd_3, return_tmb_object = TRUE)
 
-  cog_full <- get_cog(p_full, bias_correct = TRUE)
-  expect_equal(cog_full$est, c(465.937297088344, 473.391667509379, 463.328781317731, 5745.8242683174,
-    5736.42839736821, 5744.96479356155), tolerance = 1e-5)
-  cog_2011 <- get_cog(p_2011, bias_correct = TRUE)
-  cog_2 <- get_cog(p_2, bias_correct = TRUE)
-  cog_3 <- get_cog(p_3, bias_correct = TRUE)
+  # use get_weighted_average to halve time:
+  cog_full <- get_weighted_average(p_full, bias_correct = TRUE, vector = p_full$data$X)
+  expect_equal(cog_full$est, c(465.937297088344, 473.391667509379, 463.328781317731), tolerance = 1e-5)
+  cog_2011 <- get_weighted_average(p_2011, bias_correct = TRUE, vector = p_2011$data$X)
+  cog_2 <- get_weighted_average(p_2, bias_correct = TRUE, vector = p_2$data$X)
+  cog_3 <- get_weighted_average(p_3, bias_correct = TRUE, vector = p_3$data$X)
   expect_equal(cog_2011$est, subset(cog_full, year == 2011)$est)
   expect_equal(cog_2$est, subset(cog_full, year %in% c(2011, 2013))$est)
   expect_equal(cog_3$est, subset(cog_full, year %in% c(2015, 2011))$est)
@@ -159,6 +159,7 @@ test_that("get_index works with subsets of years", {
   eao <- get_eao(p_full, bias_correct = FALSE)
   eao_bias <- get_eao(p_full, bias_correct = TRUE)
   expect_equal(eao$est, eao_bias$est) # no random effects so equal
+  expect_equal(eao$est, c(7314.00000000023, 7313.99999999846, 7314.00000000215, 7313.99999999964), tolerance = 1e-5)
   cog2011 <- get_cog(p_2011)
   eao2011 <- get_eao(p_2011)
   expect_equal(eao2011$est, eao$est[eao$year == 2011])

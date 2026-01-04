@@ -64,11 +64,6 @@ test_that("get_cog() with bias correction works", {
     time = "year", mesh = pcod_spde, family = tweedie(link = "log")
   )
 
-  # unresolved issues if not all time elements!? comes back NA at least on this test!?
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year)[1:2])
-  predictions <- predict(m, newdata = nd, return_tmb_object = TRUE)
-  expect_error(get_cog(predictions, bias_correct = TRUE), regexp = "time")
-
   nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
   predictions <- predict(m, newdata = nd, return_tmb_object = TRUE)
   system.time({
