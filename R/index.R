@@ -214,6 +214,7 @@ get_index_split <- function(
   do.call(rbind, index_list)
 }
 
+#' @rdname get_index
 #' @param format Long or wide.
 #' @export
 get_cog <- function(obj, bias_correct = FALSE, level = 0.95, format = c("long", "wide"), area = 1, silent = TRUE, ...)  {
