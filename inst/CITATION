@@ -1,17 +1,20 @@
 bibentry(
-  bibtype = "Article",
-  title = paste0("sdmTMB: an R package for fast, flexible, and user-friendly ",
-                 "generalized linear mixed effects models with spatial and ",
-                 "spatiotemporal random fields"),
-  author = c(
+  bibtype      = "Article",
+  title        = paste0("{sdmTMB}: An {R} Package for Fast, Flexible, and ", 
+  "User-Friendly Generalized Linear Mixed Effects Models with Spatial and ",
+  "Spatiotemporal Random Fields"),
+  author       = c(
     person(c("Sean", "C."), "Anderson"),
     person(c("Eric", "J."), "Ward"),
     person(c("Philina", "A."), "English"),
     person(c("Lewis", "A.", "K."), "Barnett"),
     person(c("James", "T."), "Thorson")
   ),
-  year = "2024",
-  journal = "bioRxiv",
-  volume = "2022.03.24.485545",
-  doi = "10.1101/2022.03.24.485545"
+  journal      = "Journal of Statistical Software",
+  year         = "2025",
+  volume       = "115",
+  number       = "2",
+  pages        = "1--46",
+  doi          = "10.18637/jss.v115.i02",
+  header       = "To cite sdmTMB in publications use:"
 )
