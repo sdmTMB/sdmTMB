@@ -1,10 +1,26 @@
-This version fixes several bugs and adds minor functionality. It also
-removes an import from extraDistr to fix a CRAN warning about extraDistr
-being orphaned.
+This version is submitted because the accompanying paper is about to be released
+by the Journal of Statistical Software. They have asked that we update the DOI
+and citation details in CITATION. This version also fixes minor bugs.
 
 ## R CMD check results
 
-0 errors | 0 warnings | 0 notes
+0 errors | 0 warnings | 1 note
+
+Note:
+
+```
+Found the following (possibly) invalid DOIs:
+     DOI: 10.18637/jss.v115.i02
+       From: DESCRIPTION
+             inst/CITATION
+             man/sdmTMB.Rd
+             man/sdmTMB.Rd
+       Status: 404
+       Message: Not Found
+```
+
+This is expected. The DOI will not be active until the journal submits the DOI,
+which will happen after this package update on CRAN.
 
 ## Test environments
 
