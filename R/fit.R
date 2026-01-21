@@ -953,6 +953,20 @@ sdmTMB <- function(
   sm <- sm[[1]]
 
   y_i <- model.response(mf[[1]], "numeric")
+
+  # Filter weights and offset to match NA-filtered response
+  # model.frame() removes NAs by default; external vectors need same filtering
+  na_action <- attr(mf[[1]], "na.action")
+  if (!is.null(na_action)) {
+    # na.omit creates "omit" class with row indices that were removed
+    if (!is.null(weights)) {
+      weights <- weights[-na_action]
+    }
+    if (!is.null(offset)) {
+      offset <- offset[-na_action]
+    }
+  }
+
   if (delta) {
     y_i2 <- model.response(mf[[2]], "numeric")
     if (!identical(y_i, y_i2)) {
@@ -1006,6 +1020,11 @@ sdmTMB <- function(
         if (all(y_i %in% c(0, 1))) { # binary
           size <- rep(1, length(y_i))
         } else { # proportions
+          if (is.null(weights)) {
+            cli_abort(c(
+              "`weights` argument was not specified but proportions were supplied to the binomial or betabinomial family.",
+              "Please supply the `weights` argument with the number of trials per event."))
+          }
           y_i <- weights * y_i
           size <- weights
           weights <- rep(1, length(y_i))

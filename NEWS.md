@@ -1,7 +1,10 @@
 # sdmTMB development version
 
+* Fix crash with betabinomial or binomial when a response value was NA but the 
+  corresponding `weights` argument (turned into 'size') was not NA.
+
 * Add `simulate_new()` as a synonym for `sdmTMB_simulate()`. `simulate_new()`
-  is recommended going forward.
+  is recommended going forward because it is more expressive.
 
 # sdmTMB 0.8.1
 
