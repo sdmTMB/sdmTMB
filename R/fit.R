@@ -195,7 +195,7 @@ NULL
 #' consistent spatial patterns, while
 #' spatiotemporal fields represent spatial patterns that vary over time. See the [model
 #' description](https://sdmTMB.github.io/sdmTMB/articles/model-description.html)
-#' vignette for mathematical details and the paper: \doi{10.1101/2022.03.24.485545}
+#' vignette for mathematical details and the paper: \doi{10.18637/jss.v115.i02}
 #'
 #' **Binomial families**
 #'
@@ -307,10 +307,10 @@ NULL
 #'
 #' **Main reference introducing the package to cite when using sdmTMB:**
 #'
-#' Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett, J.T. Thorson. 2024.
+#' Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett., J.T. Thorson. 2025.
 #' sdmTMB: an R package for fast, flexible, and user-friendly generalized linear
 #' mixed effects models with spatial and spatiotemporal random fields.
-#' bioRxiv 2022.03.24.485545; \doi{10.1101/2022.03.24.485545}.
+#' Journal of Statistical Software. 115(2):1--46. \doi{10.18637/jss.v115.i02}.
 #'
 #' *Reference for local trends:*
 #'
