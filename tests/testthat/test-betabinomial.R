@@ -335,3 +335,34 @@ test_that("Beta-binomial handles NA in response", {
 
   expect_true(m4$model$convergence == 0)
 })
+
+test_that("Betabinomial can be used with index standardization", {
+  skip_on_cran()
+  skip_on_ci()
+  set.seed(1)
+  n_trials <- 10
+  n_obs <- 100
+  dat <- data.frame(id = seq_len(n_obs))
+  prob <- 0.4
+  phi <- 2
+  beta_vals <- stats::rbeta(n_obs, prob * phi, (1 - prob) * phi)
+  dat$successes <- stats::rbinom(n_obs, size = n_trials, prob = beta_vals)
+  dat$trials <- n_trials
+  dat$prop <- dat$successes / dat$trials
+  dat$time <- 1L
+  m <- sdmTMB(
+    prop ~ 1,
+    data = dat,
+    family = betabinomial(),
+    weights = dat$trials,
+    spatial = "off",
+    spatiotemporal = "off",
+    time = "time",
+    mesh = mesh
+  )
+  nd <- data.frame(time = 1L)
+  p <- predict(m, newdata = nd, return_tmb_object = TRUE)
+  i <- get_index(p, area = 10) # 10 'trials'
+  expect_equal(i$est, stats::plogis(p$data$est) * 10)
+  expect_equal(i$est, 3.452362, tolerance = 1e-5)
+})
