@@ -357,8 +357,7 @@ test_that("Betabinomial can be used with index standardization", {
     weights = dat$trials,
     spatial = "off",
     spatiotemporal = "off",
-    time = "time",
-    mesh = mesh
+    time = "time"
   )
   nd <- data.frame(time = 1L)
   p <- predict(m, newdata = nd, return_tmb_object = TRUE)
