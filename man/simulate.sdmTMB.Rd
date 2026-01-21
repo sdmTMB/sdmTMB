@@ -84,7 +84,7 @@ among other uses.
 set.seed(1)
 predictor_dat <- data.frame(X = runif(300), Y = runif(300), a1 = rnorm(300))
 mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.1)
-dat <- sdmTMB_simulate(
+dat <- simulate_new(
   formula = ~ 1 + a1,
   data = predictor_dat,
   mesh = mesh,
@@ -112,5 +112,5 @@ s2 <- simulate(fit, nsim = 1, params = "mle-mvn")
 s3 <- simulate(fit, nsim = 1, re_form = ~ 0)
 }
 \seealso{
-\code{\link[=sdmTMB_simulate]{sdmTMB_simulate()}}
+\code{\link[=simulate_new]{simulate_new()}}
 }

@@ -121,6 +121,7 @@ reference:
     Simulating new data with an sdmTMB model.
   contents:
   - simulate.sdmTMB
+  - simulate_new
   - sdmTMB_simulate
   - project
 

@@ -1,3 +1,8 @@
+# sdmTMB development version
+
+* Add `simulate_new()` as a synonym for `sdmTMB_simulate()`. `simulate_new()`
+  is recommended going forward.
+
 # sdmTMB 0.8.1
 
 ## Minor improvements and fixes
