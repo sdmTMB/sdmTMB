@@ -1,7 +1,7 @@
 # sdmTMB 1.0.0
 
 * Switch the recommended citation from the preprint to the Journal of
-  Statistical Software version.
+  Statistical Software version. See `citation("sdmTMB")`.
   
 ## Minor improvements and fixes
 
