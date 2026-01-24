@@ -19,8 +19,9 @@ Found the following (possibly) invalid DOIs:
        Message: Not Found
 ```
 
-This is expected. The DOI will not be active until the journal submits the DOI,
-which will happen after this package update on CRAN.
+This is expected. The DOI in the CITATION is for a new Journal of 
+Statistical Software publication that will be registered after
+publication on CRAN.
 
 ## Test environments
 
