@@ -1,7 +1,12 @@
-# sdmTMB development version
+# sdmTMB 1.0.0
 
-* Fix crash with betabinomial or binomial when a response value was NA but the 
-  corresponding `weights` argument (turned into 'size') was not NA.
+* Switch the recommended citation from the preprint to the Journal of
+  Statistical Software version.
+  
+## Minor improvements and fixes
+
+* Fix crash with betabinomial and binomial when a response value was `NA` but the 
+  corresponding `weights` argument (turned into 'size') was not `NA`.
 
 * Add `simulate_new()` as a synonym for `sdmTMB_simulate()`. `simulate_new()`
   is recommended going forward because it is more expressive.

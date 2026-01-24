@@ -1,6 +1,11 @@
-This version is submitted because the accompanying paper is about to be released
-by the Journal of Statistical Software. They have asked that we update the DOI
-and citation details in CITATION. This version also fixes minor bugs.
+This version is submitted because the accompanying paper is about to be
+released by the Journal of Statistical Software. They have asked that we
+update the DOI and citation details in CITATION.
+
+I realize this update is submitted sooner than "no more than every 1-2 months"
+as per CRAN policy, but this is a one-time unexpected request from the journal.
+
+This version also fixes minor bugs.
 
 ## R CMD check results
 
