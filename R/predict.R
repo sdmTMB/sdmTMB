@@ -291,17 +291,11 @@ predict.sdmTMB <- function(object, newdata = NULL,
   }
   model <- model[[1]]
   type <- match.arg(type)
-  multi_family <- isTRUE(object$tmb_data$multi_family == 1L)
-  has_delta_multi <- multi_family && any(object$tmb_data$delta_family_e == 1L)
-  is_delta_like <- if (multi_family) has_delta_multi else isTRUE(object$family$delta)
-  dist_col <- NULL
-  if (multi_family) {
-    dist_col <- object$distribution_column
-    if (is.null(dist_col) && "distribution_column" %in% names(object$call)) {
-      dist_col <- object$call$distribution_column
-    }
-    if (!is.null(dist_col)) dist_col <- as.character(dist_col)
-  }
+  multi_spec <- .multi_family_spec_from_object(object)
+  multi_family <- .is_multi_family_model(object)
+  has_delta_multi <- .has_multi_family_delta(object)
+  is_delta_like <- .is_delta_like_model(object)
+  regular_delta <- .is_regular_delta_model(object)
   # FIXME parallel setup here?
 
   if (is.null(re_form) && isTRUE(se_fit)) {
@@ -315,7 +309,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
   # places where we force newdata:
   nd_arg_was_null <- FALSE
   if (is.null(newdata)) {
-    if (is_delta(object) || nsim > 0 || type == "response" || !is.null(mcmc_samples) || se_fit || !is.null(re_form) || !is.null(re_form_iid) || !is.null(offset) || isTRUE(object$family$delta) || multi_family) {
+    if (nsim > 0 || type == "response" || !is.null(mcmc_samples) || se_fit || !is.null(re_form) || !is.null(re_form_iid) || !is.null(offset) || is_delta_like || multi_family) {
       newdata <- object$data
       nd_arg_was_null <- TRUE # will be used to carry over the offset
     }
@@ -423,10 +417,10 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
     e_g <- NULL
     if (multi_family) {
-      if (is.null(dist_col)) {
+      if (is.null(multi_spec$distribution_column)) {
         cli_abort("`distribution_column` is missing from the fitted model; please refit or use the original column name in `newdata`.")
       }
-      e_g <- .multi_family_predict_e_g(object, newdata, dist_col)
+      e_g <- .multi_family_predict_e_g(multi_spec, newdata)
     }
 
     if (length(object$formula) == 1L) {
@@ -667,7 +661,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
       }
 
       predtype <- as.integer(model[[1]])
-      if (!multi_family && isTRUE(object$family$delta) && sims_var == "est") {
+      if (regular_delta && sims_var == "est") {
         if (predtype %in% c(1L, NA)) {
           out1 <- lapply(out, function(x) x[, 1L, drop = TRUE])
           out1 <- do.call("cbind", out1)
@@ -736,7 +730,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
         if (type == "response"){
           attr(out, "link") <- "response"
         } else {
-          if(isTRUE(object$family$delta)){
+          if (regular_delta) {
             if (is.na(predtype)) {
               attr(out, "link") <- object$family[[2]]$link
             } else if (predtype == 1L) {
@@ -765,10 +759,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
         pred_vals <- .multi_family_predict_est(
           eta1 = r$proj_eta[,1],
           eta2 = if (has_delta_multi) r$proj_eta[,2] else NULL,
-          family_list = object$family,
           fam_index = fam_index,
-          delta_family = object$tmb_data$delta_family_e,
-          poisson_link_delta = object$tmb_data$poisson_link_delta_e,
+          spec = multi_spec,
           type = type
         )
         nd$est <- pred_vals$est
@@ -783,7 +775,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
           nd$est1 <- pred_vals$est1
           nd$est2 <- pred_vals$est2
         }
-      } else if (isTRUE(object$family$delta)) {
+      } else if (regular_delta) {
         nd$est1 <- r$proj_eta[,1]
         nd$est2 <- r$proj_eta[,2]
         nd$est_non_rf1 <- r$proj_fe[,1]
@@ -859,7 +851,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
       # For delta models with model = NA, use combined predictions
       # Check for regular delta models
-      use_combined_delta <- isTRUE(object$family$delta) && is.na(model) && !pop_pred &&
+      use_combined_delta <- regular_delta && is.na(model) && !pop_pred &&
         "proj_eta_delta" %in% names(sr_est_rep)
 
       # Check for multi-family combined predictions
@@ -895,7 +887,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
           "i" = "Use `type = 'link'`, or set `se_fit = FALSE` and transform per family."
         ))
       }
-      est_name <- if (isTRUE(object$family$delta)) "'est1' and 'est2'" else "'est'"
+      est_name <- if (regular_delta) "'est1' and 'est2'" else "'est'"
       msg <- paste0("predict(..., type = 'response', se_fit = TRUE) detected; ",
         "returning the prediction ", est_name, " in link space because the standard errors ",
         "are calculated in link space.")
@@ -919,10 +911,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
           pred_vals <- .multi_family_predict_est(
             eta1 = r$proj_fe[,1],
             eta2 = if (has_delta_multi) r$proj_fe[,2] else NULL,
-            family_list = object$family,
             fam_index = fam_index,
-            delta_family = object$tmb_data$delta_family_e,
-            poisson_link_delta = object$tmb_data$poisson_link_delta_e,
+            spec = multi_spec,
             type = type
           )
           nd$est <- pred_vals$est
@@ -942,7 +932,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
             nd$est2 <- ifelse(is_delta_row, r$proj_fe[,2], NA)
           }
         }
-      } else if (isTRUE(object$family$delta)) {
+      } else if (regular_delta) {
         if (type == "response") {
           nd$est1 <- object$family[[1]]$linkinv(r$proj_fe[,1])
           nd$est2 <- object$family[[2]]$linkinv(r$proj_fe[,2])
@@ -1032,7 +1022,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     nd$omega_s1 <- NULL
     nd$omega_s <- NULL
   }
-  if (isTRUE(object$family$delta)) {
+  if (regular_delta) {
     if (!object$tmb_data$include_spatial[2]) {
       nd$omega_s2 <- NULL
     }
@@ -1041,7 +1031,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     nd$epsilon_st1 <- NULL
     nd$epsilon_st <- NULL
   }
-  if (isTRUE(object$family$delta)) {
+  if (regular_delta) {
     if (as.logical(object$tmb_data$spatial_only)[2]) {
       nd$epsilon_st2 <- NULL
     }

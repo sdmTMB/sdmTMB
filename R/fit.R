@@ -621,36 +621,22 @@ sdmTMB <- function(
     experimental = NULL) {
   data <- droplevels(data) # if data was subset, strips absent factors
 
-  multi <- .parse_multi_family(
+  multi_spec <- .parse_multi_family(
     family = family,
     data = data,
     distribution_column = distribution_column
   )
-  multi_family <- multi$multi_family
-  family_list <- multi$family_list
-  multi_info <- multi$multi_info
-  family_names <- multi$family_names
-  link_names <- multi$link_names
-  family_names2 <- multi$family_names2
-  link_names2 <- multi$link_names2
-  delta_family <- multi$delta_family
-  poisson_link_delta <- multi$poisson_link_delta
-  family_enum1 <- multi$family_enum1
-  family_enum2 <- multi$family_enum2
-  link_enum1 <- multi$link_enum1
-  link_enum2 <- multi$link_enum2
-  has_delta <- isTRUE(multi$has_delta)
-  e_i <- multi$e_i
-  family <- multi$family
-  family_input <- multi$family_input
+  multi_family <- multi_spec$multi_family
+  family <- multi_spec$family
+  family_input <- multi_spec$family_input
   multi_offsets <- if (multi_family) {
-    .multi_family_param_offsets(family_list)
+    .multi_family_param_offsets(multi_spec$family_list)
   } else {
     NULL
   }
 
   delta <- isTRUE(family$delta)
-  if (multi_family) delta <- has_delta
+  if (multi_family) delta <- isTRUE(multi_spec$has_delta)
   n_m <- if (delta) 2L else 1L
 
   if (!missing(spatial)) {
@@ -1109,10 +1095,7 @@ sdmTMB <- function(
       y_i = y_i,
       size = size,
       weights = weights,
-      e_i = e_i,
-      family_names = family_names,
-      link_names = link_names,
-      delta_family = delta_family
+      spec = multi_spec
     )
     y_i <- resp$y_i
     size <- resp$size
@@ -1226,7 +1209,7 @@ sdmTMB <- function(
   if (!"A_st" %in% names(spde)) cli_abort("`mesh` was created with an old version of `make_mesh()`.")
   if (delta) {
     if (multi_family) {
-      y_i <- .multi_family_build_response(y_i, e_i, delta_family)
+      y_i <- .multi_family_build_response(y_i, multi_spec)
     } else {
       y_i <- cbind(ifelse(y_i > 0, 1, 0), ifelse(y_i > 0, y_i, NA_real_))
     }
@@ -1315,14 +1298,14 @@ sdmTMB <- function(
     size = c(size),
     link = if (multi_family && delta) rep(.valid_link["logit"], n_m) else .valid_link[family$link],
     multi_family = as.integer(multi_family),
-    e_i = if (multi_family) as.integer(e_i) else integer(0),
+    e_i = if (multi_family) as.integer(multi_spec$e_i) else integer(0),
     e_g = integer(0),
-    family_e1 = if (multi_family) as.integer(family_enum1) else integer(0),
-    family_e2 = if (multi_family) as.integer(family_enum2) else integer(0),
-    link_e1 = if (multi_family) as.integer(link_enum1) else integer(0),
-    link_e2 = if (multi_family) as.integer(link_enum2) else integer(0),
-    delta_family_e = if (multi_family) as.integer(delta_family) else integer(0),
-    poisson_link_delta_e = if (multi_family) as.integer(poisson_link_delta) else integer(0),
+    family_e1 = if (multi_family) as.integer(multi_spec$family_enum1) else integer(0),
+    family_e2 = if (multi_family) as.integer(multi_spec$family_enum2) else integer(0),
+    link_e1 = if (multi_family) as.integer(multi_spec$link_enum1) else integer(0),
+    link_e2 = if (multi_family) as.integer(multi_spec$link_enum2) else integer(0),
+    delta_family_e = if (multi_family) as.integer(multi_spec$delta_family) else integer(0),
+    poisson_link_delta_e = if (multi_family) as.integer(multi_spec$poisson_link_delta) else integer(0),
     ln_phi_start = if (multi_family) multi_offsets$ln_phi$start else integer(0),
     ln_phi_len = if (multi_family) multi_offsets$ln_phi$len else integer(0),
     thetaf_start = if (multi_family) multi_offsets$thetaf$start else integer(0),
@@ -1695,6 +1678,7 @@ sdmTMB <- function(
       time = time,
       time_lu = time_df,
       family = family_input,
+      multi_family_spec = multi_spec,
       distribution_column = distribution_column,
       smoothers = sm,
       response = y_i,

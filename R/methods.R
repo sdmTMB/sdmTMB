@@ -28,11 +28,11 @@ fitted.sdmTMB <- function(object, ...) {
 
   if (!"offset" %in% names(object))
     cli_abort("It looks like this was fit with an older version of sdmTMB. Try sdmTMB:::update_version(fit).")
-  if (isTRUE(object$tmb_data$multi_family == 1L)) {
+  if (.is_multi_family_model(object)) {
     pred <- predict(object, newdata = object$data, type = "response", offset = object$offset)
     return(pred$est)
   }
-  if (isTRUE(object$family$delta)) {
+  if (.is_regular_delta_model(object)) {
     inv1 <- object$family[[1]]$linkinv
     p <- predict(object, type = "link", offset = object$offset)
     p1 <- inv1(p$est1)
@@ -55,7 +55,8 @@ fitted.sdmTMB <- function(object, ...) {
 #' @importFrom stats coef
 #' @export
 coef.sdmTMB <- function(object, complete = FALSE, model = 1, ...) {
-  if (is_delta(object)) {
+  regular_delta <- .is_regular_delta_model(object)
+  if (regular_delta) {
     assert_that(length(model) == 1L)
     model <- as.integer(model)
     assert_that(model %in% c(1L, 2L))
@@ -79,7 +80,8 @@ coef.sdmTMB <- function(object, complete = FALSE, model = 1, ...) {
 #' @export
 #' @noRd
 vcov.sdmTMB <- function(object, complete = FALSE, model = 1, ...) {
-  if (is_delta(object)) {
+  regular_delta <- .is_regular_delta_model(object)
+  if (regular_delta) {
     assert_that(length(model) == 1L)
     model <- as.integer(model)
     assert_that(model %in% c(1L, 2L))
@@ -91,7 +93,7 @@ vcov.sdmTMB <- function(object, complete = FALSE, model = 1, ...) {
   nm <- colnames(v)
 
   # For delta models, identify which b_j to use
-  if (is_delta(object)) {
+  if (regular_delta) {
     if (model == 1L) {
       i <- grepl("^b_j$", nm)
     } else {
@@ -237,9 +239,10 @@ ranef.sdmTMB <- function(object, ...) {
 #' @importFrom stats residuals
 #' @export
 deviance.sdmTMB <- function(object, ...) {
+  regular_delta <- .is_regular_delta_model(object)
   implemented <- c("poisson", "Gamma", "binomial",
     "gaussian", "lognormal", "tweedie", "nbinom1", "nbinom2")
-  if (!is_delta(object)) {
+  if (!regular_delta) {
     if (!object$family$family %in% implemented) {
       cli_abort("Deviance not implemented for the fitted family")
     }
@@ -248,7 +251,7 @@ deviance.sdmTMB <- function(object, ...) {
       cli_abort("Deviance not implemented for the fitted family")
     }
   }
-  if (is_delta(object)) {
+  if (regular_delta) {
     r1 <- residuals(object, type = "deviance", model = 1)
     r2 <- residuals(object, type = "deviance", model = 2)
     r <- sum(r1^2 + r2^2)
@@ -484,9 +487,10 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
 #' @method sigma sdmTMB
 #' @export
 sigma.sdmTMB <- function(object, ...) {
+  regular_delta <- .is_regular_delta_model(object)
 
   # Get family
-  fam <- if (is_delta(object)) {
+  fam <- if (regular_delta) {
     # For delta models, use the positive model
     object$family[[2]]
   } else {

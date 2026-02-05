@@ -504,6 +504,9 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
 
   # need to re-attach environment if in fresh session
   reinitialize(object)
+  multi_family <- .is_multi_family_model(object)
+  regular_delta <- .is_regular_delta_model(object)
+  has_delta_multi <- .has_multi_family_delta(object)
 
   if (is.null(object$tmb_random) && type == "mle-mvn") {
     type <- "mle-eb" # no random effects to sample from
@@ -575,7 +578,7 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
   if (!silent) cli::cli_progress_done()
 
   if (!return_tmb_report) {
-    if (is_delta(object)) {
+    if (regular_delta) {
       if (is.na(model[[1]])) {
         ret <- lapply(ret, function(.x) .x[,1] * .x[,2])
       } else if (model[[1]] == 1) {
@@ -586,8 +589,7 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
         cli_abort("`model` argument isn't valid; should be NA, 1, or 2.")
       }
     }
-    if (isTRUE(object$tmb_data$multi_family == 1L) &&
-        any(object$tmb_data$delta_family_e == 1L)) {
+    if (multi_family && has_delta_multi) {
       fam_index <- tmb_dat$e_i + 1L
       delta_rows <- tmb_dat$delta_family_e[fam_index] == 1L
       ret <- lapply(ret, function(.x) {
@@ -603,7 +605,7 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
     if (!is.null(newdata)) {
       rownames(ret) <- newdata[[object$time]] # for use in index calcs
       attr(ret, "time") <- object$time
-      if (is_delta(object)) {
+      if (regular_delta) {
         attr(ret, "link") <- object$family[[2]]$link
       } else {
         attr(ret, "link") <- object$family$link

@@ -65,9 +65,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
 
   reinitialize(x)
 
-  multi_family <- isTRUE(x$tmb_data$multi_family == 1L)
-  has_delta_multi <- multi_family && any(x$tmb_data$delta_family_e == 1L)
-  delta <- if (multi_family) has_delta_multi else isTRUE(x$family$delta)
+  multi_family <- .is_multi_family_model(x)
+  has_delta_multi <- .has_multi_family_delta(x)
+  delta <- .is_delta_like_model(x)
   assert_that(is.numeric(model))
   assert_that(length(model) == 1L)
   if (delta) assert_that(model %in% c(1, 2), msg = "`model` must be 1 or 2.")

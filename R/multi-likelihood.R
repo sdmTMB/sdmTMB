@@ -82,14 +82,11 @@
 .parse_multi_family <- function(family, data, distribution_column) {
   multi_family <- is.list(family) && !inherits(family, "family")
   family_list <- NULL
-  multi_info <- NULL
   family_names <- NULL
   link_names <- NULL
   e_i <- NULL
   delta_family <- NULL
   poisson_link_delta <- NULL
-  family_names2 <- NULL
-  link_names2 <- NULL
   family_enum1 <- NULL
   family_enum2 <- NULL
   link_enum1 <- NULL
@@ -101,21 +98,16 @@
       cli_abort("`distribution_column` must be supplied when `family` is a named list.")
     }
     family_list <- family
-    multi_info <- .validate_multi_family_list(
+    family_info <- .validate_multi_family_list(
       family_list,
       data = data,
       distribution_column = distribution_column
     )
     family_names <- vapply(family_list, function(x) x$family[1], character(1))
     link_names <- vapply(family_list, function(x) x$link[1], character(1))
-    family_names2 <- vapply(
+    family_names_comp2 <- vapply(
       family_list,
       function(x) if (length(x$family) > 1L) x$family[2] else NA_character_,
-      character(1)
-    )
-    link_names2 <- vapply(
-      family_list,
-      function(x) if (length(x$link) > 1L) x$link[2] else NA_character_,
       character(1)
     )
     delta_family <- vapply(family_list, function(x) isTRUE(x$delta), logical(1))
@@ -143,7 +135,7 @@
       "lognormal", "tweedie", "student",
       "gengamma", "Beta", "betabinomial"
     )
-    family_names_all <- c(family_names, family_names2)
+    family_names_all <- c(family_names, family_names_comp2)
     family_names_all <- family_names_all[!is.na(family_names_all)]
     if (any(!family_names_all %in% allowed_families)) {
       bad <- family_names_all[!family_names_all %in% allowed_families]
@@ -152,17 +144,17 @@
         paste(unique(bad), collapse = ", ")
       ))
     }
-    e_i <- as.integer(multi_info$e_i) - 1L
-    family_enum1 <- as.integer(vapply(multi_info$family_enum, function(x) x[1], numeric(1)))
-    link_enum1 <- as.integer(vapply(multi_info$link_enum, function(x) x[1], numeric(1)))
+    e_i <- as.integer(family_info$e_i) - 1L
+    family_enum1 <- as.integer(vapply(family_info$family_enum, function(x) x[1], numeric(1)))
+    link_enum1 <- as.integer(vapply(family_info$link_enum, function(x) x[1], numeric(1)))
     family_enum2 <- vapply(
-      seq_along(multi_info$family_enum),
-      function(i) if (delta_family[i]) multi_info$family_enum[[i]][2] else -1,
+      seq_along(family_info$family_enum),
+      function(i) if (delta_family[i]) family_info$family_enum[[i]][2] else -1,
       numeric(1)
     )
     link_enum2 <- vapply(
-      seq_along(multi_info$link_enum),
-      function(i) if (delta_family[i]) multi_info$link_enum[[i]][2] else -1,
+      seq_along(family_info$link_enum),
+      function(i) if (delta_family[i]) family_info$link_enum[[i]][2] else -1,
       numeric(1)
     )
     family_enum2 <- as.integer(family_enum2)
@@ -177,11 +169,8 @@
   list(
     multi_family = multi_family,
     family_list = family_list,
-    multi_info = multi_info,
     family_names = family_names,
     link_names = link_names,
-    family_names2 = family_names2,
-    link_names2 = link_names2,
     delta_family = delta_family,
     poisson_link_delta = poisson_link_delta,
     family_enum1 = family_enum1,
@@ -193,6 +182,16 @@
     family = family,
     family_input = if (multi_family) family_list else family
   )
+}
+
+.assert_multi_family_spec <- function(spec, required_fields, where) {
+  missing_fields <- setdiff(required_fields, names(spec))
+  if (length(missing_fields) > 0L) {
+    cli_abort(paste0(
+      "Internal multi-family spec error in ", where,
+      ": missing field(s): ", paste(missing_fields, collapse = ", "), "."
+    ))
+  }
 }
 
 .multi_family_assert_complete_cases <- function(
@@ -281,9 +280,20 @@
   )
 }
 
-.multi_family_build_response <- function(y_i, e_i, delta_family) {
-  idx <- e_i + 1L
-  delta_rows <- delta_family[idx]
+.multi_family_build_response <- function(y_i, spec) {
+  .assert_multi_family_spec(
+    spec,
+    required_fields = c("e_i", "delta_family"),
+    where = ".multi_family_build_response()"
+  )
+  if (length(spec$e_i) != length(y_i)) {
+    cli_abort("Internal multi-family spec error: `e_i` length must match response length.")
+  }
+  if (any(spec$e_i < 0L | spec$e_i >= length(spec$delta_family))) {
+    cli_abort("Internal multi-family spec error: `e_i` contains out-of-range family indices.")
+  }
+  idx <- spec$e_i + 1L
+  delta_rows <- spec$delta_family[idx]
   y1 <- ifelse(delta_rows, ifelse(y_i > 0, 1, 0), y_i)
   y2 <- ifelse(delta_rows & y_i > 0, y_i, NA_real_)
   cbind(y1, y2)
@@ -293,11 +303,27 @@
   y_i,
   size,
   weights,
-  e_i,
-  family_names,
-  link_names,
-  delta_family
+  spec
 ) {
+  .assert_multi_family_spec(
+    spec,
+    required_fields = c("e_i", "family_names", "link_names", "delta_family"),
+    where = ".multi_family_process_response()"
+  )
+  if (length(spec$e_i) != length(y_i)) {
+    cli_abort("Internal multi-family spec error: `e_i` length must match response length.")
+  }
+  n_fam <- length(spec$family_names)
+  if (length(spec$link_names) != n_fam || length(spec$delta_family) != n_fam) {
+    cli_abort("Internal multi-family spec error: family metadata vectors must have equal length.")
+  }
+  if (any(spec$e_i < 0L | spec$e_i >= n_fam)) {
+    cli_abort("Internal multi-family spec error: `e_i` contains out-of-range family indices.")
+  }
+  e_i <- spec$e_i
+  family_names <- spec$family_names
+  link_names <- spec$link_names
+  delta_family <- spec$delta_family
   e_i_idx <- e_i + 1L
   non_delta_rows <- !delta_family[e_i_idx]
   binom_rows <- non_delta_rows & family_names[e_i_idx] == "binomial"
@@ -380,17 +406,93 @@
   list(y_i = y_i, size = size, weights = weights)
 }
 
-.multi_family_predict_e_g <- function(object, newdata, distribution_column) {
-  if (is.null(distribution_column)) {
+.multi_family_spec_from_object <- function(object) {
+  base_spec <- if ("multi_family_spec" %in% names(object) && is.list(object$multi_family_spec)) {
+    object$multi_family_spec
+  } else {
+    list(multi_family = .is_multi_family_model(object))
+  }
+  multi_family <- isTRUE(base_spec$multi_family)
+  dist_col <- base_spec$distribution_column
+  if (multi_family && is.null(dist_col)) {
+    dist_col <- object$distribution_column
+  }
+  if (multi_family && is.null(dist_col) && "distribution_column" %in% names(object$call)) {
+    dist_col <- object$call$distribution_column
+  }
+  if (!is.null(dist_col)) dist_col <- as.character(dist_col)
+
+  family_list <- base_spec$family_list
+  if (multi_family && is.null(family_list)) {
+    family_list <- object$family
+  }
+  if (multi_family && (!is.list(family_list) || inherits(family_list, "family"))) {
+    cli_abort("Multi-family models require `family` to be a named list on the fitted object.")
+  }
+  if (multi_family && length(family_list) == 0L) {
+    cli_abort("Multi-family models require at least one family in the fitted object.")
+  }
+
+  delta_family <- integer(0)
+  if (multi_family) {
+    if (!is.null(object$tmb_data$delta_family_e)) {
+      delta_family <- as.integer(object$tmb_data$delta_family_e)
+    } else if (!is.null(base_spec$delta_family)) {
+      delta_family <- as.integer(base_spec$delta_family)
+    } else {
+      delta_family <- as.integer(vapply(family_list, function(x) isTRUE(x$delta), logical(1)))
+    }
+  }
+
+  poisson_link_delta <- integer(0)
+  if (multi_family) {
+    if (!is.null(object$tmb_data$poisson_link_delta_e)) {
+      poisson_link_delta <- as.integer(object$tmb_data$poisson_link_delta_e)
+    } else if (!is.null(base_spec$poisson_link_delta)) {
+      poisson_link_delta <- as.integer(base_spec$poisson_link_delta)
+    } else {
+      poisson_link_delta <- as.integer(vapply(
+        family_list,
+        function(x) isTRUE(x$type == "poisson_link_delta"),
+        logical(1)
+      ))
+    }
+  }
+  if (multi_family &&
+      (length(delta_family) != length(family_list) ||
+      length(poisson_link_delta) != length(family_list))) {
+    cli_abort("Internal multi-family spec error: family and parameter metadata lengths do not match.")
+  }
+
+  list(
+    multi_family = multi_family,
+    has_delta = multi_family && length(delta_family) > 0L && any(delta_family == 1L),
+    family_list = family_list,
+    distribution_column = dist_col,
+    delta_family = delta_family,
+    poisson_link_delta = poisson_link_delta
+  )
+}
+
+.multi_family_predict_e_g <- function(spec, newdata) {
+  .assert_multi_family_spec(
+    spec,
+    required_fields = c("multi_family", "distribution_column", "family_list"),
+    where = ".multi_family_predict_e_g()"
+  )
+  if (!isTRUE(spec$multi_family)) {
+    cli_abort("`.multi_family_predict_e_g()` requires a multi-family model spec.")
+  }
+  if (is.null(spec$distribution_column)) {
     cli_abort("`distribution_column` must be supplied for multi-family predictions.")
   }
-  if (!is.list(object$family) || inherits(object$family, "family")) {
+  if (!is.list(spec$family_list) || inherits(spec$family_list, "family")) {
     cli_abort("Multi-family predictions require a named family list on the fitted object.")
   }
   info <- .validate_multi_family_list(
-    object$family,
+    spec$family_list,
     data = newdata,
-    distribution_column = distribution_column
+    distribution_column = spec$distribution_column
   )
   as.integer(info$e_i) - 1L
 }
@@ -398,13 +500,29 @@
 .multi_family_predict_est <- function(
   eta1,
   eta2,
-  family_list,
   fam_index,
-  delta_family,
-  poisson_link_delta,
+  spec,
   type = c("link", "response")
 ) {
+  .assert_multi_family_spec(
+    spec,
+    required_fields = c("family_list", "delta_family", "poisson_link_delta"),
+    where = ".multi_family_predict_est()"
+  )
   type <- match.arg(type)
+  family_list <- spec$family_list
+  delta_family <- spec$delta_family
+  poisson_link_delta <- spec$poisson_link_delta
+  if (!is.null(eta2) && length(eta2) != length(eta1)) {
+    cli_abort("Internal multi-family prediction error: `eta1` and `eta2` must have equal length.")
+  }
+  if (length(delta_family) != length(family_list) ||
+      length(poisson_link_delta) != length(family_list)) {
+    cli_abort("Internal multi-family prediction error: spec vectors do not match family count.")
+  }
+  if (any(fam_index < 1L | fam_index > length(family_list))) {
+    cli_abort("Internal multi-family prediction error: `fam_index` is out of range.")
+  }
   n <- length(eta1)
   est <- eta1
   est1 <- rep(NA_real_, n)

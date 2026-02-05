@@ -43,7 +43,7 @@
 plot_anisotropy <- function(object, return_data = FALSE) {
   stopifnot(inherits(object, "sdmTMB"))
   if (!check_for_H(object)) return(NULL)
-  delta <- isTRUE(object$family$delta)
+  delta <- .is_regular_delta_model(object)
 
   # Calculate anisotropy components for model 1
   comp1 <- calculate_anisotropy_components(object, m = 1)
@@ -324,7 +324,7 @@ plot_smooth <- function(object, select = 1, n = 100, level = 0.95,
 calculate_anisotropy_components <- function(x, m = 1L) {
   # Get report and extract H matrices
   report <- x$tmb_obj$report(x$tmb_obj$env$last.par.best)
-  delta <- isTRUE(x$family$delta)
+  delta <- .is_regular_delta_model(x)
 
   # Extract range values from sd_report
   est_rep <- as.list(x$sd_report, "Estimate", report = TRUE)

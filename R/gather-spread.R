@@ -39,7 +39,7 @@ spread_sims <- function(object, nsim = 200) {
     cli_abort("TMB::sdreport() must be run with the joint precision returned.")
   }
 
-  if (isTRUE(object$delta)) {
+  if (.is_regular_delta_model(object)) {
     cli_abort("This function isn't yet set up for delta models.")
   }
   n_sims <- nsim
@@ -54,7 +54,7 @@ spread_sims <- function(object, nsim = 200) {
   pars <- pars[pn %in% par_fixed]
   samps <- samps[pn %in% par_fixed, , drop = FALSE]
   pn <- pn[pn %in% par_fixed]
-  if (isTRUE(object$family$delta)) {
+  if (.is_regular_delta_model(object)) {
     cli_warn("If your delta model has 2 formulas, this function is only using the first")
   }
   .formula <- object$split_formula[[1]]$form_no_bars # TODO DELTA HARDCODED TO 1!

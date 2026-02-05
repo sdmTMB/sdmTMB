@@ -12,8 +12,8 @@ named_list <- function(...) {
 }
 
 print_model_info <- function(x) {
-  multi_family <- isTRUE(x$tmb_data$multi_family == 1L)
-  delta <- isTRUE(x$family$delta)
+  multi_family <- .is_multi_family_model(x)
+  delta <- .is_delta_like_model(x)
   spatial_only <- as.logical(x$tmb_data$spatial_only)
   fit_by <- if (isTRUE(x$reml)) "REML" else "ML"
   if (all(spatial_only)) {
@@ -121,6 +121,7 @@ print_main_effects <- function(x, m = 1) {
 }
 
 print_smooth_effects <- function(x, m = 1, edf = NULL, silent = FALSE) {
+  delta <- .is_delta_like_model(x)
   sr <- x$sd_report
   sr_se <- as.list(sr, "Std. Error")
   sr_est <- as.list(sr, "Estimate")
@@ -272,7 +273,7 @@ print_smooth_effects <- function(x, m = 1, edf = NULL, silent = FALSE) {
     colnames(ln_re_sm_mat) <- c("estimate", "std.error")
 
     if (!is.null(edf)) {
-      if (is_delta(x)) {
+      if (delta) {
         lp_regex <- paste0("^", m, "LP-s\\(")
         edf <- edf[grepl(lp_regex, names(edf))]
       } else {
@@ -400,12 +401,8 @@ print_anisotropy <- function(x, m = 1L, digits = 1L, return_dat = FALSE) {
   aniso_df$degree <- aniso_df$angle * 180 / pi
   aniso_df_st <- aniso_df_sp <- NULL
 
-  multi_family <- isTRUE(x$tmb_data$multi_family == 1L)
-  delta <- if (multi_family) {
-    any(x$tmb_data$delta_family_e == 1L)
-  } else {
-    isTRUE(x$family$delta)
-  }
+  multi_family <- .is_multi_family_model(x)
+  delta <- .is_delta_like_model(x)
   if (delta) {
     aniso_df_sp <- aniso_df[aniso_df$random_field == "spatial" &
         aniso_df$model_num == m, ][1, c("a", "b", "degree")]
@@ -459,7 +456,7 @@ print_anisotropy <- function(x, m = 1L, digits = 1L, return_dat = FALSE) {
 
 print_other_parameters <- function(x, m = 1L) {
   b <- tidy(x, "ran_pars", model = m, silent = TRUE)
-  multi_family <- isTRUE(x$tmb_data$multi_family == 1L)
+  multi_family <- .is_multi_family_model(x)
 
   multi_term_text <- function(prefix, pretext) {
     idx <- grepl(paste0("^", prefix), b$term)
@@ -604,12 +601,8 @@ print.sdmTMB <- function(x, ...) {
   lp <- x$tmb_obj$env$last.par.best
   r <- x$tmb_obj$report(lp)
 
-  multi_family <- isTRUE(x$tmb_data$multi_family == 1L)
-  delta <- if (multi_family) {
-    any(x$tmb_data$delta_family_e == 1L)
-  } else {
-    isTRUE(x$family$delta)
-  }
+  multi_family <- .is_multi_family_model(x)
+  delta <- .is_delta_like_model(x)
   print_header(x)
   if (delta) cat("\nDelta/hurdle model 1: -----------------------------------\n")
   print_one_model(x, 1, ...)

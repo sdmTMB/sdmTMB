@@ -228,7 +228,7 @@ project <- function(
 
   ## parameters: add zeros as needed to all time-based parameters
   pars <- get_pars(object)
-  n_m <- if (is_delta(object)) 2L else 1L
+  n_m <- if (.is_regular_delta_model(object)) 2L else 1L
   n_s <- dim(pars$epsilon_st)[1]
 
   new_eps <- array(0, c(n_s, nproj, n_m))
@@ -245,7 +245,7 @@ project <- function(
     map$b_rw_t <- factor(rep(NA, length(as.numeric(pars$b_rw_t))))
   }
 
-  delta <- is_delta(object)
+  delta <- .is_regular_delta_model(object)
   ## epsilon_st is always in map??
   # if (delta && "off") {
   # if (delta && "off" %in% object$spatiotemporal) {

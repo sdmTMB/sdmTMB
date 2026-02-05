@@ -74,7 +74,7 @@ qres_betabinomial <- function(object, y, mu, .n = NULL) {
   # Extract dispersion parameter
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) phi <- phi[2]
+  if (.is_regular_delta_model(object)) phi <- phi[2]
 
   # TMB parameterization: alpha = mu * phi, beta = (1 - mu) * phi
   # where mu is already on probability scale from linkinv
@@ -92,7 +92,7 @@ qres_betabinomial <- function(object, y, mu, .n = NULL) {
 qres_nbinom2 <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) phi <- phi[2]
+  if (.is_regular_delta_model(object)) phi <- phi[2]
   a <- stats::pnbinom(y - 1, size = phi, mu = mu)
   b <- stats::pnbinom(y, size = phi, mu = mu)
   u <- stats::runif(n = length(y), min = a, max = b)
@@ -117,7 +117,7 @@ qnbinom1 <- function(p, mu, phi) {
 qres_nbinom1 <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) phi <- phi[2]
+  if (.is_regular_delta_model(object)) phi <- phi[2]
   a <- pnbinom1(y - 1, phi = phi, mu = mu)
   b <- pnbinom1(y, phi = phi, mu = mu)
   u <- stats::runif(n = length(y), min = a, max = b)
@@ -134,7 +134,7 @@ ptruncated_nbinom1 <- function(q, mu, phi){
 qres_truncated_nbinom2 <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) phi <- phi[2]
+  if (.is_regular_delta_model(object)) phi <- phi[2]
   a <- ptruncated_nbinom2(y - 1, mu = mu, phi = phi)
   b <- ptruncated_nbinom2(y, mu = mu, phi = phi)
   a[is.na(a)] <- -99
@@ -147,7 +147,7 @@ qres_truncated_nbinom2 <- function(object, y, mu, ...) {
 qres_truncated_nbinom1 <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) phi <- phi[2]
+  if (.is_regular_delta_model(object)) phi <- phi[2]
   a <- ptruncated_nbinom1(y - 1, mu = mu, phi = phi)
   b <- ptruncated_nbinom1(y, mu = mu, phi = phi)
   a[is.na(a)] <- -99
@@ -164,14 +164,10 @@ qres_pois <- function(object, y, mu, ...) {
   stats::qnorm(u)
 }
 
-is_delta <- function(object) {
-  isTRUE(object$family$delta)
-}
-
 qres_gamma <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) phi <- phi[2]
+  if (.is_regular_delta_model(object)) phi <- phi[2]
   s1 <- phi
   s2 <- mu / s1
   u <- stats::pgamma(q = y, shape = s1, scale = s2)
@@ -183,7 +179,7 @@ qres_gamma_mix <- function(object, y, mu, ...) {
   # theta <- get_pars(object)
   # p_extreme <- plogis(theta[["logit_p_extreme"]])
   # phi <- exp(theta[["ln_phi"]])
-  # if (is_delta(object)) phi <- phi[2]
+  # if (.is_regular_delta_model(object)) phi <- phi[2]
   # ratio <- exp(theta[["log_ratio_mix"]])
   # s1 <- phi
   # s2 <- mu / s1
@@ -197,7 +193,7 @@ qres_nbinom2_mix <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   p_extreme <- plogis(theta[["logit_p_extreme"]])
   phi <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) phi <- phi[2]
+  if (.is_regular_delta_model(object)) phi <- phi[2]
   ratio <- exp(theta[["log_ratio_mix"]])
   a <- stats::pnbinom(y - 1, size = phi, mu = (1-p_extreme)*mu + p_extreme*ratio*mu)
   b <- stats::pnbinom(y, size = phi, mu = (1-p_extreme)*mu + p_extreme*ratio*mu)
@@ -210,7 +206,7 @@ qres_lognormal_mix <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   p_extreme <- plogis(theta[["logit_p_extreme"]])
   dispersion <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) dispersion <- dispersion[2]
+  if (.is_regular_delta_model(object)) dispersion <- dispersion[2]
   ratio <- exp(theta[["log_ratio_mix"]])
   u <- stats::plnorm(q = y, meanlog = log((1-p_extreme)*mu + p_extreme*ratio*mu) - (dispersion^2) / 2, sdlog = dispersion)
   stats::qnorm(u)
@@ -226,7 +222,7 @@ qres_gaussian <- function(object, y, mu, ...) {
 qres_lognormal <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   dispersion <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) dispersion <- dispersion[2]
+  if (.is_regular_delta_model(object)) dispersion <- dispersion[2]
   u <- stats::plnorm(q = y, meanlog = log(mu) - (dispersion^2) / 2, sdlog = dispersion)
   stats::qnorm(u)
 }
@@ -276,7 +272,7 @@ qres_gengamma <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   .Q <- theta$gengamma_Q
   sigma <- exp(theta$ln_phi)
-  if (is_delta(object)) sigma <- sigma[2]
+  if (.is_regular_delta_model(object)) sigma <- sigma[2]
   u <- pgengamma(q = y, mean = mu, sigma = sigma, .Q = .Q)
   stats::qnorm(u)
 }
@@ -450,7 +446,7 @@ residuals.sdmTMB <- function(object,
   }
   # need to re-attach environment if in fresh session
   reinitialize(object)
-  if (isTRUE(object$tmb_data$multi_family == 1L)) {
+  if (.is_multi_family_model(object)) {
     msg <- c(
       "Standard residuals are not available for multi-family models.",
       "Use `simulate(fit, type = 'mle-mvn')` with `dharma_residuals()` instead."
@@ -462,7 +458,7 @@ residuals.sdmTMB <- function(object,
   nd <- NULL
   est_column <- "est"
   linkinv <- object$family$linkinv
-  if (isTRUE(object$family$delta)) {
+  if (.is_regular_delta_model(object)) {
     fam <- fam[[model]]
     linkinv <-  object$family[[model]]$linkinv
     nd <- object$data
@@ -529,10 +525,10 @@ residuals.sdmTMB <- function(object,
     )
     mu <- linkinv(pred[, 1L, drop = TRUE])
   } else if (type == "deviance") {
-    # if (is_delta(object)) {
+    # if (.is_regular_delta_model(object)) {
     #   cli_abort("Deviance residuals not implemented for delta models")
     # }
-    if (!is_delta(object)) {
+    if (!.is_regular_delta_model(object)) {
       if (object$family$family=="binomial" && !all(object$tmb_data$size == 1)) {
         cli_abort("Deviance residuals not implemented for binomial family with size > 1.")
       }
@@ -584,7 +580,7 @@ residuals.sdmTMB <- function(object,
   } else {
     cli_abort("residual type not implemented")
   }
-  if (isTRUE(object$family$delta) && is.null(mcmc_samples) && model_missing) {
+  if (.is_regular_delta_model(object) && is.null(mcmc_samples) && model_missing) {
     cli_inform(paste0("These are residuals for delta model component ", model,
       ". Use the `model` argument to select the other component."))
   }
