@@ -89,7 +89,8 @@
 #'   ggplot(edges, aes(year, est, colour = as.factor(quantile))) +
 #'     geom_line() +
 #'     geom_ribbon(aes(ymin = lwr, ymax = upr, fill = as.factor(quantile)),
-#'                 alpha = 0.2) +
+#'       alpha = 0.2
+#'     ) +
 #'     labs(y = "Latitude", colour = "Quantile", fill = "Quantile")
 #' }
 #'
@@ -101,19 +102,26 @@ get_range_edge <- function(obj,
                            quantiles = c(0.025, 0.975),
                            level = 0.95,
                            return_sims = FALSE) {
-
   # Validation
   assert_that(is.matrix(obj),
-              !is.null(attr(obj, "time")),
-              msg = paste0("`obj` should be matrix output from `predict.sdmTMB()` ",
-                           "with `nsim > 0`."))
+    !is.null(attr(obj, "time")),
+    msg = paste0(
+      "`obj` should be matrix output from `predict.sdmTMB()` ",
+      "with `nsim > 0`."
+    )
+  )
   assert_that(is.numeric(axis),
-              msg = "`axis` should be a numeric vector.")
+    msg = "`axis` should be a numeric vector."
+  )
   assert_that(length(axis) == nrow(obj),
-              msg = paste0("`axis` should be the same length as the number of rows in `obj` (",
-                          nrow(obj), ")."))
+    msg = paste0(
+      "`axis` should be the same length as the number of rows in `obj` (",
+      nrow(obj), ")."
+    )
+  )
   assert_that(is.numeric(quantiles), all(quantiles > 0), all(quantiles < 1),
-              msg = "`quantiles` should be numeric values between 0 and 1.")
+    msg = "`quantiles` should be numeric values between 0 and 1."
+  )
   assert_that(is.logical(return_sims))
   assert_that(level > 0 && level < 1)
 
@@ -147,10 +155,28 @@ get_range_edge <- function(obj,
 
   # Initialize results array: [time, quantile, simulation]
   edges_array <- array(NA_real_,
-                       dim = c(n_times, n_quantiles, n_sims),
-                       dimnames = list(time = yrs,
-                                      quantile = quantiles,
-                                      sim = seq_len(n_sims)))
+    dim = c(n_times, n_quantiles, n_sims),
+    dimnames = list(
+      time = yrs,
+      quantile = quantiles,
+      sim = seq_len(n_sims)
+    )
+  )
+
+  # Pre-compute time indices and orderings once (not per-simulation)
+  time_cache <- vector("list", n_times)
+  for (t_idx in seq_along(yrs)) {
+    t <- yrs[t_idx]
+    time_idx <- which(.t == t)
+    axis_t <- axis[time_idx]
+    ord <- order(axis_t)
+    time_cache[[t_idx]] <- list(
+      time_idx = time_idx,
+      axis_t = axis_t,
+      ord = ord,
+      axis_ordered = axis_t[ord]
+    )
+  }
 
   # Loop over simulations
   for (sim in seq_len(n_sims)) {
@@ -159,20 +185,16 @@ get_range_edge <- function(obj,
 
     # Loop over time points
     for (t_idx in seq_along(yrs)) {
-      t <- yrs[t_idx]
-
-      # Extract data for this time point
-      time_idx <- which(.t == t)
-      axis_t <- axis[time_idx]
-      pred_t <- pred_sim[time_idx]
+      # Use cached values instead of recomputing
+      cache <- time_cache[[t_idx]]
+      pred_t <- pred_sim[cache$time_idx]
 
       # Convert to natural space using inverse link
       dens_t <- apply_inverse_link(pred_t, .link)
 
-      # Order by axis position
-      ord <- order(axis_t)
-      axis_ordered <- axis_t[ord]
-      dens_ordered <- dens_t[ord]
+      # Order by axis position (use cached ordering)
+      axis_ordered <- cache$axis_ordered
+      dens_ordered <- dens_t[cache$ord]
 
       # Calculate cumulative proportion of density
       total_dens <- sum(dens_ordered)
@@ -218,64 +240,40 @@ get_range_edge <- function(obj,
     }
   }
 
-  # Format output
+  # Format output using pre-allocation instead of growing lists
   if (return_sims) {
     # Return long format with all simulations
-    results_list <- list()
-    idx <- 1
-    for (t_idx in seq_along(yrs)) {
-      for (q_idx in seq_along(quantiles)) {
-        for (sim in seq_len(n_sims)) {
-          results_list[[idx]] <- data.frame(
-            time = yrs[t_idx],
-            quantile = quantiles[q_idx],
-            .value = edges_array[t_idx, q_idx, sim],
-            .iteration = sim
-          )
-          idx <- idx + 1
-        }
-      }
-    }
-    result <- do.call("rbind", results_list)
+    result <- data.frame(
+      time = rep(yrs, each = n_quantiles * n_sims),
+      quantile = rep(rep(quantiles, each = n_sims), times = n_times),
+      .value = as.vector(aperm(edges_array, c(3, 2, 1))),
+      .iteration = rep(seq_len(n_sims), times = n_times * n_quantiles)
+    )
     names(result)[1] <- .time_attr
     return(result)
-
   } else {
-    # Return summary statistics
-    results_list <- list()
-    idx <- 1
-    for (t_idx in seq_along(yrs)) {
-      for (q_idx in seq_along(quantiles)) {
-        sims <- edges_array[t_idx, q_idx, ]
-        # Remove NAs for summary
-        sims <- sims[!is.na(sims)]
+    # Compute summary statistics efficiently using array operations
+    est_mat <- apply(edges_array, c(1, 2), stats::median, na.rm = TRUE)
+    lwr_mat <- apply(edges_array, c(1, 2), stats::quantile,
+      probs = (1 - level) / 2, na.rm = TRUE
+    )
+    upr_mat <- apply(edges_array, c(1, 2), stats::quantile,
+      probs = 1 - (1 - level) / 2, na.rm = TRUE
+    )
+    se_mat <- apply(edges_array, c(1, 2), stats::sd, na.rm = TRUE)
 
-        if (length(sims) > 0) {
-          results_list[[idx]] <- data.frame(
-            time = yrs[t_idx],
-            quantile = quantiles[q_idx],
-            est = stats::median(sims),
-            lwr = stats::quantile(sims, probs = (1 - level) / 2),
-            upr = stats::quantile(sims, probs = 1 - (1 - level) / 2),
-            se = stats::sd(sims)
-          )
-        } else {
-          results_list[[idx]] <- data.frame(
-            time = yrs[t_idx],
-            quantile = quantiles[q_idx],
-            est = NA_real_,
-            lwr = NA_real_,
-            upr = NA_real_,
-            se = NA_real_
-          )
-        }
-        idx <- idx + 1
-      }
-    }
-    result <- do.call("rbind", results_list)
+    # Pre-allocate and fill (transpose to get correct row ordering)
+    result <- data.frame(
+      time = rep(yrs, each = n_quantiles),
+      quantile = rep(quantiles, times = n_times),
+      est = as.vector(t(est_mat)),
+      lwr = as.vector(t(lwr_mat)),
+      upr = as.vector(t(upr_mat)),
+      se = as.vector(t(se_mat))
+    )
     names(result)[1] <- .time_attr
     rownames(result) <- NULL
-    return(result)
+    result
   }
 }
 
@@ -287,7 +285,7 @@ apply_inverse_link <- function(eta, link) {
     "identity" = eta,
     "inverse" = 1 / eta,
     "cloglog" = 1 - exp(-exp(eta)),
-    "response" = eta,  # already in natural space
+    "response" = eta, # already in natural space
     {
       cli_warn(paste0("Unknown link '", link, "'. Returning untransformed values."))
       eta

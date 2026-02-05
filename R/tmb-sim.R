@@ -1,8 +1,12 @@
 #' Simulate from a spatial/spatiotemporal model
 #'
-#' `sdmTMB_simulate()` uses TMB to simulate *new* data given specified parameter
+#' `simulate_new()` uses TMB to simulate *new* data given specified parameter
 #' values. [simulate.sdmTMB()], on the other hand, takes an *existing* model fit
 #' and simulates new observations and optionally new random effects.
+#' **Note:** `sdmTMB_simulate()` is retained as a synonym for backwards
+#' compatibility. We recommend using `simulate_new()` going forward as it more
+#' clearly conveys the function's purpose. `sdmTMB_simulate()` may
+#' eventually be deprecated.
 #'
 #' @param formula A *one-sided* formula describing the fixed-effect structure.
 #'   Random intercepts are not (yet) supported. Fixed effects should match
@@ -60,75 +64,68 @@
 #' * `mu` is the true value in inverse link space.
 #' * `observed` represents the simulated process with observation error.
 #' * The remaining columns are the fixed-effect model matrix.
+#' @rdname simulate_new
 #' @export
 #' @seealso [simulate.sdmTMB()]
 #'
 #' @examples
-#'   set.seed(123)
+#' set.seed(123)
 #'
-#'   # make fake predictor(s) (a1) and sampling locations:
-#'   predictor_dat <- data.frame(
-#'     X = runif(300), Y = runif(300),
-#'     a1 = rnorm(300), year = rep(1:6, each = 50)
-#'   )
-#'   mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.1)
+#' # make fake predictor(s) (a1) and sampling locations:
+#' predictor_dat <- data.frame(
+#'   X = runif(300), Y = runif(300),
+#'   a1 = rnorm(300), year = rep(1:6, each = 50)
+#' )
+#' mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.1)
 #'
-#'   sim_dat <- sdmTMB_simulate(
-#'     formula = ~ 1 + a1,
-#'     data = predictor_dat,
-#'     time = "year",
-#'     mesh = mesh,
-#'     family = gaussian(),
-#'     range = 0.5,
-#'     sigma_E = 0.1,
-#'     phi = 0.1,
-#'     sigma_O = 0.2,
-#'     seed = 42,
-#'     B = c(0.2, -0.4) # B0 = intercept, B1 = a1 slope
-#'   )
-#'   head(sim_dat)
+#' sim_dat <- simulate_new(
+#'   formula = ~ 1 + a1,
+#'   data = predictor_dat,
+#'   time = "year",
+#'   mesh = mesh,
+#'   family = gaussian(),
+#'   range = 0.5,
+#'   sigma_E = 0.1,
+#'   phi = 0.1,
+#'   sigma_O = 0.2,
+#'   seed = 42,
+#'   B = c(0.2, -0.4) # B0 = intercept, B1 = a1 slope
+#' )
+#' head(sim_dat)
 #'
-#'   if (require("ggplot2", quietly = TRUE)) {
-#'     ggplot(sim_dat, aes(X, Y, colour = observed)) +
-#'       geom_point() +
-#'       facet_wrap(~year) +
-#'       scale_color_gradient2()
-#'   }
+#' if (require("ggplot2", quietly = TRUE)) {
+#'   ggplot(sim_dat, aes(X, Y, colour = observed)) +
+#'     geom_point() +
+#'     facet_wrap(~year) +
+#'     scale_color_gradient2()
+#' }
 #'
-#'   # fit to the simulated data:
-#'   fit <- sdmTMB(observed ~ a1, data = sim_dat, mesh = mesh, time = "year")
-#'   fit
-#
-#   # example supplying previous fit, simulating new random effects,
-#   # and changing spatial SD (sigma_O) and observation error (phi):
-#   sim_dat2 <- sdmTMB_simulate(
-#     previous_fit = fit,
-#     simulate_re = TRUE, phi = 0.04, sigma_O = 0.4
-#   )
-#   head(sim_dat2)
-sdmTMB_simulate <- function(formula,
-                            data,
-                            mesh,
-                            family = gaussian(link = "identity"),
-                            time = NULL,
-                            B = NULL,
-                            range = NULL,
-                            rho = NULL,
-                            sigma_O = NULL,
-                            sigma_E = NULL,
-                            sigma_Z = NULL,
-                            phi = NULL,
-                            tweedie_p = NULL,
-                            df = NULL,
-                            threshold_coefs = NULL,
-                            fixed_re = list(omega_s = NULL, epsilon_st = NULL, zeta_s = NULL),
-                            previous_fit = NULL,
-                            seed = sample.int(1e6, 1),
-                            time_varying = NULL,
-                            time_varying_type = c("rw", "rw0", "ar1"),
-                            sigma_V = NULL,
-                            rho_time = NULL,
-                            ...) {
+#' # fit to the simulated data:
+#' fit <- sdmTMB(observed ~ a1, data = sim_dat, mesh = mesh, time = "year")
+#' fit
+simulate_new <- function(formula,
+                         data,
+                         mesh,
+                         family = gaussian(link = "identity"),
+                         time = NULL,
+                         B = NULL,
+                         range = NULL,
+                         rho = NULL,
+                         sigma_O = NULL,
+                         sigma_E = NULL,
+                         sigma_Z = NULL,
+                         phi = NULL,
+                         tweedie_p = NULL,
+                         df = NULL,
+                         threshold_coefs = NULL,
+                         fixed_re = list(omega_s = NULL, epsilon_st = NULL, zeta_s = NULL),
+                         previous_fit = NULL,
+                         seed = sample.int(1e6, 1),
+                         time_varying = NULL,
+                         time_varying_type = c("rw", "rw0", "ar1"),
+                         sigma_V = NULL,
+                         rho_time = NULL,
+                         ...) {
 
   if (!is.null(previous_fit)) stop("`previous_fit` is deprecated. See `simulate.sdmTMB()`", call. = FALSE)
   if (!is.null(previous_fit)) mesh <- previous_fit$spde
@@ -404,6 +401,10 @@ sdmTMB_simulate <- function(formula,
   d
 }
 
+#' @rdname simulate_new
+#' @export
+sdmTMB_simulate <- simulate_new
+
 #' Simulate from a fitted sdmTMB model
 #'
 #' `simulate.sdmTMB` is an S3 method for producing a matrix of simulations from
@@ -448,7 +449,7 @@ sdmTMB_simulate <- function(formula,
 #' @return Returns a matrix; number of columns is `nsim`.
 #' @importFrom stats simulate
 #'
-#' @seealso [sdmTMB_simulate()]
+#' @seealso [simulate_new()]
 #'
 #' @export
 #' @examples
@@ -457,7 +458,7 @@ sdmTMB_simulate <- function(formula,
 #' set.seed(1)
 #' predictor_dat <- data.frame(X = runif(300), Y = runif(300), a1 = rnorm(300))
 #' mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.1)
-#' dat <- sdmTMB_simulate(
+#' dat <- simulate_new(
 #'   formula = ~ 1 + a1,
 #'   data = predictor_dat,
 #'   mesh = mesh,
@@ -483,7 +484,6 @@ sdmTMB_simulate <- function(formula,
 #'
 #' # simulate with new random fields:
 #' s3 <- simulate(fit, nsim = 1, re_form = ~ 0)
-
 simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
                             type = c("mle-eb", "mle-mvn"),
                             model = c(NA, 1, 2),

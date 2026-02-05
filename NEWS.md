@@ -1,17 +1,44 @@
 # sdmTMB (development version)
 
+# sdmTMB 1.0.0
+
+* Switch the recommended citation from the preprint to the Journal of
+  Statistical Software version. See `citation("sdmTMB")`.
+  
+## Minor improvements and fixes
+
+* Fix crash with betabinomial and binomial when a response value was `NA` but the 
+  corresponding `weights` argument (turned into 'size') was not `NA`.
+
+* Add `simulate_new()` as a synonym for `sdmTMB_simulate()`. `simulate_new()`
+  is recommended going forward because it is more expressive.
+
+# sdmTMB 0.8.1
+
+## Minor improvements and fixes
+
+* Refactor `get_cog()`, `get_weighted_average()`, and `get_eao()`. 
+  `get_cog()` should be more memory efficient and bias correction is now
+  enabled for `get_eao()` and `get_weighted_average()`. These all now work
+  with subsets of the full set of fitted time elements as `get_index()` has
+  for a while.
+
+* Optimize memory usage and speed of `get_range_edge()`.
+
+* Remove extraDistr import to avoid CRAN warning. 
+
 * Switch from `lme4` to `reformulas` package for random effects parsing functions
   (`findbars()`, `nobars()`, `subbars()`, `mkReTrms()`). The `lme4` maintainers
   moved these formula utilities to the separate `reformulas` package.
 
 * Fix `predict()` with `se_fit = TRUE` for delta models to correctly return
-  standard errors on combined predictions when `model = NA` (default). Previously,
+  standard errors on combined predictions when `model = NA`. Previously,
   standard errors were only calculated for the first component (`est1`) instead
   of the combined estimate (`est`). #496
 
 * Fix typo in `predict()` for delta models that incorrectly calculated combined
   predictions as `p1 * p1` instead of `p1 * p2` in the specific case of
-  `re_form = NA` and `link = "link"`. #496
+  `re_form = NA` and `type = "link"`. #496
 
 * Dramatically improve `print()` performance for models with large embedded
   objects in calls (e.g., cross-validation scenarios with replicated data).

@@ -102,7 +102,8 @@ if (require("ggplot2", quietly = TRUE)) {
   ggplot(edges, aes(year, est, colour = as.factor(quantile))) +
     geom_line() +
     geom_ribbon(aes(ymin = lwr, ymax = upr, fill = as.factor(quantile)),
-                alpha = 0.2) +
+      alpha = 0.2
+    ) +
     labs(y = "Latitude", colour = "Quantile", fill = "Quantile")
 }
 

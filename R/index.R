@@ -134,11 +134,6 @@
 #' }
 #' @export
 get_index <- function(obj, bias_correct = TRUE, level = 0.95, area = 1, silent = TRUE, ...)  {
-  # if offset is a character vector, use the value in the dataframe
-  if (is.character(area)) {
-    area <- obj$data[[area]]
-  }
-
   d <- get_generic(obj, value_name = "link_total",
     bias_correct = bias_correct, level = level, trans = exp, area = area, ...)
   names(d)[names(d) == "trans_est"] <- "log_est"
@@ -223,19 +218,29 @@ get_index_split <- function(
 #' @param format Long or wide.
 #' @export
 get_cog <- function(obj, bias_correct = FALSE, level = 0.95, format = c("long", "wide"), area = 1, silent = TRUE, ...)  {
-  # if offset is a character vector, use the value in the dataframe
-  if (is.character(area)) {
-    area <- obj$data[[area]]
-  }
-  pred_time <- sort(unique(obj$data[[obj$fit_obj$time]]))
-  fitted_time <- obj$fit_obj$fitted_time
-  if (bias_correct && sum(!fitted_time %in% pred_time) > 0L)
-    cli_abort("Please include all time elements in the prediction data frame if using bias_correct = TRUE with get_cog().")
 
-  d <- get_generic(obj, value_name = c("cog_x", "cog_y"),
-    bias_correct = bias_correct, level = level, trans = I, area = area, ...)
-  d <- d[, names(d) != "trans_est", drop = FALSE]
-  d$coord <- c(rep("X", each = nrow(d)/2), rep("Y", each = nrow(d)/2))
+  xy_cols <- obj$fit_obj$spde$xy_cols
+  if (all(xy_cols %in% names(obj$data))) {
+    x_vec <- obj$data[[xy_cols[[1]]]]
+    y_vec <- obj$data[[xy_cols[[2]]]]
+  } else if (!is.null(obj$pred_tmb_data$proj_lon) &&
+             !is.null(obj$pred_tmb_data$proj_lat)) {
+    x_vec <- obj$pred_tmb_data$proj_lon
+    y_vec <- obj$pred_tmb_data$proj_lat
+  } else {
+    cli_abort("Prediction data must include the x/y columns used for the model.")
+  }
+  d_x <- get_generic(obj, value_name = "weighted_avg",
+    bias_correct = bias_correct, level = level, trans = I, area = area,
+    vector = x_vec, ...)
+  d_y <- get_generic(obj, value_name = "weighted_avg",
+    bias_correct = bias_correct, level = level, trans = I, area = area,
+    vector = y_vec, ...)
+  d_x <- d_x[, names(d_x) != "trans_est", drop = FALSE]
+  d_y <- d_y[, names(d_y) != "trans_est", drop = FALSE]
+  d_x$coord <- "X"
+  d_y$coord <- "Y"
+  d <- rbind(d_x, d_y)
   format <- match.arg(format)
   if (format == "wide") {
     x <- d[d$coord == "X", c("est", "lwr", "upr", "se"),drop=FALSE]
@@ -254,14 +259,6 @@ get_cog <- function(obj, bias_correct = FALSE, level = 0.95, format = c("long", 
 #' @export
 get_weighted_average <- function(obj, vector, bias_correct = FALSE, level = 0.95,
   area = 1, silent = TRUE, ...)  {
-  # if offset is a character vector, use the value in the dataframe
-  if (is.character(area)) {
-    area <- obj$data[[area]]
-  }
-
-  if (is.null(vector)) {
-    cli_abort("A vector must be provided for weighted average calculation.")
-  }
 
   d <- get_generic(obj, value_name = "weighted_avg",
     bias_correct = bias_correct, level = level, trans = I, area = area,
@@ -280,10 +277,6 @@ get_eao <- function(obj,
   silent = TRUE,
   ...
 )  {
-  # if offset is a character vector, use the value in the dataframe
-  if (is.character(area)) {
-    area <- obj$data[[area]]
-  }
 
   d <- get_generic(obj, value_name = c("log_eao"),
     bias_correct = bias_correct, level = level, trans = exp, area = area, ...)
@@ -302,7 +295,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
 
   reinitialize(obj$fit_obj)
 
-  if ((!isTRUE(obj$do_index) && value_name[1] == "link_total") || value_name[1] == "cog_x" || value_name[[1]] == "log_eao" || value_name[1] == "weighted_avg") {
+  if ((!isTRUE(obj$do_index) && value_name[1] == "link_total") || value_name[[1]] == "log_eao" || value_name[1] == "weighted_avg") {
     if (is.null(obj[["obj"]])) {
       cli_abort(paste0("`obj` needs to be created with ",
         "`predict(..., return_tmb_object = TRUE).`"))
@@ -312,7 +305,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     nr2 <- nrow(obj$pred_tmb_data$proj_X_ij[[1]])
     if (nr1 != nr2) {
       cli_abort(c("Predicted data appears to be modified after prediction",
-        "i" ="Please filter `newdata` before predicting."))
+        "i" = "Please filter `newdata` before predicting."))
     }
 
     if (!"report" %in% names(obj$obj)) {
@@ -342,11 +335,12 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       area <- rep(area, nrow(obj$pred_tmb_data$proj_X_ij[[1]]))
 
     tmb_data <- obj$pred_tmb_data
+    if (is.null(tmb_data$proj_time_include)) {
+      cli_abort("Missing `proj_time_include` in prediction data. Please re-run `predict(..., return_tmb_object = TRUE)` with the current sdmTMB version.")
+    }
     tmb_data$area_i <- area
     if (value_name[1] == "link_total")
       tmb_data$calc_index_totals <- 1L
-    if (value_name[1] == "cog_x")
-      tmb_data$calc_cog <- 1L
     if (value_name[1] == "log_eao")
       tmb_data$calc_eao <- 1L
     if (value_name[1] == "weighted_avg") {
@@ -384,16 +378,19 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     sr <- obj$sd_report # already done in sdmTMB(do_index = TRUE)
     pars <- get_pars(obj)
     tmb_data <- obj$tmb_data
+    if (is.null(tmb_data$proj_time_include)) {
+      cli_abort("Missing `proj_time_include` in fitted data. Please refit or re-run with the current sdmTMB version.")
+    }
     obj <- list(fit_obj = obj) # to match regular format
     eps_name <- "eps_index"
   }
   sr_est <- as.list(sr, "Estimate", report = TRUE)
 
-  if (bias_correct && value_name[[1]] %in% c("link_total", "cog_x", "weighted_avg")) {
+  if (bias_correct && value_name[[1]] %in% c("link_total", "weighted_avg", "log_eao")) {
     # extract and modify parameters
     if (value_name[[1]] == "link_total") .n <- length(sr_est$total)
-    if (value_name[[1]] == "cog_x") .n <- length(sr_est$cog_x) * 2 # 2 b/c x and y
     if (value_name[[1]] == "weighted_avg") .n <- length(sr_est$weighted_avg)
+    if (value_name[[1]] == "log_eao") .n <- length(sr_est$eao)
     pars[[eps_name]] <- rep(0, .n)
     new_values <- rep(0, .n)
     names(new_values) <- rep(eps_name, length(new_values))
@@ -407,12 +404,12 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       DLL = "sdmTMB",
       silent = silent,
       intern = FALSE, # tested as faster for most models
-      inner.control = list(sparse = TRUE, lowrank = TRUE, trace = TRUE)
+      inner.control = list(sparse = TRUE, lowrank = TRUE, trace = FALSE)
     )
     gradient <- new_obj2$gr(fixed)
     corrected_vals <- gradient[names(fixed) == eps_name]
   } else {
-    if (value_name[[1]] == "link_total" || value_name[[1]] == "cog_x" || value_name[[1]] == "weighted_avg")
+    if (value_name[[1]] == "link_total" || value_name[[1]] == "weighted_avg" || value_name[[1]] == "log_eao")
       cli_inform(c("Bias correction is turned off.", "
         It is recommended to turn this on for final inference."))
   }
@@ -423,7 +420,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
   time_name <- obj$fit_obj$time
   names(d) <- c("trans_est", "se")
   if (bias_correct) {
-    if (value_name[[1]] == "cog_x" || value_name[[1]] == "weighted_avg") {
+    if (value_name[[1]] == "weighted_avg") {
       d$trans_est <- corrected_vals
     } else {
       d$trans_est <- log(corrected_vals)
@@ -441,15 +438,27 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     d$se_natural <- as.numeric(.total[,1])
   }
 
-  if ("pred_tmb_data" %in% names(obj)) { # standard case
-    ii <- sort(unique(obj$pred_tmb_data$proj_year))
-  } else { # fit with do_index = TRUE
-    ii <- sort(unique(obj$fit_obj$tmb_data$proj_year))
+  time_include <- NULL
+  if (!is.null(tmb_data) && "proj_time_include" %in% names(tmb_data)) {
+    time_include <- as.integer(tmb_data$proj_time_include)
   }
-  d <- d[d$est != 0, ,drop=FALSE] # these were not predicted on
-  d <- d[!is.na(d$est), ,drop=FALSE] # these were not predicted on
   lu <- obj$fit_obj$time_lu
-  tt <- lu$time_from_data[match(ii, lu$year_i)]
+  if (!is.null(time_include) && length(time_include) == nrow(d)) {
+    tt <- lu$time_from_data[time_include != 0]
+    d <- d[time_include != 0, ,drop=FALSE]
+    keep <- !is.na(d$est)
+    d <- d[keep, ,drop=FALSE]
+    tt <- tt[keep]
+  } else {
+    if ("pred_tmb_data" %in% names(obj)) { # standard case
+      ii <- sort(unique(obj$pred_tmb_data$proj_year))
+    } else { # fit with do_index = TRUE
+      ii <- sort(unique(obj$fit_obj$tmb_data$proj_year))
+    }
+    d <- d[d$est != 0, ,drop=FALSE] # these were not predicted on
+    d <- d[!is.na(d$est), ,drop=FALSE] # these were not predicted on
+    tt <- lu$time_from_data[match(ii, lu$year_i)]
+  }
   if (nrow(d) == 0L) {
     msg <- c(
       "There were no results returned by TMB.",

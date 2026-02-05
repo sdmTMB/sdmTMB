@@ -198,7 +198,7 @@ NULL
 #' consistent spatial patterns, while
 #' spatiotemporal fields represent spatial patterns that vary over time. See the [model
 #' description](https://sdmTMB.github.io/sdmTMB/articles/model-description.html)
-#' vignette for mathematical details and the paper: \doi{10.1101/2022.03.24.485545}
+#' vignette for mathematical details and the paper: \doi{10.18637/jss.v115.i02}
 #'
 #' **Binomial families**
 #' 
@@ -317,10 +317,10 @@ NULL
 #'
 #' **Main reference introducing the package to cite when using sdmTMB:**
 #'
-#' Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett, J.T. Thorson. 2024.
+#' Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett., J.T. Thorson. 2025.
 #' sdmTMB: an R package for fast, flexible, and user-friendly generalized linear
 #' mixed effects models with spatial and spatiotemporal random fields.
-#' bioRxiv 2022.03.24.485545; \doi{10.1101/2022.03.24.485545}.
+#' Journal of Statistical Software. 115(2):1--46. \doi{10.18637/jss.v115.i02}.
 #'
 #' *Reference for local trends:*
 #'
@@ -993,6 +993,20 @@ sdmTMB <- function(
   sm <- sm[[1]]
 
   y_i <- model.response(mf[[1]], "numeric")
+
+  # Filter weights and offset to match NA-filtered response
+  # model.frame() removes NAs by default; external vectors need same filtering
+  na_action <- attr(mf[[1]], "na.action")
+  if (!is.null(na_action)) {
+    # na.omit creates "omit" class with row indices that were removed
+    if (!is.null(weights)) {
+      weights <- weights[-na_action]
+    }
+    if (!is.null(offset)) {
+      offset <- offset[-na_action]
+    }
+  }
+
   if (delta) {
     y_i2 <- model.response(mf[[2]], "numeric")
     if (!identical(y_i, y_i2)) {
@@ -1048,6 +1062,11 @@ sdmTMB <- function(
         if (all(y_i %in% c(0, 1))) { # binary
           size <- rep(1, length(y_i))
         } else { # proportions
+          if (is.null(weights)) {
+            cli_abort(c(
+              "`weights` argument was not specified but proportions were supplied to the binomial or betabinomial family.",
+              "Please supply the `weights` argument with the number of trials per event."))
+          }
           y_i <- weights * y_i
           size <- weights
           weights <- rep(1, length(y_i))
@@ -1273,6 +1292,7 @@ sdmTMB <- function(
     proj_X_ij = list(matrix(0, ncol = 1, nrow = 1)), # dummy
     proj_X_rw_ik = matrix(0, ncol = 1, nrow = 1), # dummy
     proj_year = 0, # dummy
+    proj_time_include = rep(1L, n_t),
     proj_spatial_index = 0, # dummy
     proj_z_i = matrix(0, nrow = 1, ncol = n_m), # dummy
     indexes_total = numeric(0), # dummy

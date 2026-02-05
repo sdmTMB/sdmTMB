@@ -193,11 +193,11 @@ Type objective_function<Type>::operator()()
   DATA_INTEGER(pop_pred);
   // Calculate total summed by year (e.g. biomass)?
   DATA_INTEGER(calc_index_totals);
-  DATA_INTEGER(calc_cog);
   DATA_INTEGER(calc_eao);
   DATA_INTEGER(calc_weighted_avg);
   // DATA_INTEGER(calc_quadratic_range); // DELTA TODO
   DATA_VECTOR(area_i); // area per prediction grid cell for index standardization
+  DATA_IVECTOR(proj_time_include); // which time steps are present in predictions
 
   DATA_VECTOR(priors_b_mean);
   DATA_MATRIX(priors_b_Sigma); // beta priors matrix
@@ -214,8 +214,6 @@ Type objective_function<Type>::operator()()
   DATA_INTEGER(exclude_RE); // DELTA TODO currently shared...
   DATA_INTEGER(no_spatial); // omit all spatial calculations
 
-  DATA_VECTOR(proj_lon);
-  DATA_VECTOR(proj_lat);
   DATA_VECTOR(proj_vector);  // User-provided vector for weighted average
 
   // Distribution
@@ -1633,8 +1631,11 @@ Type objective_function<Type>::operator()()
         break;
     }
 
-    if (calc_index_totals || calc_cog || calc_eao || calc_weighted_avg) {
+    if (calc_index_totals || calc_eao || calc_weighted_avg) {
       // ------------------ Derived quantities ---------------------------------
+      // Single declaration for low-rank sparse Hessian bias correction
+      // (used by index, weighted_avg, and eao)
+      PARAMETER_VECTOR(eps_index);
       Type t1;
       Type t2;
       int link_tmp;
@@ -1744,75 +1745,26 @@ Type objective_function<Type>::operator()()
         REPORT(link_total);
         ADREPORT(link_total);
         ADREPORT(total);
-        // Low-rank sparse hessian bias-correction
-        PARAMETER_VECTOR(eps_index);
-        if (eps_index.size() > 0) {
-          Type S;
-          for (int t=0; t < n_t; t++) {
-            S = total(t);
-            S = newton::Tag(S); // Set lowrank tag on S = sum(exp(x))
-            jnll += eps_index(t) * S;
-          }
-        }
-      }
-
-      if (calc_cog) {
-        // Centre of gravity:
-        vector<Type> cog_x(n_t);
-        vector<Type> cog_y(n_t);
-        cog_x.setZero();
-        cog_y.setZero();
-        // Low-rank sparse hessian bias-correction
-        PARAMETER_VECTOR(eps_index);
-        for (int i = 0; i < n_p; i++) {
-          cog_x(proj_year(i)) += proj_lon(i) * mu_combined(i) * area_i(i);
-          cog_y(proj_year(i)) += proj_lat(i) * mu_combined(i) * area_i(i);
-        }
-        for (int t = 0; t < n_t; t++) {
-          cog_x(t) /= total(t);
-          cog_y(t) /= total(t);
-        }
-        REPORT(cog_x);
-        ADREPORT(cog_x);
-        REPORT(cog_y);
-        ADREPORT(cog_y);
-        if (eps_index.size() > 0) {
-          Type S;
-          for (int t=0; t < n_t; t++) {
-            S = cog_x(t);
-            S = newton::Tag(S); // Set lowrank tag on S
-            jnll += eps_index(t) * S;
-          }
-          for (int t=0; t < n_t; t++) {
-            S = cog_y(t);
-            S = newton::Tag(S); // Set lowrank tag on S
-            jnll += eps_index(t + n_t) * S;
-          }
-        }
+        jnll = sdmTMB::add_lowrank_bias_correction(total, eps_index, proj_time_include, 0, jnll);
       }
 
       if (calc_weighted_avg) {
         // Weighted average of user-provided vector:
         vector<Type> weighted_avg(n_t);
         weighted_avg.setZero();
-        // Low-rank sparse hessian bias-correction
-        PARAMETER_VECTOR(eps_index);
         for (int i = 0; i < n_p; i++) {
           weighted_avg(proj_year(i)) += proj_vector(i) * mu_combined(i) * area_i(i);
         }
         for (int t = 0; t < n_t; t++) {
-          weighted_avg(t) /= total(t);
+          if (proj_time_include(t) == 0 || total(t) == 0) {
+            weighted_avg(t) = Type(0);
+          } else {
+            weighted_avg(t) /= total(t);
+          }
         }
         REPORT(weighted_avg);
         ADREPORT(weighted_avg);
-        if (eps_index.size() > 0) {
-          Type S;
-          for (int t=0; t < n_t; t++) {
-            S = weighted_avg(t);
-            S = newton::Tag(S); // Set lowrank tag on S
-            jnll += eps_index(t) * S;
-          }
-        }
+        jnll = sdmTMB::add_lowrank_bias_correction(weighted_avg, eps_index, proj_time_include, 0, jnll);
       }
 
       if (calc_eao) { // effective area occupied: Thorson et al. 2016 doi:10.1098/rspb.2016.1853
@@ -1831,12 +1783,19 @@ Type objective_function<Type>::operator()()
           mean_dens(proj_year(i)) += mu_combined(i) * mu_combined(i) / sum_dens(proj_year(i));
         }
         for (int t = 0; t < n_t; t++) {
-          eao(t) = total(t) / mean_dens(t);
-          log_eao(t) = log(eao(t));
+          if (proj_time_include(t) == 0 || mean_dens(t) == 0) {
+            eao(t) = Type(0);
+            log_eao(t) = Type(0);
+          } else {
+            eao(t) = total(t) / mean_dens(t);
+            log_eao(t) = log(eao(t));
+          }
         }
         REPORT(eao);
         REPORT(mean_dens);
         ADREPORT(log_eao);
+        ADREPORT(eao);
+        jnll = sdmTMB::add_lowrank_bias_correction(eao, eps_index, proj_time_include, 0, jnll);
       }
     }
   }

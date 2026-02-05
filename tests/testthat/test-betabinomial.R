@@ -214,3 +214,154 @@ test_that("Beta-binomial matches glmmTMB when spatial='off'", {
   # Compare log-likelihoods (should be very close)
   expect_equal(logLik(m_glmmTMB)[1], logLik(m_sdmTMB)[1], tolerance = 0.001)
 })
+
+test_that("Beta-binomial handles NA in response", {
+  skip_on_cran()
+  set.seed(1)
+
+  n_trials <- 10
+  n_obs <- 100
+
+  dat <- data.frame(id = seq_len(n_obs))
+
+  prob <- 0.4
+  phi <- 2
+  beta_vals <- stats::rbeta(n_obs, prob * phi, (1 - prob) * phi)
+  dat$successes <- stats::rbinom(n_obs, size = n_trials, prob = beta_vals)
+  dat$failures <- n_trials - dat$successes
+
+  # Test 1: cbind syntax - both successes and failures NA (same rows)
+  dat$successes[c(5, 10, 15)] <- NA
+  dat$failures[c(5, 10, 15)] <- NA
+
+  m <- sdmTMB(
+    cbind(successes, failures) ~ 1,
+    data = dat,
+    family = betabinomial(),
+    spatial = "off"
+  )
+
+  expect_true(m$model$convergence == 0)
+
+  # Test 2: cbind syntax - only failures is NA (triggers the original bug)
+  dat2 <- data.frame(id = seq_len(n_obs))
+  dat2$successes <- stats::rbinom(n_obs, size = n_trials, prob = beta_vals)
+  dat2$failures <- n_trials - dat2$successes
+  dat2$failures[c(5, 10, 15)] <- NA
+
+  m2 <- sdmTMB(
+    cbind(successes, failures) ~ 1,
+    data = dat2,
+    family = betabinomial(),
+    spatial = "off"
+  )
+
+  expect_true(m2$model$convergence == 0)
+
+  # Test 3: proportions + weights syntax - NA in proportion
+  dat3 <- data.frame(id = 1:n_obs)
+  dat3$prop <- beta_vals
+  dat3$size <- n_trials
+  dat3$prop[c(5, 10, 15)] <- NA
+
+  m3 <- sdmTMB(
+    prop ~ 1,
+    data = dat3,
+    family = betabinomial(),
+    weights = dat3$size,
+    spatial = "off"
+  )
+
+  expect_true(m3$model$convergence == 0)
+
+  # try same with pre-filtering to make sure it matches exactly
+  dat3 <- dat3[!is.na(dat3$prop),,drop=FALSE]
+  m3filtered <- sdmTMB(
+    prop ~ 1,
+    data = dat3,
+    family = betabinomial(),
+    weights = dat3$size,
+    spatial = "off"
+  )
+  expect_equal(logLik(m3), logLik(m3filtered))
+
+  # now with offset
+  dat3 <- data.frame(id = 1:n_obs)
+  dat3$prop <- beta_vals
+  dat3$size <- n_trials
+  dat3$offset <- rnorm(n_obs)
+  dat3$prop[c(5, 10, 15)] <- NA
+
+  expect_error({m3 <- sdmTMB(
+    prop ~ 1,
+    data = dat3,
+    family = betabinomial(),
+    offset = dat3$offset,
+    spatial = "off"
+  )}, regexp = "weights")
+
+  m3 <- sdmTMB(
+    prop ~ 1,
+    data = dat3,
+    family = betabinomial(),
+    weights = dat3$size,
+    offset = dat3$offset,
+    spatial = "off"
+  )
+  dat3 <- dat3[!is.na(dat3$prop),,drop=FALSE]
+  m3filtered <- sdmTMB(
+    prop ~ 1,
+    data = dat3,
+    family = betabinomial(),
+    weights = dat3$size,
+    offset = dat3$offset,
+    spatial = "off"
+  )
+  expect_equal(logLik(m3), logLik(m3filtered))
+
+  # Test 4: proportions + weights syntax - NA in weights (size)
+  dat4 <- data.frame(id = 1:n_obs)
+  dat4$prop <- beta_vals
+  dat4$size <- rep(n_trials, n_obs)
+  dat4$size[c(5, 10, 15)] <- NA
+
+  m4 <- sdmTMB(
+    prop ~ 1,
+    data = dat4,
+    family = betabinomial(),
+    weights = dat4$size,
+    spatial = "off"
+  )
+
+  expect_true(m4$model$convergence == 0)
+})
+
+test_that("Betabinomial can be used with index standardization", {
+  skip_on_cran()
+  skip_on_ci()
+  set.seed(1)
+  n_trials <- 10
+  n_obs <- 100
+  dat <- data.frame(id = seq_len(n_obs))
+  prob <- 0.4
+  phi <- 2
+  beta_vals <- stats::rbeta(n_obs, prob * phi, (1 - prob) * phi)
+  dat$successes <- stats::rbinom(n_obs, size = n_trials, prob = beta_vals)
+  dat$trials <- n_trials
+  dat$prop <- dat$successes / dat$trials
+  dat$time <- 1L
+  m <- sdmTMB(
+    prop ~ 1,
+    data = dat,
+    family = betabinomial(),
+    weights = dat$trials,
+    spatial = "off",
+    spatiotemporal = "off",
+    time = "time"
+  )
+  nd <- data.frame(time = 1L)
+  p <- predict(m, newdata = nd, return_tmb_object = TRUE)
+  i <- get_index(p, area = 10) # 10 'trials'
+  expect_equal(i$est, stats::plogis(p$data$est) * 10)
+  expect_equal(i$est, 3.452362, tolerance = 1e-5)
+})

@@ -20,10 +20,6 @@
 
 1. Knief, U., Ahrens, A. K., Allendorf, V., Behringer, C. J., Bertram, J., Bouwhuis, S., Fiedler, W., Globig, A., Günther, A., Herrmann, C., Knauf, S., Marchowski, D., Piro, S., Pohlmann, A., Rollins, R. E., Staubach, C., & Harder, T. (2025). *Outbreak dynamics of high pathogenicity avian influenza virus H5N1, clade 2.3.4.4b <span class="nocase">euBB</span>, in black-headed gulls and common terns in Germany in 2023* (p. 2025.09.17.676714). <https://doi.org/10.1101/2025.09.17.676714>
 
-1. Lindmark, M., Griffiths, C. A., Bartolino, V., Thunell, V., Maioli, F., Anderson, S. C., Belgrano, A., Casini, M., Nadolna-Ałtyn, K., Pawlak, J., Pachur, M., Rakowski, M., Wikström, K., Thompson, M. S. A., Gogina, M., Ustups, D., & Jacobsen, N. S. (2025). *Weak effects of local prey density and spatial overlap on predation intensity in a temperate marine ecosystem* (p. 2025.03.27.645454). <https://doi.org/10.1101/2025.03.27.645454>
-
-1. Lindmark, M., Maioli, F., Anderson, S. C., Gogina, M., Bartolino, V., Sköld, M., Ohlsson, M., Eklöf, A., & Casini, M. (2025). *Quantifying competition between two demersal fish species from spatiotemporal stomach content data* (p. 2024.04.22.590538). <https://doi.org/10.1101/2024.04.22.590538>
-
 1. Lindmark, M., Werner, M., Thor, P., Maioli, F., Quesada, E., Bartolino, V., & Jacobson, P. (2025). *Reduced size of larvae and small fish linked to warming and reduced prey density* (p. 2025.06.27.661664). <https://doi.org/10.1101/2025.06.27.661664>
 
 1. Odell, A. N., Marshall, K. N., Ward, E. J., Johnson, K. F., & Baskett, M. L. (2025). *Spatiotemporal Models Reveal Dynamic Growth Patterns in U.S. West Coast Groundfish* (p. 2025.05.19.653526). <https://doi.org/10.1101/2025.05.19.653526>
@@ -40,7 +36,17 @@
 
 # Journal articles
 
-1. Davidson, L. N. K., English, P. A., King, J., Grant, P. B. C., Taylor, I. G., Barnett, L. A. K., Gertseva, V., Tribuzio, C. A., & Anderson, S. C. (2026). Mystery of the Disappearing Dogfish: Transboundary Analyses Reveal Steep Population Declines Across the Northeast Pacific With Little Evidence for Regional Redistribution. *Fish Fish.*, *27*(1), 1–12. <https://doi.org/10.1111/faf.70028>
+1. Davidson, L. N. K., English, P. A., King, J., Grant, P. B. C., Taylor, I. G., Barnett, L. A. K., Gertseva, V., Tribuzio, C. A., & Anderson, S. C. (2026). Mystery of the disappearing dogfish: Transboundary analyses reveal steep population declines across the northeast pacific with little evidence for regional redistribution. *Fish Fish.*, *27*(1), 1–12. <https://doi.org/10.1111/faf.70028>
+
+1. English, P. A., Anderson, S. C., & Forrest, R. E. (2026). Body Condition as a Shared Response to Environment in a Commercially Important Demersal Fish Assemblage. *Fish Fish.* <https://doi.org/10.1111/faf.70053>
+
+1. Evans, R., Gauthier, S., Robinson, C. L. K., English, P. A., Stanley, C., Wright, B. M., & Nichol, L. (2026). Linking oceanic variability, euphausiid hotspot persistence, and marine predator distribution along Canada’s west coast. *Ecol. Appl.*, *36*(1), e70141. <https://doi.org/10.1002/eap.70141>
+
+1. García-Fernández, C., Otero, J., Pennino, M. G., & Sampedro, M. P. (2026). Unveiling European hake spawning patterns from fishery data. *ICES J Mar Sci*, *83*(1), fsaf241. <https://doi.org/10.1093/icesjms/fsaf241>
+
+1. Hohwieler, K., Piza Roca, C., Brunton, E., Ward, M., & Cristescu, R. H. (2026). Exploring the potential role of built environments in wildlife conservation during wildfires. *Conserv. Sci. Pract.*, *8*(1), e70200. <https://doi.org/10.1111/csp2.70200>
+
+1. Rogers, L. A., Axler, K. E., & Bigman, J. S. (2026). Widespread Phenological Shifts With Temperature in Alaska’s Marine Fishes. *Global Change Biology*, *32*(1), e70708. <https://doi.org/10.1111/gcb.70708>
 
 1. Baecher, J. A., Akshay, V. A., Guralnick, R. P., Bauer, A. M., Tavares, Y. N., Sánchez, Y., Thorson, J. T., & Campbell, L. P. (2025). Toward ecological forecasting of West Nile virus in Florida: Insights from two decades of sentinel chicken surveillance. *Science of The Total Environment*, *1000*, 180308. <https://doi.org/10.1016/j.scitotenv.2025.180308>
 
@@ -68,6 +74,10 @@
 
 1. Lindgård, E. L., Berg, E., Zimmermann, F., & Aschan, M. (2025). Recent recovery and future prospects of the northeast Atlantic halibut stock. *ICES J Mar Sci*, *82*(9), fsaf166. <https://doi.org/10.1093/icesjms/fsaf166>
 
+1. Lindmark, M., Griffiths, C. A., Bartolino, V., Thunell, V., Maioli, F., Anderson, S. C., Belgrano, A., Casini, M., Nadolna-Ałtyn, K., Pawlak, J., Pachur, M., Rakowski, M., Wikström, K., Thompson, M. S. A., Gogina, M., Ustups, D., & Jacobsen, N. S. (2025). Weak effects of local prey density and spatial overlap on predation intensity in a temperate marine ecosystem. *Ecol. Appl.*, *35*(7), e70136. <https://doi.org/10.1002/eap.70136>
+
+1. Lindmark, M., Maioli, F., Anderson, S. C., Gogina, M., Bartolino, V., Sköld, M., Ohlsson, M., Eklöf, A., & Casini, M. (2025). Quantifying food competition between two demersal fish species from spatiotemporal stomach content data. *Can. J. Fish. Aquat. Sci.* <https://doi.org/10.1139/cjfas-2025-0064>
+
 1. Lindmark, M., Ohlberger, J., & Gårdmark, A. (2025). Stronger effect of temperature on body growth in cool than in warm populations suggests lack of local adaptation. *Ecography*, e07518. <https://doi.org/10.1002/ecog.07518>
 
 1. Matsubayashi, J., Miura, K., Yamamori, E., Arimoto, Y., Yoshimizu, C., Tayasu, I., & Tsuruga, H. (2025). Multiscale dietary analysis of brown bears in Hokkaido, Japan. *J. Wildl. Manag.*, e70047. <https://doi.org/10.1002/jwmg.70047>
@@ -76,11 +86,17 @@
 
 1. Mu, X., Wang, X., Zhang, C., Zhao, X., Zhang, J., Zhao, Y., Ying, Y., Fan, G., Liu, L., Zhu, J., & Xu, Q. (2025). Incorporating spatiotemporal structure to improve the understanding of Antarctic krill (*Euphausia* *Superba*) distribution. *Fisheries Research*, *292*, 107604. <https://doi.org/10.1016/j.fishres.2025.107604>
 
+1. Norén, K., Svensson, F., & Lindmark, M. (2025). Evaluating the potential of underwater television to contribute to marine litter assessments alongside bottom trawling. *PLoS One*, *20*(6), e0324900. <https://doi.org/10.1371/journal.pone.0324900>
+
+1. Rasmuson, L. K., Groth, S. D., Edwards, C. A., Anderson, E. S., Blume, M. T. O., & Smith, K. R. (2025). Importance of near-bottom oceanographic data in modeling the distribution of eulachon bycatch in the U.S. West Coast shrimp trawl fishery. *Front. Mar. Sci.*, *12*. <https://doi.org/10.3389/fmars.2025.1703566>
+
 1. Rovellini, A., Punt, A. E., Bryan, M. D., Kaplan, I. C., Dorn, M. W., Aydin, K., Fulton, E. A., Alglave, B., Baker, M. R., Carroll, G., Ferriss, B. E., Haltuch, M. A., Hayes, A. L., Hermann, A. J., Hernvann, P.-Y., Holsman, K. K., Liu, O. R., McHuron, E., Morzaria-Luna, H. N., … Weise, M. T. (2025). Linking climate stressors to ecological processes in ecosystem models, with a case study from the Gulf of Alaska. *ICES J. Mar. Sci.*, *82*(1), fsae002. <https://doi.org/10.1093/icesjms/fsae002>
 
 1. Schonfeld, A. J., Gasbarro, R. P., Cimino, M. A., Field, J. C., Bograd, S. J., Hazen, E. L., & Santora, J. A. (2025). Water column structure influences variability of micronekton distribution and biodiversity in the California Current. *Progress in Oceanography*, *238*, 103556. <https://doi.org/10.1016/j.pocean.2025.103556>
 
 1. Schooler, S. L., & Belant, J. L. (2025). Human Pressures Drive Global Mammalian Species Richness Loss and Community Change. *Divers. Distrib.*, *31*(8), e70076. <https://doi.org/10.1111/ddi.70076>
+
+1. Taylor, M. H., Haslob, H., Hünerlage, K., & Kempf, A. (2025). Estimation of brown shrimp stock and fishery dynamics in the German Bight using a novel biomass index. *Fisheries Research*, *291*, 107547. <https://doi.org/10.1016/j.fishres.2025.107547>
 
 1. Wan, F., Lin, H., & Zhang, F. (2025). <span class="nocase">CPUE standardisation in the Atlantic swordfish longline fishery based on sdmTMB</span>. *Shhydxxb*, *34*(2), 422–433. <https://doi.org/10.12024/jsou.20241104705>
 
@@ -230,6 +246,8 @@
 
 1. Katzenberger, J. (2019). Modelling distribution and habitat suitability for the Red Kite *Milvus* *Milvus* in Germany. *Vogelwelt*, *139*, 117–128.
 
+1. Kulik, V. V., Ovsyannikov, E. E., Varkentin, A. I., Ilyin, O. I., Budyansky, M. V., Uleysky, M. Yu., & Prants, S. V. (n.d.). Catch Efficiency and Biomass Estimates of Walleye Pollock (Gadus chalcogrammus) in Relation to Lagrangian Indicators and Surface Temperature of Water in the Okhotsk Sea. *Fish. Oceanogr.*, *n/a*(n/a). <https://doi.org/10.1111/fog.70026>
+
 1. Matsubayashi, J., Osada, Y., Kimura, K., Aoki, Y., Okazaki, M., Senda, T., Ueda, Y., Matsubara, N., & Tsuda, Y. (n.d.). Fine-scale reconstruction of pelagic fish migration by iso-logging of eye lens. *Methods Ecol. Evol.*, *n/a*(n/a). <https://doi.org/10.1111/2041-210x.70201>
 
 
@@ -237,6 +255,8 @@
 # MSc and PhD Theses
 
 1. Carlsen, A. (2025). *Understanding predators through their prey* PhD thesis. Swedish University of Agricultural Sciences.
+
+1. Charbonneau, J. A. (2025). *Shifting life histories and recreational fishery dynamics in steelhead trout* PhD thesis. Simon Fraser University.
 
 1. Díaz, R. R. (2025). *Advancing Ecosystem-Based Fisheries Management on the Grand Banks of Newfoundland* PhD thesis. Memorial University.
 
@@ -273,6 +293,8 @@
 # Reports
 
 1. Ballenger, J. C., & Schlick, C. J. C. (2025). *Stock Assessment Report on the Red Drum *Sciaenops* *Ocellatus* South Carolina Sub-Stock, 1981-2023* (South Carolina Department of Natural Resources Nos. SAR-2025-01).
+
+1. Correa, G. M., Goikoetxea, N., Arrizabalaga, H., Santiago, J., Quelle, P., & Onandia, I. (2025). Advances in the Use of Spatiotemporal Models for the Catch Per Unit Effort Standardization of North Atlantic Albacore for the Spanish Baitboat and Troll Fisheries. *Collect. Vol. Sci. Pap. ICCAT*, *82*(11), 1–33.
 
 1. DFO. (2025). Pacific Spiny Dogfish (*Squalus* *Suckleyi*) population modelling for outside waters of British Columbia in 2024. *DFO Can. Sci. Advis. Sec. Sci. Advis. Rep.*, *2025/032*.
 

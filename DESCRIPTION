@@ -1,7 +1,7 @@
 Type: Package
 Package: sdmTMB
 Title: Spatial and Spatiotemporal SPDE-Based GLMMs with 'TMB'
-Version: 0.8.0.9003
+Version: 1.0.0.9000
 Authors@R: c(
     person(c("Sean", "C."), "Anderson", , "sean@seananderson.ca",
            role = c("aut", "cre"),
@@ -55,7 +55,7 @@ Description: Implements spatial and spatiotemporal GLMMs (Generalized Linear
     Differential Equation) Gaussian Markov random field approximation to
     Gaussian random fields. One common application is for spatially explicit
     species distribution models (SDMs).
-    See Anderson et al. (2024) <doi:10.1101/2022.03.24.485545>.
+    See Anderson et al. (2025) <doi:10.18637/jss.v115.i02>.
 License: GPL-3
 Copyright: inst/COPYRIGHTS
 URL: https://sdmTMB.github.io/sdmTMB/, https://github.com/sdmTMB/sdmTMB
@@ -66,13 +66,11 @@ Imports:
     assertthat,
     abind,
     cli,
-    extraDistr,
     fmesher,
     fishMod,
     generics,
     graphics,
     lifecycle,
-    lme4,
     Matrix,
     methods,
     mgcv,
@@ -95,6 +93,7 @@ Suggests:
     glmmTMB,
     ggplot2,
     knitr,
+    lme4,
     rmarkdown,
     sf,
     spatstat.data,

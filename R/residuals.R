@@ -21,6 +21,55 @@ qres_binomial <- function(object, y, mu, .n = NULL) {
   stats::qnorm(u)
 }
 
+# Beta-binomial CDF: P(X <= q) for X ~ BetaBinomial(size, alpha, beta)
+# Replaces extraDistr::pbbinom to avoid orphaned package dependency
+pbbinom <- function(q, size, alpha, beta) {
+  # Vectorize over all inputs
+  len <- max(length(q), length(size), length(alpha), length(beta))
+  q <- rep_len(q, len)
+  size <- rep_len(size, len)
+  alpha <- rep_len(alpha, len)
+  beta <- rep_len(beta, len)
+
+  result <- numeric(len)
+
+  for (i in seq_len(len)) {
+    if (is.na(q[i]) || is.na(size[i]) || is.na(alpha[i]) || is.na(beta[i])) {
+      result[i] <- NA
+      next
+    }
+
+    # Handle edge cases
+    if (q[i] < 0) {
+      result[i] <- 0
+      next
+    }
+    if (q[i] >= size[i]) {
+      result[i] <- 1
+      next
+    }
+
+    # Sum PMF from 0 to floor(q)
+    # PMF: choose(n, k) * beta(k + alpha, n - k + beta) / beta(alpha, beta)
+    # Using log scale for numerical stability
+    q_int <- floor(q[i])
+    n <- size[i]
+    a <- alpha[i]
+    b <- beta[i]
+    log_beta_ab <- lbeta(a, b)
+    cdf <- 0
+
+    for (k in 0:q_int) {
+      log_pmf <- lchoose(n, k) + lbeta(k + a, n - k + b) - log_beta_ab
+      cdf <- cdf + exp(log_pmf)
+    }
+
+    result[i] <- cdf
+  }
+
+  result
+}
+
 qres_betabinomial <- function(object, y, mu, .n = NULL) {
   # Extract dispersion parameter
   theta <- get_pars(object)
@@ -34,8 +83,8 @@ qres_betabinomial <- function(object, y, mu, .n = NULL) {
 
   if (is.null(.n)) .n <- rep(1, length(y))
 
-  a <- extraDistr::pbbinom(pmax(0, y - 1), size = .n, alpha = alpha, beta = beta)
-  b <- extraDistr::pbbinom(y, size = .n, alpha = alpha, beta = beta)
+  a <- pbbinom(pmax(0, y - 1), size = .n, alpha = alpha, beta = beta)
+  b <- pbbinom(y, size = .n, alpha = alpha, beta = beta)
   u <- stats::runif(n = length(y), min = pmin(a, b), max = pmax(a, b))
   stats::qnorm(u)
 }

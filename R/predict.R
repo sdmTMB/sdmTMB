@@ -549,6 +549,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     tmb_data$Zt_list_proj <- Zt_list
     time_lu <- object$time_lu
     tmb_data$proj_year <- time_lu$year_i[match(nd[[object$time]], time_lu$time_from_data)] # was make_year_i(nd[[object$time]])
+    tmb_data$proj_time_include <- as.integer(time_lu$time_from_data %in% nd[[object$time]])
     tmb_data$proj_lon <- newdata[[xy_cols[[1]]]]
     tmb_data$proj_lat <- newdata[[xy_cols[[2]]]]
     tmb_data$calc_se <- as.integer(se_fit)

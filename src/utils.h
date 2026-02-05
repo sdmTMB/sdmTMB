@@ -513,4 +513,27 @@ Type dbetabinom_robust(Type y, Type loga, Type logb, Type n, int give_log=0)
   else return logres;
 }
 
+// Helper for low-rank sparse Hessian bias correction
+// Used by derived quantities (index, cog, weighted_avg, eao)
+// See Kristensen et al. (2016) doi:10.18637/jss.v070.i05 and
+// TMB's newton::Tag for low-rank sparse Hessian approximation
+template <class Type>
+Type add_lowrank_bias_correction(
+    const vector<Type>& values,
+    const vector<Type>& eps_index,
+    const vector<int>& include,
+    int offset,
+    Type jnll
+) {
+  if (eps_index.size() > 0) {
+    for (int t = 0; t < values.size(); t++) {
+      if (include.size() == 0 || include(t) != 0) {
+        Type S = newton::Tag(values(t));
+        jnll += eps_index(t + offset) * S;
+      }
+    }
+  }
+  return jnll;
+}
+
 }  // namespace sdmTMB
