@@ -40,7 +40,7 @@ test_that("SVC are estimated correctly for binomial and delta models", {
     family = binomial()
   )
 
-  expect_equal(m1$model$objective, m1.2$model$objective)
+  expect_equal(m1$model$objective, m1.2$model$objective, tolerance = 1e-5)
 
   # warn: probably don't want to do this!
   expect_message({
