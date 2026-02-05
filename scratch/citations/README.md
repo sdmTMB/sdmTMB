@@ -96,6 +96,8 @@
 
 1. Schooler, S. L., & Belant, J. L. (2025). Human Pressures Drive Global Mammalian Species Richness Loss and Community Change. *Divers. Distrib.*, *31*(8), e70076. <https://doi.org/10.1111/ddi.70076>
 
+1. Taylor, M. H., Haslob, H., Hünerlage, K., & Kempf, A. (2025). Estimation of brown shrimp stock and fishery dynamics in the German Bight using a novel biomass index. *Fisheries Research*, *291*, 107547. <https://doi.org/10.1016/j.fishres.2025.107547>
+
 1. Wan, F., Lin, H., & Zhang, F. (2025). <span class="nocase">CPUE standardisation in the Atlantic swordfish longline fishery based on sdmTMB</span>. *Shhydxxb*, *34*(2), 422–433. <https://doi.org/10.12024/jsou.20241104705>
 
 1. Ward, E. J., & Tolimieri, N. (2025). Advancing spatially explicit fisheries management with age-specific species distribution models. *Can. J. Fish. Aquat. Sci.*, *82*, 1–11. <https://doi.org/10.1139/cjfas-2025-0065>
