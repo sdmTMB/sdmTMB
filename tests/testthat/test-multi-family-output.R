@@ -22,6 +22,36 @@ test_that("Multi-family residuals are blocked", {
   )
 })
 
+test_that("Multi-family simulation respects model = 1 vs model = 2", {
+  skip_on_cran()
+
+  dat <- data.frame(
+    y = c(0, 2, 0, 3, 1, 0, 5),
+    dist = "delta_gamma"
+  )
+  fam <- list(
+    delta_gamma = delta_gamma()
+  )
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = fam,
+    distribution_column = "dist"
+  )
+
+  set.seed(101)
+  sims1 <- predict(fit, newdata = dat, nsim = 5, model = 1, type = "link")
+  set.seed(101)
+  sims2 <- predict(fit, newdata = dat, nsim = 5, model = 2, type = "link")
+
+  expect_true(is.matrix(sims1))
+  expect_true(is.matrix(sims2))
+  expect_equal(dim(sims1), dim(sims2))
+  expect_true(any(abs(sims1 - sims2) > 1e-10))
+})
+
 test_that("Multi-family delta simulations return combined responses", {
   dat <- data.frame(
     y = c(0, 2, 0, 3, 1, 0, 5),
@@ -47,6 +77,34 @@ test_that("Multi-family delta simulations return combined responses", {
   expect_equal(nrow(sims), nrow(dat))
   expect_equal(ncol(sims), 3L)
   expect_true(rlang::is_integerish(sims[dat$dist == "poisson",1L]))
+})
+
+test_that("Multi-family predict rejects NAs in prediction columns", {
+  dat <- data.frame(
+    y = c(1.2, 3, 0, 2.4, 1, 0),
+    x = c(0.1, 0.5, 0.2, 0.2, 0.3, 0.7),
+    dist = c("gaussian", "poisson", "binomial", "gaussian", "poisson", "binomial")
+  )
+  fam <- list(
+    gaussian = gaussian(),
+    poisson = poisson(),
+    binomial = binomial()
+  )
+  fit <- sdmTMB(
+    y ~ x,
+    data = dat,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = fam,
+    distribution_column = "dist",
+    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+  )
+  nd <- dat
+  nd$x[2] <- NA_real_
+  expect_error(
+    predict(fit, newdata = nd),
+    regexp = "NAs are not allowed in multi-family prediction columns"
+  )
 })
 
 test_that("tidy works for multi-family models", {

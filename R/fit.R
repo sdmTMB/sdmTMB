@@ -858,6 +858,14 @@ sdmTMB <- function(
     formula <- list(thresh[[1]]$formula, thresh[[2]]$formula)
   }
 
+  if (multi_family) {
+    .multi_family_assert_complete_cases(
+      data = data,
+      formula = formula,
+      stage = "fit"
+    )
+  }
+
   if (is.character(offset)) {
     offset <- data[[offset]]
   }

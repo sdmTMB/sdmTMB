@@ -62,6 +62,31 @@ test_that("Stage 1 multi-family can fit a simple model", {
   expect_true(is.list(fit$family))
 })
 
+test_that("Multi-family fit rejects NAs in modeling columns", {
+  dat <- data.frame(
+    y = c(1.2, 3, 0, 2.4, 1, 0),
+    x = c(0.1, 0.5, NA, 0.2, 0.3, 0.7),
+    dist = c("gaussian", "poisson", "binomial", "gaussian", "poisson", "binomial")
+  )
+  fam <- list(
+    gaussian = gaussian(),
+    poisson = poisson(),
+    binomial = binomial()
+  )
+  expect_error(
+    sdmTMB(
+      y ~ x,
+      data = dat,
+      spatial = "off",
+      spatiotemporal = "off",
+      family = fam,
+      distribution_column = "dist",
+      do_fit = FALSE
+    ),
+    regexp = "NAs are not allowed in multi-family modeling columns"
+  )
+})
+
 test_that("Stage 1 multi-family binomial proportions use weights as size", {
   dat <- data.frame(
     y = c(0.2, 0.7, 1, 0, 0.5, 0.3),

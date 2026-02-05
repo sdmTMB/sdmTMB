@@ -195,6 +195,47 @@
   )
 }
 
+.multi_family_assert_complete_cases <- function(
+  data,
+  formula,
+  stage = c("fit", "predict"),
+  response = NULL
+) {
+  stage <- match.arg(stage)
+  formulas <- if (is.list(formula)) formula else list(formula)
+  vars <- unique(unlist(lapply(formulas, all.vars)))
+  if (!is.null(response)) {
+    vars <- setdiff(vars, response)
+  }
+  vars <- intersect(vars, names(data))
+  if (!length(vars)) return(invisible(NULL))
+
+  cc <- stats::complete.cases(data[, vars, drop = FALSE])
+  if (any(!cc)) {
+    n_bad <- sum(!cc)
+    if (stage == "fit") {
+      cli_abort(c(
+        "x" = "NAs are not allowed in multi-family modeling columns.",
+        "i" = paste0(
+          "Found ", n_bad,
+          " row(s) with missing values in variables used by the model formula(s). ",
+          "Remove or impute missing values before fitting."
+        )
+      ))
+    } else {
+      cli_abort(c(
+        "x" = "NAs are not allowed in multi-family prediction columns.",
+        "i" = paste0(
+          "Found ", n_bad,
+          " row(s) with missing values in variables used by the prediction formula(s). ",
+          "Remove or impute missing values before calling `predict()`."
+        )
+      ))
+    }
+  }
+  invisible(NULL)
+}
+
 .multi_family_param_offsets <- function(family_list) {
   n_fam <- length(family_list)
   family_names <- vapply(

@@ -293,6 +293,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
   type <- match.arg(type)
   multi_family <- isTRUE(object$tmb_data$multi_family == 1L)
   has_delta_multi <- multi_family && any(object$tmb_data$delta_family_e == 1L)
+  is_delta_like <- if (multi_family) has_delta_multi else isTRUE(object$family$delta)
   dist_col <- NULL
   if (multi_family) {
     dist_col <- object$distribution_column
@@ -444,6 +445,15 @@ predict.sdmTMB <- function(object, newdata = NULL,
     if (!response %in% names(nd)) {
       nd[[response]] <- 0 # fake for model.matrix
       sdmTMB_fake_response <- TRUE
+    }
+
+    if (multi_family) {
+      .multi_family_assert_complete_cases(
+        data = nd,
+        formula = formula,
+        stage = "predict",
+        response = response
+      )
     }
 
     if (!"mgcv" %in% names(object)) object[["mgcv"]] <- FALSE
@@ -657,7 +667,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
       }
 
       predtype <- as.integer(model[[1]])
-      if (isTRUE(object$family$delta) && sims_var == "est") {
+      if (!multi_family && isTRUE(object$family$delta) && sims_var == "est") {
         if (predtype %in% c(1L, NA)) {
           out1 <- lapply(out, function(x) x[, 1L, drop = TRUE])
           out1 <- do.call("cbind", out1)
@@ -681,13 +691,13 @@ predict.sdmTMB <- function(object, newdata = NULL,
         }
       } else { # not a delta model OR not sims_var = "est":
 
-        if (isTRUE(object$family$delta) && sims_var != "est" && is.na(model[[1]])) {
+        if (is_delta_like && sims_var != "est" && is.na(model[[1]])) {
           cli_warn("`model` argument was left as NA; defaulting to 1st model component.")
           model <- 1L
         } else {
           model <- as.integer(model)
         }
-        if (!isTRUE(object$family$delta)) {
+        if (!is_delta_like) {
           model <- 1L
         }
         if (length(dim(out[[1]])) == 2L) {
