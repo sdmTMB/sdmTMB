@@ -98,6 +98,10 @@ NULL
 #'   factor predictors, if `spatial_varying` excludes the intercept (`~ 0` or `~
 #'   -1`), set `spatial = 'off'` to match. Structure must be shared in delta
 #'   models.
+#' @param distributed_lags An optional one-sided formula describing distributed
+#'   lag terms with `spatial()`, `temporal()`, or `spatiotemporal()` wrappers.
+#'   Example: `~ spatial(x) + temporal(x) + spatiotemporal(z)`. Distributed lags
+#'   are currently not supported for delta/hurdle or multi-family models.
 #' @param weights A numeric vector representing optional likelihood weights for
 #'   the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
 #'   to sum to one and are not internally modified. Can also be used for trials
@@ -618,6 +622,7 @@ sdmTMB <- function(
     do_index = FALSE,
     predict_args = NULL,
     index_args = NULL,
+    distributed_lags = NULL,
     experimental = NULL) {
   data <- droplevels(data) # if data was subset, strips absent factors
 
@@ -789,6 +794,16 @@ sdmTMB <- function(
       }
     }
   }
+
+  distributed_lags_parsed <- .parse_distributed_lags_formula(distributed_lags)
+  distributed_lags_parsed <- .validate_distributed_lag_terms(
+    distributed_lags_parsed,
+    data = data,
+    time = time,
+    delta = delta,
+    multi_family = multi_family
+  )
+
   if (is.null(time)) {
     time <- "_sdmTMB_time"
     data[[time]] <- 0L
@@ -1687,6 +1702,8 @@ sdmTMB <- function(
       tmb_map = tmb_map,
       tmb_random = tmb_random,
       spatial_varying = spatial_varying,
+      distributed_lags = distributed_lags,
+      distributed_lags_parsed = distributed_lags_parsed,
       spatial = spatial,
       spatiotemporal = spatiotemporal,
       spatial_varying_formula = spatial_varying_formula,

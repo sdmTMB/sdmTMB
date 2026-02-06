@@ -32,6 +32,7 @@ sdmTMB(
   do_index = FALSE,
   predict_args = NULL,
   index_args = NULL,
+  distributed_lags = NULL,
   experimental = NULL
 )
 }
@@ -196,6 +197,11 @@ to \code{\link[=get_index]{get_index()}}.}
 \code{do_index = TRUE}. Currently, only \code{area} is supported. Bias correction
 can be done when calling \code{\link[=get_index]{get_index()}} on the resulting fitted object.
 Most users can ignore this option.}
+
+\item{distributed_lags}{An optional one-sided formula describing distributed
+lag terms with \code{spatial()}, \code{temporal()}, or \code{spatiotemporal()} wrappers.
+Example: \code{~ spatial(x) + temporal(x) + spatiotemporal(z)}. Distributed lags
+are currently not supported for delta/hurdle or multi-family models.}
 
 \item{experimental}{A named list for esoteric or in-development options. Here
 be dragons.}
