@@ -10,6 +10,33 @@
 #   expect_error(check_valid_factor_levels(x, "test"))
 # })
 
+test_that("predict() handles NA values in response column of newdata", {
+  skip_on_cran()
+
+  set.seed(42)
+  n <- 120
+  d <- data.frame(
+    cpue = ifelse(stats::runif(n) < 0.4, 0, exp(stats::rnorm(n))),
+    x = stats::rnorm(n),
+    g = factor(sample(letters[1:6], n, replace = TRUE))
+  )
+  fit <- sdmTMB(
+    cpue ~ x + (1 | g),
+    data = d,
+    spatial = "off",
+    family = delta_lognormal(),
+    silent = TRUE
+  )
+
+  nd <- d
+  nd$cpue[1] <- NA_real_
+  p_with_response <- predict(fit, newdata = nd)
+  p_without_response <- predict(fit, newdata = nd[, setdiff(names(nd), "cpue"), drop = FALSE])
+
+  expect_equal(p_with_response$est1, p_without_response$est1, tolerance = 1e-10)
+  expect_equal(p_with_response$est2, p_without_response$est2, tolerance = 1e-10)
+})
+
 test_that("Model with random intercepts fits appropriately.", {
   skip_on_cran()
   skip_if_not_installed("glmmTMB")
@@ -544,5 +571,4 @@ test_that("issue breakpt() version of formula doesn't break random effect predic
     xy_cols = c("X", "Y")
   )}, regexp = "year_f")
 })
-
 

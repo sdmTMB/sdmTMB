@@ -1,5 +1,9 @@
 # sdmTMB (development version)
 
+* Fix `predict()` with `newdata` containing `NA` in the response column for
+  models with random effects. Predictions now work as expected when the response
+  column is present but unused for prediction. #508
+
 # sdmTMB 1.0.0
 
 * Switch the recommended citation from the preprint to the Journal of

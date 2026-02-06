@@ -432,8 +432,13 @@ predict.sdmTMB <- function(object, newdata = NULL,
     Zt_list <- list()
 
     if (sum(object$tmb_data$n_re_groups) > 0 && isFALSE(pop_pred_iid)) {
+      re_formula_no_response <- stats::formula(
+        stats::delete.response(
+          stats::terms(remove_s_and_t2(object$smoothers$formula_no_sm))
+        )
+      )
       for (ii in seq_len(length(formula))) {
-        xx <- parse_formula(remove_s_and_t2(object$smoothers$formula_no_sm), nd)
+        xx <- parse_formula(re_formula_no_response, nd)
         # factor level checks:
         RE_names <- xx$barnames
         for (i in seq_along(RE_names)) {
@@ -451,7 +456,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
         # now do with a joint data frame to ensure factor levels match
         common_cols <- intersect(colnames(object$data), colnames(nd))
         joint_df <- rbind(object$data[,common_cols,drop=FALSE], nd[,common_cols,drop=FALSE])
-        xx <- parse_formula(object$smoothers$formula_no_sm, joint_df)
+        xx <- parse_formula(re_formula_no_response, joint_df)
         # drop the original data:
         Zt <- xx$re_cov_terms$Zt[,seq(nrow(object$data) + 1, nrow(object$data) + nrow(nd))]
         Zt_list[[ii]] <- Zt
