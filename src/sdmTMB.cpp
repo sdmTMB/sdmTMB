@@ -164,6 +164,11 @@ Type objective_function<Type>::operator()()
   DATA_VECTOR(proj_offset_i); // optional offset
 
   DATA_INTEGER(n_t);  // number of years
+  DATA_INTEGER(distributed_lag_n_terms);
+  DATA_INTEGER(distributed_lag_n_covariates);
+  DATA_ARRAY(distributed_lag_covariate_vertex_time);
+  DATA_IVECTOR(distributed_lag_term_component);
+  DATA_IVECTOR(distributed_lag_term_covariate);
 
   // Random effects
   DATA_IMATRIX(re_cov_df); // dataframe describing the random effects covariance parameters
@@ -293,6 +298,9 @@ Type objective_function<Type>::operator()()
   PARAMETER_ARRAY(ln_tau_Z);    // optional spatially varying covariate process
   PARAMETER_VECTOR(ln_tau_E);    // spatio-temporal process
   PARAMETER_ARRAY(ln_kappa);    // Matern parameter
+  PARAMETER(log_kappaS_dl);    // distributed lag spatial scale (chunk 3 plumbing)
+  PARAMETER(log_kappaT_dl);    // distributed lag temporal scale (chunk 3 plumbing)
+  PARAMETER(kappaST_dl_unscaled);    // distributed lag interaction scale (chunk 3 plumbing)
 
   PARAMETER(thetaf);           // tweedie only
   PARAMETER(ln_student_df);    // student-t df (log(df - 1))
@@ -349,6 +357,17 @@ Type objective_function<Type>::operator()()
   vector<Type> rho(n_m);
   for (int m = 0; m < n_m; m++) rho(m) = sdmTMB::minus_one_to_one(ar1_phi(m));
   vector<Type> phi = exp(ln_phi);
+  Type kappaS_dl = exp(log_kappaS_dl);
+  Type kappaT_dl = exp(log_kappaT_dl);
+  Type kappaST_dl = -invlogit(kappaST_dl_unscaled);
+  (void) distributed_lag_n_terms;
+  (void) distributed_lag_n_covariates;
+  (void) distributed_lag_covariate_vertex_time;
+  (void) distributed_lag_term_component;
+  (void) distributed_lag_term_covariate;
+  (void) kappaS_dl;
+  (void) kappaT_dl;
+  (void) kappaST_dl;
   auto get_param = [&](const vector<Type> &par,
                        const vector<int> &start,
                        const vector<int> &len,

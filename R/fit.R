@@ -1235,10 +1235,6 @@ sdmTMB <- function(
   }
   if (!delta) y_i <- matrix(y_i, ncol = 1L)
 
-  # TODO: make this cleaner
-  X_ij_list <- list()
-  for (i in seq_len(n_m)) X_ij_list[[i]] <- X_ij[[i]]
-
   time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
   n_t <- nrow(time_df)
   year_i_data <- time_df$year_i[match(data[[time]], time_df$time_from_data)]
@@ -1251,6 +1247,35 @@ sdmTMB <- function(
     year_i = year_i_data,
     n_t = n_t
   )
+
+  n_b_j_non_lag <- ncol(X_ij[[1]])
+  n_dl_terms <- 0L
+  distributed_lag_n_terms <- 0L
+  distributed_lag_n_covariates <- 0L
+  distributed_lag_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
+  distributed_lag_term_component <- integer(0)
+  distributed_lag_term_covariate <- integer(0)
+
+  if (!is.null(distributed_lags_data)) {
+    n_dl_terms <- distributed_lags_data$n_terms
+    dl_X <- matrix(
+      0,
+      nrow = nrow(X_ij[[1]]),
+      ncol = n_dl_terms,
+      dimnames = list(NULL, distributed_lags_data$term_coef_name)
+    )
+    X_ij[[1]] <- cbind(X_ij[[1]], dl_X)
+
+    distributed_lag_n_terms <- as.integer(distributed_lags_data$n_terms)
+    distributed_lag_n_covariates <- as.integer(distributed_lags_data$n_covariates)
+    distributed_lag_covariate_vertex_time <- distributed_lags_data$covariate_vertex_time
+    distributed_lag_term_component <- as.integer(distributed_lags_data$term_component_id - 1L)
+    distributed_lag_term_covariate <- as.integer(distributed_lags_data$term_covariate_index0)
+  }
+
+  # TODO: make this cleaner
+  X_ij_list <- list()
+  for (i in seq_len(n_m)) X_ij_list[[i]] <- X_ij[[i]]
 
   random_walk <- if (!is.null(time_varying)) {
     switch(time_varying_type,
@@ -1272,6 +1297,11 @@ sdmTMB <- function(
     sim_obs = 1L,
     A_spatial_index = spde$sdm_spatial_id - 1L,
     year_i = year_i_data,
+    distributed_lag_n_terms = distributed_lag_n_terms,
+    distributed_lag_n_covariates = distributed_lag_n_covariates,
+    distributed_lag_covariate_vertex_time = distributed_lag_covariate_vertex_time,
+    distributed_lag_term_component = distributed_lag_term_component,
+    distributed_lag_term_covariate = distributed_lag_term_covariate,
     ar1_fields = ar1_fields,
     simulate_t = rep(1L, n_t),
     rw_fields = rw_fields,
@@ -1381,6 +1411,9 @@ sdmTMB <- function(
     ln_tau_Z = matrix(0, n_z, n_m),
     ln_tau_E = rep(0, n_m),
     ln_kappa = matrix(0, 2L, n_m),
+    log_kappaS_dl = 0,
+    log_kappaT_dl = 0,
+    kappaST_dl_unscaled = 0,
     # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
     thetaf = 0,
     ln_student_df = if (!multi_family && family$family[1] == "student") {
@@ -1416,12 +1449,17 @@ sdmTMB <- function(
     fam <- family
     if (family$family == "student") fam$family <- "gaussian"
     temp <- mgcv::gam(formula = formula[[1]], data = data, family = fam)
-    tmb_params$b_j <- stats::coef(temp)
+    temp_coef <- stats::coef(temp)
+    tmb_params$b_j[seq_along(temp_coef)] <- temp_coef
   }
 
   # Map off parameters not needed
   tmb_map <- map_all_params(tmb_params)
-  tmb_map$b_j <- NULL
+  if (n_dl_terms > 0L) {
+    tmb_map$b_j <- factor(c(seq_len(n_b_j_non_lag), rep(NA_integer_, n_dl_terms)))
+  } else {
+    tmb_map$b_j <- NULL
+  }
   if (delta) tmb_map$b_j2 <- NULL
   if (multi_family) {
     tmb_map$ln_phi <- factor(rep(NA, n_m))
