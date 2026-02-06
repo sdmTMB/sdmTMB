@@ -213,7 +213,9 @@ extract_template_summary <- function(fit_tpl, component) {
   }
 
   list(
-    objective = fit_tpl$opt$objective,
+    objective_total = fit_tpl$opt$objective,
+    objective_data = fit_tpl$report$jnll_comp[1],
+    objective_re = sum(fit_tpl$report$jnll_comp[2:3]),
     kappa_name = kappa_name,
     kappa_value = kappa_value,
     beta_lag = unname(par["gamma_j"]),
@@ -249,9 +251,9 @@ run_component <- function(component, dat, mesh, dll_name) {
 
   param_cmp <- data.frame(
     component = component,
-    parameter = c("objective", sdm_sum$kappa_name, "lag_beta", "phi", "tweedie_p"),
+    parameter = c("objective_data", sdm_sum$kappa_name, "lag_beta", "phi", "tweedie_p"),
     sdmTMB = c(sdm_sum$objective, sdm_sum$kappa_value, sdm_sum$beta_lag, sdm_sum$phi, sdm_sum$tweedie_p),
-    template = c(tpl_sum$objective, tpl_sum$kappa_value, tpl_sum$beta_lag, tpl_sum$phi, tpl_sum$tweedie_p)
+    template = c(tpl_sum$objective_data, tpl_sum$kappa_value, tpl_sum$beta_lag, tpl_sum$phi, tpl_sum$tweedie_p)
   )
 
   eff_cmp <- cbind(
@@ -260,6 +262,14 @@ run_component <- function(component, dat, mesh, dll_name) {
   )
 
   print(param_cmp, row.names = FALSE)
+  cat(
+    sprintf(
+      "template objective breakdown: total=%.6f data=%.6f re_const=%.6f\n",
+      tpl_sum$objective_total,
+      tpl_sum$objective_data,
+      tpl_sum$objective_re
+    )
+  )
   print(eff_cmp, row.names = FALSE)
 
   list(param_cmp = param_cmp, eff_cmp = eff_cmp)
