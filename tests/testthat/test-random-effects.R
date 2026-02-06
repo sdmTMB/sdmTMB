@@ -301,7 +301,7 @@ test_that("Model with random intercepts fits appropriately.", {
   p1 <- predict(m, newdata = nd, re_form_iid = ~0)
   p2 <- predict(m, newdata = nd, re_form_iid = NA)
   # and this fails when not correct
-  expect_error(predict(m, newdata = nd), regexp = "variable lengths differ")
+  expect_error(predict(m, newdata = nd), regexp = "missing from `newdata`")
 })
 
 test_that("Random intercepts and cross validation play nicely", {
@@ -571,4 +571,3 @@ test_that("issue breakpt() version of formula doesn't break random effect predic
     xy_cols = c("X", "Y")
   )}, regexp = "year_f")
 })
-

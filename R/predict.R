@@ -438,9 +438,15 @@ predict.sdmTMB <- function(object, newdata = NULL,
         )
       )
       for (ii in seq_len(length(formula))) {
-        xx <- parse_formula(re_formula_no_response, nd)
         # factor level checks:
-        RE_names <- xx$barnames
+        RE_names <- barnames(reformulas::findbars(re_formula_no_response))
+        missing_RE_names <- setdiff(RE_names, names(newdata))
+        if (length(missing_RE_names) > 0) {
+          cli_abort(c(
+            "Random effect group column(s) missing from `newdata`: {.val {missing_RE_names}}.",
+            "i" = "Use `re_form_iid = NA` or `re_form_iid = ~0` to exclude random effects in prediction."
+          ))
+        }
         for (i in seq_along(RE_names)) {
           assert_that(is.factor(newdata[[RE_names[i]]]),
             msg = sprintf("Random effect group column `%s` in newdata is not a factor.", RE_names[i]))
