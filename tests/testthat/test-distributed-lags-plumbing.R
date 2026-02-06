@@ -109,3 +109,31 @@ test_that("no-lag fit remains numerically identical with explicit distributed_la
   expect_equal(fit_base$tmb_obj$report()$eta_i, fit_null$tmb_obj$report()$eta_i, tolerance = 1e-8)
   expect_equal(fit_base$tmb_obj$report()$mu_i, fit_null$tmb_obj$report()$mu_i, tolerance = 1e-8)
 })
+
+test_that("predict tmb_data keeps distributed lag columns aligned with b_j", {
+  skip_on_cran()
+  set.seed(1)
+  dat <- make_dl_plumbing_data()
+  mesh <- make_dl_plumbing_mesh(dat)
+
+  fit <- sdmTMB(
+    y ~ x1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    distributed_lags = ~ spatial(x1) + temporal(x2)
+  )
+
+  td <- predict(fit, newdata = dat, return_tmb_data = TRUE)
+  lag_cols <- fit$distributed_lags_data$term_coef_name
+
+  expect_equal(colnames(td$proj_X_ij[[1]]), colnames(fit$tmb_data$X_ij[[1]]))
+  expect_equal(ncol(td$proj_X_ij[[1]]), length(fit$tmb_params$b_j))
+  expect_equal(
+    unname(colSums(abs(td$proj_X_ij[[1]][, lag_cols, drop = FALSE]))),
+    rep(0, length(lag_cols))
+  )
+})

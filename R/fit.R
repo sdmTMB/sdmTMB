@@ -1258,13 +1258,10 @@ sdmTMB <- function(
 
   if (!is.null(distributed_lags_data)) {
     n_dl_terms <- distributed_lags_data$n_terms
-    dl_X <- matrix(
-      0,
-      nrow = nrow(X_ij[[1]]),
-      ncol = n_dl_terms,
-      dimnames = list(NULL, distributed_lags_data$term_coef_name)
+    X_ij[[1]] <- .append_distributed_lag_coef_columns(
+      X = X_ij[[1]],
+      coef_names = distributed_lags_data$term_coef_name
     )
-    X_ij[[1]] <- cbind(X_ij[[1]], dl_X)
 
     distributed_lag_n_terms <- as.integer(distributed_lags_data$n_terms)
     distributed_lag_n_covariates <- as.integer(distributed_lags_data$n_covariates)

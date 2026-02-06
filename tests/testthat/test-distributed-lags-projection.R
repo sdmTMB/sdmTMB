@@ -91,6 +91,42 @@ test_that(".build_vertex_time_covariates is isolated by time slice", {
   )
 })
 
+test_that(".build_vertex_time_covariates rejects non-integer indices", {
+  A_st <- Matrix::Matrix(
+    rbind(
+      c(1, 0),
+      c(0.5, 0.5),
+      c(0, 1)
+    ),
+    sparse = TRUE
+  )
+  dat <- data.frame(x1 = c(2, 4, 6, 8))
+
+  expect_error(
+    sdmTMB:::.build_vertex_time_covariates(
+      covariate_data = dat,
+      covariates = "x1",
+      A_st = A_st,
+      year_i = c(0, 0, 1.5, 1),
+      A_spatial_index = c(0L, 1L, 2L, 1L),
+      n_t = 2L
+    ),
+    regexp = "whole-number indices"
+  )
+
+  expect_error(
+    sdmTMB:::.build_vertex_time_covariates(
+      covariate_data = dat,
+      covariates = "x1",
+      A_st = A_st,
+      year_i = c(0L, 0L, 1L, 1L),
+      A_spatial_index = c(0, 1, 2.2, 1),
+      n_t = 2L
+    ),
+    regexp = "whole-number indices"
+  )
+})
+
 test_that(".build_distributed_lag_tmb_data returns term-covariate mapping", {
   A_st <- Matrix::Matrix(
     rbind(

@@ -1,3 +1,65 @@
+.extract_distributed_lag_term_exprs <- function(expr) {
+  if (is.call(expr)) {
+    fn <- as.character(expr[[1]])
+    if (identical(fn, "+")) {
+      if (length(expr) == 2L) {
+        return(.extract_distributed_lag_term_exprs(expr[[2]]))
+      }
+      if (length(expr) == 3L) {
+        return(c(
+          .extract_distributed_lag_term_exprs(expr[[2]]),
+          .extract_distributed_lag_term_exprs(expr[[3]])
+        ))
+      }
+    }
+    if (identical(fn, "(") && length(expr) == 2L) {
+      return(.extract_distributed_lag_term_exprs(expr[[2]]))
+    }
+  }
+  list(expr)
+}
+
+.append_distributed_lag_coef_columns <- function(X, coef_names) {
+  if (!length(coef_names)) {
+    return(X)
+  }
+  existing <- intersect(colnames(X), coef_names)
+  if (length(existing)) {
+    cli_abort(c(
+      "Distributed lag coefficient names collide with existing fixed-effect columns.",
+      "x" = "Conflicting name(s): {.code {paste(existing, collapse = ', ')}}"
+    ))
+  }
+  lag_cols <- matrix(
+    0,
+    nrow = nrow(X),
+    ncol = length(coef_names),
+    dimnames = list(NULL, coef_names)
+  )
+  cbind(X, lag_cols)
+}
+
+.coerce_integerish <- function(x, name) {
+  if (!is.numeric(x)) {
+    cli_abort("`{name}` must be numeric and integer-valued.")
+  }
+  if (anyNA(x)) {
+    cli_abort("`{name}` cannot contain `NA` values.")
+  }
+  if (!length(x)) {
+    return(integer(0))
+  }
+  if (any(!is.finite(x))) {
+    cli_abort("`{name}` cannot contain non-finite values.")
+  }
+  tol <- sqrt(.Machine$double.eps)
+  rounded <- round(x)
+  if (any(abs(x - rounded) > tol)) {
+    cli_abort("`{name}` must contain whole-number indices.")
+  }
+  as.integer(rounded)
+}
+
 .parse_distributed_lags_formula <- function(distributed_lags) {
   if (is.null(distributed_lags)) {
     return(NULL)
@@ -11,15 +73,15 @@
     cli_abort("`distributed_lags` must be a one-sided formula such as `~ spatial(x) + temporal(x)`.")
   }
 
-  term_labels <- attr(stats::terms(distributed_lags), "term.labels")
-  if (!length(term_labels)) {
+  term_exprs <- .extract_distributed_lag_term_exprs(distributed_lags[[2]])
+  if (!length(term_exprs)) {
     cli_abort("`distributed_lags` must include at least one lag term.")
   }
 
   allowed_wrappers <- c("spatial", "temporal", "spatiotemporal")
 
-  parsed_terms <- lapply(term_labels, function(term_label) {
-    expr <- str2lang(term_label)
+  parsed_terms <- lapply(term_exprs, function(expr) {
+    term_label <- paste(deparse(expr), collapse = "")
 
     if (!is.call(expr)) {
       cli_abort(c(
@@ -117,10 +179,7 @@
 }
 
 .normalize_dl_index <- function(x, n_max, name) {
-  if (anyNA(x)) {
-    cli_abort("`{name}` cannot contain `NA` values.")
-  }
-  x <- as.integer(x)
+  x <- .coerce_integerish(x, name = name)
   if (!length(x)) return(x)
   min_x <- min(x)
   if (min_x == 0L) {
@@ -135,15 +194,16 @@
 }
 
 .normalize_dl_year_i <- function(year_i, n_t = NULL) {
-  if (anyNA(year_i)) {
-    cli_abort("`year_i` cannot contain `NA` values.")
-  }
-  year_i <- as.integer(year_i)
+  year_i <- .coerce_integerish(year_i, name = "year_i")
   if (!length(year_i)) {
     if (is.null(n_t)) {
       cli_abort("`year_i` cannot be empty.")
     }
-    return(list(year_i = integer(0), n_t = as.integer(n_t)))
+    if (!is.numeric(n_t) || length(n_t) != 1L || !is.finite(n_t) ||
+      abs(n_t - round(n_t)) > sqrt(.Machine$double.eps) || n_t <= 0) {
+      cli_abort("`n_t` must be a single positive integer.")
+    }
+    return(list(year_i = integer(0), n_t = as.integer(round(n_t))))
   }
   min_year <- min(year_i)
   if (min_year == 1L) {
@@ -154,7 +214,11 @@
   if (is.null(n_t)) {
     n_t <- max(year_i) + 1L
   } else {
-    n_t <- as.integer(n_t)
+    if (!is.numeric(n_t) || length(n_t) != 1L || !is.finite(n_t) ||
+      abs(n_t - round(n_t)) > sqrt(.Machine$double.eps)) {
+      cli_abort("`n_t` must be a single positive integer.")
+    }
+    n_t <- as.integer(round(n_t))
     if (n_t <= 0L) cli_abort("`n_t` must be > 0.")
     if (max(year_i) >= n_t) {
       cli_abort("`year_i` contains a time index >= `n_t`.")

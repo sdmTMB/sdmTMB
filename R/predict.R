@@ -514,6 +514,12 @@ predict.sdmTMB <- function(object, newdata = NULL,
       mf <- model.frame(Terms, newdata, xlev = object$xlevels[[i]])
       proj_X_ij[[i]] <- model.matrix(Terms, mf, contrasts.arg = object$contrasts[[i]])
     }
+    if (!is.null(object$distributed_lags_data)) {
+      proj_X_ij[[1]] <- .append_distributed_lag_coef_columns(
+        X = proj_X_ij[[1]],
+        coef_names = object$distributed_lags_data$term_coef_name
+      )
+    }
 
     # TODO DELTA hardcoded to 1:
     sm <- parse_smoothers(object$smoothers$formula_no_bars, data = object$data,

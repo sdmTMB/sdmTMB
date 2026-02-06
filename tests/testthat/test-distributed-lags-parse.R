@@ -122,6 +122,19 @@ test_that("distributed_lags errors clearly for unsupported specs", {
     ),
     regexp = "must be numeric"
   )
+
+  expect_error(
+    sdmTMB(
+      y ~ 1,
+      data = dat,
+      mesh = mesh,
+      spatial = "off",
+      spatiotemporal = "off",
+      distributed_lags = ~ spatial(x_num) + spatial(x_num),
+      do_fit = FALSE
+    ),
+    regexp = "Duplicate"
+  )
 })
 
 test_that("distributed_lags temporal terms require time", {
