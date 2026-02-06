@@ -358,7 +358,7 @@ Effect.sdmTMB <- function(focal.predictors, mod, ...) {
     cli_abort("Please install the effects package")
   }
 
-  if (is_delta(mod)) {
+  if (.is_delta_like_model(mod)) {
     msg <- paste0("Effect() and ggeffects::ggeffect() do not yet work with ",
       "sdmTMB delta/hurdle models. Please use ggeffects::ggpredict() instead.")
     cli_abort(msg)
