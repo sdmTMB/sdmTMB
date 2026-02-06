@@ -536,10 +536,22 @@ struct DistributedLagContext {
   const vector<Type>& b_j;
 };
 
+// Extract column t of covariate cov_i from 3D array (vertices x time x covariates)
+template <class Type>
+Eigen::Matrix<Type, Eigen::Dynamic, 1> dl_get_covariate_col(
+    array<Type>& covariate_vertex_time, int cov_i, int t, int n_vertices) {
+  Eigen::Matrix<Type, Eigen::Dynamic, 1> col(n_vertices);
+  for (int v = 0; v < n_vertices; v++) col(v) = covariate_vertex_time(v, t, cov_i);
+  return col;
+}
+
 template <class Type>
 bool dl_solve_transformed_vertex_time(
     int component,
-    const Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic>& cov_vertex_time,
+    array<Type>& covariate_vertex_time,
+    int cov_i,
+    int n_vertices,
+    int n_t,
     const Eigen::SparseMatrix<Type>& M0_dl,
     const Eigen::SparseMatrix<Type>& M1_dl,
     Type kappaS_scale,
@@ -550,14 +562,13 @@ bool dl_solve_transformed_vertex_time(
     bool has_m0_solver,
     Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> >& lu_m0,
     Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic>& transformed_vertex_time) {
-  int n_vertices = cov_vertex_time.rows();
-  int n_t = cov_vertex_time.cols();
   transformed_vertex_time.setZero();
 
   if (component == 0) { // spatial
     if (!has_spatial_solver || lu_spatial.info() != Eigen::Success) return false;
     for (int t = 0; t < n_t; t++) {
-      Eigen::Matrix<Type, Eigen::Dynamic, 1> rhs = M0_dl * cov_vertex_time.col(t);
+      Eigen::Matrix<Type, Eigen::Dynamic, 1> rhs =
+        M0_dl * dl_get_covariate_col(covariate_vertex_time, cov_i, t, n_vertices);
       Eigen::Matrix<Type, Eigen::Dynamic, 1> solved = lu_spatial.solve(rhs);
       if (lu_spatial.info() != Eigen::Success) return false;
       transformed_vertex_time.col(t) = solved;
@@ -566,10 +577,13 @@ bool dl_solve_transformed_vertex_time(
   }
 
   if (component == 1) { // temporal
-    for (int v = 0; v < n_vertices; v++) transformed_vertex_time(v, 0) = cov_vertex_time(v, 0);
+    for (int v = 0; v < n_vertices; v++) {
+      transformed_vertex_time(v, 0) = covariate_vertex_time(v, 0, cov_i);
+    }
     for (int t = 1; t < n_t; t++) {
       for (int v = 0; v < n_vertices; v++) {
-        transformed_vertex_time(v, t) = cov_vertex_time(v, t) + kappaT_dl * transformed_vertex_time(v, t - 1);
+        transformed_vertex_time(v, t) =
+          covariate_vertex_time(v, t, cov_i) + kappaT_dl * transformed_vertex_time(v, t - 1);
       }
     }
     return true;
@@ -577,10 +591,13 @@ bool dl_solve_transformed_vertex_time(
 
   if (component == 2) { // spatiotemporal
     if (!has_m0_solver || lu_m0.info() != Eigen::Success) return false;
-    for (int v = 0; v < n_vertices; v++) transformed_vertex_time(v, 0) = cov_vertex_time(v, 0);
+    for (int v = 0; v < n_vertices; v++) {
+      transformed_vertex_time(v, 0) = covariate_vertex_time(v, 0, cov_i);
+    }
     for (int t = 1; t < n_t; t++) {
       Eigen::Matrix<Type, Eigen::Dynamic, 1> rhs =
-        M0_dl * cov_vertex_time.col(t) - kappaST_scale * (M1_dl * transformed_vertex_time.col(t - 1));
+        M0_dl * dl_get_covariate_col(covariate_vertex_time, cov_i, t, n_vertices) -
+        kappaST_scale * (M1_dl * transformed_vertex_time.col(t - 1));
       Eigen::Matrix<Type, Eigen::Dynamic, 1> solved = lu_m0.solve(rhs);
       if (lu_m0.info() != Eigen::Success) return false;
       transformed_vertex_time.col(t) = solved;
@@ -627,14 +644,12 @@ void add_distributed_lags_to_eta_fixed(
 
   // Determine which scale parameters are needed by scanning components
   bool needs_kappaS = false;
-  bool needs_kappaT = false;
   bool needs_kappaST = false;
   bool need_spatial_solver = false;
   bool need_m0_solver = false;
   for (int term = 0; term < ctx.n_terms; term++) {
     int component = ctx.term_component(term);
     if (component == 0) { needs_kappaS = true; need_spatial_solver = true; }
-    if (component == 1) needs_kappaT = true;
     if (component == 2) {
       needs_kappaS = true;
       needs_kappaST = true;
@@ -667,19 +682,6 @@ void add_distributed_lags_to_eta_fixed(
     }
   }
 
-  // Extract covariate slices from 3D array into Eigen matrices
-  std::vector<Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> > covariate_cache;
-  covariate_cache.reserve(ctx.n_covariates);
-  for (int cov_i = 0; cov_i < ctx.n_covariates; cov_i++) {
-    Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> cov_vertex_time(n_vertices_dl, n_t_dl);
-    for (int t = 0; t < n_t_dl; t++) {
-      for (int v = 0; v < n_vertices_dl; v++) {
-        cov_vertex_time(v, t) = ctx.covariate_vertex_time(v, t, cov_i);
-      }
-    }
-    covariate_cache.push_back(cov_vertex_time);
-  }
-
   // Solve and project each term, accumulate into eta_fixed_i
   int dl_coef_start = ctx.b_j.size() - ctx.n_terms;
   for (int term = 0; term < ctx.n_terms; term++) {
@@ -689,7 +691,10 @@ void add_distributed_lags_to_eta_fixed(
     Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> transformed_vertex_time(n_vertices_dl, n_t_dl);
     bool solved = dl_solve_transformed_vertex_time(
       component,
-      covariate_cache[cov_i],
+      ctx.covariate_vertex_time,
+      cov_i,
+      n_vertices_dl,
+      n_t_dl,
       ctx.M0,
       ctx.M1,
       kappaS_scale,
