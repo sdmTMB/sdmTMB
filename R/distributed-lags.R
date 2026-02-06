@@ -116,10 +116,180 @@
   distributed_lags
 }
 
-.build_vertex_time_covariates <- function(...) {
-  cli_abort("Internal error: `.build_vertex_time_covariates()` is not implemented yet.")
+.normalize_dl_index <- function(x, n_max, name) {
+  if (anyNA(x)) {
+    cli_abort("`{name}` cannot contain `NA` values.")
+  }
+  x <- as.integer(x)
+  if (!length(x)) return(x)
+  min_x <- min(x)
+  if (min_x == 0L) {
+    x <- x + 1L
+  } else if (min_x != 1L) {
+    cli_abort("`{name}` must be 0-based or 1-based indexing.")
+  }
+  if (any(x < 1L | x > n_max)) {
+    cli_abort("`{name}` contains indices outside valid range.")
+  }
+  x
 }
 
-.build_distributed_lag_tmb_data <- function(...) {
-  cli_abort("Internal error: `.build_distributed_lag_tmb_data()` is not implemented yet.")
+.normalize_dl_year_i <- function(year_i, n_t = NULL) {
+  if (anyNA(year_i)) {
+    cli_abort("`year_i` cannot contain `NA` values.")
+  }
+  year_i <- as.integer(year_i)
+  if (!length(year_i)) {
+    if (is.null(n_t)) {
+      cli_abort("`year_i` cannot be empty.")
+    }
+    return(list(year_i = integer(0), n_t = as.integer(n_t)))
+  }
+  min_year <- min(year_i)
+  if (min_year == 1L) {
+    year_i <- year_i - 1L
+  } else if (min_year != 0L) {
+    cli_abort("`year_i` must be 0-based or 1-based indexing.")
+  }
+  if (is.null(n_t)) {
+    n_t <- max(year_i) + 1L
+  } else {
+    n_t <- as.integer(n_t)
+    if (n_t <= 0L) cli_abort("`n_t` must be > 0.")
+    if (max(year_i) >= n_t) {
+      cli_abort("`year_i` contains a time index >= `n_t`.")
+    }
+  }
+  list(year_i = year_i, n_t = n_t)
+}
+
+.build_vertex_time_covariates <- function(covariate_data,
+                                          covariates,
+                                          A_st,
+                                          year_i,
+                                          A_spatial_index = NULL,
+                                          n_t = NULL) {
+  if (!inherits(covariate_data, "data.frame")) {
+    cli_abort("`covariate_data` must be a data frame.")
+  }
+  if (!inherits(A_st, "sparseMatrix")) {
+    A_st <- Matrix::Matrix(A_st, sparse = TRUE)
+  }
+  A_st <- methods::as(A_st, "dgCMatrix")
+
+  n_obs <- nrow(covariate_data)
+  if (length(year_i) != n_obs) {
+    cli_abort("`year_i` length must equal `nrow(covariate_data)`.")
+  }
+  if (is.null(A_spatial_index)) {
+    A_spatial_index <- seq_len(n_obs)
+  }
+  if (length(A_spatial_index) != n_obs) {
+    cli_abort("`A_spatial_index` length must equal `nrow(covariate_data)`.")
+  }
+
+  missing_covariates <- setdiff(covariates, names(covariate_data))
+  if (length(missing_covariates)) {
+    cli_abort(c(
+      "Missing covariate(s) in `covariate_data`.",
+      "x" = "Missing: {.code {paste(missing_covariates, collapse = ', ')}}"
+    ))
+  }
+
+  non_numeric <- covariates[!vapply(covariates, function(v) is.numeric(covariate_data[[v]]), logical(1L))]
+  if (length(non_numeric)) {
+    cli_abort(c(
+      "Covariates supplied to `.build_vertex_time_covariates()` must be numeric.",
+      "x" = "Non-numeric covariate(s): {.code {paste(non_numeric, collapse = ', ')}}"
+    ))
+  }
+
+  year_lu <- .normalize_dl_year_i(year_i, n_t = n_t)
+  year_i <- year_lu$year_i
+  n_t <- year_lu$n_t
+
+  A_spatial_index <- .normalize_dl_index(
+    A_spatial_index,
+    n_max = nrow(A_st),
+    name = "A_spatial_index"
+  )
+
+  n_vertices <- ncol(A_st)
+  n_covariates <- length(covariates)
+  out <- array(
+    0,
+    dim = c(n_vertices, n_t, n_covariates),
+    dimnames = list(NULL, NULL, covariates)
+  )
+
+  for (cov_idx in seq_along(covariates)) {
+    cov_name <- covariates[[cov_idx]]
+    x <- covariate_data[[cov_name]]
+    if (any(is.infinite(x), na.rm = TRUE)) {
+      cli_abort("Covariate `{cov_name}` contains Inf/-Inf values.")
+    }
+    for (t_i in seq_len(n_t)) {
+      obs_this_time <- which(year_i == (t_i - 1L))
+      if (!length(obs_this_time)) {
+        next
+      }
+      x_t <- x[obs_this_time]
+      keep <- !is.na(x_t)
+      if (!any(keep)) {
+        next
+      }
+      A_t <- A_st[A_spatial_index[obs_this_time[keep]], , drop = FALSE]
+      x_t <- x_t[keep]
+      numerator <- as.vector(Matrix::crossprod(A_t, x_t))
+      denominator <- as.vector(Matrix::crossprod(A_t, rep(1, length(x_t))))
+      good <- denominator > 0
+      if (any(good)) {
+        out[good, t_i, cov_idx] <- numerator[good] / denominator[good]
+      }
+    }
+  }
+
+  list(
+    covariate_vertex_time = out,
+    covariates = covariates,
+    n_t = n_t,
+    n_vertices = n_vertices
+  )
+}
+
+.build_distributed_lag_tmb_data <- function(distributed_lags,
+                                            data,
+                                            A_st,
+                                            A_spatial_index,
+                                            year_i,
+                                            n_t) {
+  if (is.null(distributed_lags)) {
+    return(NULL)
+  }
+
+  vertex_cov <- .build_vertex_time_covariates(
+    covariate_data = data,
+    covariates = distributed_lags$covariates,
+    A_st = A_st,
+    year_i = year_i,
+    A_spatial_index = A_spatial_index,
+    n_t = n_t
+  )
+
+  component_levels <- c("spatial", "temporal", "spatiotemporal")
+  component_id <- match(distributed_lags$terms$component, component_levels)
+
+  list(
+    covariate_vertex_time = vertex_cov$covariate_vertex_time,
+    covariates = distributed_lags$covariates,
+    term_component = distributed_lags$terms$component,
+    term_component_id = as.integer(component_id),
+    term_covariate_index = as.integer(distributed_lags$terms$covariate_id),
+    term_covariate_index0 = as.integer(distributed_lags$terms$covariate_id - 1L),
+    term_coef_name = distributed_lags$terms$coef_name,
+    n_vertices = vertex_cov$n_vertices,
+    n_t = vertex_cov$n_t,
+    n_covariates = length(distributed_lags$covariates),
+    n_terms = nrow(distributed_lags$terms)
+  )
 }

@@ -624,6 +624,7 @@ sdmTMB <- function(
     index_args = NULL,
     distributed_lags = NULL,
     experimental = NULL) {
+  mesh_missing <- missing(mesh)
   data <- droplevels(data) # if data was subset, strips absent factors
 
   multi_spec <- .parse_multi_family(
@@ -697,7 +698,7 @@ sdmTMB <- function(
 
   if (!include_spatial && all(spatiotemporal == "off") || !include_spatial && all(spatial_only)) {
     no_spatial <- TRUE
-    if (missing(mesh)) {
+    if (mesh_missing) {
       mesh <- sdmTMB::pcod_mesh_2011 # internal data; fake!
     }
   } else {
@@ -803,6 +804,9 @@ sdmTMB <- function(
     delta = delta,
     multi_family = multi_family
   )
+  if (!is.null(distributed_lags_parsed) && mesh_missing) {
+    cli_abort("`mesh` must be supplied when using `distributed_lags`.")
+  }
 
   if (is.null(time)) {
     time <- "_sdmTMB_time"
@@ -1237,6 +1241,16 @@ sdmTMB <- function(
 
   time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
   n_t <- nrow(time_df)
+  year_i_data <- time_df$year_i[match(data[[time]], time_df$time_from_data)]
+
+  distributed_lags_data <- .build_distributed_lag_tmb_data(
+    distributed_lags = distributed_lags_parsed,
+    data = data,
+    A_st = spde$A_st,
+    A_spatial_index = spde$sdm_spatial_id - 1L,
+    year_i = year_i_data,
+    n_t = n_t
+  )
 
   random_walk <- if (!is.null(time_varying)) {
     switch(time_varying_type,
@@ -1257,7 +1271,7 @@ sdmTMB <- function(
     sim_re = if ("sim_re" %in% names(experimental)) as.integer(experimental$sim_re) else rep(0L, 6),
     sim_obs = 1L,
     A_spatial_index = spde$sdm_spatial_id - 1L,
-    year_i = time_df$year_i[match(data[[time]], time_df$time_from_data)],
+    year_i = year_i_data,
     ar1_fields = ar1_fields,
     simulate_t = rep(1L, n_t),
     rw_fields = rw_fields,
@@ -1704,6 +1718,7 @@ sdmTMB <- function(
       spatial_varying = spatial_varying,
       distributed_lags = distributed_lags,
       distributed_lags_parsed = distributed_lags_parsed,
+      distributed_lags_data = distributed_lags_data,
       spatial = spatial,
       spatiotemporal = spatiotemporal,
       spatial_varying_formula = spatial_varying_formula,

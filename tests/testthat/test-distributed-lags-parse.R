@@ -1,14 +1,22 @@
+make_dl_mesh <- function(dat) {
+  make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
+}
+
 test_that("distributed_lags parses valid terms", {
   dat <- data.frame(
     y = rnorm(8),
     x_num = rnorm(8),
     x_lag = rnorm(8),
-    year = rep(1:4, each = 2)
+    year = rep(1:4, each = 2),
+    X = rep(1:4, each = 2),
+    Y = rep(c(0, 1), 4)
   )
+  mesh <- make_dl_mesh(dat)
 
   fit <- sdmTMB(
     y ~ 1,
     data = dat,
+    mesh = mesh,
     time = "year",
     spatial = "off",
     spatiotemporal = "off",
@@ -33,12 +41,16 @@ test_that("distributed_lags parses valid terms", {
 test_that("distributed_lags covariates do not need to be in the main formula", {
   dat <- data.frame(
     y = rnorm(8),
-    x_only_lag = rnorm(8)
+    x_only_lag = rnorm(8),
+    X = rep(1:4, each = 2),
+    Y = rep(c(0, 1), 4)
   )
+  mesh <- make_dl_mesh(dat)
 
   fit <- sdmTMB(
     y ~ 1,
     data = dat,
+    mesh = mesh,
     spatial = "off",
     spatiotemporal = "off",
     distributed_lags = ~ spatial(x_only_lag),
@@ -53,13 +65,17 @@ test_that("distributed_lags errors clearly for unsupported specs", {
   dat <- data.frame(
     y = rnorm(8),
     x_num = rnorm(8),
-    x_chr = letters[1:8]
+    x_chr = letters[1:8],
+    X = rep(1:4, each = 2),
+    Y = rep(c(0, 1), 4)
   )
+  mesh <- make_dl_mesh(dat)
 
   expect_error(
     sdmTMB(
       y ~ 1,
       data = dat,
+      mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
       distributed_lags = ~ banana(x_num),
@@ -72,6 +88,7 @@ test_that("distributed_lags errors clearly for unsupported specs", {
     sdmTMB(
       y ~ 1,
       data = dat,
+      mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
       distributed_lags = ~ spatial(scale(x_num)),
@@ -84,6 +101,7 @@ test_that("distributed_lags errors clearly for unsupported specs", {
     sdmTMB(
       y ~ 1,
       data = dat,
+      mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
       distributed_lags = ~ spatial(not_in_data),
@@ -96,6 +114,7 @@ test_that("distributed_lags errors clearly for unsupported specs", {
     sdmTMB(
       y ~ 1,
       data = dat,
+      mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
       distributed_lags = ~ spatial(x_chr),
@@ -108,13 +127,17 @@ test_that("distributed_lags errors clearly for unsupported specs", {
 test_that("distributed_lags temporal terms require time", {
   dat <- data.frame(
     y = rnorm(8),
-    x_num = rnorm(8)
+    x_num = rnorm(8),
+    X = rep(1:4, each = 2),
+    Y = rep(c(0, 1), 4)
   )
+  mesh <- make_dl_mesh(dat)
 
   expect_error(
     sdmTMB(
       y ~ 1,
       data = dat,
+      mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
       distributed_lags = ~ temporal(x_num),
@@ -127,6 +150,7 @@ test_that("distributed_lags temporal terms require time", {
     sdmTMB(
       y ~ 1,
       data = dat,
+      mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
       distributed_lags = ~ spatiotemporal(x_num),
@@ -140,13 +164,17 @@ test_that("distributed_lags rejects delta and multi-family models", {
   dat <- data.frame(
     y = c(0, 1, 0, 2, 0.5, 1.2),
     x_num = rnorm(6),
-    dist = c("gaussian", "poisson", "gaussian", "poisson", "gaussian", "poisson")
+    dist = c("gaussian", "poisson", "gaussian", "poisson", "gaussian", "poisson"),
+    X = rep(1:3, each = 2),
+    Y = rep(c(0, 1), 3)
   )
+  mesh <- make_dl_mesh(dat)
 
   expect_error(
     sdmTMB(
       y ~ 1,
       data = dat,
+      mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
       family = delta_gamma(),
@@ -160,6 +188,7 @@ test_that("distributed_lags rejects delta and multi-family models", {
     sdmTMB(
       y ~ 1,
       data = dat,
+      mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
       family = list(gaussian = gaussian(), poisson = poisson()),
@@ -168,5 +197,24 @@ test_that("distributed_lags rejects delta and multi-family models", {
       do_fit = FALSE
     ),
     regexp = "unsupported for multi-family"
+  )
+})
+
+test_that("distributed_lags requires an explicit mesh", {
+  dat <- data.frame(
+    y = rnorm(8),
+    x_num = rnorm(8)
+  )
+
+  expect_error(
+    sdmTMB(
+      y ~ 1,
+      data = dat,
+      spatial = "off",
+      spatiotemporal = "off",
+      distributed_lags = ~ spatial(x_num),
+      do_fit = FALSE
+    ),
+    regexp = "mesh.*distributed_lags"
   )
 })
