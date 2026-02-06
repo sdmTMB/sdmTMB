@@ -28,10 +28,10 @@ test_that("distributed lag fits run for each wrapper and combined terms", {
   mesh <- make_dl_fit_mesh(dat)
 
   lag_forms <- list(
-    spatial = ~ spatial(x1),
-    temporal = ~ temporal(x1),
-    spatiotemporal = ~ spatiotemporal(x2),
-    combined = ~ spatial(x1) + temporal(x1) + spatiotemporal(x2)
+    spatial = ~ space(x1),
+    temporal = ~ time(x1),
+    spatiotemporal = ~ spacetime(x2),
+    combined = ~ space(x1) + time(x1) + spacetime(x2)
   )
 
   for (nm in names(lag_forms)) {
@@ -66,7 +66,7 @@ test_that("distributed lag model matches no-lag model when lag coefficients are 
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 
-  dl_formula <- ~ spatial(x1) + temporal(x2)
+  dl_formula <- ~ space(x1) + time(x2)
   proto <- sdmTMB(
     y ~ x1 + x2,
     data = dat,

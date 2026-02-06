@@ -144,7 +144,7 @@ test_that(".build_distributed_lag_tmb_data returns term-covariate mapping", {
   )
 
   parsed <- sdmTMB:::.parse_distributed_lags_formula(
-    ~ spatial(x1) + temporal(x2) + spatiotemporal(x1)
+    ~ space(x1) + time(x2) + spacetime(x1)
   )
   parsed <- sdmTMB:::.validate_distributed_lag_terms(
     parsed,
@@ -187,7 +187,7 @@ test_that("sdmTMB builds distributed_lags_data in fit path", {
     time = "year",
     spatial = "off",
     spatiotemporal = "off",
-    distributed_lags = ~ spatial(x1) + temporal(x2),
+    distributed_lags = ~ space(x1) + time(x2),
     do_fit = FALSE
   )
 

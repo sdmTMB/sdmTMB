@@ -53,14 +53,14 @@ test_that("distributed lag coefficient slots are appended and lag parameters are
     time = "year",
     spatial = "off",
     spatiotemporal = "off",
-    distributed_lags = ~ spatial(x1) + temporal(x2),
+    distributed_lags = ~ space(x1) + time(x2),
     do_fit = FALSE
   )
 
   x_mat <- fit$tmb_data$X_ij[[1]]
-  expect_true(all(c("dl_spatial_x1", "dl_temporal_x2") %in% colnames(x_mat)))
+  expect_true(all(c("dl_space_x1", "dl_time_x2") %in% colnames(x_mat)))
   expect_equal(
-    unname(colSums(abs(x_mat[, c("dl_spatial_x1", "dl_temporal_x2"), drop = FALSE]))),
+    unname(colSums(abs(x_mat[, c("dl_space_x1", "dl_time_x2"), drop = FALSE]))),
     c(0, 0)
   )
 
@@ -91,7 +91,7 @@ test_that("distributed lag parameter lengths follow used components", {
     time = "year",
     spatial = "off",
     spatiotemporal = "off",
-    distributed_lags = ~ spatiotemporal(x1),
+    distributed_lags = ~ spacetime(x1),
     do_fit = FALSE
   )
 
@@ -146,7 +146,7 @@ test_that("predict tmb_data keeps distributed lag columns aligned with b_j", {
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    distributed_lags = ~ spatial(x1) + temporal(x2),
+    distributed_lags = ~ space(x1) + time(x2),
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 

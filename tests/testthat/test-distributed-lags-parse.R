@@ -20,13 +20,13 @@ test_that("distributed_lags parses valid terms", {
     time = "year",
     spatial = "off",
     spatiotemporal = "off",
-    distributed_lags = ~ spatial(x_num) + temporal(x_lag) + spatiotemporal(x_num),
+    distributed_lags = ~ space(x_num) + time(x_lag) + spacetime(x_num),
     do_fit = FALSE
   )
 
   expect_equal(
     fit$distributed_lags_parsed$terms$component,
-    c("spatial", "temporal", "spatiotemporal")
+    c("space", "time", "spacetime")
   )
   expect_equal(
     fit$distributed_lags_parsed$terms$variable,
@@ -34,7 +34,7 @@ test_that("distributed_lags parses valid terms", {
   )
   expect_equal(
     fit$distributed_lags_parsed$terms$coef_name,
-    c("dl_spatial_x_num", "dl_temporal_x_lag", "dl_spatiotemporal_x_num")
+    c("dl_space_x_num", "dl_time_x_lag", "dl_spacetime_x_num")
   )
 })
 
@@ -53,7 +53,7 @@ test_that("distributed_lags covariates do not need to be in the main formula", {
     mesh = mesh,
     spatial = "off",
     spatiotemporal = "off",
-    distributed_lags = ~ spatial(x_only_lag),
+    distributed_lags = ~ space(x_only_lag),
     do_fit = FALSE
   )
 
@@ -91,7 +91,7 @@ test_that("distributed_lags errors clearly for unsupported specs", {
       mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
-      distributed_lags = ~ spatial(scale(x_num)),
+      distributed_lags = ~ space(scale(x_num)),
       do_fit = FALSE
     ),
     regexp = "bare variable"
@@ -104,7 +104,7 @@ test_that("distributed_lags errors clearly for unsupported specs", {
       mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
-      distributed_lags = ~ spatial(not_in_data),
+      distributed_lags = ~ space(not_in_data),
       do_fit = FALSE
     ),
     regexp = "Missing distributed lag covariate"
@@ -117,7 +117,7 @@ test_that("distributed_lags errors clearly for unsupported specs", {
       mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
-      distributed_lags = ~ spatial(x_chr),
+      distributed_lags = ~ space(x_chr),
       do_fit = FALSE
     ),
     regexp = "must be numeric"
@@ -130,14 +130,14 @@ test_that("distributed_lags errors clearly for unsupported specs", {
       mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
-      distributed_lags = ~ spatial(x_num) + spatial(x_num),
+      distributed_lags = ~ space(x_num) + space(x_num),
       do_fit = FALSE
     ),
     regexp = "Duplicate"
   )
 })
 
-test_that("distributed_lags temporal terms require time", {
+test_that("distributed_lags time terms require time", {
   dat <- data.frame(
     y = rnorm(8),
     x_num = rnorm(8),
@@ -153,7 +153,7 @@ test_that("distributed_lags temporal terms require time", {
       mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
-      distributed_lags = ~ temporal(x_num),
+      distributed_lags = ~ time(x_num),
       do_fit = FALSE
     ),
     regexp = "require a `time` argument"
@@ -166,7 +166,7 @@ test_that("distributed_lags temporal terms require time", {
       mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
-      distributed_lags = ~ spatiotemporal(x_num),
+      distributed_lags = ~ spacetime(x_num),
       do_fit = FALSE
     ),
     regexp = "require a `time` argument"
@@ -191,7 +191,7 @@ test_that("distributed_lags rejects delta and multi-family models", {
       spatial = "off",
       spatiotemporal = "off",
       family = delta_gamma(),
-      distributed_lags = ~ spatial(x_num),
+      distributed_lags = ~ space(x_num),
       do_fit = FALSE
     ),
     regexp = "unsupported for delta"
@@ -206,7 +206,7 @@ test_that("distributed_lags rejects delta and multi-family models", {
       spatiotemporal = "off",
       family = list(gaussian = gaussian(), poisson = poisson()),
       distribution_column = "dist",
-      distributed_lags = ~ spatial(x_num),
+      distributed_lags = ~ space(x_num),
       do_fit = FALSE
     ),
     regexp = "unsupported for multi-family"
@@ -225,7 +225,7 @@ test_that("distributed_lags requires an explicit mesh", {
       data = dat,
       spatial = "off",
       spatiotemporal = "off",
-      distributed_lags = ~ spatial(x_num),
+      distributed_lags = ~ space(x_num),
       do_fit = FALSE
     ),
     regexp = "mesh.*distributed_lags"

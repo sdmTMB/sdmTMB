@@ -70,7 +70,7 @@
   }
 
   if (length(distributed_lags) != 2L) {
-    cli_abort("`distributed_lags` must be a one-sided formula such as `~ spatial(x) + temporal(x)`.")
+    cli_abort("`distributed_lags` must be a one-sided formula such as `~ space(x) + time(x)`.")
   }
 
   term_exprs <- .extract_distributed_lag_term_exprs(distributed_lags[[2]])
@@ -78,7 +78,7 @@
     cli_abort("`distributed_lags` must include at least one lag term.")
   }
 
-  allowed_wrappers <- c("spatial", "temporal", "spatiotemporal")
+  allowed_wrappers <- c("space", "time", "spacetime")
 
   parsed_terms <- lapply(term_exprs, function(expr) {
     term_label <- paste(deparse(expr), collapse = "")
@@ -86,7 +86,7 @@
     if (!is.call(expr)) {
       cli_abort(c(
         "Unsupported term in `distributed_lags`.",
-        "i" = "Terms must be wrapped in `spatial()`, `temporal()`, or `spatiotemporal()`.",
+        "i" = "Terms must be wrapped in `space()`, `time()`, or `spacetime()`.",
         "x" = "Problematic term: {.code {term_label}}"
       ))
     }
@@ -95,7 +95,7 @@
     if (!wrapper %in% allowed_wrappers) {
       cli_abort(c(
         "Unsupported wrapper in `distributed_lags`.",
-        "i" = "Allowed wrappers are `spatial()`, `temporal()`, and `spatiotemporal()`.",
+        "i" = "Allowed wrappers are `space()`, `time()`, and `spacetime()`.",
         "x" = "Problematic term: {.code {term_label}}"
       ))
     }
@@ -103,7 +103,7 @@
     if (length(expr) != 2L || !is.symbol(expr[[2]])) {
       cli_abort(c(
         "Unsupported `distributed_lags` term structure.",
-        "i" = "Use a bare variable name inside each wrapper, e.g. `spatial(depth)`.",
+        "i" = "Use a bare variable name inside each wrapper, e.g. `space(depth)`.",
         "x" = "Problematic term: {.code {term_label}}"
       ))
     }
@@ -133,7 +133,7 @@
     formula = distributed_lags,
     terms = terms_df,
     covariates = unique_covariates,
-    needs_time = any(terms_df$component %in% c("temporal", "spatiotemporal"))
+    needs_time = any(terms_df$component %in% c("time", "spacetime"))
   )
 }
 
@@ -152,7 +152,7 @@
 
   if (isTRUE(distributed_lags$needs_time) && is.null(time)) {
     cli_abort(
-      "`distributed_lags` terms wrapped in `temporal()` or `spatiotemporal()` require a `time` argument."
+      "`distributed_lags` terms wrapped in `time()` or `spacetime()` require a `time` argument."
     )
   }
 
@@ -344,7 +344,7 @@
     n_t = n_t
   )
 
-  component_levels <- c("spatial", "temporal", "spatiotemporal")
+  component_levels <- c("space", "time", "spacetime")
   component_id <- match(distributed_lags$terms$component, component_levels)
 
   list(

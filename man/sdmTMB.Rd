@@ -199,8 +199,8 @@ can be done when calling \code{\link[=get_index]{get_index()}} on the resulting 
 Most users can ignore this option.}
 
 \item{distributed_lags}{An optional one-sided formula describing distributed
-lag terms with \code{spatial()}, \code{temporal()}, or \code{spatiotemporal()} wrappers.
-Example: \code{~ spatial(x) + temporal(x) + spatiotemporal(z)}. Distributed lags
+lag terms with \code{space()}, \code{time()}, or \code{spacetime()} wrappers.
+Example: \code{~ space(x) + time(x) + spacetime(z)}. Distributed lags
 are currently not supported for delta/hurdle or multi-family models.}
 
 \item{experimental}{A named list for esoteric or in-development options. Here

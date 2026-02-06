@@ -99,8 +99,8 @@ NULL
 #'   -1`), set `spatial = 'off'` to match. Structure must be shared in delta
 #'   models.
 #' @param distributed_lags An optional one-sided formula describing distributed
-#'   lag terms with `spatial()`, `temporal()`, or `spatiotemporal()` wrappers.
-#'   Example: `~ spatial(x) + temporal(x) + spatiotemporal(z)`. Distributed lags
+#'   lag terms with `space()`, `time()`, or `spacetime()` wrappers.
+#'   Example: `~ space(x) + time(x) + spacetime(z)`. Distributed lags
 #'   are currently not supported for delta/hurdle or multi-family models.
 #' @param weights A numeric vector representing optional likelihood weights for
 #'   the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
@@ -1270,9 +1270,9 @@ sdmTMB <- function(
     distributed_lag_covariate_vertex_time <- distributed_lags_data$covariate_vertex_time
     distributed_lag_term_component <- as.integer(distributed_lags_data$term_component_id - 1L)
     distributed_lag_term_covariate <- as.integer(distributed_lags_data$term_covariate_index0)
-    dl_has_spatial_component <- any(distributed_lags_data$term_component %in% c("spatial", "spatiotemporal"))
-    dl_has_temporal_component <- any(distributed_lags_data$term_component == "temporal")
-    dl_has_spatiotemporal_component <- any(distributed_lags_data$term_component == "spatiotemporal")
+    dl_has_spatial_component <- any(distributed_lags_data$term_component %in% c("space", "spacetime"))
+    dl_has_temporal_component <- any(distributed_lags_data$term_component == "time")
+    dl_has_spatiotemporal_component <- any(distributed_lags_data$term_component == "spacetime")
   }
 
   # TODO: make this cleaner
