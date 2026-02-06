@@ -331,14 +331,16 @@ predict.sdmTMB <- function(object, newdata = NULL,
   tmb_data <- object$tmb_data
   tmb_data$do_predict <- 1L
   no_spatial <- as.logical(object$tmb_data$no_spatial)
+  has_distributed_lags <- !is.null(object$distributed_lags_data)
 
   if (!is.null(newdata)) {
-    if (any(!xy_cols %in% names(newdata)) && isFALSE(pop_pred) && !no_spatial)
+    needs_xy <- if (has_distributed_lags) TRUE else isFALSE(pop_pred) && !no_spatial
+    if (any(!xy_cols %in% names(newdata)) && needs_xy)
       cli_abort(c("`xy_cols` (the column names for the x and y coordinates) are not in `newdata`.",
           "Did you miss specifying the argument `xy_cols` to match your data?",
           "The newer `make_mesh()` (vs. `make_spde()`) takes care of this for you."))
 
-    if (isFALSE(pop_pred) && !no_spatial) {
+    if (isFALSE(pop_pred) && (!no_spatial || has_distributed_lags)) {
       xy_orig <- object$data[,xy_cols]
       xy_nd <- newdata[,xy_cols]
       all_outside <- function(x1, x2) {
@@ -389,7 +391,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
     newdata$sdm_orig_id <- seq_len(nrow(newdata))
 
-    if (!no_spatial) {
+    if (!no_spatial || has_distributed_lags) {
       if (requireNamespace("dplyr", quietly = TRUE)) { # faster
         unique_newdata <- dplyr::distinct(newdata[, xy_cols, drop = FALSE])
       } else {
@@ -558,7 +560,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
     tmb_data$Zt_list_proj <- Zt_list
     time_lu <- object$time_lu
-    tmb_data$proj_year <- time_lu$year_i[match(nd[[object$time]], time_lu$time_from_data)] # was make_year_i(nd[[object$time]])
+    proj_year <- time_lu$year_i[match(nd[[object$time]], time_lu$time_from_data)] # was make_year_i(nd[[object$time]])
+    tmb_data$proj_year <- proj_year
     tmb_data$proj_time_include <- as.integer(time_lu$time_from_data %in% nd[[object$time]])
     tmb_data$proj_lon <- newdata[[xy_cols[[1]]]]
     tmb_data$proj_lat <- newdata[[xy_cols[[2]]]]
@@ -566,6 +569,18 @@ predict.sdmTMB <- function(object, newdata = NULL,
     tmb_data$pop_pred <- as.integer(pop_pred)
     tmb_data$exclude_RE <- exclude_RE
     tmb_data$proj_spatial_index <- newdata$sdm_spatial_id
+    tmb_data$proj_distributed_lag_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
+    if (has_distributed_lags) {
+      proj_dl_data <- .build_distributed_lag_tmb_data(
+        distributed_lags = object$distributed_lags_parsed,
+        data = nd,
+        A_st = proj_mesh,
+        A_spatial_index = nd$sdm_spatial_id,
+        year_i = proj_year,
+        n_t = tmb_data$n_t
+      )
+      tmb_data$proj_distributed_lag_covariate_vertex_time <- proj_dl_data$covariate_vertex_time
+    }
     tmb_data$proj_Zs <- sm$Zs
     tmb_data$proj_Xs <- sm$Xs
 

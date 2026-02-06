@@ -261,6 +261,7 @@ Type objective_function<Type>::operator()()
   DATA_FACTOR(proj_year);
   DATA_MATRIX(proj_z_i);
   DATA_IVECTOR(proj_spatial_index);
+  DATA_ARRAY(proj_distributed_lag_covariate_vertex_time);
 
   DATA_IVECTOR(spatial_only); // !spatial_only means include spatiotemporal(!)
   DATA_INTEGER(spatial_covariate); // include SVC?
@@ -1352,6 +1353,29 @@ Type objective_function<Type>::operator()()
     for (int m = 0; m < n_m; m++) {
       if (m == 0) proj_fe.col(m) = proj_X_ij(m) * b_j;
       if (m == 1) proj_fe.col(m) = proj_X_ij(m) * b_j2;
+    }
+    {
+      sdmTMB::DistributedLagContext<Type> dl_proj_ctx = {
+        distributed_lag_n_terms,
+        distributed_lag_n_covariates,
+        n_p,
+        n_t,
+        distributed_lag_term_component,
+        distributed_lag_term_covariate,
+        proj_distributed_lag_covariate_vertex_time,
+        proj_mesh,
+        proj_spatial_index,
+        proj_year,
+        spde.M0,
+        spde.M1,
+        kappaS_dl,
+        kappaT_dl,
+        kappaST_dl,
+        b_j
+      };
+      sdmTMB::add_distributed_lags_to_eta_fixed(proj_fe, dl_proj_ctx);
+    }
+    for (int m = 0; m < n_m; m++) {
       if (!multi_family) {
         if (n_m == 1) proj_fe.col(m) += proj_offset_i;
         if (m == 1) proj_fe.col(m) += proj_offset_i;

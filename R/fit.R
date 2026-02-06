@@ -1304,6 +1304,7 @@ sdmTMB <- function(
     distributed_lag_covariate_vertex_time = distributed_lag_covariate_vertex_time,
     distributed_lag_term_component = distributed_lag_term_component,
     distributed_lag_term_covariate = distributed_lag_term_covariate,
+    proj_distributed_lag_covariate_vertex_time = array(0, dim = c(1L, 1L, 1L)),
     ar1_fields = ar1_fields,
     simulate_t = rep(1L, n_t),
     rw_fields = rw_fields,
