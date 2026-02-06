@@ -1248,8 +1248,10 @@ sdmTMB <- function(
     n_t = n_t
   )
 
-  n_b_j_non_lag <- ncol(X_ij[[1]])
   n_dl_terms <- 0L
+  dl_has_spatial_component <- FALSE
+  dl_has_temporal_component <- FALSE
+  dl_has_spatiotemporal_component <- FALSE
   distributed_lag_n_terms <- 0L
   distributed_lag_n_covariates <- 0L
   distributed_lag_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
@@ -1268,6 +1270,9 @@ sdmTMB <- function(
     distributed_lag_covariate_vertex_time <- distributed_lags_data$covariate_vertex_time
     distributed_lag_term_component <- as.integer(distributed_lags_data$term_component_id - 1L)
     distributed_lag_term_covariate <- as.integer(distributed_lags_data$term_covariate_index0)
+    dl_has_spatial_component <- any(distributed_lags_data$term_component %in% c("spatial", "spatiotemporal"))
+    dl_has_temporal_component <- any(distributed_lags_data$term_component == "temporal")
+    dl_has_spatiotemporal_component <- any(distributed_lags_data$term_component == "spatiotemporal")
   }
 
   # TODO: make this cleaner
@@ -1408,9 +1413,9 @@ sdmTMB <- function(
     ln_tau_Z = matrix(0, n_z, n_m),
     ln_tau_E = rep(0, n_m),
     ln_kappa = matrix(0, 2L, n_m),
-    log_kappaS_dl = 0,
-    log_kappaT_dl = 0,
-    kappaST_dl_unscaled = 0,
+    log_kappaS_dl = if (dl_has_spatial_component) 0 else numeric(0),
+    log_kappaT_dl = if (dl_has_temporal_component) 0 else numeric(0),
+    kappaST_dl_unscaled = if (dl_has_spatiotemporal_component) 0 else numeric(0),
     # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
     thetaf = 0,
     ln_student_df = if (!multi_family && family$family[1] == "student") {
@@ -1452,11 +1457,10 @@ sdmTMB <- function(
 
   # Map off parameters not needed
   tmb_map <- map_all_params(tmb_params)
-  if (n_dl_terms > 0L) {
-    tmb_map$b_j <- factor(c(seq_len(n_b_j_non_lag), rep(NA_integer_, n_dl_terms)))
-  } else {
-    tmb_map$b_j <- NULL
-  }
+  tmb_map$b_j <- NULL
+  tmb_map$log_kappaS_dl <- NULL
+  tmb_map$log_kappaT_dl <- NULL
+  tmb_map$kappaST_dl_unscaled <- NULL
   if (delta) tmb_map$b_j2 <- NULL
   if (multi_family) {
     tmb_map$ln_phi <- factor(rep(NA, n_m))

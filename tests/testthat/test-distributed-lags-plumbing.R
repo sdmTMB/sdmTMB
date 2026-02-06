@@ -34,12 +34,15 @@ test_that("distributed lag tmb_data includes safe defaults when feature is off",
   expect_length(fit$tmb_data$distributed_lag_term_covariate, 0L)
 
   expect_true(all(c("log_kappaS_dl", "log_kappaT_dl", "kappaST_dl_unscaled") %in% names(fit$tmb_params)))
-  expect_true(all(is.na(fit$tmb_map$log_kappaS_dl)))
-  expect_true(all(is.na(fit$tmb_map$log_kappaT_dl)))
-  expect_true(all(is.na(fit$tmb_map$kappaST_dl_unscaled)))
+  expect_length(fit$tmb_params$log_kappaS_dl, 0L)
+  expect_length(fit$tmb_params$log_kappaT_dl, 0L)
+  expect_length(fit$tmb_params$kappaST_dl_unscaled, 0L)
+  expect_null(fit$tmb_map[["log_kappaS_dl", exact = TRUE]])
+  expect_null(fit$tmb_map[["log_kappaT_dl", exact = TRUE]])
+  expect_null(fit$tmb_map[["kappaST_dl_unscaled", exact = TRUE]])
 })
 
-test_that("distributed lag coefficient slots are appended and mapped off in chunk 3", {
+test_that("distributed lag coefficient slots are appended and lag parameters are length-aware", {
   dat <- make_dl_plumbing_data()
   mesh <- make_dl_plumbing_mesh(dat)
 
@@ -71,11 +74,30 @@ test_that("distributed lag coefficient slots are appended and mapped off in chun
     c(ncol(fit$tmb_data$A_st), fit$tmb_data$n_t, 2L)
   )
 
-  b_map <- fit$tmb_map$b_j
-  dl_idx <- match(c("dl_spatial_x1", "dl_temporal_x2"), colnames(x_mat))
-  base_idx <- setdiff(seq_along(b_map), dl_idx)
-  expect_true(all(is.na(b_map[dl_idx])))
-  expect_false(any(is.na(b_map[base_idx])))
+  expect_null(fit$tmb_map[["b_j", exact = TRUE]])
+  expect_length(fit$tmb_params$log_kappaS_dl, 1L)
+  expect_length(fit$tmb_params$log_kappaT_dl, 1L)
+  expect_length(fit$tmb_params$kappaST_dl_unscaled, 0L)
+})
+
+test_that("distributed lag parameter lengths follow used components", {
+  dat <- make_dl_plumbing_data()
+  mesh <- make_dl_plumbing_mesh(dat)
+
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    distributed_lags = ~ spatiotemporal(x1),
+    do_fit = FALSE
+  )
+
+  expect_length(fit$tmb_params$log_kappaS_dl, 1L)
+  expect_length(fit$tmb_params$log_kappaT_dl, 0L)
+  expect_length(fit$tmb_params$kappaST_dl_unscaled, 1L)
 })
 
 test_that("no-lag fit remains numerically identical with explicit distributed_lags = NULL", {
@@ -124,7 +146,8 @@ test_that("predict tmb_data keeps distributed lag columns aligned with b_j", {
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    distributed_lags = ~ spatial(x1) + temporal(x2)
+    distributed_lags = ~ spatial(x1) + temporal(x2),
+    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 
   td <- predict(fit, newdata = dat, return_tmb_data = TRUE)

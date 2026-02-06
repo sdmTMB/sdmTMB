@@ -298,9 +298,9 @@ Type objective_function<Type>::operator()()
   PARAMETER_ARRAY(ln_tau_Z);    // optional spatially varying covariate process
   PARAMETER_VECTOR(ln_tau_E);    // spatio-temporal process
   PARAMETER_ARRAY(ln_kappa);    // Matern parameter
-  PARAMETER(log_kappaS_dl);    // distributed lag spatial scale (chunk 3 plumbing)
-  PARAMETER(log_kappaT_dl);    // distributed lag temporal scale (chunk 3 plumbing)
-  PARAMETER(kappaST_dl_unscaled);    // distributed lag interaction scale (chunk 3 plumbing)
+  PARAMETER_VECTOR(log_kappaS_dl);    // distributed lag spatial scale (optional; length 0/1)
+  PARAMETER_VECTOR(log_kappaT_dl);    // distributed lag temporal scale (optional; length 0/1)
+  PARAMETER_VECTOR(kappaST_dl_unscaled);    // distributed lag interaction scale (optional; length 0/1)
 
   PARAMETER(thetaf);           // tweedie only
   PARAMETER(ln_student_df);    // student-t df (log(df - 1))
@@ -357,17 +357,12 @@ Type objective_function<Type>::operator()()
   vector<Type> rho(n_m);
   for (int m = 0; m < n_m; m++) rho(m) = sdmTMB::minus_one_to_one(ar1_phi(m));
   vector<Type> phi = exp(ln_phi);
-  Type kappaS_dl = exp(log_kappaS_dl);
-  Type kappaT_dl = exp(log_kappaT_dl);
-  Type kappaST_dl = -invlogit(kappaST_dl_unscaled);
-  (void) distributed_lag_n_terms;
-  (void) distributed_lag_n_covariates;
-  (void) distributed_lag_covariate_vertex_time;
-  (void) distributed_lag_term_component;
-  (void) distributed_lag_term_covariate;
-  (void) kappaS_dl;
-  (void) kappaT_dl;
-  (void) kappaST_dl;
+  Type kappaS_dl = Type(0.0);
+  Type kappaT_dl = Type(0.0);
+  Type kappaST_dl = Type(0.0);
+  if (log_kappaS_dl.size() > 0) kappaS_dl = exp(log_kappaS_dl(0));
+  if (log_kappaT_dl.size() > 0) kappaT_dl = exp(log_kappaT_dl(0));
+  if (kappaST_dl_unscaled.size() > 0) kappaST_dl = -invlogit(kappaST_dl_unscaled(0));
   auto get_param = [&](const vector<Type> &par,
                        const vector<int> &start,
                        const vector<int> &len,
@@ -814,6 +809,29 @@ Type objective_function<Type>::operator()()
     if (m == 0) eta_fixed_i.col(m) = X_ij(m) * b_j;
     if (m == 1) eta_fixed_i.col(m) = X_ij(m) * b_j2;
   }
+  sdmTMB::add_distributed_lags_to_eta_fixed(
+    eta_fixed_i,
+    n_m,
+    n_i,
+    n_t,
+    b_j,
+    A_st,
+    A_spatial_index,
+    year_i,
+    spde.M0,
+    spde.M1,
+    distributed_lag_n_terms,
+    distributed_lag_n_covariates,
+    distributed_lag_covariate_vertex_time,
+    distributed_lag_term_component,
+    distributed_lag_term_covariate,
+    log_kappaS_dl,
+    log_kappaT_dl,
+    kappaST_dl_unscaled,
+    kappaS_dl,
+    kappaT_dl,
+    kappaST_dl
+  );
 
   // FIXME delta must be same in 2 components:
   // p-splines/smoothers
@@ -1879,6 +1897,14 @@ Type objective_function<Type>::operator()()
     ADREPORT(range);        // Matern approximate distance at 10% correlation
     REPORT(log_range);  // log Matern approximate distance at 10% correlation
     ADREPORT(log_range);  // log Matern approximate distance at 10% correlation
+  }
+  if (distributed_lag_n_terms > 0) {
+    REPORT(kappaS_dl);
+    REPORT(kappaT_dl);
+    REPORT(kappaST_dl);
+    if (log_kappaS_dl.size() > 0) ADREPORT(kappaS_dl);
+    if (log_kappaT_dl.size() > 0) ADREPORT(kappaT_dl);
+    if (kappaST_dl_unscaled.size() > 0) ADREPORT(kappaST_dl);
   }
 
   // only ADREPORT phi if a family uses it:
