@@ -178,23 +178,33 @@
   distributed_lags
 }
 
-.normalize_dl_index <- function(x, n_max, name) {
+# Coerce integer-valued vector to 0-based indexing.
+# Accepts either 0-based (min == 0) or 1-based (min == 1) input.
+.to_zero_based <- function(x, name) {
   x <- .coerce_integerish(x, name = name)
   if (!length(x)) return(x)
   min_x <- min(x)
-  if (min_x == 0L) {
-    x <- x + 1L
-  } else if (min_x != 1L) {
-    cli_abort("`{name}` must be 0-based or 1-based indexing.")
+  if (min_x == 1L) {
+    x <- x - 1L
+  } else if (min_x != 0L) {
+    cli_abort("`{name}` must use 0-based or 1-based indexing.")
   }
+  x
+}
+
+# Normalize A_spatial_index to 1-based and validate range.
+.normalize_dl_index <- function(x, n_max, name) {
+  x <- .to_zero_based(x, name) + 1L
+  if (!length(x)) return(x)
   if (any(x < 1L | x > n_max)) {
     cli_abort("`{name}` contains indices outside valid range.")
   }
   x
 }
 
+# Normalize year_i to 0-based and compute/validate n_t.
 .normalize_dl_year_i <- function(year_i, n_t = NULL) {
-  year_i <- .coerce_integerish(year_i, name = "year_i")
+  year_i <- .to_zero_based(year_i, name = "year_i")
   if (!length(year_i)) {
     if (is.null(n_t)) {
       cli_abort("`year_i` cannot be empty.")
@@ -204,12 +214,6 @@
       cli_abort("`n_t` must be a single positive integer.")
     }
     return(list(year_i = integer(0), n_t = as.integer(round(n_t))))
-  }
-  min_year <- min(year_i)
-  if (min_year == 1L) {
-    year_i <- year_i - 1L
-  } else if (min_year != 0L) {
-    cli_abort("`year_i` must be 0-based or 1-based indexing.")
   }
   if (is.null(n_t)) {
     n_t <- max(year_i) + 1L
