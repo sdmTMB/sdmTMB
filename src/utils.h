@@ -500,6 +500,42 @@ Type devresid_nbinom2( Type y,
   return devresid;
 }
 
+// Bundles all distributed-lag inputs passed from R/TMB DATA and PARAMETER
+// blocks so that helper functions take a single context reference instead of
+// 20+ individual arguments.
+template <class Type>
+struct DistributedLagContext {
+  // Dimensions
+  int n_terms;
+  int n_covariates;
+  int n_i;
+  int n_t;
+
+  // Per-term metadata (length n_terms, 0-based)
+  const vector<int>& term_component;
+  const vector<int>& term_covariate;
+
+  // Covariate field on mesh vertices x time x covariates
+  array<Type>& covariate_vertex_time;
+
+  // Mesh projection + observation mapping
+  const Eigen::SparseMatrix<Type>& A_st;
+  const vector<int>& A_spatial_index;
+  const vector<int>& year_i;
+
+  // SPDE mass/stiffness matrices (from main mesh)
+  const Eigen::SparseMatrix<Type>& M0;
+  const Eigen::SparseMatrix<Type>& M1;
+
+  // Transformed lag scale parameters (already on natural scale)
+  Type kappaS;
+  Type kappaT;
+  Type kappaST;
+
+  // Fixed-effect coefficients (full vector; lag slots are at the tail)
+  const vector<Type>& b_j;
+};
+
 template <class Type>
 bool dl_solve_transformed_vertex_time(
     int component,
@@ -509,6 +545,8 @@ bool dl_solve_transformed_vertex_time(
     Type kappaS_scale,
     Type kappaT_dl,
     Type kappaST_scale,
+    bool has_spatial_solver,
+    Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> >& lu_spatial,
     bool has_m0_solver,
     Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> >& lu_m0,
     Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic>& transformed_vertex_time) {
@@ -517,10 +555,7 @@ bool dl_solve_transformed_vertex_time(
   transformed_vertex_time.setZero();
 
   if (component == 0) { // spatial
-    Eigen::SparseMatrix<Type> spatial_system = M0_dl + kappaS_scale * M1_dl;
-    Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> > lu_spatial;
-    lu_spatial.compute(spatial_system);
-    if (lu_spatial.info() != Eigen::Success) return false;
+    if (!has_spatial_solver || lu_spatial.info() != Eigen::Success) return false;
     for (int t = 0; t < n_t; t++) {
       Eigen::Matrix<Type, Eigen::Dynamic, 1> rhs = M0_dl * cov_vertex_time.col(t);
       Eigen::Matrix<Type, Eigen::Dynamic, 1> solved = lu_spatial.solve(rhs);
@@ -577,73 +612,28 @@ Eigen::Matrix<Type, Eigen::Dynamic, 1> dl_project_vertex_time_to_observations(
   return term_i;
 }
 
+// Add distributed-lag term contributions to eta_fixed_i.
+// All dimension/index consistency is enforced by the R layer;
+// C++ only checks conditions that can arise at solve time
+// (sparse factorization failures, parameter presence).
 template <class Type>
 void add_distributed_lags_to_eta_fixed(
     array<Type>& eta_fixed_i,
-    int n_m,
-    int n_i,
-    int n_t,
-    const vector<Type>& b_j,
-    const Eigen::SparseMatrix<Type>& A_st,
-    const vector<int>& A_spatial_index,
-    const vector<int>& year_i,
-    const Eigen::SparseMatrix<Type>& M0_dl,
-    const Eigen::SparseMatrix<Type>& M1_dl,
-    int distributed_lag_n_terms,
-    int distributed_lag_n_covariates,
-    array<Type>& distributed_lag_covariate_vertex_time,
-    const vector<int>& distributed_lag_term_component,
-    const vector<int>& distributed_lag_term_covariate,
-    const vector<Type>& log_kappaS_dl,
-    const vector<Type>& log_kappaT_dl,
-    const vector<Type>& kappaST_dl_unscaled,
-    Type kappaS_dl,
-    Type kappaT_dl,
-    Type kappaST_dl) {
-  if (distributed_lag_n_terms <= 0) return;
+    DistributedLagContext<Type>& ctx) {
+  if (ctx.n_terms <= 0) return;
 
-  if (n_m > 1) error("Distributed lags are only implemented for single-family models.");
-  if (distributed_lag_term_component.size() != distributed_lag_n_terms ||
-      distributed_lag_term_covariate.size() != distributed_lag_n_terms) {
-    error("Distributed lag term vectors have inconsistent length.");
-  }
-  if (distributed_lag_n_covariates <= 0) {
-    error("Distributed lag covariate count must be positive when terms are present.");
-  }
-  if (distributed_lag_covariate_vertex_time.dim.size() != 3) {
-    error("Distributed lag covariate array must be 3-dimensional.");
-  }
+  int n_vertices_dl = ctx.covariate_vertex_time.dim[0];
+  int n_t_dl = ctx.covariate_vertex_time.dim[1];
 
-  int n_vertices_dl = distributed_lag_covariate_vertex_time.dim[0];
-  int n_t_dl = distributed_lag_covariate_vertex_time.dim[1];
-  int n_covariates_dl = distributed_lag_covariate_vertex_time.dim[2];
-  if (n_t_dl != n_t) error("Distributed lag covariate time dimension does not match n_t.");
-  if (n_covariates_dl != distributed_lag_n_covariates) {
-    error("Distributed lag covariate dimension does not match declared covariate count.");
-  }
-  if (M0_dl.rows() != n_vertices_dl || M0_dl.cols() != n_vertices_dl ||
-      M1_dl.rows() != n_vertices_dl || M1_dl.cols() != n_vertices_dl) {
-    error("Distributed lag mesh dimensions do not match SPDE matrices.");
-  }
-  if (b_j.size() < distributed_lag_n_terms) {
-    error("Distributed lag coefficient slots are inconsistent with b_j length.");
-  }
-
-  int max_spatial_index = A_st.rows() - 1;
-  for (int i = 0; i < n_i; i++) {
-    if (year_i(i) < 0 || year_i(i) >= n_t) error("year_i index outside valid range for distributed lag calculation.");
-    if (A_spatial_index(i) < 0 || A_spatial_index(i) > max_spatial_index) {
-      error("A_spatial_index outside valid range for distributed lag calculation.");
-    }
-  }
-
+  // Determine which scale parameters are needed by scanning components
   bool needs_kappaS = false;
   bool needs_kappaT = false;
   bool needs_kappaST = false;
+  bool need_spatial_solver = false;
   bool need_m0_solver = false;
-  for (int term = 0; term < distributed_lag_n_terms; term++) {
-    int component = distributed_lag_term_component(term);
-    if (component == 0) needs_kappaS = true;
+  for (int term = 0; term < ctx.n_terms; term++) {
+    int component = ctx.term_component(term);
+    if (component == 0) { needs_kappaS = true; need_spatial_solver = true; }
     if (component == 1) needs_kappaT = true;
     if (component == 2) {
       needs_kappaS = true;
@@ -651,58 +641,62 @@ void add_distributed_lags_to_eta_fixed(
       need_m0_solver = true;
     }
   }
-  if (needs_kappaS && log_kappaS_dl.size() == 0) error("Distributed lag spatial-scale parameter is missing.");
-  if (needs_kappaT && log_kappaT_dl.size() == 0) error("Distributed lag temporal-scale parameter is missing.");
-  if (needs_kappaST && kappaST_dl_unscaled.size() == 0) {
-    error("Distributed lag spatiotemporal parameter is missing.");
-  }
-  if (log_kappaS_dl.size() > 1 || log_kappaT_dl.size() > 1 || kappaST_dl_unscaled.size() > 1) {
-    error("Distributed lag parameters must have length 0 or 1.");
-  }
 
+  // Compute derived scales
   Type kappaS_scale = Type(0.0);
   Type kappaST_scale = Type(0.0);
-  if (needs_kappaS) kappaS_scale = Type(1.0) / (kappaS_dl * kappaS_dl);
-  if (needs_kappaST) kappaST_scale = kappaST_dl * kappaS_scale;
+  if (needs_kappaS) kappaS_scale = Type(1.0) / (ctx.kappaS * ctx.kappaS);
+  if (needs_kappaST) kappaST_scale = ctx.kappaST * kappaS_scale;
 
+  // Factorize spatial system once for all spatial terms
+  Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> > lu_spatial;
+  if (need_spatial_solver) {
+    Eigen::SparseMatrix<Type> spatial_system = ctx.M0 + kappaS_scale * ctx.M1;
+    lu_spatial.compute(spatial_system);
+    if (lu_spatial.info() != Eigen::Success) {
+      error("Distributed lag sparse solve failed while factorizing spatial system (M0 + kappa^{-2} M1).");
+    }
+  }
+
+  // Factorize M0 once for spatiotemporal terms
   Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> > lu_m0;
   if (need_m0_solver) {
-    lu_m0.compute(M0_dl);
+    lu_m0.compute(ctx.M0);
     if (lu_m0.info() != Eigen::Success) {
       error("Distributed lag sparse solve failed while factorizing M0.");
     }
   }
 
+  // Extract covariate slices from 3D array into Eigen matrices
   std::vector<Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> > covariate_cache;
-  covariate_cache.reserve(distributed_lag_n_covariates);
-  for (int cov_i = 0; cov_i < distributed_lag_n_covariates; cov_i++) {
+  covariate_cache.reserve(ctx.n_covariates);
+  for (int cov_i = 0; cov_i < ctx.n_covariates; cov_i++) {
     Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> cov_vertex_time(n_vertices_dl, n_t_dl);
     for (int t = 0; t < n_t_dl; t++) {
       for (int v = 0; v < n_vertices_dl; v++) {
-        cov_vertex_time(v, t) = distributed_lag_covariate_vertex_time(v, t, cov_i);
+        cov_vertex_time(v, t) = ctx.covariate_vertex_time(v, t, cov_i);
       }
     }
     covariate_cache.push_back(cov_vertex_time);
   }
 
-  int dl_coef_start = b_j.size() - distributed_lag_n_terms;
-  for (int term = 0; term < distributed_lag_n_terms; term++) {
-    int component = distributed_lag_term_component(term);
-    int cov_i = distributed_lag_term_covariate(term);
-    if (component < 0 || component > 2) error("Unknown distributed lag component id.");
-    if (cov_i < 0 || cov_i >= distributed_lag_n_covariates) {
-      error("Distributed lag term covariate index outside valid range.");
-    }
+  // Solve and project each term, accumulate into eta_fixed_i
+  int dl_coef_start = ctx.b_j.size() - ctx.n_terms;
+  for (int term = 0; term < ctx.n_terms; term++) {
+    int component = ctx.term_component(term);
+    int cov_i = ctx.term_covariate(term);
 
     Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> transformed_vertex_time(n_vertices_dl, n_t_dl);
     bool solved = dl_solve_transformed_vertex_time(
       component,
       covariate_cache[cov_i],
-      M0_dl,
-      M1_dl,
+      ctx.M0,
+      ctx.M1,
       kappaS_scale,
-      kappaT_dl,
+      ctx.kappaT,
       kappaST_scale,
+      need_spatial_solver,
+      lu_spatial,
       need_m0_solver,
       lu_m0,
       transformed_vertex_time
@@ -713,15 +707,15 @@ void add_distributed_lags_to_eta_fixed(
 
     Eigen::Matrix<Type, Eigen::Dynamic, 1> term_i = dl_project_vertex_time_to_observations(
       transformed_vertex_time,
-      A_st,
-      A_spatial_index,
-      year_i,
-      n_i,
-      n_t
+      ctx.A_st,
+      ctx.A_spatial_index,
+      ctx.year_i,
+      ctx.n_i,
+      ctx.n_t
     );
 
-    Type beta_dl = b_j(dl_coef_start + term);
-    for (int i = 0; i < n_i; i++) eta_fixed_i(i,0) += beta_dl * term_i(i);
+    Type beta_dl = ctx.b_j(dl_coef_start + term);
+    for (int i = 0; i < ctx.n_i; i++) eta_fixed_i(i,0) += beta_dl * term_i(i);
   }
 }
 

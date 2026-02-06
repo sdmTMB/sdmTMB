@@ -809,29 +809,27 @@ Type objective_function<Type>::operator()()
     if (m == 0) eta_fixed_i.col(m) = X_ij(m) * b_j;
     if (m == 1) eta_fixed_i.col(m) = X_ij(m) * b_j2;
   }
-  sdmTMB::add_distributed_lags_to_eta_fixed(
-    eta_fixed_i,
-    n_m,
-    n_i,
-    n_t,
-    b_j,
-    A_st,
-    A_spatial_index,
-    year_i,
-    spde.M0,
-    spde.M1,
-    distributed_lag_n_terms,
-    distributed_lag_n_covariates,
-    distributed_lag_covariate_vertex_time,
-    distributed_lag_term_component,
-    distributed_lag_term_covariate,
-    log_kappaS_dl,
-    log_kappaT_dl,
-    kappaST_dl_unscaled,
-    kappaS_dl,
-    kappaT_dl,
-    kappaST_dl
-  );
+  {
+    sdmTMB::DistributedLagContext<Type> dl_ctx = {
+      distributed_lag_n_terms,
+      distributed_lag_n_covariates,
+      n_i,
+      n_t,
+      distributed_lag_term_component,
+      distributed_lag_term_covariate,
+      distributed_lag_covariate_vertex_time,
+      A_st,
+      A_spatial_index,
+      year_i,
+      spde.M0,
+      spde.M1,
+      kappaS_dl,
+      kappaT_dl,
+      kappaST_dl,
+      b_j
+    };
+    sdmTMB::add_distributed_lags_to_eta_fixed(eta_fixed_i, dl_ctx);
+  }
 
   // FIXME delta must be same in 2 components:
   // p-splines/smoothers
