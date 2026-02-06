@@ -1927,6 +1927,29 @@ Type objective_function<Type>::operator()()
     if (log_kappaS_dl.size() > 0) ADREPORT(kappaS_dl);
     if (log_kappaT_dl.size() > 0) ADREPORT(kappaT_dl);
     if (kappaST_dl_unscaled.size() > 0) ADREPORT(kappaST_dl);
+
+    // Derived distributed-lag summaries
+    // Temporal persistence summary (mapped to AR1-like 0 to 1 scale)
+    if (log_kappaT_dl.size() > 0) {
+      Type rhoT = kappaT_dl / (Type(1.0) + kappaT_dl);
+      REPORT(rhoT);
+      ADREPORT(rhoT);
+    }
+
+    // Spatial displacement summaries (MSD and RMSD), adjusted by rhoT when
+    // temporal lag is present
+    if (log_kappaS_dl.size() > 0) {
+      Type MSD = Type(4.0) / (kappaS_dl * kappaS_dl);
+      if (log_kappaT_dl.size() > 0) {
+        Type rhoT = kappaT_dl / (Type(1.0) + kappaT_dl);
+        MSD = MSD * (Type(1.0) - rhoT);
+      }
+      Type RMSD = sqrt(MSD);
+      REPORT(MSD);
+      REPORT(RMSD);
+      ADREPORT(MSD);
+      ADREPORT(RMSD);
+    }
   }
 
   // only ADREPORT phi if a family uses it:

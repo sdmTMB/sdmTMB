@@ -109,3 +109,45 @@ test_that("distributed lag model matches no-lag model when lag coefficients are 
   expect_equal(fit_base$tmb_obj$report()$eta_i, fit_lag_fixed$tmb_obj$report()$eta_i, tolerance = 1e-6)
   expect_equal(fit_base$tmb_obj$report()$mu_i, fit_lag_fixed$tmb_obj$report()$mu_i, tolerance = 1e-6)
 })
+
+test_that("distributed lag derived quantities are conditionally reported", {
+  skip_on_cran()
+  dat <- make_dl_fit_data()
+  mesh <- make_dl_fit_mesh(dat)
+
+  fit_time <- sdmTMB(
+    y ~ x1 + x2,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    distributed_lags = ~ time(x1),
+    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+  )
+  rep_time <- fit_time$tmb_obj$report()
+  expect_true(is.numeric(rep_time$rhoT))
+  expect_true(is.finite(rep_time$rhoT))
+  expect_null(rep_time$MSD)
+  expect_null(rep_time$RMSD)
+
+  fit_space <- sdmTMB(
+    y ~ x1 + x2,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    distributed_lags = ~ space(x1),
+    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+  )
+  rep_space <- fit_space$tmb_obj$report()
+  expect_null(rep_space$rhoT)
+  expect_true(is.numeric(rep_space$MSD))
+  expect_true(is.numeric(rep_space$RMSD))
+  expect_true(is.finite(rep_space$MSD))
+  expect_true(is.finite(rep_space$RMSD))
+  expect_equal(rep_space$RMSD^2, rep_space$MSD, tolerance = 1e-6)
+})
