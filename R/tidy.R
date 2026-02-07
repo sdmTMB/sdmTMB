@@ -133,14 +133,23 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   ii <- 1
 
   # grab fixed effects:
-  .formula <- x$split_formula[[model]]$form_no_bars
-  .formula <- remove_s_and_t2(.formula)
-  if (!"mgcv" %in% names(x)) x[["mgcv"]] <- FALSE
-  fe_names <- colnames(model.matrix(.formula, x$data))
+  fe_names <- NULL
+  if (!is.null(x$tmb_data$X_ij) && length(x$tmb_data$X_ij) >= model) {
+    fe_names <- colnames(x$tmb_data$X_ij[[model]])
+  }
+  if (is.null(fe_names) || length(fe_names) != length(est$b_j)) {
+    .formula <- x$split_formula[[model]]$form_no_bars
+    .formula <- remove_s_and_t2(.formula)
+    fe_names <- colnames(model.matrix(.formula, x$data))
+  }
+  if (is.null(fe_names) || length(fe_names) != length(est$b_j)) {
+    fe_names <- paste0("b_j", seq_along(est$b_j))
+  }
 
-  b_j <- est$b_j[!fe_names == "offset", drop = TRUE]
-  b_j_se <- se$b_j[!fe_names == "offset", drop = TRUE]
-  fe_names <- fe_names[!fe_names == "offset"]
+  keep_fe <- fe_names != "offset"
+  b_j <- est$b_j[keep_fe, drop = TRUE]
+  b_j_se <- se$b_j[keep_fe, drop = TRUE]
+  fe_names <- fe_names[keep_fe]
   out <- data.frame(term = fe_names, estimate = b_j, std.error = b_j_se, stringsAsFactors = FALSE)
 
   if (x$tmb_data$threshold_func > 0) {
@@ -306,6 +315,38 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
       conf.low = rho_lwr, conf.high = rho_upr, stringsAsFactors = FALSE
     )
     ii <- ii + 1
+  }
+
+  add_reported_parameter <- function(term_name) {
+    if (!term_name %in% names(est)) return(NULL)
+    est_term <- est[[term_name]]
+    if (is.null(est_term) || !length(est_term)) return(NULL)
+    se_term <- se[[term_name]]
+    if (is.null(se_term) || !length(se_term)) {
+      se_term <- rep(NA_real_, length(est_term))
+    }
+    est_term <- as.numeric(est_term)
+    se_term <- as.numeric(se_term)
+    if (length(se_term) == 1L && length(est_term) > 1L) {
+      se_term <- rep(se_term, length(est_term))
+    }
+    if (length(se_term) != length(est_term)) {
+      se_term <- rep(NA_real_, length(est_term))
+    }
+    data.frame(
+      term = term_name,
+      estimate = est_term,
+      std.error = se_term,
+      conf.low = est_term - crit * se_term,
+      conf.high = est_term + crit * se_term,
+      stringsAsFactors = FALSE
+    )
+  }
+  for (term_name in c("kappaS_dl", "kappaT_dl", "kappaST_dl", "rhoT", "MSD", "RMSD")) {
+    term_df <- add_reported_parameter(term_name)
+    if (!is.null(term_df)) {
+      out_re[[paste0("distributed_lag_", term_name)]] <- term_df
+    }
   }
 
   if (all(!x$tmb_data$include_spatial) && all(x$tmb_data$spatial_only)) out_re$range <- NULL

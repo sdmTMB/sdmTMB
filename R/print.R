@@ -42,6 +42,21 @@ print_model_info <- function(x) {
 
   mesh <- paste0("Mesh: ", extract_call_name(x$call$mesh), " (", covariance, " covariance)\n")
   data <- paste0("Data: ", extract_call_name(x$call$data), "\n")
+  distributed_lags <- NULL
+  if (!is.null(x$distributed_lags_parsed) &&
+      !is.null(x$distributed_lags_parsed$terms) &&
+      nrow(x$distributed_lags_parsed$terms) > 0L) {
+    dl_terms <- x$distributed_lags_parsed$terms
+    dl_labels <- paste0(dl_terms$component, "(", dl_terms$variable, ")")
+    distributed_lags <- paste0("Distributed lags: ", paste(dl_labels, collapse = " + "), "\n")
+  } else if ("distributed_lags" %in% names(x$call)) {
+    dl_name <- extract_call_name(x$call$distributed_lags)
+    if (!is.null(dl_name) && dl_name != "NULL") {
+      distributed_lags <- paste0("Distributed lags: ", dl_name, "\n")
+      distributed_lags <- gsub('\\"', "", distributed_lags)
+      distributed_lags <- gsub("\\'", "", distributed_lags)
+    }
+  }
 
   if (multi_family) {
     dist_col <- x$distribution_column
@@ -105,6 +120,7 @@ print_model_info <- function(x) {
     family1,
     family2,
     overall_family,
+    distributed_lags,
     criterion,
     covariance
   )
@@ -498,6 +514,12 @@ print_other_parameters <- function(x, m = 1L) {
   sigma_E <- get_term_text("sigma_E",
     paste0("Spatiotemporal ", xtra, toupper(x$spatiotemporal[m]), " SD"))
   rho <- get_term_text("rho", "Spatiotemporal AR1 correlation (rho)")
+  kappaS_dl <- get_term_text("kappaS_dl", "Distributed lag spatial scale (kappaS_dl)")
+  kappaT_dl <- get_term_text("kappaT_dl", "Distributed lag temporal scale (kappaT_dl)")
+  kappaST_dl <- get_term_text("kappaST_dl", "Distributed lag space-time coupling (kappaST_dl)")
+  rhoT <- get_term_text("rhoT", "Distributed lag temporal persistence (rhoT)")
+  MSD <- get_term_text("MSD", "Distributed lag mean square displacement (MSD)")
+  RMSD <- get_term_text("RMSD", "Distributed lag root mean square displacement (RMSD)")
 
   if ("sigma_Z" %in% b$term) {
     # tidy() takes sigma_Z from the sdreport,
@@ -513,7 +535,10 @@ print_other_parameters <- function(x, m = 1L) {
     sigma_Z <- ""
   }
 
-  named_list(phi, tweedie_p, student_df, sigma_O, sigma_E, sigma_Z, rho, gengamma_par)
+  named_list(
+    phi, tweedie_p, student_df, sigma_O, sigma_E, sigma_Z, rho,
+    kappaS_dl, kappaT_dl, kappaST_dl, rhoT, MSD, RMSD, gengamma_par
+  )
 }
 
 print_header <- function(x) {
@@ -523,6 +548,7 @@ print_header <- function(x) {
   cat(info$mesh)
   cat(info$time)
   cat(info$data)
+  cat(info$distributed_lags)
   cat(info$overall_family)
 }
 
@@ -572,6 +598,12 @@ print_one_model <- function(x, m = 1, edf = FALSE, silent = FALSE) {
   cat(other$student_df)
   cat(other$gengamma_par)
   cat(other$rho)
+  cat(other$kappaS_dl)
+  cat(other$kappaT_dl)
+  cat(other$kappaST_dl)
+  cat(other$rhoT)
+  cat(other$MSD)
+  cat(other$RMSD)
   cat(range)
   cat(other$sigma_O)
   cat(other$sigma_Z)
