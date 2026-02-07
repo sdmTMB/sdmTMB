@@ -521,6 +521,12 @@ predict.sdmTMB <- function(object, newdata = NULL,
         X = proj_X_ij[[1]],
         coef_names = object$distributed_lags_data$term_coef_name
       )
+      if (regular_delta) {
+        proj_X_ij[[2]] <- .append_distributed_lag_coef_columns(
+          X = proj_X_ij[[2]],
+          coef_names = object$distributed_lags_data$term_coef_name
+        )
+      }
     }
 
     # TODO DELTA hardcoded to 1:

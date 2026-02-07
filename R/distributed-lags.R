@@ -146,10 +146,6 @@
     cli_abort("`distributed_lags` is currently unsupported for multi-family models.")
   }
 
-  if (isTRUE(delta)) {
-    cli_abort("`distributed_lags` is currently unsupported for delta/hurdle models.")
-  }
-
   if (isTRUE(distributed_lags$needs_time) && is.null(time)) {
     cli_abort(
       "`distributed_lags` terms wrapped in `time()` or `spacetime()` require a `time` argument."

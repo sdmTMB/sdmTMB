@@ -534,6 +534,9 @@ struct DistributedLagContext {
 
   // Fixed-effect coefficients (full vector; lag slots are at the tail)
   const vector<Type>& b_j;
+
+  // Column of eta_fixed_i/proj_fe to accumulate into (0-based model index)
+  int model_col;
 };
 
 // Extract column t of covariate cov_i from 3D array (vertices x time x covariates)
@@ -720,7 +723,7 @@ void add_distributed_lags_to_eta_fixed(
     );
 
     Type beta_dl = ctx.b_j(dl_coef_start + term);
-    for (int i = 0; i < ctx.n_i; i++) eta_fixed_i(i,0) += beta_dl * term_i(i);
+    for (int i = 0; i < ctx.n_i; i++) eta_fixed_i(i, ctx.model_col) += beta_dl * term_i(i);
   }
 }
 

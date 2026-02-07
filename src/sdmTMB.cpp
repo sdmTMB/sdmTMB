@@ -827,9 +827,32 @@ Type objective_function<Type>::operator()()
       kappaS_dl,
       kappaT_dl,
       kappaST_dl,
-      b_j
+      b_j,
+      0
     };
     sdmTMB::add_distributed_lags_to_eta_fixed(eta_fixed_i, dl_ctx);
+    if (n_m > 1) {
+      sdmTMB::DistributedLagContext<Type> dl_ctx2 = {
+        distributed_lag_n_terms,
+        distributed_lag_n_covariates,
+        n_i,
+        n_t,
+        distributed_lag_term_component,
+        distributed_lag_term_covariate,
+        distributed_lag_covariate_vertex_time,
+        A_st,
+        A_spatial_index,
+        year_i,
+        spde.M0,
+        spde.M1,
+        kappaS_dl,
+        kappaT_dl,
+        kappaST_dl,
+        b_j2,
+        1
+      };
+      sdmTMB::add_distributed_lags_to_eta_fixed(eta_fixed_i, dl_ctx2);
+    }
   }
 
   // FIXME delta must be same in 2 components:
@@ -1371,9 +1394,32 @@ Type objective_function<Type>::operator()()
         kappaS_dl,
         kappaT_dl,
         kappaST_dl,
-        b_j
+        b_j,
+        0
       };
       sdmTMB::add_distributed_lags_to_eta_fixed(proj_fe, dl_proj_ctx);
+      if (n_m > 1) {
+        sdmTMB::DistributedLagContext<Type> dl_proj_ctx2 = {
+          distributed_lag_n_terms,
+          distributed_lag_n_covariates,
+          n_p,
+          n_t,
+          distributed_lag_term_component,
+          distributed_lag_term_covariate,
+          proj_distributed_lag_covariate_vertex_time,
+          proj_mesh,
+          proj_spatial_index,
+          proj_year,
+          spde.M0,
+          spde.M1,
+          kappaS_dl,
+          kappaT_dl,
+          kappaST_dl,
+          b_j2,
+          1
+        };
+        sdmTMB::add_distributed_lags_to_eta_fixed(proj_fe, dl_proj_ctx2);
+      }
     }
     for (int m = 0; m < n_m; m++) {
       if (!multi_family) {

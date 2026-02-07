@@ -80,6 +80,35 @@ test_that("distributed lag coefficient slots are appended and lag parameters are
   expect_length(fit$tmb_params$kappaST_dl_unscaled, 0L)
 })
 
+test_that("distributed lag coefficient slots are appended to both delta components", {
+  dat <- data.frame(
+    y = c(0, 1, 0, 2, 0.5, 1.2, 0, 0.7),
+    x1 = rnorm(8),
+    x2 = rnorm(8),
+    year = rep(1:4, each = 2),
+    X = rep(1:4, each = 2),
+    Y = rep(c(0, 1), 4)
+  )
+  mesh <- make_dl_plumbing_mesh(dat)
+
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(),
+    distributed_lags = ~ space(x1) + time(x2),
+    do_fit = FALSE
+  )
+
+  expect_true(all(c("dl_space_x1", "dl_time_x2") %in% colnames(fit$tmb_data$X_ij[[1]])))
+  expect_true(all(c("dl_space_x1", "dl_time_x2") %in% colnames(fit$tmb_data$X_ij[[2]])))
+  expect_equal(length(fit$tmb_params$b_j), ncol(fit$tmb_data$X_ij[[1]]))
+  expect_equal(length(fit$tmb_params$b_j2), ncol(fit$tmb_data$X_ij[[2]]))
+})
+
 test_that("distributed lag parameter lengths follow used components", {
   dat <- make_dl_plumbing_data()
   mesh <- make_dl_plumbing_mesh(dat)
@@ -157,6 +186,42 @@ test_that("predict tmb_data keeps distributed lag columns aligned with b_j", {
   expect_equal(ncol(td$proj_X_ij[[1]]), length(fit$tmb_params$b_j))
   expect_equal(
     unname(colSums(abs(td$proj_X_ij[[1]][, lag_cols, drop = FALSE]))),
+    rep(0, length(lag_cols))
+  )
+})
+
+test_that("predict tmb_data keeps distributed lag columns aligned with b_j2 for delta", {
+  skip_on_cran()
+  set.seed(1)
+  dat <- data.frame(
+    y = c(0, 1, 0, 2, 0.5, 1.2, 0, 0.7, 0, 1.1, 0.3, 0),
+    x1 = rnorm(12),
+    x2 = rnorm(12),
+    year = rep(1:4, each = 3),
+    X = rep(1:4, each = 3),
+    Y = rep(c(0, 1, 2), 4)
+  )
+  mesh <- make_dl_plumbing_mesh(dat)
+
+  fit <- suppressWarnings(sdmTMB(
+    y ~ x1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(),
+    distributed_lags = ~ space(x1) + time(x2),
+    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+  ))
+
+  td <- predict(fit, newdata = dat, return_tmb_data = TRUE)
+  lag_cols <- fit$distributed_lags_data$term_coef_name
+
+  expect_equal(colnames(td$proj_X_ij[[2]]), colnames(fit$tmb_data$X_ij[[2]]))
+  expect_equal(ncol(td$proj_X_ij[[2]]), length(fit$tmb_params$b_j2))
+  expect_equal(
+    unname(colSums(abs(td$proj_X_ij[[2]][, lag_cols, drop = FALSE]))),
     rep(0, length(lag_cols))
   )
 })

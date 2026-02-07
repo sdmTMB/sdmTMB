@@ -22,6 +22,27 @@ make_dl_predict_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
+make_dl_predict_delta_data <- function() {
+  set.seed(202)
+  n_t <- 5L
+  n_s <- 6L
+  year <- rep(seq_len(n_t), each = n_s)
+  x <- rep(seq_len(n_s), times = n_t)
+  y <- rep(1:2, length.out = n_t * n_s)
+  x1 <- as.numeric(scale(sin(year / 2) + x / max(x)))
+  x2 <- as.numeric(scale(cos(year / 3) + y / max(y)))
+  positive <- exp(0.2 + 0.4 * x1)
+  present <- as.integer(x2 > 0)
+  data.frame(
+    y = ifelse(present == 1L, positive, 0),
+    x1 = x1,
+    x2 = x2,
+    year = year,
+    X = x,
+    Y = y
+  )
+}
+
 test_that("distributed lag predict works for default and newdata pathways", {
   skip_on_cran()
 
@@ -102,6 +123,65 @@ test_that("distributed lag newdata covariate changes prediction direction when l
 
   p_low <- predict(fit, newdata = nd_low)
   p_high <- predict(fit, newdata = nd_high)
+
+  expect_gt(mean(p_high$est - p_low$est), 0)
+})
+
+test_that("delta distributed lag in component 2 changes combined response predictions", {
+  skip_on_cran()
+
+  dat <- make_dl_predict_delta_data()
+  mesh <- make_dl_predict_mesh(dat)
+
+  proto <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(),
+    distributed_lags = ~ time(x1),
+    do_fit = FALSE
+  )
+
+  lag_col <- proto$distributed_lags_data$term_coef_name
+  lag_idx1 <- match(lag_col, colnames(proto$tmb_data$X_ij[[1]]))
+  lag_idx2 <- match(lag_col, colnames(proto$tmb_data$X_ij[[2]]))
+
+  b_map1 <- seq_along(proto$tmb_params$b_j)
+  b_map1[lag_idx1] <- NA_integer_
+  b_start1 <- proto$tmb_params$b_j
+  b_start1[lag_idx1] <- 0
+
+  b_map2 <- seq_along(proto$tmb_params$b_j2)
+  b_map2[lag_idx2] <- NA_integer_
+  b_start2 <- proto$tmb_params$b_j2
+  b_start2[lag_idx2] <- 1
+
+  fit <- suppressWarnings(sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(),
+    distributed_lags = ~ time(x1),
+    control = sdmTMBcontrol(
+      start = list(b_j = b_start1, b_j2 = b_start2),
+      map = list(b_j = factor(b_map1), b_j2 = factor(b_map2)),
+      newton_loops = 0,
+      getsd = FALSE
+    )
+  ))
+
+  nd_low <- dat
+  nd_high <- dat
+  nd_high$x1 <- nd_high$x1 + 0.5
+
+  p_low <- predict(fit, newdata = nd_low, type = "response")
+  p_high <- predict(fit, newdata = nd_high, type = "response")
 
   expect_gt(mean(p_high$est - p_low$est), 0)
 })

@@ -173,7 +173,7 @@ test_that("distributed_lags time terms require time", {
   )
 })
 
-test_that("distributed_lags rejects delta and multi-family models", {
+test_that("distributed_lags supports single-family delta and rejects multi-family", {
   dat <- data.frame(
     y = c(0, 1, 0, 2, 0.5, 1.2),
     x_num = rnorm(6),
@@ -183,19 +183,18 @@ test_that("distributed_lags rejects delta and multi-family models", {
   )
   mesh <- make_dl_mesh(dat)
 
-  expect_error(
-    sdmTMB(
-      y ~ 1,
-      data = dat,
-      mesh = mesh,
-      spatial = "off",
-      spatiotemporal = "off",
-      family = delta_gamma(),
-      distributed_lags = ~ space(x_num),
-      do_fit = FALSE
-    ),
-    regexp = "unsupported for delta"
+  fit_delta <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(),
+    distributed_lags = ~ space(x_num),
+    do_fit = FALSE
   )
+  expect_true(all(c("dl_space_x_num") %in% colnames(fit_delta$tmb_data$X_ij[[1]])))
+  expect_true(all(c("dl_space_x_num") %in% colnames(fit_delta$tmb_data$X_ij[[2]])))
 
   expect_error(
     sdmTMB(

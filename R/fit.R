@@ -101,7 +101,7 @@ NULL
 #' @param distributed_lags An optional one-sided formula describing distributed
 #'   lag terms with `space()`, `time()`, or `spacetime()` wrappers.
 #'   Example: `~ space(x) + time(x) + spacetime(z)`. Distributed lags
-#'   are currently not supported for delta/hurdle or multi-family models.
+#'   are currently not supported for multi-family models.
 #' @param weights A numeric vector representing optional likelihood weights for
 #'   the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
 #'   to sum to one and are not internally modified. Can also be used for trials
@@ -1264,6 +1264,12 @@ sdmTMB <- function(
       X = X_ij[[1]],
       coef_names = distributed_lags_data$term_coef_name
     )
+    if (delta) {
+      X_ij[[2]] <- .append_distributed_lag_coef_columns(
+        X = X_ij[[2]],
+        coef_names = distributed_lags_data$term_coef_name
+      )
+    }
 
     distributed_lag_n_terms <- as.integer(distributed_lags_data$n_terms)
     distributed_lag_n_covariates <- as.integer(distributed_lags_data$n_covariates)

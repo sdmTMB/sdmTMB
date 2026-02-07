@@ -201,7 +201,7 @@ Most users can ignore this option.}
 \item{distributed_lags}{An optional one-sided formula describing distributed
 lag terms with \code{space()}, \code{time()}, or \code{spacetime()} wrappers.
 Example: \code{~ space(x) + time(x) + spacetime(z)}. Distributed lags
-are currently not supported for delta/hurdle or multi-family models.}
+are currently not supported for multi-family models.}
 
 \item{experimental}{A named list for esoteric or in-development options. Here
 be dragons.}
