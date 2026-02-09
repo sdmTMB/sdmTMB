@@ -70,11 +70,31 @@ test_that("distributed lag ran_pars include lag scales and derived diagnostics",
   ))
 
   td <- tidy(fit, effects = "ran_pars", silent = TRUE)
-  expected_terms <- c("kappaS_dl", "kappaT_dl", "kappaST_dl", "rhoT", "MSD", "RMSD")
-  expect_true(all(expected_terms %in% td$term))
-  for (nm in expected_terms) {
-    expect_equal(sum(td$term == nm), 1L)
-  }
+  expected_terms <- c(
+    "kappaS_dl[x1]", "kappaS_dl[x2]",
+    "kappaT_dl[x1]",
+    "kappaST_dl[x2]",
+    "rhoT[x1]",
+    "MSD[x1]", "MSD[x2]",
+    "RMSD[x1]", "RMSD[x2]"
+  )
+  expect_true(all(expected_terms %in% td$term), info = paste(setdiff(expected_terms, td$term), collapse = ", "))
+  expect_false("kappaT_dl[x2]" %in% td$term)
+
+  rep_est <- as.list(fit$sd_report, "Estimate", report = TRUE)
+  rep_se <- as.list(fit$sd_report, "Std. Error", report = TRUE)
+  expect_length(rep_est$kappaS_dl, 2L)
+  expect_length(rep_est$kappaT_dl, 1L)
+  expect_length(rep_est$kappaST_dl, 1L)
+  expect_length(rep_est$rhoT, 1L)
+  expect_length(rep_est$MSD, 2L)
+  expect_length(rep_est$RMSD, 2L)
+  expect_length(rep_se$kappaS_dl, 2L)
+  expect_length(rep_se$kappaT_dl, 1L)
+  expect_length(rep_se$kappaST_dl, 1L)
+  expect_length(rep_se$rhoT, 1L)
+  expect_length(rep_se$MSD, 2L)
+  expect_length(rep_se$RMSD, 2L)
 })
 
 test_that("print output reports distributed lag structure and diagnostics", {
@@ -96,6 +116,6 @@ test_that("print output reports distributed lag structure and diagnostics", {
 
   out <- paste(capture.output(print(fit)), collapse = "\n")
   expect_match(out, "Distributed lags: space\\(x1\\) \\+ time\\(x1\\) \\+ spacetime\\(x2\\)")
-  expect_match(out, "Distributed lag temporal persistence( \\(rhoT\\))?:")
-  expect_match(out, "Distributed lag (root mean square displacement \\(RMSD\\)|RMSD):")
+  expect_match(out, "rhoT\\[x1\\]=")
+  expect_match(out, "RMSD\\[x1\\]=")
 })

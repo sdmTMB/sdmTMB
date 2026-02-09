@@ -29,10 +29,10 @@ struct DistributedLagContext {
   const Eigen::SparseMatrix<Type>& M0;
   const Eigen::SparseMatrix<Type>& M1;
 
-  // Transformed lag scale parameters (already on natural scale)
-  Type kappaS;
-  Type kappaT;
-  Type kappaST;
+  // Per-covariate transformed lag scale parameters (natural scale)
+  const vector<Type>& kappaS_by_covariate;
+  const vector<Type>& kappaT_by_covariate;
+  const vector<Type>& kappaST_by_covariate;
 
   // Fixed-effect coefficients (full vector; lag slots are at the tail)
   const vector<Type>& b_j;
@@ -164,40 +164,61 @@ void add_distributed_lags_to_eta_fixed(
     array<Type>& eta_fixed_i,
     DistributedLagContext<Type>& ctx) {
   if (ctx.n_terms <= 0) return;
+  if (ctx.n_covariates <= 0) {
+    error("Distributed lag metadata error: n_covariates must be > 0 when n_terms > 0.");
+  }
+  if (ctx.kappaS_by_covariate.size() != ctx.n_covariates ||
+      ctx.kappaT_by_covariate.size() != ctx.n_covariates ||
+      ctx.kappaST_by_covariate.size() != ctx.n_covariates) {
+    error("Distributed lag parameter length mismatch with n_covariates.");
+  }
 
   int n_vertices_dl = ctx.covariate_vertex_time.dim[0];
   int n_t_dl = ctx.covariate_vertex_time.dim[1];
 
-  // Determine which scale parameters are needed by scanning components
-  bool needs_kappaS = false;
-  bool needs_kappaST = false;
-  bool need_spatial_solver = false;
+  // Determine required solvers/scales by scanning terms.
+  std::vector<int> cov_needs_spatial_scale(ctx.n_covariates, 0);
+  std::vector<int> cov_needs_spatial_solver(ctx.n_covariates, 0);
   bool need_m0_solver = false;
   for (int term = 0; term < ctx.n_terms; term++) {
     int component = ctx.term_component(term);
+    int cov_i = ctx.term_covariate(term);
     if (!dl_is_valid_component(component)) {
       error("Distributed lag metadata error: invalid component code (expected spatial=0, temporal=1, spatiotemporal=2).");
     }
-    if (component == dl_space) { needs_kappaS = true; need_spatial_solver = true; }
+    if (cov_i < 0 || cov_i >= ctx.n_covariates) {
+      error("Distributed lag metadata error: term covariate index out of bounds.");
+    }
+    if (component == dl_space) {
+      cov_needs_spatial_scale[cov_i] = 1;
+      cov_needs_spatial_solver[cov_i] = 1;
+    }
     if (component == dl_spacetime) {
-      needs_kappaS = true;
-      needs_kappaST = true;
+      cov_needs_spatial_scale[cov_i] = 1;
       need_m0_solver = true;
     }
   }
 
-  // Compute derived scales
-  Type kappaS_scale = Type(0.0);
-  Type kappaST_scale = Type(0.0);
-  if (needs_kappaS) kappaS_scale = Type(1.0) / (ctx.kappaS * ctx.kappaS);
-  if (needs_kappaST) kappaST_scale = ctx.kappaST * kappaS_scale;
+  // Compute per-covariate derived scales.
+  vector<Type> kappaS_scale(ctx.n_covariates);
+  vector<Type> kappaST_scale(ctx.n_covariates);
+  kappaS_scale.setZero();
+  kappaST_scale.setZero();
+  for (int cov_i = 0; cov_i < ctx.n_covariates; cov_i++) {
+    if (cov_needs_spatial_scale[cov_i]) {
+      kappaS_scale(cov_i) = Type(1.0) / (ctx.kappaS_by_covariate(cov_i) * ctx.kappaS_by_covariate(cov_i));
+      kappaST_scale(cov_i) = ctx.kappaST_by_covariate(cov_i) * kappaS_scale(cov_i);
+    }
+  }
 
-  // Factorize spatial system once for all spatial terms
-  Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> > lu_spatial;
-  if (need_spatial_solver) {
-    Eigen::SparseMatrix<Type> spatial_system = ctx.M0 + kappaS_scale * ctx.M1;
-    lu_spatial.compute(spatial_system);
-    if (lu_spatial.info() != Eigen::Success) {
+  // Factorize per-covariate spatial systems once.
+  std::vector< Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> > >
+    lu_spatial_by_covariate(ctx.n_covariates);
+  for (int cov_i = 0; cov_i < ctx.n_covariates; cov_i++) {
+    if (!cov_needs_spatial_solver[cov_i]) continue;
+    Eigen::SparseMatrix<Type> spatial_system = ctx.M0 + kappaS_scale(cov_i) * ctx.M1;
+    lu_spatial_by_covariate[cov_i].compute(spatial_system);
+    if (lu_spatial_by_covariate[cov_i].info() != Eigen::Success) {
       error("Distributed lag sparse solve failed while factorizing spatial system (M0 + kappa^{-2} M1).");
     }
   }
@@ -226,11 +247,11 @@ void add_distributed_lags_to_eta_fixed(
       n_t_dl,
       ctx.M0,
       ctx.M1,
-      kappaS_scale,
-      ctx.kappaT,
-      kappaST_scale,
-      need_spatial_solver,
-      lu_spatial,
+      kappaS_scale(cov_i),
+      ctx.kappaT_by_covariate(cov_i),
+      kappaST_scale(cov_i),
+      cov_needs_spatial_solver[cov_i] == 1,
+      lu_spatial_by_covariate[cov_i],
       need_m0_solver,
       lu_m0,
       transformed_vertex_time

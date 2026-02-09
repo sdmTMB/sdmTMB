@@ -30,6 +30,9 @@ test_that("distributed lag tmb_data includes safe defaults when feature is off",
   expect_equal(fit$tmb_data$distributed_lag_n_terms, 0L)
   expect_equal(fit$tmb_data$distributed_lag_n_covariates, 0L)
   expect_equal(dim(fit$tmb_data$distributed_lag_covariate_vertex_time), c(1L, 1L, 1L))
+  expect_length(fit$tmb_data$distributed_lag_covariate_has_spatial, 0L)
+  expect_length(fit$tmb_data$distributed_lag_covariate_has_temporal, 0L)
+  expect_length(fit$tmb_data$distributed_lag_covariate_has_spacetime, 0L)
   expect_length(fit$tmb_data$distributed_lag_term_component, 0L)
   expect_length(fit$tmb_data$distributed_lag_term_covariate, 0L)
 
@@ -37,9 +40,9 @@ test_that("distributed lag tmb_data includes safe defaults when feature is off",
   expect_length(fit$tmb_params$log_kappaS_dl, 0L)
   expect_length(fit$tmb_params$log_kappaT_dl, 0L)
   expect_length(fit$tmb_params$kappaST_dl_unscaled, 0L)
-  expect_null(fit$tmb_map[["log_kappaS_dl", exact = TRUE]])
-  expect_null(fit$tmb_map[["log_kappaT_dl", exact = TRUE]])
-  expect_null(fit$tmb_map[["kappaST_dl_unscaled", exact = TRUE]])
+  expect_equal(length(fit$tmb_map[["log_kappaS_dl", exact = TRUE]]), 0L)
+  expect_equal(length(fit$tmb_map[["log_kappaT_dl", exact = TRUE]]), 0L)
+  expect_equal(length(fit$tmb_map[["kappaST_dl_unscaled", exact = TRUE]]), 0L)
 })
 
 test_that("distributed lag coefficient slots are appended and lag parameters are length-aware", {
@@ -67,6 +70,9 @@ test_that("distributed lag coefficient slots are appended and lag parameters are
   expect_equal(length(fit$tmb_params$b_j), ncol(x_mat))
   expect_equal(fit$tmb_data$distributed_lag_n_terms, 2L)
   expect_equal(fit$tmb_data$distributed_lag_n_covariates, 2L)
+  expect_equal(fit$tmb_data$distributed_lag_covariate_has_spatial, c(1L, 0L))
+  expect_equal(fit$tmb_data$distributed_lag_covariate_has_temporal, c(0L, 1L))
+  expect_equal(fit$tmb_data$distributed_lag_covariate_has_spacetime, c(0L, 0L))
   expect_equal(fit$tmb_data$distributed_lag_term_component, c(0L, 1L))
   expect_equal(fit$tmb_data$distributed_lag_term_covariate, c(0L, 1L))
   expect_equal(
@@ -75,9 +81,12 @@ test_that("distributed lag coefficient slots are appended and lag parameters are
   )
 
   expect_null(fit$tmb_map[["b_j", exact = TRUE]])
-  expect_length(fit$tmb_params$log_kappaS_dl, 1L)
-  expect_length(fit$tmb_params$log_kappaT_dl, 1L)
-  expect_length(fit$tmb_params$kappaST_dl_unscaled, 0L)
+  expect_length(fit$tmb_params$log_kappaS_dl, 2L)
+  expect_length(fit$tmb_params$log_kappaT_dl, 2L)
+  expect_length(fit$tmb_params$kappaST_dl_unscaled, 2L)
+  expect_equal(as.integer(fit$tmb_map$log_kappaS_dl), c(1L, NA_integer_))
+  expect_equal(as.integer(fit$tmb_map$log_kappaT_dl), c(NA_integer_, 1L))
+  expect_true(all(is.na(as.integer(fit$tmb_map$kappaST_dl_unscaled))))
 })
 
 test_that("distributed lag coefficient slots are appended to both delta components", {
@@ -125,8 +134,12 @@ test_that("distributed lag parameter lengths follow used components", {
   )
 
   expect_length(fit$tmb_params$log_kappaS_dl, 1L)
-  expect_length(fit$tmb_params$log_kappaT_dl, 0L)
+  expect_length(fit$tmb_params$log_kappaT_dl, 1L)
   expect_length(fit$tmb_params$kappaST_dl_unscaled, 1L)
+  expect_equal(fit$tmb_data$distributed_lag_covariate_has_spatial, 1L)
+  expect_equal(fit$tmb_data$distributed_lag_covariate_has_temporal, 0L)
+  expect_equal(fit$tmb_data$distributed_lag_covariate_has_spacetime, 1L)
+  expect_true(is.na(as.integer(fit$tmb_map$log_kappaT_dl)))
 })
 
 test_that("no-lag fit remains numerically identical with explicit distributed_lags = NULL", {

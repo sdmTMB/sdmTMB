@@ -101,7 +101,8 @@ NULL
 #' @param distributed_lags An optional one-sided formula describing distributed
 #'   lag terms with `space()`, `time()`, or `spacetime()` wrappers.
 #'   Example: `~ space(x) + time(x) + spacetime(z)`. Distributed lags
-#'   are currently not supported for multi-family models.
+#'   are currently not supported for multi-family models. Lag scale parameters
+#'   are estimated separately for each lag covariate.
 #' @param weights A numeric vector representing optional likelihood weights for
 #'   the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
 #'   to sum to one and are not internally modified. Can also be used for trials
@@ -1265,12 +1266,12 @@ sdmTMB <- function(
   )
 
   n_dl_terms <- 0L
-  dl_has_spatial_component <- FALSE
-  dl_has_temporal_component <- FALSE
-  dl_has_spatiotemporal_component <- FALSE
   distributed_lag_n_terms <- 0L
   distributed_lag_n_covariates <- 0L
   distributed_lag_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
+  distributed_lag_covariate_has_spatial <- integer(0)
+  distributed_lag_covariate_has_temporal <- integer(0)
+  distributed_lag_covariate_has_spacetime <- integer(0)
   distributed_lag_term_component <- integer(0)
   distributed_lag_term_covariate <- integer(0)
 
@@ -1290,11 +1291,11 @@ sdmTMB <- function(
     distributed_lag_n_terms <- as.integer(distributed_lags_data$n_terms)
     distributed_lag_n_covariates <- as.integer(distributed_lags_data$n_covariates)
     distributed_lag_covariate_vertex_time <- distributed_lags_data$covariate_vertex_time
+    distributed_lag_covariate_has_spatial <- as.integer(distributed_lags_data$covariate_has_spatial)
+    distributed_lag_covariate_has_temporal <- as.integer(distributed_lags_data$covariate_has_temporal)
+    distributed_lag_covariate_has_spacetime <- as.integer(distributed_lags_data$covariate_has_spacetime)
     distributed_lag_term_component <- as.integer(distributed_lags_data$term_component_id - 1L)
     distributed_lag_term_covariate <- as.integer(distributed_lags_data$term_covariate_index0)
-    dl_has_spatial_component <- any(distributed_lags_data$term_component %in% c("space", "spacetime"))
-    dl_has_temporal_component <- any(distributed_lags_data$term_component == "time")
-    dl_has_spatiotemporal_component <- any(distributed_lags_data$term_component == "spacetime")
   }
 
   # TODO: make this cleaner
@@ -1324,6 +1325,9 @@ sdmTMB <- function(
     distributed_lag_n_terms = distributed_lag_n_terms,
     distributed_lag_n_covariates = distributed_lag_n_covariates,
     distributed_lag_covariate_vertex_time = distributed_lag_covariate_vertex_time,
+    distributed_lag_covariate_has_spatial = distributed_lag_covariate_has_spatial,
+    distributed_lag_covariate_has_temporal = distributed_lag_covariate_has_temporal,
+    distributed_lag_covariate_has_spacetime = distributed_lag_covariate_has_spacetime,
     distributed_lag_term_component = distributed_lag_term_component,
     distributed_lag_term_covariate = distributed_lag_term_covariate,
     proj_distributed_lag_covariate_vertex_time = array(0, dim = c(1L, 1L, 1L)),
@@ -1436,9 +1440,9 @@ sdmTMB <- function(
     ln_tau_Z = matrix(0, n_z, n_m),
     ln_tau_E = rep(0, n_m),
     ln_kappa = matrix(0, 2L, n_m),
-    log_kappaS_dl = if (dl_has_spatial_component) 0 else numeric(0),
-    log_kappaT_dl = if (dl_has_temporal_component) 0 else numeric(0),
-    kappaST_dl_unscaled = if (dl_has_spatiotemporal_component) 0 else numeric(0),
+    log_kappaS_dl = numeric(distributed_lag_n_covariates),
+    log_kappaT_dl = numeric(distributed_lag_n_covariates),
+    kappaST_dl_unscaled = numeric(distributed_lag_n_covariates),
     # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
     thetaf = 0,
     ln_student_df = if (!multi_family && family$family[1] == "student") {
@@ -1479,11 +1483,20 @@ sdmTMB <- function(
   }
 
   # Map off parameters not needed
+  .make_distributed_lag_kappa_map <- function(has_component) {
+    if (!length(has_component)) {
+      return(factor(integer(0)))
+    }
+    out <- rep(NA_integer_, length(has_component))
+    est_i <- which(as.logical(has_component))
+    out[est_i] <- seq_along(est_i)
+    factor(out)
+  }
   tmb_map <- map_all_params(tmb_params)
   tmb_map$b_j <- NULL
-  tmb_map$log_kappaS_dl <- NULL
-  tmb_map$log_kappaT_dl <- NULL
-  tmb_map$kappaST_dl_unscaled <- NULL
+  tmb_map$log_kappaS_dl <- .make_distributed_lag_kappa_map(distributed_lag_covariate_has_spatial)
+  tmb_map$log_kappaT_dl <- .make_distributed_lag_kappa_map(distributed_lag_covariate_has_temporal)
+  tmb_map$kappaST_dl_unscaled <- .make_distributed_lag_kappa_map(distributed_lag_covariate_has_spacetime)
   if (delta) tmb_map$b_j2 <- NULL
   if (multi_family) {
     tmb_map$ln_phi <- factor(rep(NA, n_m))
@@ -1635,6 +1648,31 @@ sdmTMB <- function(
 
   # this is complex; pulled it out into own function:
   tmb_map$ln_kappa <- get_kappa_map(n_m = n_m, spatial = spatial, spatiotemporal = spatiotemporal, share_range = share_range)
+
+  .validate_distributed_lag_control_length <- function(x, param_name, control_name) {
+    if (length(x) == distributed_lag_n_covariates) return(invisible(NULL))
+    cov_text <- if (distributed_lag_n_covariates > 0L) {
+      paste(distributed_lags_data$covariates, collapse = ", ")
+    } else {
+      "<none>"
+    }
+    cli_abort(c(
+      paste0(
+        "`control$", control_name, "$", param_name, "` must have length ",
+        distributed_lag_n_covariates, "."
+      ),
+      "i" = paste0("Distributed lag covariates (in order): ", cov_text, ".")
+    ))
+  }
+  dl_param_names <- c("log_kappaS_dl", "log_kappaT_dl", "kappaST_dl_unscaled")
+  for (param_name in dl_param_names) {
+    if (param_name %in% names(start)) {
+      .validate_distributed_lag_control_length(start[[param_name]], param_name, "start")
+    }
+    if (param_name %in% names(map)) {
+      .validate_distributed_lag_control_length(map[[param_name]], param_name, "map")
+    }
+  }
 
   for (i in seq_along(start)) {
     cli_inform(c(

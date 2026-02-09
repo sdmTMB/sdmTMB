@@ -168,6 +168,9 @@ Type objective_function<Type>::operator()()
   DATA_INTEGER(distributed_lag_n_terms);
   DATA_INTEGER(distributed_lag_n_covariates);
   DATA_ARRAY(distributed_lag_covariate_vertex_time);
+  DATA_IVECTOR(distributed_lag_covariate_has_spatial);
+  DATA_IVECTOR(distributed_lag_covariate_has_temporal);
+  DATA_IVECTOR(distributed_lag_covariate_has_spacetime);
   DATA_IVECTOR(distributed_lag_term_component);
   DATA_IVECTOR(distributed_lag_term_covariate);
 
@@ -300,9 +303,9 @@ Type objective_function<Type>::operator()()
   PARAMETER_ARRAY(ln_tau_Z);    // optional spatially varying covariate process
   PARAMETER_VECTOR(ln_tau_E);    // spatio-temporal process
   PARAMETER_ARRAY(ln_kappa);    // Matern parameter
-  PARAMETER_VECTOR(log_kappaS_dl);    // distributed lag spatial scale (optional; length 0/1)
-  PARAMETER_VECTOR(log_kappaT_dl);    // distributed lag temporal scale (optional; length 0/1)
-  PARAMETER_VECTOR(kappaST_dl_unscaled);    // distributed lag interaction scale (optional; length 0/1)
+  PARAMETER_VECTOR(log_kappaS_dl);    // distributed lag spatial scale (length n_covariates)
+  PARAMETER_VECTOR(log_kappaT_dl);    // distributed lag temporal scale (length n_covariates)
+  PARAMETER_VECTOR(kappaST_dl_unscaled);    // distributed lag interaction scale (length n_covariates)
 
   PARAMETER(thetaf);           // tweedie only
   PARAMETER(ln_student_df);    // student-t df (log(df - 1))
@@ -359,12 +362,33 @@ Type objective_function<Type>::operator()()
   vector<Type> rho(n_m);
   for (int m = 0; m < n_m; m++) rho(m) = sdmTMB::minus_one_to_one(ar1_phi(m));
   vector<Type> phi = exp(ln_phi);
-  Type kappaS_dl = Type(0.0);
-  Type kappaT_dl = Type(0.0);
-  Type kappaST_dl = Type(0.0);
-  if (log_kappaS_dl.size() > 0) kappaS_dl = exp(log_kappaS_dl(0));
-  if (log_kappaT_dl.size() > 0) kappaT_dl = exp(log_kappaT_dl(0));
-  if (kappaST_dl_unscaled.size() > 0) kappaST_dl = -invlogit(kappaST_dl_unscaled(0));
+  if (log_kappaS_dl.size() != distributed_lag_n_covariates ||
+      log_kappaT_dl.size() != distributed_lag_n_covariates ||
+      kappaST_dl_unscaled.size() != distributed_lag_n_covariates) {
+    error("Distributed lag parameter vectors must have length `distributed_lag_n_covariates`.");
+  }
+  if (distributed_lag_covariate_has_spatial.size() != distributed_lag_n_covariates ||
+      distributed_lag_covariate_has_temporal.size() != distributed_lag_n_covariates ||
+      distributed_lag_covariate_has_spacetime.size() != distributed_lag_n_covariates) {
+    error("Distributed lag covariate component indicators must have length `distributed_lag_n_covariates`.");
+  }
+  vector<Type> kappaS_dl_by_covariate(distributed_lag_n_covariates);
+  vector<Type> kappaT_dl_by_covariate(distributed_lag_n_covariates);
+  vector<Type> kappaST_dl_by_covariate(distributed_lag_n_covariates);
+  kappaS_dl_by_covariate.setZero();
+  kappaT_dl_by_covariate.setZero();
+  kappaST_dl_by_covariate.setZero();
+  for (int cov_i = 0; cov_i < distributed_lag_n_covariates; cov_i++) {
+    if (distributed_lag_covariate_has_spatial(cov_i) == 1) {
+      kappaS_dl_by_covariate(cov_i) = exp(log_kappaS_dl(cov_i));
+    }
+    if (distributed_lag_covariate_has_temporal(cov_i) == 1) {
+      kappaT_dl_by_covariate(cov_i) = exp(log_kappaT_dl(cov_i));
+    }
+    if (distributed_lag_covariate_has_spacetime(cov_i) == 1) {
+      kappaST_dl_by_covariate(cov_i) = -invlogit(kappaST_dl_unscaled(cov_i));
+    }
+  }
   auto get_param = [&](const vector<Type> &par,
                        const vector<int> &start,
                        const vector<int> &len,
@@ -825,9 +849,9 @@ Type objective_function<Type>::operator()()
       year_i,
       spde.M0,
       spde.M1,
-      kappaS_dl,
-      kappaT_dl,
-      kappaST_dl,
+      kappaS_dl_by_covariate,
+      kappaT_dl_by_covariate,
+      kappaST_dl_by_covariate,
       b_model,
       model_col
     };
@@ -1372,9 +1396,9 @@ Type objective_function<Type>::operator()()
         proj_year,
         spde.M0,
         spde.M1,
-        kappaS_dl,
-        kappaT_dl,
-        kappaST_dl,
+        kappaS_dl_by_covariate,
+        kappaT_dl_by_covariate,
+        kappaST_dl_by_covariate,
         b_model,
         model_col
       };
@@ -1928,30 +1952,84 @@ Type objective_function<Type>::operator()()
     ADREPORT(log_range);  // log Matern approximate distance at 10% correlation
   }
   if (distributed_lag_n_terms > 0) {
-    REPORT(kappaS_dl);
-    REPORT(kappaT_dl);
-    REPORT(kappaST_dl);
-    if (log_kappaS_dl.size() > 0) ADREPORT(kappaS_dl);
-    if (log_kappaT_dl.size() > 0) ADREPORT(kappaT_dl);
-    if (kappaST_dl_unscaled.size() > 0) ADREPORT(kappaST_dl);
+    int n_spatial_covariates = 0;
+    int n_temporal_covariates = 0;
+    int n_spacetime_covariates = 0;
+    for (int cov_i = 0; cov_i < distributed_lag_n_covariates; cov_i++) {
+      if (distributed_lag_covariate_has_spatial(cov_i) == 1) n_spatial_covariates++;
+      if (distributed_lag_covariate_has_temporal(cov_i) == 1) n_temporal_covariates++;
+      if (distributed_lag_covariate_has_spacetime(cov_i) == 1) n_spacetime_covariates++;
+    }
+
+    if (n_spatial_covariates > 0) {
+      vector<Type> kappaS_dl(n_spatial_covariates);
+      int idx = 0;
+      for (int cov_i = 0; cov_i < distributed_lag_n_covariates; cov_i++) {
+        if (distributed_lag_covariate_has_spatial(cov_i) == 1) {
+          kappaS_dl(idx++) = kappaS_dl_by_covariate(cov_i);
+        }
+      }
+      REPORT(kappaS_dl);
+      ADREPORT(kappaS_dl);
+    }
+
+    if (n_temporal_covariates > 0) {
+      vector<Type> kappaT_dl(n_temporal_covariates);
+      int idx = 0;
+      for (int cov_i = 0; cov_i < distributed_lag_n_covariates; cov_i++) {
+        if (distributed_lag_covariate_has_temporal(cov_i) == 1) {
+          kappaT_dl(idx++) = kappaT_dl_by_covariate(cov_i);
+        }
+      }
+      REPORT(kappaT_dl);
+      ADREPORT(kappaT_dl);
+    }
+
+    if (n_spacetime_covariates > 0) {
+      vector<Type> kappaST_dl(n_spacetime_covariates);
+      int idx = 0;
+      for (int cov_i = 0; cov_i < distributed_lag_n_covariates; cov_i++) {
+        if (distributed_lag_covariate_has_spacetime(cov_i) == 1) {
+          kappaST_dl(idx++) = kappaST_dl_by_covariate(cov_i);
+        }
+      }
+      REPORT(kappaST_dl);
+      ADREPORT(kappaST_dl);
+    }
 
     // Derived distributed-lag summaries
-    // Temporal persistence summary (mapped to AR1-like 0 to 1 scale)
-    if (log_kappaT_dl.size() > 0) {
-      Type rhoT = kappaT_dl / (Type(1.0) + kappaT_dl);
+    // Temporal persistence summary (mapped to AR1-like 0 to 1 scale),
+    // computed for each lag covariate that uses temporal transport.
+    if (n_temporal_covariates > 0) {
+      vector<Type> rhoT(n_temporal_covariates);
+      int idx = 0;
+      for (int cov_i = 0; cov_i < distributed_lag_n_covariates; cov_i++) {
+        if (distributed_lag_covariate_has_temporal(cov_i) == 1) {
+          rhoT(idx++) = kappaT_dl_by_covariate(cov_i) / (Type(1.0) + kappaT_dl_by_covariate(cov_i));
+        }
+      }
       REPORT(rhoT);
       ADREPORT(rhoT);
     }
 
     // Spatial displacement summaries (MSD and RMSD), adjusted by rhoT when
-    // temporal lag is present
-    if (log_kappaS_dl.size() > 0) {
-      Type MSD = Type(4.0) / (kappaS_dl * kappaS_dl);
-      if (log_kappaT_dl.size() > 0) {
-        Type rhoT = kappaT_dl / (Type(1.0) + kappaT_dl);
-        MSD = MSD * (Type(1.0) - rhoT);
+    // that same covariate has temporal lag transport.
+    if (n_spatial_covariates > 0) {
+      vector<Type> MSD(n_spatial_covariates);
+      vector<Type> RMSD(n_spatial_covariates);
+      int idx = 0;
+      for (int cov_i = 0; cov_i < distributed_lag_n_covariates; cov_i++) {
+        if (distributed_lag_covariate_has_spatial(cov_i) == 1) {
+          Type MSD_cov = Type(4.0) / (kappaS_dl_by_covariate(cov_i) * kappaS_dl_by_covariate(cov_i));
+          if (distributed_lag_covariate_has_temporal(cov_i) == 1) {
+            Type rhoT_cov = kappaT_dl_by_covariate(cov_i) / (Type(1.0) + kappaT_dl_by_covariate(cov_i));
+            MSD_cov = MSD_cov * (Type(1.0) - rhoT_cov);
+          }
+          MSD(idx) = MSD_cov;
+          RMSD(idx) = sqrt(MSD_cov);
+          idx++;
+        }
       }
-      Type RMSD = sqrt(MSD);
       REPORT(MSD);
       REPORT(RMSD);
       ADREPORT(MSD);

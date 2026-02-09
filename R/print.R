@@ -495,6 +495,15 @@ print_other_parameters <- function(x, m = 1L) {
     }
     a
   }
+  distributed_lag_term_text <- function(term_prefix = "", pretext = "") {
+    idx <- grepl(paste0("^", term_prefix, "\\["), b$term)
+    if (!any(idx)) {
+      return("")
+    }
+    vals <- mround(b$estimate[idx], 2L)
+    term_labels <- sub(paste0("^", term_prefix, "\\[([^\\]]+)\\]$"), "\\1", b$term[idx])
+    paste0(pretext, ": ", paste(paste0(term_labels, "=", vals), collapse = ", "), "\n")
+  }
 
   if (multi_family) {
     phi <- multi_term_text("phi_", "Dispersion parameter (phi)")
@@ -514,12 +523,12 @@ print_other_parameters <- function(x, m = 1L) {
   sigma_E <- get_term_text("sigma_E",
     paste0("Spatiotemporal ", xtra, toupper(x$spatiotemporal[m]), " SD"))
   rho <- get_term_text("rho", "Spatiotemporal AR1 correlation (rho)")
-  kappaS_dl <- get_term_text("kappaS_dl", "Distributed lag spatial scale parameter")
-  kappaT_dl <- get_term_text("kappaT_dl", "Distributed lag temporal scale parameter")
-  kappaST_dl <- get_term_text("kappaST_dl", "Distributed lag space-time coupling scale parameter")
-  rhoT <- get_term_text("rhoT", "Distributed lag temporal persistence")
-  MSD <- get_term_text("MSD", "Distributed lag mean square displacement (MSD)")
-  RMSD <- get_term_text("RMSD", "Distributed lag RMSD")
+  kappaS_dl <- distributed_lag_term_text("kappaS_dl", "Distributed lag spatial scale parameter")
+  kappaT_dl <- distributed_lag_term_text("kappaT_dl", "Distributed lag temporal scale parameter")
+  kappaST_dl <- distributed_lag_term_text("kappaST_dl", "Distributed lag space-time coupling scale parameter")
+  rhoT <- distributed_lag_term_text("rhoT", "Distributed lag temporal persistence")
+  MSD <- distributed_lag_term_text("MSD", "Distributed lag mean square displacement (MSD)")
+  RMSD <- distributed_lag_term_text("RMSD", "Distributed lag RMSD")
 
   if ("sigma_Z" %in% b$term) {
     # tidy() takes sigma_Z from the sdreport,

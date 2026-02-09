@@ -365,10 +365,24 @@
 
   component_levels <- c("space", "time", "spacetime")
   component_id <- match(distributed_lags$terms$component, component_levels)
+  terms_df <- distributed_lags$terms
+  covariates <- distributed_lags$covariates
+  covariate_has_spatial <- as.integer(vapply(covariates, function(cov_name) {
+    any(terms_df$variable == cov_name & terms_df$component %in% c("space", "spacetime"))
+  }, logical(1L)))
+  covariate_has_temporal <- as.integer(vapply(covariates, function(cov_name) {
+    any(terms_df$variable == cov_name & terms_df$component == "time")
+  }, logical(1L)))
+  covariate_has_spacetime <- as.integer(vapply(covariates, function(cov_name) {
+    any(terms_df$variable == cov_name & terms_df$component == "spacetime")
+  }, logical(1L)))
 
   list(
     covariate_vertex_time = covariate_vertex_time,
-    covariates = distributed_lags$covariates,
+    covariates = covariates,
+    covariate_has_spatial = covariate_has_spatial,
+    covariate_has_temporal = covariate_has_temporal,
+    covariate_has_spacetime = covariate_has_spacetime,
     term_component = distributed_lags$terms$component,
     term_component_id = as.integer(component_id),
     term_covariate_index = as.integer(distributed_lags$terms$covariate_id),
@@ -376,7 +390,7 @@
     term_coef_name = distributed_lags$terms$coef_name,
     n_vertices = n_vertices,
     n_t = n_t,
-    n_covariates = length(distributed_lags$covariates),
+    n_covariates = length(covariates),
     n_terms = nrow(distributed_lags$terms)
   )
 }

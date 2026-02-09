@@ -317,24 +317,66 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     ii <- ii + 1
   }
 
-  add_reported_parameter <- function(term_name) {
-    if (!term_name %in% names(est)) return(NULL)
-    est_term <- est[[term_name]]
-    if (is.null(est_term) || !length(est_term)) return(NULL)
-    se_term <- se[[term_name]]
-    if (is.null(se_term) || !length(se_term)) {
-      se_term <- rep(NA_real_, length(est_term))
+  dl_report <- x$tmb_obj$report()
+  expand_distributed_lag_vector <- function(values, keep_idx, n_covariates, field_name, allow_null = FALSE) {
+    if (is.null(values) || !length(values)) {
+      if (allow_null) return(rep(NA_real_, n_covariates))
+      return(NULL)
     }
-    est_term <- as.numeric(est_term)
-    se_term <- as.numeric(se_term)
-    if (length(se_term) == 1L && length(est_term) > 1L) {
-      se_term <- rep(se_term, length(est_term))
+    values <- as.numeric(values)
+    if (length(values) == n_covariates) return(values)
+    if (length(values) == length(keep_idx)) {
+      out <- rep(NA_real_, n_covariates)
+      out[keep_idx] <- values
+      return(out)
     }
-    if (length(se_term) != length(est_term)) {
-      se_term <- rep(NA_real_, length(est_term))
+    cli_warn(c(
+      "Unexpected distributed lag vector length in reported output.",
+      "x" = paste0("`", field_name, "` has length ", length(values),
+        " but expected ", n_covariates, " (all covariates) or ",
+        length(keep_idx), " (active covariates).")
+    ))
+    rep(NA_real_, n_covariates)
+  }
+  add_distributed_lag_parameter <- function(term_name, covariate_mask_name) {
+    if (is.null(x$distributed_lags_data) || !length(x$distributed_lags_data$covariates)) {
+      return(NULL)
     }
+    covariates <- x$distributed_lags_data$covariates
+    keep <- x$distributed_lags_data[[covariate_mask_name]]
+    if (is.null(keep) || length(keep) != length(covariates)) {
+      return(NULL)
+    }
+    keep <- as.logical(keep)
+    keep_idx <- which(keep)
+    if (!length(keep_idx)) {
+      return(NULL)
+    }
+
+    est_full <- expand_distributed_lag_vector(
+      values = dl_report[[term_name]],
+      keep_idx = keep_idx,
+      n_covariates = length(covariates),
+      field_name = term_name,
+      allow_null = FALSE
+    )
+    if (is.null(est_full)) {
+      return(NULL)
+    }
+
+    se_full <- expand_distributed_lag_vector(
+      values = se[[term_name]],
+      keep_idx = keep_idx,
+      n_covariates = length(covariates),
+      field_name = paste0(term_name, " (SE)"),
+      allow_null = TRUE
+    )
+
+    est_term <- est_full[keep_idx]
+    se_term <- se_full[keep_idx]
+    term_labels <- paste0(term_name, "[", covariates[keep_idx], "]")
     data.frame(
-      term = term_name,
+      term = term_labels,
       estimate = est_term,
       std.error = se_term,
       conf.low = est_term - crit * se_term,
@@ -342,8 +384,16 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
       stringsAsFactors = FALSE
     )
   }
-  for (term_name in c("kappaS_dl", "kappaT_dl", "kappaST_dl", "rhoT", "MSD", "RMSD")) {
-    term_df <- add_reported_parameter(term_name)
+  dl_term_masks <- c(
+    kappaS_dl = "covariate_has_spatial",
+    kappaT_dl = "covariate_has_temporal",
+    kappaST_dl = "covariate_has_spacetime",
+    rhoT = "covariate_has_temporal",
+    MSD = "covariate_has_spatial",
+    RMSD = "covariate_has_spatial"
+  )
+  for (term_name in names(dl_term_masks)) {
+    term_df <- add_distributed_lag_parameter(term_name, dl_term_masks[[term_name]])
     if (!is.null(term_df)) {
       out_re[[paste0("distributed_lag_", term_name)]] <- term_df
     }
