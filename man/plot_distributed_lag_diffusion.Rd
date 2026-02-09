@@ -8,7 +8,7 @@ plot_distributed_lag_diffusion(
   object,
   covariate = NULL,
   component,
-  time_value,
+  time_value = NULL,
   n_steps = 3L,
   common_scale = FALSE,
   plot = TRUE
@@ -23,8 +23,10 @@ Required when multiple lag covariates were fitted.}
 \item{component}{Distributed-lag component name. Must be exactly one of
 \code{"space"}, \code{"time"}, or \code{"spacetime"}.}
 
-\item{time_value}{Time slice for the impulse. Supply either a modeled time
-value or a 1-based time index.}
+\item{time_value}{Optional time slice for the impulse. Supply either a
+modeled time value or a 1-based time index. Required only when the fitted
+distributed-lag specification includes \code{time()} or \code{spacetime()} terms with
+a model time column.}
 
 \item{n_steps}{Number of transformed slices to plot starting at
 \code{time_value}. Defaults to 3.}
