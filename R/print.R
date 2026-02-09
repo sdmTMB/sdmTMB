@@ -514,12 +514,12 @@ print_other_parameters <- function(x, m = 1L) {
   sigma_E <- get_term_text("sigma_E",
     paste0("Spatiotemporal ", xtra, toupper(x$spatiotemporal[m]), " SD"))
   rho <- get_term_text("rho", "Spatiotemporal AR1 correlation (rho)")
-  kappaS_dl <- get_term_text("kappaS_dl", "Distributed lag spatial scale (kappaS_dl)")
-  kappaT_dl <- get_term_text("kappaT_dl", "Distributed lag temporal scale (kappaT_dl)")
-  kappaST_dl <- get_term_text("kappaST_dl", "Distributed lag space-time coupling (kappaST_dl)")
-  rhoT <- get_term_text("rhoT", "Distributed lag temporal persistence (rhoT)")
+  kappaS_dl <- get_term_text("kappaS_dl", "Distributed lag spatial scale parameter")
+  kappaT_dl <- get_term_text("kappaT_dl", "Distributed lag temporal scale parameter")
+  kappaST_dl <- get_term_text("kappaST_dl", "Distributed lag space-time coupling scale parameter")
+  rhoT <- get_term_text("rhoT", "Distributed lag temporal persistence")
   MSD <- get_term_text("MSD", "Distributed lag mean square displacement (MSD)")
-  RMSD <- get_term_text("RMSD", "Distributed lag root mean square displacement (RMSD)")
+  RMSD <- get_term_text("RMSD", "Distributed lag RMSD")
 
   if ("sigma_Z" %in% b$term) {
     # tidy() takes sigma_Z from the sdreport,
@@ -598,16 +598,16 @@ print_one_model <- function(x, m = 1, edf = FALSE, silent = FALSE) {
   cat(other$student_df)
   cat(other$gengamma_par)
   cat(other$rho)
-  cat(other$kappaS_dl)
-  cat(other$kappaT_dl)
-  cat(other$kappaST_dl)
+  # cat(other$kappaS_dl)
+  # cat(other$kappaT_dl)
+  # cat(other$kappaST_dl)
   cat(other$rhoT)
-  cat(other$MSD)
-  cat(other$RMSD)
+  # cat(other$MSD)
   cat(range)
   cat(other$sigma_O)
   cat(other$sigma_Z)
   cat(other$sigma_E)
+  cat(other$RMSD)
 }
 print_footer <- function(x) {
   info <- print_model_info(x)
