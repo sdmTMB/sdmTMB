@@ -713,6 +713,7 @@ sdmTMB <- function(
   spde <- mesh
   epsilon_model <- NULL
   epsilon_predictor <- NULL
+  distributed_lag_covariate_vertex_override <- NULL
   if (!is.null(experimental)) {
     if ("epsilon_predictor" %in% names(experimental)) {
       epsilon_predictor <- experimental$epsilon_predictor
@@ -724,6 +725,10 @@ sdmTMB <- function(
       epsilon_model <- experimental$epsilon_model
     } else {
       epsilon_model <- NULL
+    }
+
+    if ("distributed_lag_covariate_vertex" %in% names(experimental)) {
+      distributed_lag_covariate_vertex_override <- experimental$distributed_lag_covariate_vertex
     }
   }
 
@@ -806,6 +811,9 @@ sdmTMB <- function(
   )
   if (!is.null(distributed_lags_parsed) && mesh_missing) {
     cli_abort("`mesh` must be supplied when using `distributed_lags`.")
+  }
+  if (is.null(distributed_lags_parsed) && !is.null(distributed_lag_covariate_vertex_override)) {
+    cli_abort("`experimental$distributed_lag_covariate_vertex` requires `distributed_lags`.")
   }
 
   if (is.null(time)) {
@@ -1245,7 +1253,8 @@ sdmTMB <- function(
     A_st = spde$A_st,
     A_spatial_index = spde$sdm_spatial_id - 1L,
     year_i = year_i_data,
-    n_t = n_t
+    n_t = n_t,
+    covariate_vertex_time = distributed_lag_covariate_vertex_override
   )
 
   n_dl_terms <- 0L

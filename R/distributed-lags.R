@@ -326,33 +326,56 @@
                                             A_st,
                                             A_spatial_index,
                                             year_i,
-                                            n_t) {
+                                            n_t,
+                                            covariate_vertex_time = NULL) {
   if (is.null(distributed_lags)) {
     return(NULL)
   }
 
-  vertex_cov <- .build_vertex_time_covariates(
-    covariate_data = data,
-    covariates = distributed_lags$covariates,
-    A_st = A_st,
-    year_i = year_i,
-    A_spatial_index = A_spatial_index,
-    n_t = n_t
-  )
+  n_vertices <- ncol(A_st)
+
+  if (is.null(covariate_vertex_time)) {
+    vertex_cov <- .build_vertex_time_covariates(
+      covariate_data = data,
+      covariates = distributed_lags$covariates,
+      A_st = A_st,
+      year_i = year_i,
+      A_spatial_index = A_spatial_index,
+      n_t = n_t
+    )
+    covariate_vertex_time <- vertex_cov$covariate_vertex_time
+    n_vertices <- vertex_cov$n_vertices
+    n_t <- vertex_cov$n_t
+  } else {
+    if (length(distributed_lags$covariates) != 1L) {
+      cli_abort("`experimental$distributed_lag_covariate_vertex` currently supports exactly one distributed-lag covariate.")
+    }
+    if (!is.numeric(covariate_vertex_time) || any(!is.finite(covariate_vertex_time))) {
+      cli_abort("`experimental$distributed_lag_covariate_vertex` must be a finite numeric vector.")
+    }
+    if (length(covariate_vertex_time) != n_vertices) {
+      cli_abort("`experimental$distributed_lag_covariate_vertex` must have length equal to the number of mesh vertices.")
+    }
+    covariate_vertex_time <- array(
+      rep(covariate_vertex_time, n_t),
+      dim = c(n_vertices, n_t, 1L),
+      dimnames = list(NULL, NULL, distributed_lags$covariates)
+    )
+  }
 
   component_levels <- c("space", "time", "spacetime")
   component_id <- match(distributed_lags$terms$component, component_levels)
 
   list(
-    covariate_vertex_time = vertex_cov$covariate_vertex_time,
+    covariate_vertex_time = covariate_vertex_time,
     covariates = distributed_lags$covariates,
     term_component = distributed_lags$terms$component,
     term_component_id = as.integer(component_id),
     term_covariate_index = as.integer(distributed_lags$terms$covariate_id),
     term_covariate_index0 = as.integer(distributed_lags$terms$covariate_id - 1L),
     term_coef_name = distributed_lags$terms$coef_name,
-    n_vertices = vertex_cov$n_vertices,
-    n_t = vertex_cov$n_t,
+    n_vertices = n_vertices,
+    n_t = n_t,
     n_covariates = length(distributed_lags$covariates),
     n_terms = nrow(distributed_lags$terms)
   )
