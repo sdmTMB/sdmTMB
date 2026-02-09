@@ -212,7 +212,7 @@ NULL
 #' vignette for mathematical details and the paper: \doi{10.18637/jss.v115.i02}
 #'
 #' **Binomial families**
-#' 
+#'
 #' Following the structure of [stats::glm()] and \pkg{glmmTMB}, a binomial
 #' family can be specified in one of 4 ways: (1) the response may be a factor
 #' (and the model classifies the first level versus all others), (2) the
@@ -563,8 +563,6 @@ NULL
 #' )
 #' tidy(fit_disp, effects = "dispersion")
 #'
-#' # For residual diagnostics with dispformula:
-#' # dharma_residuals(simulate(fit_disp, nsim = 200), fit_disp)
 #'
 #' # Delta-Gamma model with covariate-dependent positive-component dispersion:
 #' fit_dg_disp <- sdmTMB(

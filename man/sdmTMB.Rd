@@ -526,8 +526,6 @@ fit_disp <- sdmTMB(
 )
 tidy(fit_disp, effects = "dispersion")
 
-# For residual diagnostics with dispformula:
-# dharma_residuals(simulate(fit_disp, nsim = 200), fit_disp)
 
 # Delta-Gamma model with covariate-dependent positive-component dispersion:
 fit_dg_disp <- sdmTMB(
