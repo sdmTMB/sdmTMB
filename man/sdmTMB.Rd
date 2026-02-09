@@ -17,6 +17,7 @@ sdmTMB(
   time_varying = NULL,
   time_varying_type = c("rw", "rw0", "ar1"),
   spatial_varying = NULL,
+  dispformula = ~1,
   weights = NULL,
   offset = NULL,
   extra_time = NULL,
@@ -130,6 +131,13 @@ approximately 1. \strong{The spatial intercept is controlled by the \code{spatia
 argument}; set \code{spatial = 'on'} or \code{'off'} to include or exclude it. For
 factor predictors, if \code{spatial_varying} excludes the intercept (\code{~ 0} or \code{~ -1}), set \code{spatial = 'off'} to match. Structure must be shared in delta
 models.}
+
+\item{dispformula}{A one-sided formula describing predictors for the
+observation model dispersion parameter. Defaults to \code{~ 1}, which estimates
+a single dispersion parameter. For families without an estimable dispersion
+parameter (e.g., binomial or Poisson), this is ignored. This is currently
+not supported for multi-family models or truncated negative-binomial
+families.}
 
 \item{weights}{A numeric vector representing optional likelihood weights for
 the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
@@ -507,6 +515,29 @@ fit_nb2 <- sdmTMB(
   family = nbinom2() #<
 )
 fit_nb2
+
+# Allow dispersion to vary by year:
+fit_disp <- sdmTMB(
+  density ~ depth_scaled,
+  data = pcod_2011, mesh = mesh,
+  spatial = "off",
+  family = tweedie(link = "log"),
+  dispformula = ~ 0 + as.factor(year) #<
+)
+tidy(fit_disp, effects = "dispersion")
+
+# For residual diagnostics with dispformula:
+# dharma_residuals(simulate(fit_disp, nsim = 200), fit_disp)
+
+# Delta-Gamma model with covariate-dependent positive-component dispersion:
+fit_dg_disp <- sdmTMB(
+  density ~ depth_scaled,
+  data = pcod_2011, mesh = mesh,
+  spatial = "off",
+  family = delta_gamma(),
+  dispformula = ~ depth_scaled #<
+)
+tidy(fit_dg_disp, effects = "dispersion", model = 2)
 
 # IID random intercepts by year:
 pcod_2011$fyear <- as.factor(pcod_2011$year)

@@ -1,5 +1,18 @@
 # sdmTMB (development version)
 
+## Minor improvements and fixes
+
+* Add support for `dispformula` in single-family and regular delta models so
+  observation-model dispersion can vary with covariates.
+* Add `tidy(..., effects = "dispersion")` output and a dedicated
+  `print()` section for dispersion-model coefficients.
+* For `dispformula` models, `sigma()` now errors with guidance and non-response
+  residual types now point users to simulation-based diagnostics via
+  `dharma_residuals()`.
+* Prediction/projection/index/simulation pathways now rebuild and propagate
+  dispersion design matrices for `newdata` so dispersion-formula models work
+  consistently end-to-end.
+
 # sdmTMB 1.0.0
 
 * Switch the recommended citation from the preprint to the Journal of

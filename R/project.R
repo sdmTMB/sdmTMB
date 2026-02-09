@@ -354,6 +354,12 @@ move_proj_to_tmbdat <- function(x, object, newdata, called_by_simulate = FALSE, 
   x$A_spatial_index <- seq_len(dim(proj_mesh)[1]) - 1L
   x$X_threshold <- x$proj_X_threshold
   x$X_ij <- x$proj_X_ij
+  if (isTRUE(as.logical(x$has_dispersion_model))) {
+    if (is.null(x$proj_Xdisp_ij)) {
+      cli_abort("Internal error: missing dispersion projection matrix in prediction data.")
+    }
+    x$Xdisp_ij <- x$proj_Xdisp_ij
+  }
   x$X_rw_ik <- x$proj_X_rw_ik
   x$z_i <- x$proj_z_i
   x$Zs <- x$proj_Zs
@@ -392,6 +398,7 @@ move_proj_to_tmbdat <- function(x, object, newdata, called_by_simulate = FALSE, 
 
   # nullify large data objects that are no longer needed:
   x$proj_X_ij <- list(matrix(0, ncol = 1, nrow = 1))
+  x$proj_Xdisp_ij <- matrix(0, ncol = 1, nrow = 1)
   x$proj_X_rw_ik <- matrix(0, ncol = 1, nrow = 1) # dummy
   x$proj_mesh <- Matrix::Matrix(c(0, 0, 2:0), 3, 5) # dummy
   x$proj_Zs <- list()

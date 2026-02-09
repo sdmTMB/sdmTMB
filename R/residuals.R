@@ -453,6 +453,12 @@ residuals.sdmTMB <- function(object,
     )
     cli_abort(msg)
   }
+  if (isTRUE(object$has_dispformula) && type != "response") {
+    cli_abort(c(
+      "Residual type `{type}` is not available when `dispformula` is used.",
+      "i" = "Use simulation-based residuals with `dharma_residuals()`."
+    ))
+  }
 
   fam <- object$family$family
   nd <- NULL

@@ -473,6 +473,18 @@ print_anisotropy <- function(x, m = 1L, digits = 1L, return_dat = FALSE) {
 print_other_parameters <- function(x, m = 1L) {
   b <- tidy(x, "ran_pars", model = m, silent = TRUE)
   multi_family <- .is_multi_family_model(x)
+  mm_disp <- NULL
+
+  if (isTRUE(x$has_dispformula) && !multi_family) {
+    d <- tidy(x, effects = "dispersion", model = m, conf.int = FALSE, silent = TRUE)
+    if (nrow(d) > 0) {
+      mm_disp <- cbind(
+        coef.est = mround(d$estimate, 2L),
+        coef.se = mround(d$std.error, 2L)
+      )
+      rownames(mm_disp) <- d$term
+    }
+  }
 
   multi_term_text <- function(prefix, pretext) {
     idx <- grepl(paste0("^", prefix), b$term)
@@ -546,7 +558,7 @@ print_other_parameters <- function(x, m = 1L) {
 
   named_list(
     phi, tweedie_p, student_df, sigma_O, sigma_E, sigma_Z, rho,
-    kappaS_dl, kappaT_dl, kappaST_dl, rhoT, MSD, RMSD, gengamma_par
+    kappaS_dl, kappaT_dl, kappaST_dl, rhoT, MSD, RMSD, gengamma_par, mm_disp
   )
 }
 
@@ -599,6 +611,12 @@ print_one_model <- function(x, m = 1, edf = FALSE, silent = FALSE) {
   if (!is.null(tv)) {
     cat("Time-varying parameters:\n")
     print(tv)
+    cat("\n")
+  }
+
+  if (!is.null(other$mm_disp)) {
+    cat("Dispersion model:\n")
+    print(other$mm_disp)
     cat("\n")
   }
 

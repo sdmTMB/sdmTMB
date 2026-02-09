@@ -487,6 +487,13 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
 #' @method sigma sdmTMB
 #' @export
 sigma.sdmTMB <- function(object, ...) {
+  if (isTRUE(object$has_dispformula)) {
+    cli_abort(c(
+      "`sigma()` is not available when `dispformula` is used because dispersion varies by observation.",
+      "i" = "Use `tidy(object, effects = 'dispersion')` to inspect dispersion coefficients, or `dharma_residuals()` for residual diagnostics."
+    ))
+  }
+
   regular_delta <- .is_regular_delta_model(object)
 
   # Get family
@@ -503,7 +510,6 @@ sigma.sdmTMB <- function(object, ...) {
   if (family_name %in% c("gaussian", "lognormal")) {
     # phi = dispersion parameter from TMB report
     tmb_obj <- object$tmb_obj
-    sdr <- object$sd_report
 
     phi_idx <- which(names(tmb_obj$env$last.par.best) == "ln_phi")
     if (length(phi_idx) > 0) {

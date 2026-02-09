@@ -540,6 +540,31 @@ predict.sdmTMB <- function(object, newdata = NULL,
       }
     }
 
+    proj_Xdisp_ij <- NULL
+    if (isTRUE(object$has_dispformula)) {
+      tt_disp <- stats::terms(object$dispformula)
+      mf_disp_fit <- model.frame(tt_disp, object$data)
+      xlevels_disp <- stats::.getXlevels(attr(mf_disp_fit, "terms"), mf_disp_fit)
+      mf_disp <- model.frame(tt_disp, newdata, xlev = xlevels_disp, na.action = stats::na.pass)
+      if (sum(is.na(mf_disp)) > 0) {
+        cli_abort("NAs are not allowed in variables used by `dispformula` in `newdata`.")
+      }
+      proj_Xdisp_ij <- model.matrix(tt_disp, mf_disp)
+      fit_disp_cols <- colnames(object$tmb_data$Xdisp_ij)
+      pred_disp_cols <- colnames(proj_Xdisp_ij)
+      missing_cols <- setdiff(fit_disp_cols, pred_disp_cols)
+      extra_cols <- setdiff(pred_disp_cols, fit_disp_cols)
+      if (length(missing_cols) > 0 || length(extra_cols) > 0) {
+        cli_abort(c(
+          "Dispersion model matrix in `newdata` does not match the fitted `dispformula` terms.",
+          if (length(missing_cols) > 0) paste0("x Missing terms: ", paste(missing_cols, collapse = ", ")),
+          if (length(extra_cols) > 0) paste0("x New terms: ", paste(extra_cols, collapse = ", ")),
+          "i" = "Check factor levels and columns used in `dispformula`."
+        ))
+      }
+      proj_Xdisp_ij <- proj_Xdisp_ij[, fit_disp_cols, drop = FALSE]
+    }
+
     # TODO DELTA hardcoded to 1:
     sm <- parse_smoothers(object$smoothers$formula_no_bars, data = object$data,
       newdata = nd, basis_prev = object$smoothers$basis_out)
@@ -572,6 +597,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     tmb_data$area_i <- if (length(area) == 1L) rep(area, nrow(proj_X_ij[[1]])) else area
     tmb_data$proj_mesh <- proj_mesh
     tmb_data$proj_X_ij <- proj_X_ij
+    tmb_data$proj_Xdisp_ij <- proj_Xdisp_ij
     tmb_data$proj_X_rw_ik <- proj_X_rw_ik
     # tmb_data$proj_RE_indexes <- proj_RE_indexes
 

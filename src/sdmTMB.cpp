@@ -151,6 +151,7 @@ Type objective_function<Type>::operator()()
   // Vectors of real data
   DATA_ARRAY(y_i);      // response
   DATA_STRUCT(X_ij, sdmTMB::LOM_t); // list of model matrices
+  DATA_MATRIX(Xdisp_ij); // dispersion model matrix
   DATA_MATRIX(z_i);      // model matrix for spatial covariate effect
   DATA_MATRIX(X_rw_ik);  // model matrix for random walk covariate(s)
 
@@ -246,6 +247,7 @@ Type objective_function<Type>::operator()()
   DATA_IVECTOR(ln_student_df_len);
   DATA_IVECTOR(gengamma_Q_start);
   DATA_IVECTOR(gengamma_Q_len);
+  DATA_INTEGER(has_dispersion_model);
 
   // SPDE objects from R-INLA
   DATA_STRUCT(spde_aniso, spde_aniso_t);
@@ -298,6 +300,7 @@ Type objective_function<Type>::operator()()
   // Fixed effects
   PARAMETER_VECTOR(b_j);  // fixed effect parameters
   PARAMETER_VECTOR(b_j2);  // fixed effect parameters delta2 part
+  PARAMETER_VECTOR(b_disp_k);  // fixed effect parameters on dispersion
   PARAMETER_ARRAY(bs); // smoother linear effects
   PARAMETER_VECTOR(ln_tau_O);    // spatial process
   PARAMETER_ARRAY(ln_tau_Z);    // optional spatially varying covariate process
@@ -362,6 +365,23 @@ Type objective_function<Type>::operator()()
   vector<Type> rho(n_m);
   for (int m = 0; m < n_m; m++) rho(m) = sdmTMB::minus_one_to_one(ar1_phi(m));
   vector<Type> phi = exp(ln_phi);
+  vector<Type> ln_phi_i(1);
+  vector<Type> phi_i(1);
+  if (has_dispersion_model) {
+    if (multi_family) {
+      error("dispersion formulas are not supported in multi-family models.");
+    }
+    if (Xdisp_ij.rows() != n_i) {
+      error("`Xdisp_ij` must have `n_i` rows.");
+    }
+    ln_phi_i = Xdisp_ij * b_disp_k;
+    phi_i = exp(ln_phi_i);
+    REPORT(ln_phi_i);
+    if (b_disp_k.size() == 1) {
+      ADREPORT(ln_phi_i(0));
+      ADREPORT(phi_i(0));
+    }
+  }
   if (log_kappaS_dl.size() != distributed_lag_n_covariates ||
       log_kappaT_dl.size() != distributed_lag_n_covariates ||
       kappaST_dl_unscaled.size() != distributed_lag_n_covariates) {
@@ -1065,6 +1085,10 @@ Type objective_function<Type>::operator()()
       Type thetaf_val = thetaf;
       Type ln_student_df_val = ln_student_df;
       Type gengamma_Q_val = gengamma_Q;
+      if (!multi_family && has_dispersion_model) {
+        ln_phi_val = ln_phi_i(i);
+        phi_val = phi_i(i);
+      }
       if (multi_family) {
         int fam_index = e_i(i);
         delta_row = delta_family_e(fam_index);
@@ -1333,6 +1357,9 @@ Type objective_function<Type>::operator()()
           share_range(m), stan_flag);
     }
     if (!multi_family && !sdmTMB::isNA(priors(8))) { // phi
+      if (has_dispersion_model) {
+        error("Priors on phi are not supported with `dispformula` yet.");
+      }
       jnll -= dnorm(phi(m), priors(8), priors(9), true);
       if (stan_flag) jnll -= ln_phi(m); // Jacobian adjustment
     }
@@ -2072,8 +2099,12 @@ Type objective_function<Type>::operator()()
     }
   }
   if (phi_used) {
-    ADREPORT(phi);
-    REPORT(phi);
+    if (has_dispersion_model) {
+      REPORT(phi_i);
+    } else {
+      ADREPORT(phi);
+      REPORT(phi);
+    }
   }
 
   if (!multi_family && family(0) == tweedie_family) ADREPORT(tweedie_p); // #302
