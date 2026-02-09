@@ -370,6 +370,15 @@ predict.sdmTMB <- function(object, newdata = NULL,
         "If you would like to predict on new time elements,",
         "see the `extra_time` argument in `?sdmTMB`.")
       )
+    if (has_distributed_lags &&
+      !is.null(object$distributed_lags_parsed) &&
+      isTRUE(object$distributed_lags_parsed$needs_time) &&
+      !setequal(new_data_time, original_time)) {
+      cli_abort(c(
+        "Temporal distributed-lag prediction currently requires full time coverage in `newdata`.",
+        "i" = "For now, include all modeled time elements in `newdata`, then subset the returned predictions as needed."
+      ))
+    }
 
     # If making population predictions (with standard errors), we don't need
     # to worry about space, so fill in dummy values if the user hasn't made any:

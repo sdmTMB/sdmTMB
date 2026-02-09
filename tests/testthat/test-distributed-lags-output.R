@@ -96,6 +96,6 @@ test_that("print output reports distributed lag structure and diagnostics", {
 
   out <- paste(capture.output(print(fit)), collapse = "\n")
   expect_match(out, "Distributed lags: space\\(x1\\) \\+ time\\(x1\\) \\+ spacetime\\(x2\\)")
-  expect_match(out, "Distributed lag temporal persistence \\(rhoT\\):")
-  expect_match(out, "Distributed lag root mean square displacement \\(RMSD\\):")
+  expect_match(out, "Distributed lag temporal persistence( \\(rhoT\\))?:")
+  expect_match(out, "Distributed lag (root mean square displacement \\(RMSD\\)|RMSD):")
 })

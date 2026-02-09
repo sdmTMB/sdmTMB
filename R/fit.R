@@ -883,7 +883,14 @@ sdmTMB <- function(
     offset <- data[[offset]]
   }
 
-  check_irregalar_time(data, time, spatiotemporal, time_varying, extra_time = extra_time)
+  check_irregalar_time(
+    data,
+    time,
+    spatiotemporal,
+    time_varying,
+    extra_time = extra_time,
+    distributed_lag_temporal = !is.null(distributed_lags_parsed) && isTRUE(distributed_lags_parsed$needs_time)
+  )
 
   spatial_varying_formula <- spatial_varying # save it
   if (!is.null(spatial_varying)) {
@@ -2145,23 +2152,42 @@ parse_spatial_arg <- function(spatial) {
   spatial
 }
 
-check_irregalar_time <- function(data, time, spatiotemporal, time_varying, extra_time) {
-  if (any(spatiotemporal %in% c("ar1", "rw")) || !is.null(time_varying)) {
-    if (!is.numeric(data[[time]])) {
-      cli_abort("Time column should be integer or numeric if using AR(1) or random walk processes.")
-    }
-    ti <- sort(union(unique(data[[time]]), extra_time))
-    if (length(unique(diff(ti))) > 1L) {
-      missed <- find_missing_time(data[[time]])
+check_irregalar_time <- function(data, time, spatiotemporal, time_varying, extra_time, distributed_lag_temporal = FALSE) {
+  has_ar1_rw <- any(spatiotemporal %in% c("ar1", "rw")) || !is.null(time_varying)
+  has_dl_temporal <- isTRUE(distributed_lag_temporal)
+  if (!(has_ar1_rw || has_dl_temporal)) return(invisible(NULL))
+
+  if (!is.numeric(data[[time]])) {
+    cli_abort(
+      "Time column should be integer or numeric if using AR(1), random walk, or temporal distributed-lag processes."
+    )
+  }
+
+  ti_data <- sort(unique(data[[time]]))
+  ti_ar1 <- sort(union(ti_data, extra_time))
+  irregular_ar1 <- has_ar1_rw && length(unique(diff(ti_ar1))) > 1L
+  irregular_dl <- has_dl_temporal && length(unique(diff(ti_data))) > 1L
+
+  if (irregular_ar1 || irregular_dl) {
+    missed <- find_missing_time(data[[time]])
+    msg <- c("Detected irregular time spacing.")
+    if (irregular_ar1) {
       msg <- c(
-        "Detected irregular time spacing with an AR(1) or random walk process.",
-        "Consider filling in the missing time slices with `extra_time`.",
+        msg,
+        "For AR(1) or random walk processes, consider filling missing slices with `extra_time`.",
         if (length(missed)) {
           paste0("`extra_time = c(", paste(missed, collapse = ", "), ")`")
         }
       )
-      cli_inform(msg)
     }
+    if (irregular_dl) {
+      msg <- c(
+        msg,
+        "For `distributed_lags` with `time()` or `spacetime()`, include rows in `data` for missing time slices so lag covariates are defined.",
+        "Using `extra_time` alone is not sufficient for temporal distributed lags."
+      )
+    }
+    cli_inform(msg)
   }
 }
 

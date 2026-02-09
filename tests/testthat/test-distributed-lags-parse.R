@@ -230,3 +230,29 @@ test_that("distributed_lags requires an explicit mesh", {
     regexp = "mesh.*distributed_lags"
   )
 })
+
+test_that("distributed_lags time terms detect irregular time spacing", {
+  dat <- data.frame(
+    y = rnorm(6),
+    x_num = rnorm(6),
+    year = rep(c(1, 3, 4), each = 2),
+    X = rep(1:3, each = 2),
+    Y = rep(c(0, 1), 3)
+  )
+  mesh <- make_dl_mesh(dat)
+
+  expect_message(
+    sdmTMB(
+      y ~ 1,
+      data = dat,
+      mesh = mesh,
+      time = "year",
+      spatial = "off",
+      spatiotemporal = "off",
+      distributed_lags = ~ time(x_num),
+      extra_time = 2,
+      do_fit = FALSE
+    ),
+    regexp = "extra_time.*not sufficient"
+  )
+})

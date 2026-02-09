@@ -539,6 +539,18 @@ struct DistributedLagContext {
   int model_col;
 };
 
+enum DistributedLagComponent {
+  dl_space = 0,
+  dl_time = 1,
+  dl_spacetime = 2
+};
+
+inline bool dl_is_valid_component(int component) {
+  return component == dl_space ||
+    component == dl_time ||
+    component == dl_spacetime;
+}
+
 // Extract column t of covariate cov_i from 3D array (vertices x time x covariates)
 template <class Type>
 Eigen::Matrix<Type, Eigen::Dynamic, 1> dl_get_covariate_col(
@@ -566,8 +578,9 @@ bool dl_solve_transformed_vertex_time(
     Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> >& lu_m0,
     Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic>& transformed_vertex_time) {
   transformed_vertex_time.setZero();
+  if (!dl_is_valid_component(component)) return false;
 
-  if (component == 0) { // spatial
+  if (component == dl_space) { // spatial
     if (!has_spatial_solver || lu_spatial.info() != Eigen::Success) return false;
     for (int t = 0; t < n_t; t++) {
       Eigen::Matrix<Type, Eigen::Dynamic, 1> rhs =
@@ -579,7 +592,7 @@ bool dl_solve_transformed_vertex_time(
     return true;
   }
 
-  if (component == 1) { // temporal
+  if (component == dl_time) { // temporal
     for (int v = 0; v < n_vertices; v++) {
       transformed_vertex_time(v, 0) = covariate_vertex_time(v, 0, cov_i);
     }
@@ -592,7 +605,7 @@ bool dl_solve_transformed_vertex_time(
     return true;
   }
 
-  if (component == 2) { // spatiotemporal
+  if (component == dl_spacetime) { // spatiotemporal
     if (!has_m0_solver || lu_m0.info() != Eigen::Success) return false;
     for (int v = 0; v < n_vertices; v++) {
       transformed_vertex_time(v, 0) = covariate_vertex_time(v, 0, cov_i);
@@ -652,8 +665,11 @@ void add_distributed_lags_to_eta_fixed(
   bool need_m0_solver = false;
   for (int term = 0; term < ctx.n_terms; term++) {
     int component = ctx.term_component(term);
-    if (component == 0) { needs_kappaS = true; need_spatial_solver = true; }
-    if (component == 2) {
+    if (!dl_is_valid_component(component)) {
+      error("Distributed lag metadata error: invalid component code (expected spatial=0, temporal=1, spatiotemporal=2).");
+    }
+    if (component == dl_space) { needs_kappaS = true; need_spatial_solver = true; }
+    if (component == dl_spacetime) {
       needs_kappaS = true;
       needs_kappaST = true;
       need_m0_solver = true;

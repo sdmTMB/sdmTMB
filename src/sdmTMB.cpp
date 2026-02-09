@@ -810,7 +810,7 @@ Type objective_function<Type>::operator()()
     if (m == 0) eta_fixed_i.col(m) = X_ij(m) * b_j;
     if (m == 1) eta_fixed_i.col(m) = X_ij(m) * b_j2;
   }
-  {
+  auto add_dl_obs_for_model = [&](const vector<Type>& b_model, int model_col) {
     sdmTMB::DistributedLagContext<Type> dl_ctx = {
       distributed_lag_n_terms,
       distributed_lag_n_covariates,
@@ -827,33 +827,13 @@ Type objective_function<Type>::operator()()
       kappaS_dl,
       kappaT_dl,
       kappaST_dl,
-      b_j,
-      0
+      b_model,
+      model_col
     };
     sdmTMB::add_distributed_lags_to_eta_fixed(eta_fixed_i, dl_ctx);
-    if (n_m > 1) {
-      sdmTMB::DistributedLagContext<Type> dl_ctx2 = {
-        distributed_lag_n_terms,
-        distributed_lag_n_covariates,
-        n_i,
-        n_t,
-        distributed_lag_term_component,
-        distributed_lag_term_covariate,
-        distributed_lag_covariate_vertex_time,
-        A_st,
-        A_spatial_index,
-        year_i,
-        spde.M0,
-        spde.M1,
-        kappaS_dl,
-        kappaT_dl,
-        kappaST_dl,
-        b_j2,
-        1
-      };
-      sdmTMB::add_distributed_lags_to_eta_fixed(eta_fixed_i, dl_ctx2);
-    }
-  }
+  };
+  add_dl_obs_for_model(b_j, 0);
+  if (n_m > 1) add_dl_obs_for_model(b_j2, 1);
 
   // FIXME delta must be same in 2 components:
   // p-splines/smoothers
@@ -1377,8 +1357,8 @@ Type objective_function<Type>::operator()()
       if (m == 0) proj_fe.col(m) = proj_X_ij(m) * b_j;
       if (m == 1) proj_fe.col(m) = proj_X_ij(m) * b_j2;
     }
-    {
-      sdmTMB::DistributedLagContext<Type> dl_proj_ctx = {
+    auto add_dl_proj_for_model = [&](const vector<Type>& b_model, int model_col) {
+      sdmTMB::DistributedLagContext<Type> dl_ctx = {
         distributed_lag_n_terms,
         distributed_lag_n_covariates,
         n_p,
@@ -1394,33 +1374,13 @@ Type objective_function<Type>::operator()()
         kappaS_dl,
         kappaT_dl,
         kappaST_dl,
-        b_j,
-        0
+        b_model,
+        model_col
       };
-      sdmTMB::add_distributed_lags_to_eta_fixed(proj_fe, dl_proj_ctx);
-      if (n_m > 1) {
-        sdmTMB::DistributedLagContext<Type> dl_proj_ctx2 = {
-          distributed_lag_n_terms,
-          distributed_lag_n_covariates,
-          n_p,
-          n_t,
-          distributed_lag_term_component,
-          distributed_lag_term_covariate,
-          proj_distributed_lag_covariate_vertex_time,
-          proj_mesh,
-          proj_spatial_index,
-          proj_year,
-          spde.M0,
-          spde.M1,
-          kappaS_dl,
-          kappaT_dl,
-          kappaST_dl,
-          b_j2,
-          1
-        };
-        sdmTMB::add_distributed_lags_to_eta_fixed(proj_fe, dl_proj_ctx2);
-      }
-    }
+      sdmTMB::add_distributed_lags_to_eta_fixed(proj_fe, dl_ctx);
+    };
+    add_dl_proj_for_model(b_j, 0);
+    if (n_m > 1) add_dl_proj_for_model(b_j2, 1);
     for (int m = 0; m < n_m; m++) {
       if (!multi_family) {
         if (n_m == 1) proj_fe.col(m) += proj_offset_i;

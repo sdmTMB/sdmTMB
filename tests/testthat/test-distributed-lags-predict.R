@@ -185,3 +185,45 @@ test_that("delta distributed lag in component 2 changes combined response predic
 
   expect_gt(mean(p_high$est - p_low$est), 0)
 })
+
+test_that("temporal distributed lags require full modeled time coverage in newdata", {
+  skip_on_cran()
+
+  dat <- make_dl_predict_data()
+  mesh <- make_dl_predict_mesh(dat)
+
+  fit_time <- sdmTMB(
+    y ~ x1 + x2,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    distributed_lags = ~ time(x1),
+    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+  )
+
+  nd_subset <- dat[dat$year %in% sort(unique(dat$year))[1:3], , drop = FALSE]
+  expect_error(
+    predict(fit_time, newdata = nd_subset),
+    regexp = "requires full time coverage"
+  )
+
+  fit_space <- sdmTMB(
+    y ~ x1 + x2,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    distributed_lags = ~ space(x1),
+    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+  )
+
+  expect_silent({
+    p_space <- predict(fit_space, newdata = nd_subset)
+    expect_equal(nrow(p_space), nrow(nd_subset))
+  })
+})
