@@ -66,6 +66,9 @@ test_that("distributed lag predict works for default and newdata pathways", {
   expect_equal(nrow(p_fit), nrow(dat))
   expect_equal(p_fit$est, p_new$est, tolerance = 1e-6)
   expect_equal(p_fit$est_non_rf, p_new$est_non_rf, tolerance = 1e-6)
+  expect_true(all(c("dl_cov_space_x1", "dl_cov_time_x2") %in% names(p_fit)))
+  expect_equal(p_fit$dl_cov_space_x1, p_new$dl_cov_space_x1, tolerance = 1e-6)
+  expect_equal(p_fit$dl_cov_time_x2, p_new$dl_cov_time_x2, tolerance = 1e-6)
 
   p_se <- predict(fit, newdata = dat, re_form = NA, se_fit = TRUE)
   expect_true("est_se" %in% names(p_se))
@@ -124,6 +127,8 @@ test_that("distributed lag newdata covariate changes prediction direction when l
   p_low <- predict(fit, newdata = nd_low)
   p_high <- predict(fit, newdata = nd_high)
 
+  expect_true("dl_cov_time_x1" %in% names(p_low))
+  expect_gt(mean(p_high$dl_cov_time_x1 - p_low$dl_cov_time_x1), 0)
   expect_gt(mean(p_high$est - p_low$est), 0)
 })
 
@@ -226,4 +231,27 @@ test_that("temporal distributed lags require full modeled time coverage in newda
     p_space <- predict(fit_space, newdata = nd_subset)
     expect_equal(nrow(p_space), nrow(nd_subset))
   })
+})
+
+test_that("space-only distributed lag predict works without modeled time", {
+  skip_on_cran()
+
+  dat <- make_dl_predict_data()
+  dat$year <- NULL
+  mesh <- make_dl_predict_mesh(dat)
+
+  fit <- sdmTMB(
+    y ~ x1 + x2,
+    data = dat,
+    mesh = mesh,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    distributed_lags = ~ space(x1),
+    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+  )
+
+  p <- predict(fit)
+  expect_equal(nrow(p), nrow(dat))
+  expect_true("dl_cov_space_x1" %in% names(p))
 })

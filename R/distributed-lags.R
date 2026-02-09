@@ -394,3 +394,463 @@
     n_terms = nrow(distributed_lags$terms)
   )
 }
+
+.solve_distributed_lag_vertex_time <- function(component, vertex_time_input, M0, M1, kappaS, kappaT, kappaST) {
+  n_vertices <- nrow(vertex_time_input)
+  n_t <- ncol(vertex_time_input)
+  out <- matrix(0, nrow = n_vertices, ncol = n_t)
+
+  solve_sparse <- function(A, rhs, label) {
+    tryCatch(
+      as.numeric(Matrix::solve(A, rhs)),
+      error = function(e) {
+        cli_abort(c(
+          "Distributed-lag sparse solve failed in diagnostic plotting.",
+          "x" = paste0(label, ": ", conditionMessage(e))
+        ))
+      }
+    )
+  }
+
+  if (component == "space") {
+    kappaS_scale <- 1 / (kappaS^2)
+    system_mat <- M0 + kappaS_scale * M1
+    for (tt in seq_len(n_t)) {
+      rhs <- as.numeric(M0 %*% vertex_time_input[, tt, drop = TRUE])
+      out[, tt] <- solve_sparse(system_mat, rhs, "spatial system (M0 + kappaS^-2 * M1)")
+    }
+    return(out)
+  }
+
+  if (component == "time") {
+    out[, 1L] <- vertex_time_input[, 1L]
+    if (n_t > 1L) {
+      for (tt in 2:n_t) {
+        out[, tt] <- vertex_time_input[, tt] + kappaT * out[, tt - 1L]
+      }
+    }
+    return(out)
+  }
+
+  if (component == "spacetime") {
+    kappaS_scale <- 1 / (kappaS^2)
+    kappaST_scale <- kappaST * kappaS_scale
+    out[, 1L] <- vertex_time_input[, 1L]
+    if (n_t > 1L) {
+      for (tt in 2:n_t) {
+        rhs <- as.numeric(M0 %*% vertex_time_input[, tt, drop = TRUE] -
+          kappaST_scale * (M1 %*% out[, tt - 1L, drop = TRUE]))
+        out[, tt] <- solve_sparse(M0, rhs, "spatiotemporal system (M0)")
+      }
+    }
+    return(out)
+  }
+
+  cli_abort("Unknown distributed-lag component in solver.")
+}
+
+.project_distributed_lag_vertex_time <- function(transformed_vertex_time,
+                                                 A_st,
+                                                 A_spatial_index,
+                                                 year_i,
+                                                 n_t) {
+  if (!inherits(A_st, "sparseMatrix")) {
+    A_st <- Matrix::Matrix(A_st, sparse = TRUE)
+  }
+  A_st <- methods::as(A_st, "dgCMatrix")
+  n_i <- length(A_spatial_index)
+  A_spatial_index <- .normalize_dl_index(
+    A_spatial_index,
+    n_max = nrow(A_st),
+    name = "A_spatial_index"
+  )
+  year_lu <- .normalize_dl_year_i(year_i, n_t = n_t)
+  year_i <- year_lu$year_i
+  projected_by_t <- lapply(seq_len(year_lu$n_t), function(tt) {
+    as.numeric(A_st %*% transformed_vertex_time[, tt, drop = TRUE])
+  })
+  out <- numeric(n_i)
+  for (i in seq_len(n_i)) {
+    out[i] <- projected_by_t[[year_i[i] + 1L]][A_spatial_index[i]]
+  }
+  out
+}
+
+.distributed_lag_predict_colnames <- function(term_coef_name) {
+  paste0("dl_cov_", sub("^dl_", "", term_coef_name))
+}
+
+.compute_distributed_lag_term_values <- function(distributed_lags_data,
+                                                 covariate_vertex_time,
+                                                 A_st,
+                                                 A_spatial_index,
+                                                 year_i,
+                                                 n_t,
+                                                 M0,
+                                                 M1,
+                                                 log_kappaS_dl,
+                                                 log_kappaT_dl,
+                                                 kappaST_dl_unscaled) {
+  if (is.null(distributed_lags_data)) {
+    return(NULL)
+  }
+  n_terms <- distributed_lags_data$n_terms
+  if (is.null(n_terms) || n_terms < 1L) {
+    return(NULL)
+  }
+  n_covariates <- distributed_lags_data$n_covariates
+  if (length(log_kappaS_dl) != n_covariates ||
+      length(log_kappaT_dl) != n_covariates ||
+      length(kappaST_dl_unscaled) != n_covariates) {
+    cli_abort("Distributed-lag parameter vectors did not match the expected number of lag covariates.")
+  }
+
+  if (length(dim(covariate_vertex_time)) != 3L) {
+    cli_abort("`covariate_vertex_time` must be a 3D array: [vertices, time, covariates].")
+  }
+  if (dim(covariate_vertex_time)[3] != n_covariates) {
+    cli_abort("`covariate_vertex_time` covariate dimension does not match distributed-lag metadata.")
+  }
+
+  term_out <- matrix(0, nrow = length(A_spatial_index), ncol = n_terms)
+  colnames(term_out) <- .distributed_lag_predict_colnames(distributed_lags_data$term_coef_name)
+
+  for (term_i in seq_len(n_terms)) {
+    component <- distributed_lags_data$term_component[[term_i]]
+    cov_i <- distributed_lags_data$term_covariate_index[[term_i]]
+    cov_slice <- matrix(
+      covariate_vertex_time[, , cov_i],
+      nrow = dim(covariate_vertex_time)[1],
+      ncol = dim(covariate_vertex_time)[2]
+    )
+    kappaS <- exp(log_kappaS_dl[[cov_i]])
+    kappaT <- exp(log_kappaT_dl[[cov_i]])
+    kappaST <- -stats::plogis(kappaST_dl_unscaled[[cov_i]])
+    transformed_vertex_time <- .solve_distributed_lag_vertex_time(
+      component = component,
+      vertex_time_input = cov_slice,
+      M0 = M0,
+      M1 = M1,
+      kappaS = kappaS,
+      kappaT = kappaT,
+      kappaST = kappaST
+    )
+    term_out[, term_i] <- .project_distributed_lag_vertex_time(
+      transformed_vertex_time = transformed_vertex_time,
+      A_st = A_st,
+      A_spatial_index = A_spatial_index,
+      year_i = year_i,
+      n_t = n_t
+    )
+  }
+
+  term_out
+}
+
+#' Plot Distributed-Lag Diffusion from a Point on the Mesh
+#'
+#' Diagnostic visualization of an impulse covariate diffusing through one
+#' distributed-lag component (`space()`, `time()`, or `spacetime()`).
+#' Values are plotted as colored mesh triangles, so no prediction grid is
+#' required.
+#'
+#' @param object A fitted [sdmTMB()] model with `distributed_lags`.
+#' @param covariate Optional covariate name from `distributed_lags`.
+#'   Required when multiple lag covariates were fitted.
+#' @param component Distributed-lag component name. Must be exactly one of
+#'   `"space"`, `"time"`, or `"spacetime"`.
+#' @param time_value Optional time slice for the impulse. Supply either a
+#'   modeled time value or a 1-based time index. Required only when the fitted
+#'   distributed-lag specification includes `time()` or `spacetime()` terms with
+#'   a model time column.
+#' @param n_steps Number of transformed slices to plot starting at
+#'   `time_value`. Defaults to 3.
+#' @param common_scale Should transformed panels share a common color scale?
+#'   Defaults to `FALSE`.
+#' @param plot Logical. If `TRUE` (default), draw the plot.
+#'
+#' @return Invisibly returns a list with impulse/transformed fields on vertices,
+#'   triangle summaries used for plotting, selected indices, and a `ggplot`
+#'   object (when \pkg{ggplot2} is available).
+#' @export
+plot_distributed_lag_diffusion <- function(object,
+                                           covariate = NULL,
+                                           component,
+                                           time_value = NULL,
+                                           n_steps = 3L,
+                                           common_scale = FALSE,
+                                           plot = TRUE) {
+  stopifnot(inherits(object, "sdmTMB"))
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    cli_abort("`ggplot2` must be installed to use `plot_distributed_lag_diffusion()`.")
+  }
+  if (missing(component)) {
+    cli_abort("`component` is required and must be one of `space`, `time`, or `spacetime`.")
+  }
+  if (!component %in% c("space", "time", "spacetime")) {
+    cli_abort("`component` must be exactly one of `space`, `time`, or `spacetime`.")
+  }
+  if (is.null(object$distributed_lags_data)) {
+    cli_abort("`object` does not contain `distributed_lags_data`.")
+  }
+  if (!is.numeric(n_steps) || length(n_steps) != 1L || !is.finite(n_steps) || n_steps < 1L) {
+    cli_abort("`n_steps` must be a single positive integer.")
+  }
+  n_steps <- as.integer(round(n_steps))
+  if (!is.logical(plot) || length(plot) != 1L) {
+    cli_abort("`plot` must be `TRUE` or `FALSE`.")
+  }
+  if (is.null(object$distributed_lags_parsed) ||
+      is.null(object$distributed_lags_parsed$terms) ||
+      nrow(object$distributed_lags_parsed$terms) == 0L) {
+    cli_abort("`object` does not contain distributed-lag terms.")
+  }
+  terms_df <- object$distributed_lags_parsed$terms
+  has_temporal_distributed_lag <- any(terms_df$component %in% c("time", "spacetime"))
+  model_has_time <- !is.null(object$time) && !identical(object$time, "_sdmTMB_time")
+  if (is.null(time_value) && model_has_time && has_temporal_distributed_lag) {
+    cli_abort("`time_value` is required for models with temporal distributed-lag terms.")
+  }
+  covariates <- unique(terms_df$variable)
+  if (is.null(covariate)) {
+    if (length(covariates) != 1L) {
+      cli_abort(c(
+        "Multiple distributed-lag covariates are present.",
+        "x" = "Set `covariate` to one of: {.code {paste(covariates, collapse = ', ')}}."
+      ))
+    }
+    covariate <- covariates[[1]]
+  }
+  covariate <- as.character(covariate[[1]])
+  if (!covariate %in% covariates) {
+    cli_abort(c(
+      "Unknown distributed-lag covariate.",
+      "x" = "Could not find `{covariate}` in the fitted distributed-lag terms."
+    ))
+  }
+  components_for_covariate <- unique(terms_df$component[terms_df$variable == covariate])
+  if (!component %in% components_for_covariate) {
+    cli_abort(c(
+      "Requested component/covariate term was not fitted.",
+      "x" = "No term `{component}({covariate})` in `object$distributed_lags`."
+    ))
+  }
+
+  mesh <- object$spde$mesh
+  if (is.null(mesh$loc) || is.null(mesh$graph) || is.null(mesh$graph$tv)) {
+    cli_abort("Could not find mesh vertices/triangles in `object$spde$mesh`.")
+  }
+  loc <- as.matrix(mesh$loc[, 1:2, drop = FALSE])
+  tv <- as.matrix(mesh$graph$tv)
+  if (!nrow(tv) || ncol(tv) != 3L) {
+    cli_abort("Mesh triangle connectivity (`mesh$graph$tv`) must be an n x 3 matrix.")
+  }
+  if (min(tv) == 0L) tv <- tv + 1L
+  if (any(tv < 1L) || any(tv > nrow(loc))) {
+    cli_abort("Mesh triangle indices were out of bounds for mesh vertices.")
+  }
+  center <- colMeans(loc)
+  vertex_i <- which.min(rowSums((loc - matrix(center, nrow = nrow(loc), ncol = 2L, byrow = TRUE))^2))
+
+  n_t <- object$tmb_data$n_t
+  if (is.null(n_t) || !length(n_t) || n_t < 1L) {
+    cli_abort("Could not determine the number of time slices from `object$tmb_data$n_t`.")
+  }
+  if (!is.null(object$time_lu) &&
+      "time_from_data" %in% names(object$time_lu) &&
+      nrow(object$time_lu) == n_t) {
+    time_values <- object$time_lu$time_from_data
+  } else {
+    time_values <- seq_len(n_t)
+  }
+  if (is.null(time_value)) {
+    time_i <- 1L
+  } else {
+    time_i <- match(time_value, time_values)
+    if (is.na(time_i) && is.numeric(time_value) && length(time_value) == 1L) {
+      candidate <- as.integer(round(time_value))
+      if (is.finite(candidate) && candidate >= 1L && candidate <= n_t) {
+        time_i <- candidate
+      }
+    }
+    if (is.na(time_i)) {
+      preview <- paste(utils::head(time_values, 12L), collapse = ", ")
+      cli_abort(c(
+        "Could not match `time_value` to modeled time slices.",
+        "x" = "Available times include: {.code {preview}}."
+      ))
+    }
+  }
+  if (component == "space") {
+    time_idx <- time_i
+  } else {
+    time_idx <- seq.int(time_i, min(n_t, time_i + n_steps - 1L))
+    if (length(time_idx) < n_steps) {
+      cli_inform("Requested `n_steps` exceeded modeled time range; using available trailing slices.")
+    }
+  }
+
+  covariates <- object$distributed_lags_data$covariates
+  cov_i <- match(covariate, covariates)
+  if (is.na(cov_i)) {
+    cli_abort("Internal mismatch: selected covariate not found in `distributed_lags_data$covariates`.")
+  }
+
+  if (!is.null(object$model) &&
+      !is.null(object$model$par) &&
+      !is.null(object$tmb_obj) &&
+      !is.null(object$tmb_obj$env)) {
+    params <- object$tmb_obj$env$parList(object$model$par)
+  } else if (!is.null(object$tmb_params)) {
+    params <- object$tmb_params
+  } else {
+    cli_abort("Could not extract distributed-lag parameters from `object`.")
+  }
+  kappaS <- exp(params$log_kappaS_dl[cov_i])
+  kappaT <- exp(params$log_kappaT_dl[cov_i])
+  kappaST <- -stats::plogis(params$kappaST_dl_unscaled[cov_i])
+
+  has_space <- as.logical(object$distributed_lags_data$covariate_has_spatial[cov_i])
+  has_time <- as.logical(object$distributed_lags_data$covariate_has_temporal[cov_i])
+  has_spacetime <- as.logical(object$distributed_lags_data$covariate_has_spacetime[cov_i])
+  if (component == "space" && !has_space) {
+    cli_abort("Selected covariate was not fitted with a spatial distributed-lag component.")
+  }
+  if (component == "time" && !has_time) {
+    cli_abort("Selected covariate was not fitted with a temporal distributed-lag component.")
+  }
+  if (component == "spacetime" && !has_spacetime) {
+    cli_abort("Selected covariate was not fitted with a spatiotemporal distributed-lag component.")
+  }
+
+  n_vertices <- nrow(loc)
+  impulse_vertex_time <- matrix(0, nrow = n_vertices, ncol = n_t)
+  impulse_vertex_time[vertex_i, time_i] <- 1
+
+  M0 <- object$tmb_data$spde$M0
+  M1 <- object$tmb_data$spde$M1
+  transformed_vertex_time <- .solve_distributed_lag_vertex_time(
+    component = component,
+    vertex_time_input = impulse_vertex_time,
+    M0 = M0,
+    M1 = M1,
+    kappaS = kappaS,
+    kappaT = kappaT,
+    kappaST = kappaST
+  )
+
+  panel_fields <- vector("list", length(time_idx) + 1L)
+  panel_titles <- character(length(panel_fields))
+  panel_fields[[1L]] <- impulse_vertex_time[, time_i]
+  panel_titles[[1L]] <- paste0("original (t=", time_values[time_i], ")")
+  for (j in seq_along(time_idx)) {
+    tt <- time_idx[j]
+    lag <- tt - time_i
+    panel_fields[[j + 1L]] <- transformed_vertex_time[, tt]
+    panel_titles[[j + 1L]] <- if (lag == 0L) {
+      paste0("diffused (t=", time_values[tt], ")")
+    } else {
+      paste0("lag+", lag, " (t=", time_values[tt], ")")
+    }
+  }
+
+  n_tri <- nrow(tv)
+  triangle_values <- vapply(panel_fields, function(v) {
+    rowMeans(matrix(v[tv], nrow = n_tri, ncol = 3L))
+  }, numeric(n_tri))
+  if (!is.matrix(triangle_values)) {
+    triangle_values <- matrix(triangle_values, ncol = 1L)
+  }
+  colnames(triangle_values) <- panel_titles
+
+  tri_x <- matrix(loc[tv, 1], nrow = n_tri, ncol = 3L)
+  tri_y <- matrix(loc[tv, 2], nrow = n_tri, ncol = 3L)
+  xlim <- range(loc[, 1])
+  ylim <- range(loc[, 2])
+
+  triangle_df <- do.call(rbind, lapply(seq_len(ncol(triangle_values)), function(j) {
+    data.frame(
+      panel = panel_titles[j],
+      tri = rep(seq_len(n_tri), each = 3L),
+      x = as.vector(t(tri_x)),
+      y = as.vector(t(tri_y)),
+      value = rep(triangle_values[, j], each = 3L),
+      stringsAsFactors = FALSE
+    )
+  }))
+  triangle_df$panel <- factor(triangle_df$panel, levels = panel_titles)
+  point_df <- data.frame(
+    panel = factor(panel_titles, levels = panel_titles),
+    x = rep(loc[vertex_i, 1], length(panel_titles)),
+    y = rep(loc[vertex_i, 2], length(panel_titles))
+  )
+
+  triangle_df$value_plot <- triangle_df$value
+  fill_name <- "Value"
+  if (!isTRUE(common_scale)) {
+    fill_name <- "Relative value"
+    for (p in levels(triangle_df$panel)) {
+      i <- which(triangle_df$panel == p)
+      rng <- range(triangle_df$value[i], finite = TRUE)
+      if (!all(is.finite(rng)) || rng[1] == rng[2]) {
+        triangle_df$value_plot[i] <- 0
+      } else {
+        triangle_df$value_plot[i] <- (triangle_df$value[i] - rng[1]) / (rng[2] - rng[1])
+      }
+    }
+  }
+
+  fill_limits <- if (isTRUE(common_scale)) NULL else c(0, 1)
+  xlab <- if (!is.null(object$spde$xy_cols) && length(object$spde$xy_cols) >= 2L) object$spde$xy_cols[1] else "x"
+  ylab <- if (!is.null(object$spde$xy_cols) && length(object$spde$xy_cols) >= 2L) object$spde$xy_cols[2] else "y"
+  plot_obj <- ggplot2::ggplot(
+    triangle_df,
+    ggplot2::aes(x = .data$x, y = .data$y, group = interaction(.data$panel, .data$tri))
+  ) +
+    ggplot2::geom_polygon(
+      ggplot2::aes(fill = .data$value_plot),
+      color = "#FFFFFF10", linewidth = 0.4
+    ) +
+    ggplot2::geom_point(
+      data = point_df,
+      ggplot2::aes(x = .data$x, y = .data$y),
+      inherit.aes = FALSE,
+      shape = 21,
+      fill = "black",
+      color = "black",
+      size = 1.4
+    ) +
+    ggplot2::facet_wrap(stats::as.formula("~ panel"), nrow = 1L) +
+    ggplot2::coord_equal(xlim = xlim, ylim = ylim, expand = FALSE) +
+    ggplot2::scale_fill_viridis_c(
+      limits = fill_limits,
+      name = fill_name, option = "C"
+    ) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      panel.grid = ggplot2::element_blank()
+    ) +
+    ggplot2::labs(x = xlab, y = ylab)
+
+  if (plot) {
+    print(plot_obj)
+  }
+
+  invisible(list(
+    covariate = covariate,
+    component = component,
+    vertex = vertex_i,
+    vertex_xy = loc[vertex_i, , drop = TRUE],
+    impulse_time_index = time_i,
+    impulse_time_value = time_values[time_i],
+    transformed_time_index = time_idx,
+    transformed_time_values = time_values[time_idx],
+    impulse_vertex_time = impulse_vertex_time,
+    transformed_vertex_time = transformed_vertex_time,
+    triangle_values = triangle_values,
+    triangle_df = triangle_df,
+    plot = plot_obj,
+    mesh_loc = loc,
+    mesh_triangles = tv
+  ))
+}

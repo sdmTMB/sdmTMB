@@ -80,6 +80,8 @@
 #' * `omega_s`: Spatial random field (models consistent spatial patterns)
 #' * `zeta_s`: Spatially varying coefficient field (models how effects vary across space)
 #' * `epsilon_st`: Spatiotemporal random field (models spatial patterns that vary over time)
+#' * `dl_cov_*`: Distributed-lag transformed covariate values (one column per
+#'   distributed-lag term; available when `distributed_lags` were fitted)
 #'
 #' If `return_tmb_object = TRUE` (and `nsim = 0` and `mcmc_samples = NULL`):
 #'
@@ -788,6 +790,23 @@ predict.sdmTMB <- function(object, newdata = NULL,
     lp <- new_tmb_obj$env$last.par.best
     r <- new_tmb_obj$report(lp)
     if (return_tmb_report) return(r)
+    if (has_distributed_lags) {
+      par_list <- new_tmb_obj$env$parList(lp)
+      dl_term_values <- .compute_distributed_lag_term_values(
+        distributed_lags_data = object$distributed_lags_data,
+        covariate_vertex_time = tmb_data$proj_distributed_lag_covariate_vertex_time,
+        A_st = tmb_data$proj_mesh,
+        A_spatial_index = tmb_data$proj_spatial_index,
+        year_i = tmb_data$proj_year,
+        n_t = tmb_data$n_t,
+        M0 = tmb_data$spde$M0,
+        M1 = tmb_data$spde$M1,
+        log_kappaS_dl = par_list$log_kappaS_dl,
+        log_kappaT_dl = par_list$log_kappaT_dl,
+        kappaST_dl_unscaled = par_list$kappaST_dl_unscaled
+      )
+      nd <- cbind(nd, as.data.frame(dl_term_values))
+    }
 
     if (isFALSE(pop_pred)) {
       if (multi_family) {
@@ -1039,6 +1058,23 @@ predict.sdmTMB <- function(object, newdata = NULL,
     lp <- object$tmb_obj$env$last.par.best
     # object$tmb_obj$fn(lp) # call once to update internal structures?
     r <- object$tmb_obj$report(lp)
+    if (has_distributed_lags) {
+      par_list <- object$tmb_obj$env$parList(lp)
+      dl_term_values <- .compute_distributed_lag_term_values(
+        distributed_lags_data = object$distributed_lags_data,
+        covariate_vertex_time = object$tmb_data$distributed_lag_covariate_vertex_time,
+        A_st = object$tmb_data$A_st,
+        A_spatial_index = object$tmb_data$A_spatial_index,
+        year_i = object$tmb_data$year_i,
+        n_t = object$tmb_data$n_t,
+        M0 = object$tmb_data$spde$M0,
+        M1 = object$tmb_data$spde$M1,
+        log_kappaS_dl = par_list$log_kappaS_dl,
+        log_kappaT_dl = par_list$log_kappaT_dl,
+        kappaST_dl_unscaled = par_list$kappaST_dl_unscaled
+      )
+      nd <- cbind(nd, as.data.frame(dl_term_values))
+    }
 
     nd$est <- r$eta_i[,1] # DELTA FIXME
     # The following is not an error,

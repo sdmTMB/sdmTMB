@@ -109,6 +109,8 @@ A data frame:
 \item \code{omega_s}: Spatial random field (models consistent spatial patterns)
 \item \code{zeta_s}: Spatially varying coefficient field (models how effects vary across space)
 \item \code{epsilon_st}: Spatiotemporal random field (models spatial patterns that vary over time)
+\item \verb{dl_cov_*}: Distributed-lag transformed covariate values (one column per
+distributed-lag term; available when \code{distributed_lags} were fitted)
 }
 
 If \code{return_tmb_object = TRUE} (and \code{nsim = 0} and \code{mcmc_samples = NULL}):
