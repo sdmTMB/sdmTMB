@@ -2,6 +2,8 @@
 
 ## Minor improvements and fixes
 
+* Add distributed-lag article/vignette.
+
 * Add experimental support for distributed lag models.
 
 * Add experimental support for multi-family models (row-specific families).

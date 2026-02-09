@@ -1,0 +1,141 @@
+---
+title: "Distributed lag covariates with sdmTMB"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Distributed lag covariates with sdmTMB}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+**If the code in this vignette has not been evaluated, a rendered version is available on the [documentation site](https://sdmTMB.github.io/sdmTMB/index.html) under 'Articles'.**
+
+```{r setup, include = FALSE, cache=FALSE}
+ggplot_installed <- require("ggplot2", quietly = TRUE)
+pkgs <- ggplot_installed
+EVAL <- identical(Sys.getenv("NOT_CRAN"), "true") && pkgs
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.asp = 0.618,
+  eval = EVAL,
+  purl = EVAL
+)
+```
+
+```{r packages, message=FALSE, warning=TRUE}
+library(ggplot2)
+library(sdmTMB)
+```
+
+This vignette demonstrates a simple spatial distributed-lag model with simulated data.
+We simulate:
+
+- a fine-scale predictor surface;
+- a smoother latent surface that drives the response;
+- a model that estimates the lagged covariate from the fine-scale predictor.
+
+## Simulate fine- and broad-scale spatial fields
+
+```{r simulate}
+set.seed(1)
+
+predictor_dat <- data.frame(
+  X = runif(1000),
+  Y = runif(1000)
+)
+
+mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.05)
+
+sim_smooth <- simulate_new(
+  formula = ~ 1,
+  data = predictor_dat,
+  mesh = mesh,
+  family = gaussian(),
+  range = 0.5,
+  phi = 0.01,
+  sigma_O = 1,
+  seed = 42,
+  B = 0
+)
+
+sim_fine <- simulate_new(
+  formula = ~ 1,
+  data = predictor_dat,
+  mesh = mesh,
+  family = gaussian(),
+  range = 0.15,
+  phi = 0.01,
+  sigma_O = 1,
+  seed = 42,
+  B = 0
+)
+
+y <- 0.3 * sim_smooth$mu + rnorm(length(sim_smooth$mu), 0, 0.1)
+
+dat <- data.frame(
+  observed = y,
+  x1 = sim_fine$mu,
+  X = sim_fine$X,
+  Y = sim_fine$Y
+)
+```
+
+## Fit a distributed-lag model
+
+The response is a function of the smooth field, but we only provide the fine-scale predictor (`x1`) to the model.
+
+```{r fit}
+fit <- sdmTMB(
+  observed ~ 1,
+  mesh = mesh,
+  distributed_lags = ~ space(x1),
+  spatial = "off",
+  data = dat
+)
+
+fit
+tidy(fit)
+tidy(fit, effects = "ran_pars")
+```
+
+## Plot the estimated diffusion kernel
+
+```{r plot-diffusion}
+plot_distributed_lag_diffusion(fit, component = "space")
+```
+
+## Compare true and estimated lagged covariates
+
+```{r compare}
+pred <- predict(fit)
+pred$X <- sim_fine$X
+pred$Y <- sim_fine$Y
+pred$x1_smooth_sim <- sim_smooth$mu
+pred$x1_fine_sim <- sim_fine$mu
+
+cor(pred$dl_cov_space_x1, pred$x1_smooth_sim)
+
+g1 <- ggplot(pred, aes(X, Y, colour = x1_fine_sim)) +
+  geom_point(size = 0.7) +
+  scale_colour_gradient2() +
+  coord_equal() +
+  ggtitle("Fine-scale predictor (x1)")
+
+g2 <- ggplot(pred, aes(X, Y, colour = x1_smooth_sim)) +
+  geom_point(size = 0.7) +
+  scale_colour_gradient2() +
+  coord_equal() +
+  ggtitle("True smoothed version of predictor (x1)")
+
+g3 <- ggplot(pred, aes(X, Y, colour = dl_cov_space_x1)) +
+  geom_point(size = 0.7) +
+  scale_colour_gradient2() +
+  coord_equal() +
+  ggtitle("Estimated lagged covariate")
+
+print(g1)
+print(g2)
+print(g3)
+```

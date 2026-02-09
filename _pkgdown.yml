@@ -23,6 +23,7 @@ articles:
   - articles/residual-checking
   - articles/cross-validation
   - articles/bayesian
+  - articles/distributed-lags
 
 - title: Predictions and Applications
   contents:
