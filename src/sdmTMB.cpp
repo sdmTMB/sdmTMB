@@ -2,6 +2,7 @@
 #define EIGEN_DONT_PARALLELIZE
 #include <TMB.hpp>
 #include "utils.h"
+#include "distributed-lags.h"
 // #include <omp.h>
 
 enum valid_family {
