@@ -453,6 +453,8 @@ residuals.sdmTMB <- function(object,
     )
     cli_abort(msg)
   }
+  # TODO: support additional residual types for `dispformula` models once
+  # observation-level dispersion is threaded through all residual calculations.
   if (isTRUE(object$has_dispformula) && type != "response") {
     cli_abort(c(
       "Residual type `{type}` is not available when `dispformula` is used.",

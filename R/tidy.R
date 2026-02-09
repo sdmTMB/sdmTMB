@@ -621,11 +621,14 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   out_re <- unique(out_re)
 
   out_disp <- NULL
-  if (isTRUE(x$has_dispformula)) {
+  if (effects == "dispersion" && isTRUE(x$has_dispformula)) {
     if (multi_family) {
       cli_abort("`effects = 'dispersion'` is not available for multi-family models yet.")
     }
     if (delta && model == 1L) {
+      if (!silent) {
+        cli_inform("Dispersion coefficients are estimated for the positive component only in delta models; use `model = 2`.")
+      }
       out_disp <- data.frame(
         model = integer(0),
         term = character(0),

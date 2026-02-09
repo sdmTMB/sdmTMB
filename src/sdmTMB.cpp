@@ -1085,7 +1085,7 @@ Type objective_function<Type>::operator()()
       Type thetaf_val = thetaf;
       Type ln_student_df_val = ln_student_df;
       Type gengamma_Q_val = gengamma_Q;
-      if (!multi_family && has_dispersion_model) {
+      if (!multi_family && has_dispersion_model && (n_m == 1 || m == (n_m - 1))) {
         ln_phi_val = ln_phi_i(i);
         phi_val = phi_i(i);
       }
