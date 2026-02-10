@@ -479,8 +479,8 @@ print_other_parameters <- function(x, m = 1L) {
     d <- tidy(x, effects = "dispersion", model = m, conf.int = FALSE, silent = TRUE)
     if (nrow(d) > 0) {
       mm_disp <- cbind(
-        coef.est = mround(d$estimate, 2L),
-        coef.se = mround(d$std.error, 2L)
+        coef.est = round(d$estimate, 2L),
+        coef.se = round(d$std.error, 2L)
       )
       rownames(mm_disp) <- d$term
     }
