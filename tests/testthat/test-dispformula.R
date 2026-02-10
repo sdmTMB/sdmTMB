@@ -8,10 +8,10 @@ test_that("dispformula works for non-multi-family models", {
     family = tweedie(link = "log"),
     spatial = "off",
     spatiotemporal = "off",
-    dispformula = ~ 0 + as.factor(year),
-    control = sdmTMBcontrol(newton_loops = 0)
+    dispformula = ~ 0 + as.factor(year)
   )
 
+  print(fit)
   p <- get_pars(fit)
   expect_true("b_disp_k" %in% names(p))
   expect_gt(length(p$b_disp_k), 1L)
@@ -26,7 +26,11 @@ test_that("dispformula works for non-multi-family models", {
   td_re <- tidy(fit, effects = "ran_pars")
   expect_false("phi" %in% td_re$term)
 
-  expect_output(print(fit), "Dispersion model:")
+  print_out <- capture.output(print(fit))
+  disp_idx <- which(grepl("^Dispersion model:$", print_out))
+  expect_equal(length(disp_idx), 1L)
+  disp_lines <- print_out[seq.int(disp_idx + 1L, min(length(print_out), disp_idx + 6L))]
+  expect_false(any(grepl("\"", disp_lines, fixed = TRUE)))
 
   expect_error(
     sigma(fit),
@@ -35,6 +39,10 @@ test_that("dispformula works for non-multi-family models", {
 
   expect_error(
     residuals(fit, type = "mle-eb"),
+    regexp = "dharma_residuals"
+  )
+  expect_error(
+    residuals(fit, type = "mle-mvn"),
     regexp = "dharma_residuals"
   )
   expect_equal(length(residuals(fit, type = "response")), nrow(fit$data))
@@ -103,6 +111,7 @@ test_that("dispformula works with simulation and index prediction pathways", {
 
   nd <- d[seq_len(80), c("X", "Y", "year"), drop = FALSE]
 
+  set.seed(1)
   sims <- simulate(fit, nsim = 2L, newdata = nd, silent = TRUE)
   expect_equal(dim(sims), c(nrow(nd), 2L))
 
