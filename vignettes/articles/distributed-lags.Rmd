@@ -27,64 +27,92 @@ knitr::opts_chunk$set(
 ```{r packages, message=FALSE, warning=TRUE}
 library(ggplot2)
 library(sdmTMB)
+theme_set(theme_light())
 ```
 
 This vignette demonstrates a simple spatial distributed-lag model with simulated data.
-We simulate:
+We will simulate a fine-scale predictor observed at sample locations and a spatially diffused effect. Then we will fit a model that estimates the lagged covariate from the fine-scale predictor.
 
-- a fine-scale predictor surface;
-- a smoother latent surface that drives the response;
-- a model that estimates the lagged covariate from the fine-scale predictor.
+We will suppress this simulation chunk to avoid clutter.
 
-## Simulate fine- and broad-scale spatial fields
+```{r simulate, include=FALSE}
+simulate_spatial_diffusion <- function(
+  n_obs = 1200,
+  cutoff = 0.05,
+  n_hotspots = 50,
+  hotspot_sd = 0.03,
+  kappaS = 6,
+  beta = 0.7,
+  sigma = 0.05,
+  seed = 1
+) {
+  set.seed(seed)
 
-```{r simulate}
-set.seed(1)
+  dat <- data.frame(
+    X = runif(n_obs),
+    Y = runif(n_obs)
+  )
 
-predictor_dat <- data.frame(
-  X = runif(1000),
-  Y = runif(1000)
-)
+  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = cutoff)
+  A_st <- mesh$A_st
+  M0 <- mesh$spde$c0
+  M1 <- mesh$spde$g1
 
-mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.05)
+  centers <- cbind(runif(n_hotspots), runif(n_hotspots))
+  weights <- rnorm(n_hotspots)
+  sq_dist <- outer(dat$X, centers[, 1], "-")^2 +
+    outer(dat$Y, centers[, 2], "-")^2
+  hotspot_field <- as.numeric(exp(-sq_dist / (2 * hotspot_sd^2)) %*% weights)
 
-sim_smooth <- simulate_new(
-  formula = ~ 1,
-  data = predictor_dat,
-  mesh = mesh,
-  family = gaussian(),
-  range = 0.5,
-  phi = 0.01,
-  sigma_O = 1,
-  seed = 42,
-  B = 0
-)
+  # Fine-scale observed covariate at each sample location.
+  x_fine <- as.numeric(scale(hotspot_field + rnorm(n_obs, sd = 0.25)))
 
-sim_fine <- simulate_new(
-  formula = ~ 1,
-  data = predictor_dat,
-  mesh = mesh,
-  family = gaussian(),
-  range = 0.15,
-  phi = 0.01,
-  sigma_O = 1,
-  seed = 42,
-  B = 0
-)
+  # Map observations to mesh vertices with barycentric weights.
+  numerator <- as.vector(Matrix::crossprod(A_st, x_fine))
+  denominator <- as.vector(Matrix::crossprod(A_st, rep(1, n_obs)))
+  x_vertex <- numeric(ncol(A_st))
+  keep <- denominator > 0
+  x_vertex[keep] <- numerator[keep] / denominator[keep]
 
-y <- 0.3 * sim_smooth$mu + rnorm(length(sim_smooth$mu), 0, 0.1)
+  # Apply the same spatial distributed-lag operator used in the model:
+  # x_diffused = (M0 + kappaS^-2 * M1)^-1 * M0 * x_vertex
+  diffusion_matrix <- M0 + (1 / kappaS^2) * M1
+  x_vertex_diffused <- as.numeric(Matrix::solve(diffusion_matrix, M0 %*% x_vertex))
+  x_diffused <- as.numeric(A_st %*% x_vertex_diffused)
 
-dat <- data.frame(
-  observed = y,
-  x1 = sim_fine$mu,
-  X = sim_fine$X,
-  Y = sim_fine$Y
-)
+  dat$x1 <- x_fine
+  dat$x1_truth <- x_diffused
+  dat$observed <- beta * dat$x1_truth + rnorm(n_obs, sd = sigma)
+
+  list(
+    data = dat,
+    mesh = mesh,
+    truth = list(beta = beta, kappaS = kappaS)
+  )
+}
+
+sim <- simulate_spatial_diffusion(seed = 1)
+dat <- sim$data
+mesh <- sim$mesh
 ```
 
 ## Fit a distributed-lag model
 
-The response is a function of the smooth field, but we only provide the fine-scale predictor (`x1`) to the model.
+Above, in a hidden chunk, we simulated these data:
+
+```{r}
+head(dat)
+```
+
+We have coordinates `X` and `Y`, a covariate we observe `x1`, our response `observed`, and `x1_truth`, which is the diffused value of `x1` that we wouldn't normally know.
+
+Normally, we'd start by creating a mesh with `make_mesh(data, c("X", "Y"), cutoff = 0.05)`, but our simulator already created one for us named `mesh`, so we'll use that.
+
+```{r}
+plot(mesh)
+```
+
+The response is a function of the smooth field, but we only provide the fine-scale predictor (`x1`) to the model. To fit a distributed lag model with spatial diffusion, we add the one sided formula `~ space(x1)` to the `distributed_lags` argument.
 
 ```{r fit}
 fit <- sdmTMB(
@@ -110,24 +138,22 @@ plot_distributed_lag_diffusion(fit, component = "space")
 
 ```{r compare}
 pred <- predict(fit)
-pred$X <- sim_fine$X
-pred$Y <- sim_fine$Y
-pred$x1_smooth_sim <- sim_smooth$mu
-pred$x1_fine_sim <- sim_fine$mu
+pred$X <- dat$X
+pred$Y <- dat$Y
 
-cor(pred$dl_cov_space_x1, pred$x1_smooth_sim)
+cor(pred$dl_cov_space_x1, pred$x1_truth)
 
-g1 <- ggplot(pred, aes(X, Y, colour = x1_fine_sim)) +
+g1 <- ggplot(pred, aes(X, Y, colour = x1)) +
   geom_point(size = 0.7) +
   scale_colour_gradient2() +
   coord_equal() +
-  ggtitle("Fine-scale predictor (x1)")
+  ggtitle("Fine-scale observed predictor (x1)")
 
-g2 <- ggplot(pred, aes(X, Y, colour = x1_smooth_sim)) +
+g2 <- ggplot(pred, aes(X, Y, colour = x1_truth)) +
   geom_point(size = 0.7) +
   scale_colour_gradient2() +
   coord_equal() +
-  ggtitle("True smoothed version of predictor (x1)")
+  ggtitle("True diffused covariate (from simulation)")
 
 g3 <- ggplot(pred, aes(X, Y, colour = dl_cov_space_x1)) +
   geom_point(size = 0.7) +
