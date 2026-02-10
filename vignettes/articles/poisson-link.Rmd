@@ -145,8 +145,7 @@ ggplot(p, aes(log_depth, log(plogis(est1) * exp(est2)), colour = year)) +
   ylab("log expected catch weight")
 ```
 
-There is no one curve!
-It depends on the value of year and for every point in space that has a different random field value.
+There is no one curve! It depends on the value of year.
 
 ## A Poisson-link-delta-gamma alternative
 
