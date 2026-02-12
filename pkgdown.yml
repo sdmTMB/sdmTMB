@@ -1,0 +1,27 @@
+pandoc: 3.1.11
+pkgdown: 2.2.0
+pkgdown_sha: ~
+articles:
+  articles/age-composition: age-composition.html
+  articles/basic-intro: basic-intro.html
+  articles/bayesian: bayesian.html
+  articles/cross-validation: cross-validation.html
+  articles/delta-models: delta-models.html
+  articles/forecasting: forecasting.html
+  articles/ggeffects: ggeffects.html
+  articles/index-standardization: index-standardization.html
+  model-description: model-description.html
+  articles/multispecies: multispecies.html
+  articles/poisson-link: poisson-link.html
+  articles/presence-only: presence-only.html
+  articles/pretty-plots: pretty-plots.html
+  articles/range-edges: range-edges.html
+  articles/residual-checking: residual-checking.html
+  articles/spatial-trend-models: spatial-trend-models.html
+  articles/threshold-models: threshold-models.html
+  articles/visreg: visreg.html
+  articles/zoib: zoib.html
+last_built: 2026-02-12T20:05Z
+urls:
+  reference: https://sdmTMB.github.io/sdmTMB/reference
+  article: https://sdmTMB.github.io/sdmTMB/articles
