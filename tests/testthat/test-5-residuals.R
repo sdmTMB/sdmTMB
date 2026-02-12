@@ -328,6 +328,105 @@ test_that("residuals() works", {
   rpos <- residuals(fit2, type = "mle-mvn")
   })
 
+test_that("Poisson-link delta residuals use encounter and positive means", {
+  skip_on_cran()
+  fit <- sdmTMB(
+    density ~ s(depth),
+    data = pcod_2011,
+    spatial = "off",
+    family = delta_gamma(type = "poisson-link")
+  )
+  pred <- predict(fit, newdata = fit$data, offset = fit$offset)
+
+  p <- 1 - exp(-exp(fit$offset + pred$est1))
+  mu_pos <- exp(pred$est1 + pred$est2) / p
+
+  set.seed(1)
+  r1 <- residuals(fit, model = 1, type = "mle-eb")
+  set.seed(1)
+  r1_manual <- qres_binomial(
+    fit,
+    y = fit$response[, 1],
+    mu = p,
+    .n = fit$tmb_data$size
+  )
+  expect_equal(r1, r1_manual)
+  expect_false(anyNA(r1))
+  expect_false(any(is.infinite(r1)))
+
+  set.seed(1)
+  r2 <- residuals(fit, model = 2, type = "mle-eb")
+  set.seed(1)
+  r2_manual <- qres_gamma(
+    fit,
+    y = fit$response[, 2],
+    mu = mu_pos
+  )
+  expect_equal(unname(r2), unname(r2_manual))
+  expect_false(any(is.infinite(r2), na.rm = TRUE))
+})
+
+test_that("Poisson-link delta mle-mcmc residuals use both eta components", {
+  skip_on_cran()
+  fit <- sdmTMB(
+    density ~ s(depth),
+    data = pcod_2011,
+    spatial = "off",
+    family = delta_gamma(type = "poisson-link")
+  )
+
+  params <- .one_sample_posterior(fit)
+  draw <- predict(
+    fit,
+    newdata = fit$data,
+    mcmc_samples = matrix(params, ncol = 1L),
+    nsim = 1L,
+    offset = fit$offset,
+    return_tmb_report = TRUE
+  )
+  eta <- draw[[1L]]$proj_eta
+
+  mu1 <- .poisson_link_delta_mu_from_eta(
+    fit,
+    model = 1L,
+    eta1 = eta[, 1L],
+    eta2 = eta[, 2L]
+  )
+  mu2 <- .poisson_link_delta_mu_from_eta(
+    fit,
+    model = 2L,
+    eta1 = eta[, 1L],
+    eta2 = eta[, 2L]
+  )
+
+  set.seed(1)
+  r1 <- residuals(fit, type = "mle-mcmc", model = 1, mcmc_samples = eta)
+  set.seed(1)
+  r1_manual <- qres_binomial(
+    fit,
+    y = fit$response[, 1],
+    mu = mu1,
+    .n = fit$tmb_data$size
+  )
+  expect_equal(r1, r1_manual)
+
+  set.seed(1)
+  r2 <- residuals(fit, type = "mle-mcmc", model = 2, mcmc_samples = eta)
+  set.seed(1)
+  r2_manual <- qres_gamma(
+    fit,
+    y = fit$response[, 2],
+    mu = mu2
+  )
+  expect_equal(unname(r2), unname(r2_manual))
+
+  set.seed(1)
+  expect_error(
+    residuals(fit, type = "mle-mcmc", model = 2, mcmc_samples = eta[, 2L]),
+    regexp = "provide a matrix with both sampled linear predictors"
+  )
+})
+
 test_that("Pearson residuals work", {
   # binomial proportion
   set.seed(1)

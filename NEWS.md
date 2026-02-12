@@ -1,6 +1,11 @@
 # sdmTMB (development version)
 
-## Minor improvements and fixes
+* Fix `residuals()` for Poisson-link delta models so residuals use the
+  correct inverse link for encounter and positive-component 
+  mechanism(including offsets), avoiding spurious `NaN`/`Inf` values in
+  the first linear predictor residuals. For most scenarios, using
+  simulation-based residuals from `dharma_residuals()` for delta models
+  for the combined residuals is still most straight forward. #512
 
 * Add distributed-lag article/vignette.
 
