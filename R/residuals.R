@@ -281,6 +281,25 @@ qres_gengamma <- function(object, y, mu, ...) {
   stats::qnorm(u)
 }
 
+.is_poisson_link_delta_model <- function(object) {
+  if (!is_delta(object)) return(FALSE)
+  is_pld <- object$tmb_data$poisson_link_delta
+  if (is.null(is_pld) || length(is_pld) == 0L) return(FALSE)
+  isTRUE(as.logical(is_pld[[1L]]))
+}
+
+.poisson_link_delta_mu_from_eta <- function(object, model, eta1, eta2) {
+  n <- exp(object$offset + eta1)
+  p <- -expm1(-n)
+  if (model == 1L) {
+    return(p)
+  } else if (model == 2L) {
+    return(exp(eta1 + eta2) / p)
+  } else {
+    cli_abort("`model` must be 1 or 2 for delta models.")
+  }
+}
+
 #' Residuals method for sdmTMB models
 #'
 #' See the residual-checking vignette: `browseVignettes("sdmTMB")` or [on the
@@ -455,7 +474,8 @@ residuals.sdmTMB <- function(object,
   nd <- NULL
   est_column <- "est"
   linkinv <- object$family$linkinv
-  if (isTRUE(object$family$delta)) {
+  poisson_link_delta <- .is_poisson_link_delta_model(object)
+  if (is_delta(object)) {
     fam <- fam[[model]]
     linkinv <-  object$family[[model]]$linkinv
     nd <- object$data
@@ -491,7 +511,12 @@ residuals.sdmTMB <- function(object,
 
   if (!"offset" %in% names(object)) cli_abort("This model appears to have been fit with an older sdmTMB.")
   if (type %in% c("mle-eb", "response", "pearson")) {
-    mu <- linkinv(predict(object, newdata = object$data, offset = object$offset)[[est_column]]) # not newdata = NULL
+    pred <- predict(object, newdata = object$data, offset = object$offset) # not newdata = NULL
+    if (poisson_link_delta) {
+      mu <- .poisson_link_delta_mu_from_eta(object, model = model, eta1 = pred$est1, eta2 = pred$est2)
+    } else {
+      mu <- linkinv(pred[[est_column]])
+    }
   } else if (type == "mvn-laplace") {
     mu <- linkinv(predict(object, nsim = 1L, model = model, offset = object$offset)[, 1L, drop = TRUE])
   } else if (type == "mle-mcmc") {
@@ -501,9 +526,35 @@ residuals.sdmTMB <- function(object,
         "remotes::install_github('sdmTMB/sdmTMBextra')")
       cli_abort(msg)
     }
-    mcmc_samples <- as.numeric(mcmc_samples)
-    assert_that(length(mcmc_samples) == nrow(object$data))
-    mu <- linkinv(mcmc_samples)
+    if (poisson_link_delta) {
+      if (is.matrix(mcmc_samples)) {
+        if (nrow(mcmc_samples) != nrow(object$data) || ncol(mcmc_samples) < 2L) {
+          cli_abort("For Poisson-link delta models, matrix `mcmc_samples` must have `nrow(data)` rows and at least 2 columns (`eta1`, `eta2`).")
+        }
+        mu <- .poisson_link_delta_mu_from_eta(
+          object,
+          model = model,
+          eta1 = mcmc_samples[, 1L],
+          eta2 = mcmc_samples[, 2L]
+        )
+      } else {
+        mcmc_samples <- as.numeric(mcmc_samples)
+        assert_that(length(mcmc_samples) == nrow(object$data))
+        if (model == 2L) {
+          cli_abort("For Poisson-link delta `type = 'mle-mcmc'` with `model = 2`, provide a matrix with both sampled linear predictors (`eta1`, `eta2`).")
+        }
+        mu <- .poisson_link_delta_mu_from_eta(
+          object,
+          model = model,
+          eta1 = mcmc_samples,
+          eta2 = rep(NA_real_, nrow(object$data))
+        )
+      }
+    } else {
+      mcmc_samples <- as.numeric(mcmc_samples)
+      assert_that(length(mcmc_samples) == nrow(object$data))
+      mu <- linkinv(mcmc_samples)
+    }
   } else if (type == "mle-mvn") {
     ## see TMB:::oneSamplePosterior()
 
@@ -512,15 +563,34 @@ residuals.sdmTMB <- function(object,
     } else {
       params <- .one_sample_posterior(object)
     }
-    pred <- predict(
-      object,
-      newdata = object$data,
-      mcmc_samples = matrix(params, ncol = 1L),
-      model = model[[1L]],
-      nsim = 1L,
-      offset = object$offset
-    )
-    mu <- linkinv(pred[, 1L, drop = TRUE])
+    if (poisson_link_delta) {
+      pred_report <- predict(
+        object,
+        newdata = object$data,
+        mcmc_samples = matrix(params, ncol = 1L),
+        model = model[[1L]],
+        nsim = 1L,
+        offset = object$offset,
+        return_tmb_report = TRUE
+      )
+      eta <- pred_report[[1L]]$proj_eta
+      mu <- .poisson_link_delta_mu_from_eta(
+        object,
+        model = model,
+        eta1 = eta[, 1L],
+        eta2 = eta[, 2L]
+      )
+    } else {
+      pred <- predict(
+        object,
+        newdata = object$data,
+        mcmc_samples = matrix(params, ncol = 1L),
+        model = model[[1L]],
+        nsim = 1L,
+        offset = object$offset
+      )
+      mu <- linkinv(pred[, 1L, drop = TRUE])
+    }
   } else if (type == "deviance") {
     # if (is_delta(object)) {
     #   cli_abort("Deviance residuals not implemented for delta models")
