@@ -166,6 +166,7 @@ Type objective_function<Type>::operator()()
   DATA_VECTOR(proj_offset_i); // optional offset
 
   DATA_INTEGER(n_t);  // number of years
+  DATA_INTEGER(n_groups);  // number of groups for grouped spatiotemporal fields
   DATA_INTEGER(distributed_lag_n_terms);
   DATA_INTEGER(distributed_lag_n_covariates);
   DATA_ARRAY(distributed_lag_covariate_vertex_time);
@@ -190,6 +191,7 @@ Type objective_function<Type>::operator()()
 
   // Indices for factors
   DATA_FACTOR(year_i);
+  DATA_IVECTOR(group_i);
 
   DATA_INTEGER(normalize_in_r);
   DATA_INTEGER(flag);
@@ -265,6 +267,7 @@ Type objective_function<Type>::operator()()
   DATA_STRUCT(proj_X_ij, sdmTMB::LOM_t);
   DATA_MATRIX(proj_X_rw_ik);
   DATA_FACTOR(proj_year);
+  DATA_IVECTOR(proj_group_i);
   DATA_MATRIX(proj_z_i);
   DATA_IVECTOR(proj_spatial_index);
   DATA_ARRAY(proj_distributed_lag_covariate_vertex_time);
@@ -305,6 +308,7 @@ Type objective_function<Type>::operator()()
   PARAMETER_VECTOR(ln_tau_O);    // spatial process
   PARAMETER_ARRAY(ln_tau_Z);    // optional spatially varying covariate process
   PARAMETER_VECTOR(ln_tau_E);    // spatio-temporal process
+  PARAMETER_VECTOR(ln_tau_U);    // grouped spatio-temporal process
   PARAMETER_ARRAY(ln_kappa);    // Matern parameter
   PARAMETER_VECTOR(log_kappaS_dl);    // distributed lag spatial scale (length n_covariates)
   PARAMETER_VECTOR(log_kappaT_dl);    // distributed lag temporal scale (length n_covariates)
@@ -332,6 +336,7 @@ Type objective_function<Type>::operator()()
   PARAMETER_ARRAY(omega_s);    // spatial effects; n_s length
   PARAMETER_ARRAY(zeta_s);    // spatial effects on covariate; n_s length, n_z cols, n_m
   PARAMETER_ARRAY(epsilon_st);  // spatio-temporal effects; n_s by n_t by n_m array
+  PARAMETER_ARRAY(upsilon_stg);  // grouped spatio-temporal effects; n_s by n_t by n_groups by n_m
   PARAMETER_ARRAY(b_threshold);  // coefficients for threshold relationship (3) // DELTA TODO
   PARAMETER_VECTOR(b_epsilon); // slope coefficient for log-linear model on epsilon
   PARAMETER_VECTOR(ln_epsilon_re_sigma);
@@ -431,6 +436,8 @@ Type objective_function<Type>::operator()()
   // DELTA DONE
   array<Type> sigma_O(1,n_m); // array b/c ADREPORT crashes if vector elements mapped
   array<Type> log_sigma_O(1,n_m); // array b/c ADREPORT crashes if vector elements mapped
+  array<Type> sigma_U(1,n_m); // grouped spatiotemporal SD
+  array<Type> log_sigma_U(1,n_m); // grouped spatiotemporal log SD
   int n_z = ln_tau_Z.rows();
   array<Type> sigma_Z(n_z, n_m);
   array<Type> log_sigma_Z(n_z,n_m); // for SE
@@ -447,6 +454,10 @@ Type objective_function<Type>::operator()()
       for (int m = 0; m < n_m; m++)
         log_sigma_Z(z,m) = log(sigma_Z(z,m));
     }
+    if (n_groups > 0) {
+      sigma_U(0,m) = sdmTMB::calc_rf_sigma(ln_tau_U(m), ln_kappa(1,m));
+      log_sigma_U(0,m) = log(sigma_U(0,m));
+    }
   }
   REPORT(sigma_Z);
   ADREPORT(sigma_Z);
@@ -455,6 +466,11 @@ Type objective_function<Type>::operator()()
   ADREPORT(sigma_O);
   ADREPORT(log_sigma_O);
   ADREPORT(log_sigma_Z);
+  if (n_groups > 0) {
+    REPORT(sigma_U);
+    ADREPORT(sigma_U);
+    ADREPORT(log_sigma_U);
+  }
 
   // TODO can we not always run this for speed?
   //vector<Type> sigma_E(n_m);
@@ -671,27 +687,60 @@ Type objective_function<Type>::operator()()
           }
           ADREPORT(rho);
         } else if (rw_fields(m)) {
-          Type rw_scale_0 = barrier ?
-            sdmTMB::barrier_scaling_factor(ln_tau_E_vec(0,m), ln_kappa(1,m)) :
-            1. / exp(ln_tau_E_vec(0,m));
-          PARALLEL_REGION jnll += SCALE(GMRF(Q_temp, s), rw_scale_0)(epsilon_st.col(m).col(0));
-          for (int t = 1; t < n_t; t++) {
-            Type rw_scale_t = barrier ?
-              sdmTMB::barrier_scaling_factor(ln_tau_E_vec(t,m), ln_kappa(1,m)) :
-              1. / exp(ln_tau_E_vec(t,m));
-            PARALLEL_REGION jnll += SCALE(GMRF(Q_temp, s), rw_scale_t)(epsilon_st.col(m).col(t) - epsilon_st.col(m).col(t - 1));
-          }
-          if (sim_re(1)) {
-            for (int t = 0; t < n_t; t++) {
-              if (simulate_t(t)) {
-                vector<Type> epsilon_st_tmp(epsilon_st.col(m).rows());
-                SIMULATE {
-                  GMRF(Q_temp, s).simulate(epsilon_st_tmp);
-                  epsilon_st_tmp *= 1./exp(ln_tau_E_vec(t,m));
-                  if (t == 0) {
-                    epsilon_st.col(m).col(0) = epsilon_st_tmp;
-                  } else {
-                    epsilon_st.col(m).col(t) = epsilon_st.col(m).col(t-1) + epsilon_st_tmp;
+          if (n_groups > 0) {
+            Type rw_group_scale = barrier ?
+              sdmTMB::barrier_scaling_factor(ln_tau_U(m), ln_kappa(1,m)) :
+              1. / exp(ln_tau_U(m));
+            for (int g = 0; g < n_groups; g++) {
+              PARALLEL_REGION jnll += SCALE(GMRF(Q_temp, s), rw_group_scale)(upsilon_stg.col(m).col(g).col(0));
+              for (int t = 1; t < n_t; t++) {
+                PARALLEL_REGION jnll += SCALE(GMRF(Q_temp, s), rw_group_scale)(
+                  upsilon_stg.col(m).col(g).col(t) - upsilon_stg.col(m).col(g).col(t - 1)
+                );
+              }
+            }
+            if (sim_re(1)) {
+              for (int g = 0; g < n_groups; g++) {
+                for (int t = 0; t < n_t; t++) {
+                  if (simulate_t(t)) {
+                    vector<Type> upsilon_tmp(upsilon_stg.col(m).rows());
+                    SIMULATE {
+                      GMRF(Q_temp, s).simulate(upsilon_tmp);
+                      upsilon_tmp *= rw_group_scale;
+                      if (t == 0) {
+                        upsilon_stg.col(m).col(g).col(0) = upsilon_tmp;
+                      } else {
+                        upsilon_stg.col(m).col(g).col(t) =
+                          upsilon_stg.col(m).col(g).col(t - 1) + upsilon_tmp;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          } else {
+            Type rw_scale_0 = barrier ?
+              sdmTMB::barrier_scaling_factor(ln_tau_E_vec(0,m), ln_kappa(1,m)) :
+              1. / exp(ln_tau_E_vec(0,m));
+            PARALLEL_REGION jnll += SCALE(GMRF(Q_temp, s), rw_scale_0)(epsilon_st.col(m).col(0));
+            for (int t = 1; t < n_t; t++) {
+              Type rw_scale_t = barrier ?
+                sdmTMB::barrier_scaling_factor(ln_tau_E_vec(t,m), ln_kappa(1,m)) :
+                1. / exp(ln_tau_E_vec(t,m));
+              PARALLEL_REGION jnll += SCALE(GMRF(Q_temp, s), rw_scale_t)(epsilon_st.col(m).col(t) - epsilon_st.col(m).col(t - 1));
+            }
+            if (sim_re(1)) {
+              for (int t = 0; t < n_t; t++) {
+                if (simulate_t(t)) {
+                  vector<Type> epsilon_st_tmp(epsilon_st.col(m).rows());
+                  SIMULATE {
+                    GMRF(Q_temp, s).simulate(epsilon_st_tmp);
+                    epsilon_st_tmp *= 1./exp(ln_tau_E_vec(t,m));
+                    if (t == 0) {
+                      epsilon_st.col(m).col(0) = epsilon_st_tmp;
+                    } else {
+                      epsilon_st.col(m).col(t) = epsilon_st.col(m).col(t-1) + epsilon_st_tmp;
+                    }
                   }
                 }
               }
@@ -831,17 +880,31 @@ Type objective_function<Type>::operator()()
   array<Type> omega_s_A(n_i, n_m);
   array<Type> zeta_s_A(n_i, n_z, n_m);
   array<Type> epsilon_st_A(n_i, n_t, n_m);
+  array<Type> upsilon_stg_A(n_i, n_t, n_groups, n_m);
   array<Type> epsilon_st_A_vec(n_i, n_m);
+  array<Type> upsilon_st_A_vec(n_groups > 0 ? n_i : 1, n_m);
   omega_s_A.setZero();
   zeta_s_A.setZero();
   epsilon_st_A.setZero();
+  upsilon_stg_A.setZero();
   epsilon_st_A_vec.setZero();
+  upsilon_st_A_vec.setZero();
 
   if (!no_spatial) {
     for (int m = 0; m < n_m; m++) {
       for (int t = 0; t < n_t; t++)
         if (!spatial_only(m)) epsilon_st_A.col(m).col(t) =
           A_st * vector<Type>(epsilon_st.col(m).col(t));
+      if (n_groups > 0) {
+        for (int t = 0; t < n_t; t++) {
+          if (!spatial_only(m)) {
+            for (int g = 0; g < n_groups; g++) {
+              upsilon_stg_A.col(m).col(g).col(t) =
+                A_st * vector<Type>(upsilon_stg.col(m).col(g).col(t));
+            }
+          }
+        }
+      }
       if (!omit_spatial_intercept) omega_s_A.col(m) = A_st * vector<Type>(omega_s.col(m));
       for (int z = 0; z < n_z; z++)
         zeta_s_A.col(m).col(z) = A_st * vector<Type>(zeta_s.col(m).col(z));
@@ -984,6 +1047,10 @@ Type objective_function<Type>::operator()()
         for (int z = 0; z < n_z; z++)
           eta_i(i,m) += zeta_s_A(i,z,m) * z_i(i,z); // spatially varying covariate DELTA
       if (!no_spatial) epsilon_st_A_vec(i,m) = epsilon_st_A(A_spatial_index(i), year_i(i),m); // record it
+      if (!no_spatial && n_groups > 0) {
+        upsilon_st_A_vec(i,m) = upsilon_stg_A(A_spatial_index(i), year_i(i), group_i(i), m);
+        eta_i(i,m) += upsilon_st_A_vec(i,m); // grouped spatiotemporal
+      }
       eta_i(i,m) += epsilon_st_A_vec(i,m); // spatiotemporal
 
       eta_i(i,m) += eta_iid_re_i(i,m);
@@ -1540,15 +1607,19 @@ Type objective_function<Type>::operator()()
     array<Type> proj_omega_s_A_unique(n_p_mesh, n_m);
     array<Type> proj_zeta_s_A_unique(n_p_mesh, n_z, n_m);
     array<Type> proj_epsilon_st_A_unique(n_p_mesh, n_t, n_m);
+    array<Type> proj_upsilon_stg_A_unique(n_p_mesh, n_t, n_groups, n_m);
     proj_epsilon_st_A_unique.setZero();
+    proj_upsilon_stg_A_unique.setZero();
 
     // Expanded to full length:
     array<Type> proj_omega_s_A(n_p, n_m);
     array<Type> proj_zeta_s_A(n_p, n_z, n_m);
     array<Type> proj_epsilon_st_A_vec(n_p, n_m);
+    array<Type> proj_upsilon_st_A_vec(n_groups > 0 ? n_p : 1, n_m);
     proj_omega_s_A.setZero(); // may not get filled
     proj_zeta_s_A.setZero(); // may not get filled
     proj_epsilon_st_A_vec.setZero(); // may not get filled
+    proj_upsilon_st_A_vec.setZero(); // may not get filled
 
     array<Type> proj_zeta_s_A_cov(n_p, n_z, n_m);
     proj_zeta_s_A_cov.setZero();
@@ -1557,6 +1628,14 @@ Type objective_function<Type>::operator()()
       for (int m = 0; m < n_m; m++) {
         for (int t = 0; t < n_t; t++) {
           proj_epsilon_st_A_unique.col(m).col(t) = proj_mesh * vector<Type>(epsilon_st.col(m).col(t));
+        }
+        if (n_groups > 0) {
+          for (int t = 0; t < n_t; t++) {
+            for (int g = 0; g < n_groups; g++) {
+              proj_upsilon_stg_A_unique.col(m).col(g).col(t) =
+                proj_mesh * vector<Type>(upsilon_stg.col(m).col(g).col(t));
+            }
+          }
         }
         if (!omit_spatial_intercept) proj_omega_s_A_unique.col(m) = proj_mesh * vector<Type>(omega_s.col(m));
       }
@@ -1575,6 +1654,10 @@ Type objective_function<Type>::operator()()
         for (int i = 0; i < n_p; i++) {
           proj_omega_s_A(i,m) = proj_omega_s_A_unique(proj_spatial_index(i),m);
           proj_epsilon_st_A_vec(i,m) = proj_epsilon_st_A_unique(proj_spatial_index(i), proj_year(i),m);
+          if (n_groups > 0) {
+            proj_upsilon_st_A_vec(i,m) =
+              proj_upsilon_stg_A_unique(proj_spatial_index(i), proj_year(i), proj_group_i(i), m);
+          }
           for (int z = 0; z < n_z; z++) {
             proj_zeta_s_A(i,z,m) = proj_zeta_s_A_unique(proj_spatial_index(i),z,m);
           }
@@ -1604,6 +1687,11 @@ Type objective_function<Type>::operator()()
     array<Type> proj_eta(n_p, n_m);
     for (int m = 0; m < n_m; m++)
       proj_rf.col(m) = proj_omega_s_A.col(m) + proj_epsilon_st_A_vec.col(m);
+    if (n_groups > 0) {
+      for (int m = 0; m < n_m; m++) {
+        proj_rf.col(m) += proj_upsilon_st_A_vec.col(m);
+      }
+    }
 
     for (int m = 0; m < n_m; m++)
       for (int z = 0; z < n_z; z++)
@@ -1716,6 +1804,7 @@ Type objective_function<Type>::operator()()
     REPORT(proj_fe);            // fixed effect projections
     REPORT(proj_omega_s_A);     // spatial random effect projections
     REPORT(proj_epsilon_st_A_vec);  // spatiotemporal random effect projections
+    if (n_groups > 0) REPORT(proj_upsilon_st_A_vec);  // grouped spatiotemporal random effect projections
     REPORT(proj_zeta_s_A);      // spatial slope projections
     // REPORT(proj_zeta_s_A_cov);  // spatial slope * covariate projections
     REPORT(proj_eta);           // combined projections (in link space)
@@ -2114,6 +2203,7 @@ Type objective_function<Type>::operator()()
   }
 
   REPORT(epsilon_st_A_vec);   // spatio-temporal effects; vector
+  if (n_groups > 0) REPORT(upsilon_st_A_vec);   // grouped spatio-temporal effects; vector
   REPORT(b_rw_t);   // time-varying effects
   REPORT(omega_s_A);      // spatial effects; n_s length vector
   REPORT(zeta_s_A);     // spatial covariate effects; n_s length vector
@@ -2132,6 +2222,7 @@ Type objective_function<Type>::operator()()
     REPORT(omega_s_A);
     REPORT(epsilon_st);
     REPORT(epsilon_st_A_vec);
+    if (n_groups > 0) REPORT(upsilon_st_A_vec);
     REPORT(zeta_s);
     REPORT(zeta_s_A);
   }

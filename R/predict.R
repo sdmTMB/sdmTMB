@@ -280,6 +280,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
   if (object$version < numeric_version("0.5.0.9001")) {
     cli_abort("This model was fit with an older version of sdmTMB before internal handling of `extra_time` was simplified. Please refit your model before predicting on it (or install version 0.5.0 or 0.5.0.9000).")
   }
+  grouped_model <- !is.null(object$groups)
 
   area <- 1
   sims <- nsim
@@ -426,6 +427,12 @@ predict.sdmTMB <- function(object, newdata = NULL,
         newdata[[xy_cols[2]]] <- NA_real_ # fake
       }
       newdata[["sdm_spatial_id"]] <- rep(0L, nrow(newdata)) # fake
+    }
+
+    proj_group_i <- if (grouped_model) {
+      make_predict_groups(object, newdata)
+    } else {
+      0L
     }
 
     e_g <- NULL
@@ -608,6 +615,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     tmb_data$proj_time_include <- as.integer(time_lu$time_from_data %in% nd[[object$time]])
     tmb_data$proj_lon <- newdata[[xy_cols[[1]]]]
     tmb_data$proj_lat <- newdata[[xy_cols[[2]]]]
+    tmb_data$proj_group_i <- proj_group_i
     tmb_data$calc_se <- as.integer(se_fit)
     tmb_data$pop_pred <- as.integer(pop_pred)
     tmb_data$exclude_RE <- exclude_RE
@@ -706,12 +714,13 @@ predict.sdmTMB <- function(object, newdata = NULL,
     }
     if (!is.null(mcmc_samples) || sims > 0) {
       if (return_tmb_report) return(r)
+      epsilon_sims_var <- if (grouped_model) "proj_upsilon_st_A_vec" else "proj_epsilon_st_A_vec"
       .var <-  switch(sims_var,
         "est" = "proj_eta",
         "est_rf" = "proj_rf",
         "omega_s" = "proj_omega_s_A",
         "zeta_s" = "proj_zeta_s_A",
-        "epsilon_st" = "proj_epsilon_st_A_vec",
+        "epsilon_st" = epsilon_sims_var,
         sims_var)
       out <- lapply(r, `[[`, .var)
 
@@ -815,6 +824,12 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
     lp <- new_tmb_obj$env$last.par.best
     r <- new_tmb_obj$report(lp)
+    proj_epsilon_name <- if (grouped_model && "proj_upsilon_st_A_vec" %in% names(r)) {
+      "proj_upsilon_st_A_vec"
+    } else {
+      "proj_epsilon_st_A_vec"
+    }
+    proj_epsilon_st <- r[[proj_epsilon_name]]
     if (return_tmb_report) return(r)
     if (has_distributed_lags) {
       par_list <- new_tmb_obj$env$parList(lp)
@@ -851,7 +866,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
         for (z in seq_len(dim(r$proj_zeta_s_A)[2])) { # SVC:
           nd[[paste0("zeta_s_", object$spatial_varying[z])]] <- r$proj_zeta_s_A[,z,1]
         }
-        nd$epsilon_st <- r$proj_epsilon_st_A_vec[,1]
+        nd$epsilon_st <- proj_epsilon_st[,1]
         if (has_delta_multi) {
           nd$est1 <- pred_vals$est1
           nd$est2 <- pred_vals$est2
@@ -869,8 +884,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
           nd[[paste0("zeta_s_", object$spatial_varying[z], "1")]] <- r$proj_zeta_s_A[,z,1]
           nd[[paste0("zeta_s_", object$spatial_varying[z], "2")]] <- r$proj_zeta_s_A[,z,2]
         }
-        nd$epsilon_st1 <- r$proj_epsilon_st_A_vec[,1]
-        nd$epsilon_st2 <- r$proj_epsilon_st_A_vec[,2]
+        nd$epsilon_st1 <- proj_epsilon_st[,1]
+        nd$epsilon_st2 <- proj_epsilon_st[,2]
         if (type == "response" && !se_fit) {
           nd$est1 <- object$family[[1]]$linkinv(nd$est1)
           nd$est2 <- object$family[[2]]$linkinv(nd$est2)
@@ -894,7 +909,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
         for (z in seq_len(dim(r$proj_zeta_s_A)[2])) { # SVC:
           nd[[paste0("zeta_s_", object$spatial_varying[z])]] <- r$proj_zeta_s_A[,z,1]
         }
-        nd$epsilon_st <- r$proj_epsilon_st_A_vec[,1]
+        nd$epsilon_st <- proj_epsilon_st[,1]
         if (type == "response") {
           nd$est <- object$family$linkinv(nd$est)
         }
@@ -1084,6 +1099,12 @@ predict.sdmTMB <- function(object, newdata = NULL,
     lp <- object$tmb_obj$env$last.par.best
     # object$tmb_obj$fn(lp) # call once to update internal structures?
     r <- object$tmb_obj$report(lp)
+    obs_epsilon_name <- if (grouped_model && "upsilon_st_A_vec" %in% names(r)) {
+      "upsilon_st_A_vec"
+    } else {
+      "epsilon_st_A_vec"
+    }
+    obs_epsilon_st <- r[[obs_epsilon_name]]
     if (has_distributed_lags) {
       par_list <- object$tmb_obj$env$parList(lp)
       dl_term_values <- .compute_distributed_lag_term_values(
@@ -1106,12 +1127,12 @@ predict.sdmTMB <- function(object, newdata = NULL,
     # The following is not an error,
     # IID and RW effects are baked into fixed effects for `newdata` in above code:
     nd$est_non_rf <- r$eta_fixed_i[,1] + r$eta_rw_i[,1] + r$eta_iid_re_i[,1] # DELTA FIXME
-    nd$est_rf <- r$omega_s_A[,1] + r$epsilon_st_A_vec[,1] # DELTA FIXME
+    nd$est_rf <- r$omega_s_A[,1] + obs_epsilon_st[,1] # DELTA FIXME
     nd$omega_s <- r$omega_s_A[,1]# DELTA FIXME
     for (z in seq_len(dim(r$zeta_s_A)[2])) { # SVC: # DELTA FIXME
       nd[[paste0("zeta_s_", object$spatial_varying[z])]] <- r$zeta_s_A[,z,1]
     }
-    nd$epsilon_st <- r$epsilon_st_A_vec[,1]# DELTA FIXME
+    nd$epsilon_st <- obs_epsilon_st[,1]# DELTA FIXME
     obj <- object
   }
 
@@ -1203,6 +1224,28 @@ check_time_class <- function(object, newdata) {
       cli_abort(msg)
     }
   }
+}
+
+make_predict_groups <- function(object, newdata) {
+  group_column <- object$groups
+  if (!group_column %in% names(newdata)) {
+    cli_abort(c(
+      "Prediction data are missing a required grouping column.",
+      "x" = paste0("Missing column `", group_column, "` referenced by `experimental$groups`.")
+    ))
+  }
+
+  group_levels <- object$group_levels
+  if (is.null(group_levels) &&
+    group_column %in% names(object$data) &&
+    is.factor(object$data[[group_column]])) {
+    group_levels <- levels(object$data[[group_column]])
+  }
+  if (is.null(group_levels)) {
+    cli_abort("Fitted object is missing `group_levels`; refit before predicting with `experimental$groups`.")
+  }
+
+  make_groups(newdata[[group_column]], prev_levels = group_levels)
 }
 
 check_visreg <- function(sys_calls) {

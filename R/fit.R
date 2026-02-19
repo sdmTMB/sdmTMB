@@ -769,7 +769,11 @@ sdmTMB <- function(
   epsilon_model <- NULL
   epsilon_predictor <- NULL
   distributed_lag_covariate_vertex_override <- NULL
+  groups <- NULL
   if (!is.null(experimental)) {
+    if (!is.list(experimental) || is.null(names(experimental))) {
+      cli_abort("`experimental` must be a named list.")
+    }
     if ("epsilon_predictor" %in% names(experimental)) {
       epsilon_predictor <- experimental$epsilon_predictor
     } else {
@@ -784,6 +788,9 @@ sdmTMB <- function(
 
     if ("distributed_lag_covariate_vertex" %in% names(experimental)) {
       distributed_lag_covariate_vertex_override <- experimental$distributed_lag_covariate_vertex
+    }
+    if ("groups" %in% names(experimental)) {
+      groups <- experimental$groups
     }
   }
 
@@ -829,6 +836,16 @@ sdmTMB <- function(
   assert_that(inherits(spde, "sdmTMBmesh"))
   assert_that(class(formula) %in% c("formula", "list"))
   assert_that(inherits(data, "data.frame"))
+  group_levels <- validate_experimental_groups(
+    groups = groups,
+    data = data,
+    delta = delta,
+    multi_family = multi_family,
+    spatiotemporal = spatiotemporal,
+    epsilon_model = epsilon_model,
+    epsilon_predictor = epsilon_predictor,
+    do_index = do_index
+  )
   time_varying_type <- match.arg(time_varying_type)
   # if (!is.null(map) && length(map) != length(start)) {
   #   cli_warn(c("`length(map) != length(start)`.",
@@ -1317,6 +1334,12 @@ sdmTMB <- function(
   time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
   n_t <- nrow(time_df)
   year_i_data <- time_df$year_i[match(data[[time]], time_df$time_from_data)]
+  n_groups <- 0L
+  group_i <- 0L
+  if (!is.null(groups)) {
+    group_i <- make_groups(data[[groups]])
+    n_groups <- length(group_levels)
+  }
 
   distributed_lags_data <- .build_distributed_lag_tmb_data(
     distributed_lags = distributed_lags_parsed,
@@ -1377,6 +1400,7 @@ sdmTMB <- function(
   tmb_data <- list(
     y_i = y_i,
     n_t = n_t,
+    n_groups = n_groups,
     z_i = z_i,
     offset_i = offset,
     proj_offset_i = 0,
@@ -1385,6 +1409,8 @@ sdmTMB <- function(
     sim_obs = 1L,
     A_spatial_index = spde$sdm_spatial_id - 1L,
     year_i = year_i_data,
+    group_i = group_i,
+    proj_group_i = 0L, # dummy
     distributed_lag_n_terms = distributed_lag_n_terms,
     distributed_lag_n_covariates = distributed_lag_n_covariates,
     distributed_lag_covariate_vertex_time = distributed_lag_covariate_vertex_time,
@@ -1505,6 +1531,7 @@ sdmTMB <- function(
     ln_tau_O = rep(0, n_m),
     ln_tau_Z = matrix(0, n_z, n_m),
     ln_tau_E = rep(0, n_m),
+    ln_tau_U = rep(0, n_m),
     ln_kappa = matrix(0, 2L, n_m),
     log_kappaS_dl = numeric(distributed_lag_n_covariates),
     log_kappaT_dl = numeric(distributed_lag_n_covariates),
@@ -1533,6 +1560,11 @@ sdmTMB <- function(
     omega_s = matrix(0, if (!omit_spatial_intercept) n_s else 0L, n_m),
     zeta_s = array(0, dim = c(n_s, n_z, n_m)),
     epsilon_st = array(0, dim = c(n_s, tmb_data$n_t, n_m)),
+    upsilon_stg = if (n_groups > 0L) {
+      array(0, dim = c(n_s, tmb_data$n_t, n_groups, n_m))
+    } else {
+      array(0, dim = c(1L, 1L, 1L, n_m))
+    },
     b_threshold = if (thresh[[1]]$threshold_func == 2L) matrix(0, 3L, n_m) else matrix(0, 2L, n_m),
     b_epsilon = rep(0, n_m),
     ln_epsilon_re_sigma = rep(0, n_m),
@@ -1568,6 +1600,10 @@ sdmTMB <- function(
   tmb_map$log_kappaS_dl <- .make_distributed_lag_kappa_map(distributed_lag_covariate_has_spatial)
   tmb_map$log_kappaT_dl <- .make_distributed_lag_kappa_map(distributed_lag_covariate_has_temporal)
   tmb_map$kappaST_dl_unscaled <- .make_distributed_lag_kappa_map(distributed_lag_covariate_has_spacetime)
+  if (n_groups == 0L) {
+    tmb_map$ln_tau_U <- factor(rep(NA, length(tmb_params$ln_tau_U)))
+    tmb_map$upsilon_stg <- factor(rep(NA, length(tmb_params$upsilon_stg)))
+  }
   if (delta) tmb_map$b_j2 <- NULL
   if (multi_family) {
     tmb_map$ln_phi <- factor(rep(NA, n_m))
@@ -1659,8 +1695,15 @@ sdmTMB <- function(
     tmb_map <- unmap(tmb_map, c("omega_s", "ln_tau_O"))
   }
   if (!all(spatiotemporal == "off")) {
-    tmb_random <- c(tmb_random, "epsilon_st")
-    tmb_map <- unmap(tmb_map, c("ln_tau_E", "epsilon_st"))
+    if (n_groups > 0L) {
+      tmb_random <- c(tmb_random, "upsilon_stg")
+      tmb_map <- unmap(tmb_map, c("ln_tau_U", "upsilon_stg"))
+      tmb_map$ln_tau_E <- factor(rep(NA, length(tmb_params$ln_tau_E)))
+      tmb_map$epsilon_st <- factor(rep(NA, length(tmb_params$epsilon_st)))
+    } else {
+      tmb_random <- c(tmb_random, "epsilon_st")
+      tmb_map <- unmap(tmb_map, c("ln_tau_E", "epsilon_st"))
+    }
   }
   if (!is.null(spatial_varying)) {
     tmb_random <- c(tmb_random, "zeta_s")
@@ -1881,6 +1924,8 @@ sdmTMB <- function(
       threshold_parameter = thresh[[1]]$threshold_parameter,
       threshold_function = thresh[[1]]$threshold_func,
       epsilon_predictor = epsilon_predictor,
+      groups = groups,
+      group_levels = group_levels,
       time = time,
       time_lu = time_df,
       family = family_input,
@@ -2313,6 +2358,62 @@ find_missing_time <- function(x) {
     allx <- seq(min(ti), max(ti), by = mindiff)
     setdiff(allx, ti)
   }
+}
+
+validate_experimental_groups <- function(
+    groups,
+    data,
+    delta,
+    multi_family,
+    spatiotemporal,
+    epsilon_model,
+    epsilon_predictor,
+    do_index) {
+  if (is.null(groups)) return(NULL)
+  if (!(is.character(groups) && length(groups) == 1L)) {
+    cli_abort("`experimental$groups` must be a single column name (character).")
+  }
+  if (!groups %in% names(data)) {
+    cli_abort("`experimental$groups` must match a column in `data`.")
+  }
+  if (!is.factor(data[[groups]])) {
+    cli_abort("The `experimental$groups` column in `data` must be a factor.")
+  }
+  if (any(is.na(data[[groups]]))) {
+    cli_abort("The `experimental$groups` column in `data` cannot contain `NA` values.")
+  }
+  if (delta) {
+    cli_abort("`experimental$groups` is not supported for delta models yet.")
+  }
+  if (multi_family) {
+    cli_abort("`experimental$groups` is not supported for multi-family models yet.")
+  }
+  if (!all(spatiotemporal == "rw")) {
+    cli_abort("`experimental$groups` currently requires `spatiotemporal = 'rw'` for all model components.")
+  }
+  if (!is.null(epsilon_model) || !is.null(epsilon_predictor)) {
+    cli_abort("`experimental$groups` is not currently compatible with `experimental$epsilon_model` or `experimental$epsilon_predictor`.")
+  }
+  if (do_index) {
+    cli_abort("`experimental$groups` is not currently compatible with `do_index = TRUE`.")
+  }
+  levels(data[[groups]])
+}
+
+make_groups <- function(x, prev_levels = NULL) {
+  assertthat::assert_that(inherits(x, "factor"), msg = "Group column is not a factor.")
+  if (any(is.na(x))) {
+    cli_abort("Group column cannot contain `NA` values.")
+  }
+  lvs <- levels(x)
+  vals <- unique(as.character(x))
+  if (is.null(prev_levels) && length(setdiff(lvs, vals))) {
+    cli_abort("Extra factor levels found in group column; remove with `droplevels()`.")
+  }
+  if (!is.null(prev_levels) && !identical(lvs, prev_levels)) {
+    cli_abort("Factor levels in the group column are not identical between fitted and prediction data.")
+  }
+  as.integer(x) - 1L
 }
 
 unmap <- function(x, v) {

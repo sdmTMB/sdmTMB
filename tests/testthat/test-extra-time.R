@@ -405,3 +405,41 @@ test_that("make_time_lu works", {
       scale_fill_viridis_c()
   }
 })
+
+test_that("grouped RW supports extra_time prediction", {
+  local_edition(2)
+  skip_on_cran()
+  skip_on_ci()
+
+  d <- subset(pcod, year %in% c(2003, 2005, 2007))
+  d <- d[seq_len(min(250L, nrow(d))), ]
+  d$grp <- factor(rep(c("a", "b"), length.out = nrow(d)))
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 30)
+
+  fit <- sdmTMB(
+    density ~ 1,
+    data = d,
+    time = "year",
+    mesh = mesh,
+    family = tweedie(link = "log"),
+    spatial = "off",
+    spatiotemporal = "rw",
+    extra_time = 2009,
+    experimental = list(groups = "grp")
+  )
+
+  p_fit <- predict(fit)
+  p_data <- predict(fit, newdata = d)
+
+  nd <- replicate_df(d, "year", sort(unique(c(d$year, fit$extra_time))))
+  nd$grp <- factor(nd$grp, levels = levels(d$grp))
+  p_nd <- predict(fit, newdata = nd)
+
+  expect_equal(p_fit$est, p_data$est, tolerance = 1e-6)
+  expect_equal(nrow(p_nd), nrow(nd))
+  expect_true(all(c(sort(unique(d$year)), fit$extra_time) %in% unique(p_nd$year)))
+  expect_equal(
+    nrow(subset(p_nd, year %in% fit$extra_time)),
+    nrow(subset(nd, year %in% fit$extra_time))
+  )
+})
