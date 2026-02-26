@@ -204,20 +204,22 @@ test_that("grouped RW C++ path fits as experimental", {
   nd_extra_level$grp <- factor(as.character(nd_extra_level$grp), levels = c(levels(s$grp), "c"))
   expect_error(
     predict(fit, newdata = nd_extra_level),
-    regexp = "not identical between fitted and prediction data"
+    regexp = "Extra factor levels found"
   )
 
   nd_reordered_levels <- s
   nd_reordered_levels$grp <- factor(as.character(nd_reordered_levels$grp), levels = rev(levels(s$grp)))
-  expect_error(
-    predict(fit, newdata = nd_reordered_levels),
-    regexp = "not identical between fitted and prediction data"
-  )
+  p_reordered_levels <- predict(fit, newdata = nd_reordered_levels)
+  expect_equal(p_reordered_levels$est, p_data$est, tolerance = 1e-6)
 
   nd_subset <- subset(s, grp == "a")
   nd_subset$grp <- factor(nd_subset$grp, levels = levels(s$grp))
   p_subset <- predict(fit, newdata = nd_subset)
   expect_equal(p_subset$est, p_data$est[s$grp == "a"], tolerance = 1e-6)
+
+  nd_subset_drop_levels <- droplevels(nd_subset)
+  p_subset_drop_levels <- predict(fit, newdata = nd_subset_drop_levels)
+  expect_equal(p_subset_drop_levels$est, p_data$est[s$grp == "a"], tolerance = 1e-6)
 
   nd_extra_time <- replicate_df(s, "year", 1:5)
   nd_extra_time$grp <- factor(nd_extra_time$grp, levels = levels(s$grp))
@@ -244,9 +246,21 @@ test_that("make_groups validates prediction levels against fit levels", {
     regexp = "cannot contain `NA` values"
   )
 
-  x_bad <- factor(c("a", "b"), levels = c("b", "a"))
+  x_missing <- factor(c("a", "a"), levels = "a")
+  expect_identical(make_groups(x_missing, prev_levels = c("a", "b")), c(0L, 0L))
+
+  x_unused <- factor(c("a", "b"), levels = c("a", "b", "unused"))
+  expect_error(
+    make_groups(x_unused, prev_levels = c("a", "b")),
+    regexp = "Extra factor levels found"
+  )
+
+  x_reordered <- factor(c("a", "b"), levels = c("b", "a"))
+  expect_identical(make_groups(x_reordered, prev_levels = c("a", "b")), c(0L, 1L))
+
+  x_bad <- factor(c("a", "c"), levels = c("a", "b", "c"))
   expect_error(
     make_groups(x_bad, prev_levels = c("a", "b")),
-    regexp = "not identical between fitted and prediction data"
+    regexp = "Extra factor levels found"
   )
 })

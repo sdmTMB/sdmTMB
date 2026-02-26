@@ -2410,8 +2410,16 @@ make_groups <- function(x, prev_levels = NULL) {
   if (is.null(prev_levels) && length(setdiff(lvs, vals))) {
     cli_abort("Extra factor levels found in group column; remove with `droplevels()`.")
   }
-  if (!is.null(prev_levels) && !identical(lvs, prev_levels)) {
-    cli_abort("Factor levels in the group column are not identical between fitted and prediction data.")
+  if (!is.null(prev_levels)) {
+    new_levels <- setdiff(lvs, prev_levels)
+    if (length(new_levels)) {
+      cli_abort(c(
+        "Extra factor levels found in group column that were not present in the fitted data.",
+        "x" = paste0("Extra levels: ", paste(new_levels, collapse = ", "), "."),
+        "i" = "Drop unused levels in `newdata` with `droplevels()`."
+      ))
+    }
+    return(match(as.character(x), prev_levels) - 1L)
   }
   as.integer(x) - 1L
 }
