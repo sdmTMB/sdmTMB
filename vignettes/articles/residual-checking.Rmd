@@ -194,6 +194,48 @@ AIC also supports including the 'a1' predictor.
 
 For help interpreting the DHARMa residual plots, see `vignette("DHARMa", package="DHARMa")`.
 
+# Extracting DHARMa residuals
+
+We can extract the DHARMa residuals if we want to plot them ourselves. E.g., lets extract the DHARMa residuals from a model and make a QQ plot for each year:
+
+```{r}
+pcod_dat <- pcod_2011
+fit_pcod <- sdmTMB(
+  density ~ factor(year), 
+  time = "year",
+  data = pcod_dat, 
+  mesh = pcod_mesh_2011, 
+  family = tweedie()
+)
+set.seed(1)
+
+# make sure to set return_DHARMa = TRUE:
+dh <- simulate(fit_pcod, nsim = 300, type = "mle-mvn") |> 
+  dharma_residuals(fit_pcod, return_DHARMa = TRUE)
+
+# add the DHARMa scaled residuals to the fitted data:
+pcod_dat$scaled_residuals <- dh$scaledResiduals
+
+# a little function to calculate the quantile-quantile values:
+make_qq <- function(x) {
+  u <- x$scaled_residuals
+  n <- length(u)
+  m <- seq_len(n) / (n + 1)
+  z <- qqplot(m, u, plot.it = FALSE)
+}
+
+# apply out function to each year:
+out <- group_by(pcod_dat, year) |> 
+  group_split() |> 
+  purrr::map_dfr(make_qq, .id = "year")
+
+# plot it
+ggplot(out, aes(x, y)) + 
+  facet_wrap(vars(year)) + 
+  geom_point() + 
+  geom_abline(intercept = 0, slope = 1)
+```
+
 # The need for one-sample residuals
 
 The above used random effects drawn as if they were observed once.
