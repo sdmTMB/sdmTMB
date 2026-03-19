@@ -196,7 +196,7 @@ For help interpreting the DHARMa residual plots, see `vignette("DHARMa", package
 
 # Extracting DHARMa residuals
 
-We can extract the DHARMa residuals if we want to plot them ourselves. E.g., lets extract the DHARMa residuals from a model and make a QQ plot for each year:
+We can extract the DHARMa residuals if we want to plot them ourselves. E.g., let's extract the DHARMa residuals from a model and make a QQ plot for each year:
 
 ```{r}
 pcod_dat <- pcod_2011
