@@ -216,7 +216,7 @@ dh <- simulate(fit_pcod, nsim = 300, type = "mle-mvn") |>
 # add the DHARMa scaled residuals to the fitted data:
 pcod_dat$scaled_residuals <- dh$scaledResiduals
 
-# a little function to calculate the quantile-quantile values:
+# a small function to calculate the quantile-quantile values:
 make_qq <- function(x) {
   u <- x$scaled_residuals
   n <- length(u)
@@ -224,7 +224,7 @@ make_qq <- function(x) {
   z <- qqplot(m, u, plot.it = FALSE)
 }
 
-# apply out function to each year:
+# apply our function to each year:
 out <- group_by(pcod_dat, year) |> 
   group_split() |> 
   purrr::map_dfr(make_qq, .id = "year")
