@@ -13,10 +13,14 @@ test_that("get_index works", {
   predictions <- predict(m, newdata = nd, return_tmb_object = TRUE)
   ind <- get_index(predictions, bias_correct = FALSE)
   ind
+  expect_s3_class(ind, "data.frame")
   expect_equal(ind$est, c(231093.53593233, 496535.536294892, 448246.178485261,
     123741.27252067, 186757.491613366, 354408.827465818, 319877.944093621,
     363284.968094093, 191744.545097374), tolerance = 1e-5)
-  expect_s3_class(ind, "data.frame")
+  expect_equal(ind$se_natural, c(34119.5010216887, 67987.7282245663, 
+    60432.8362168011, 19242.5241803067, 
+    28990.7319560472, 47539.6734588743, 44165.2634135574, 49344.1167299188, 
+    29289.6929311748), tolerance = 1e-4)
 
   indsp <- get_index_split(m, nd, nsplit = 2, bias_correct = FALSE)
   expect_equal(ind, indsp)
