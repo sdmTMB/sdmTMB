@@ -1,5 +1,8 @@
 # sdmTMB (development version)
 
+* Fix `se_natural` column in `get_index()` output. #523 
+  Thanks to @CataRoman and @gavinfay.
+
 * Fix `residuals()` for Poisson-link delta models so residuals use the
   correct inverse link for encounter and positive-component 
   mechanism(including offsets), avoiding spurious `NaN`/`Inf` values in
