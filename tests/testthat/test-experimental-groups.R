@@ -1,4 +1,4 @@
-test_that("experimental groups is parsed and plumbed", {
+test_that("experimental groups is parsed", {
   local_edition(2)
 
   d <- subset(pcod, year %in% c(2003, 2005, 2007))
@@ -220,6 +220,20 @@ test_that("grouped RW C++ path fits as experimental", {
   nd_subset_drop_levels <- droplevels(nd_subset)
   p_subset_drop_levels <- predict(fit, newdata = nd_subset_drop_levels)
   expect_equal(p_subset_drop_levels$est, p_data$est[s$grp == "a"], tolerance = 1e-6)
+
+  # Verify upsilon produces different predictions at same locations for different groups:
+  nd_grp_a <- head(nd_subset, 5L)
+  nd_grp_b <- nd_grp_a
+  nd_grp_b$grp <- factor(rep("b", nrow(nd_grp_b)), levels = levels(s$grp))
+  p_grp_a <- predict(fit, newdata = nd_grp_a)
+  p_grp_b <- predict(fit, newdata = nd_grp_b)
+  expect_equal(
+    p_grp_a$est - p_grp_b$est,
+    p_grp_a$epsilon_st - p_grp_b$epsilon_st,
+    tolerance = 1e-6
+  )
+  expect_false(isTRUE(all.equal(p_grp_a$epsilon_st, p_grp_b$epsilon_st)))
+  expect_false(isTRUE(all.equal(p_grp_a$est, p_grp_b$est)))
 
   nd_extra_time <- replicate_df(s, "year", 1:5)
   nd_extra_time$grp <- factor(nd_extra_time$grp, levels = levels(s$grp))
