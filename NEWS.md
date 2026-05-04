@@ -1,5 +1,9 @@
 # sdmTMB (development version)
 
+* Fix `se_natural` column in `get_index()` output. #523 
+  Thanks to @CataRoman and @gavinfay.
+
+
 * Fix `residuals()` for Poisson-link delta models so residuals use the
   correct inverse link for encounter and positive-component 
   mechanism(including offsets), avoiding spurious `NaN`/`Inf` values in
@@ -18,6 +22,10 @@
   
 * Add `tidy(..., effects = "dispersion")` output and a dedicated
   `print()` section for dispersion-model coefficients.
+
+* Fix `predict()` with `newdata` containing `NA` in the response column for
+  models with random effects. Predictions now work as expected when the response
+  column is present but unused for prediction. #508
 
 # sdmTMB 1.0.0
 

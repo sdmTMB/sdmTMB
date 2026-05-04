@@ -470,10 +470,21 @@ predict.sdmTMB <- function(object, newdata = NULL,
     Zt_list <- list()
 
     if (sum(object$tmb_data$n_re_groups) > 0 && isFALSE(pop_pred_iid)) {
+      re_formula_no_response <- stats::formula(
+        stats::delete.response(
+          stats::terms(remove_s_and_t2(object$smoothers$formula_no_sm))
+        )
+      )
       for (ii in seq_len(length(formula))) {
-        xx <- parse_formula(remove_s_and_t2(object$smoothers$formula_no_sm), nd)
         # factor level checks:
-        RE_names <- xx$barnames
+        RE_names <- barnames(reformulas::findbars(re_formula_no_response))
+        missing_RE_names <- setdiff(RE_names, names(newdata))
+        if (length(missing_RE_names) > 0) {
+          cli_abort(c(
+            "Random effect group column(s) missing from `newdata`: {.val {missing_RE_names}}.",
+            "i" = "Use `re_form_iid = NA` or `re_form_iid = ~0` to exclude random effects in prediction."
+          ))
+        }
         for (i in seq_along(RE_names)) {
           assert_that(is.factor(newdata[[RE_names[i]]]),
             msg = sprintf("Random effect group column `%s` in newdata is not a factor.", RE_names[i]))
@@ -489,7 +500,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
         # now do with a joint data frame to ensure factor levels match
         common_cols <- intersect(colnames(object$data), colnames(nd))
         joint_df <- rbind(object$data[,common_cols,drop=FALSE], nd[,common_cols,drop=FALSE])
-        xx <- parse_formula(object$smoothers$formula_no_sm, joint_df)
+        xx <- parse_formula(re_formula_no_response, joint_df)
         # drop the original data:
         Zt <- xx$re_cov_terms$Zt[,seq(nrow(object$data) + 1, nrow(object$data) + nrow(nd))]
         Zt_list[[ii]] <- Zt

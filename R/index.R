@@ -435,7 +435,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
   # also grab natural space SE:
   if ("link_total" %in% value_name) {
     .total <- ssr[row.names(ssr) %in% "total", , drop = FALSE]
-    d$se_natural <- as.numeric(.total[,1])
+    d$se_natural <- as.numeric(.total[,2])
   }
 
   time_include <- NULL
