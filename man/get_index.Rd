@@ -61,7 +61,8 @@ calculation while experimenting with models. See Thorson and Kristensen
 \item{area}{Grid cell area for area weighting the index. Can be: (1) a
 numeric vector of length \code{nrow(newdata)} with area for each grid cell, (2)
 a single numeric value to apply to all grid cells, or (3) a character value
-giving the column name in \code{newdata} containing areas.}
+giving the column name in \code{newdata} containing areas. See Details for
+non-spatial uses of \code{area} as an integration multiplier.}
 
 \item{silent}{Silent?}
 
@@ -109,6 +110,16 @@ intervals, and standard error of the estimates.
 \description{
 Extract a relative biomass/abundance index, center of gravity, effective
 area occupied, or weighted average
+}
+\details{
+More generally, \code{area} is the multiplier used to integrate response-scale
+predictions. For binomial or beta-binomial models fit to proportions with
+\code{weights} specifying the number of trials, predictions are expected
+proportions per trial. In that case, \code{area} can be used as a standard number
+of trials (e.g., hooks per longline set) to obtain an expected-count index.
+The original fitting \code{weights} are not automatically reused for index
+standardization; supply the desired standardization multiplier through
+\code{area}.
 }
 \examples{
 \dontshow{if (ggplot2_installed()) withAutoprint(\{ # examplesIf}
