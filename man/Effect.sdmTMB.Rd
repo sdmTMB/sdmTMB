@@ -21,7 +21,7 @@ Output from \code{\link[effects:effect]{effects::effect()}}. Can then be plotted
 Used by effects package
 }
 \examples{
-\dontshow{if (inla_installed() && require("effects", quietly = TRUE)) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+\dontshow{if (inla_installed() && require("effects", quietly = TRUE)) withAutoprint(\{ # examplesIf}
 fit <- sdmTMB(present ~ depth_scaled, data = pcod_2011, family = binomial(),
   spatial = "off")
 effects::effect("depth_scaled", fit)

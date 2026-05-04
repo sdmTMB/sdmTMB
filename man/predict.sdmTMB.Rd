@@ -135,7 +135,7 @@ Make predictions from an sdmTMB model; can predict on the original or new
 data.
 }
 \examples{
-\dontshow{if (ggplot2_installed() && inla_installed()) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+\dontshow{if (ggplot2_installed() && inla_installed()) withAutoprint(\{ # examplesIf}
 
 d <- pcod_2011
 mesh <- make_mesh(d, c("X", "Y"), cutoff = 30) # a coarse mesh for example speed

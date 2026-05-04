@@ -21,7 +21,7 @@ in \code{\link[=predict.sdmTMB]{predict.sdmTMB()}}.
 \ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}}
 }
 \examples{
-\dontshow{if (inla_installed() && require("tmbstan", quietly = TRUE) && ggplot2_installed()) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+\dontshow{if (inla_installed() && require("tmbstan", quietly = TRUE) && ggplot2_installed()) withAutoprint(\{ # examplesIf}
 \donttest{
 mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 35) # quite coarse
 

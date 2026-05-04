@@ -35,7 +35,7 @@ be enabled with \code{anisotropy = TRUE}. These plotting functions help visualiz
 that estimated anisotropy.
 }
 \examples{
-\dontshow{if (inla_installed() && ggplot2_installed()) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+\dontshow{if (inla_installed() && ggplot2_installed()) withAutoprint(\{ # examplesIf}
 mesh <- make_mesh(pcod_2011, c("X", "Y"), n_knots = 80, type = "kmeans")
 fit <- sdmTMB(
   data = pcod_2011,

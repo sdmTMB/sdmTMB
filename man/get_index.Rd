@@ -55,7 +55,7 @@ center of gravity coordinates.
 Extract a relative biomass/abundance index or a center of gravity
 }
 \examples{
-\dontshow{if (inla_installed()) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+\dontshow{if (inla_installed()) withAutoprint(\{ # examplesIf}
 \donttest{
 # Use a small number of knots for this example to make it fast:
 pcod_spde <- make_mesh(pcod, c("X", "Y"), n_knots = 60, type = "kmeans")

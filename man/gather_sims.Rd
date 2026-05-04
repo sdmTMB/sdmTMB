@@ -36,7 +36,7 @@ long-format data frame. The format matches the format in the \pkg{tidybayes}
 \code{spread_draws()} and \code{gather_draws()} functions.
 }
 \examples{
-\dontshow{if (inla_installed()) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+\dontshow{if (inla_installed()) withAutoprint(\{ # examplesIf}
 m <- sdmTMB(density ~ 0 + depth_scaled + depth_scaled2,
   data = pcod_2011, mesh = pcod_mesh_2011, family = tweedie(),
   spatiotemporal = "AR1", time = "year")

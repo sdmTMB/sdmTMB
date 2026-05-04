@@ -9,7 +9,7 @@ Methods for using the \pkg{emmeans} package with \pkg{sdmTMB}. The
 effects.
 }
 \examples{
-\dontshow{if (inla_installed() && require("emmeans", quietly = TRUE)) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+\dontshow{if (inla_installed() && require("emmeans", quietly = TRUE)) withAutoprint(\{ # examplesIf}
 mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
 fit <- sdmTMB(
   present ~ as.factor(year),

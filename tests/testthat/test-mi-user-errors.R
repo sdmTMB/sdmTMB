@@ -36,7 +36,7 @@ start[3,1] <- beta3
 start[4,1] <- Eo
 
 expect_error({
-m2 <- sdmTMB(y ~ logistic(mi), data = dat1, spatial = "off",
+m2 <- sdmTMB(y ~ logistic(mi), data = dat2, spatial = "off",
              family = lognormal(),
              control = sdmTMBcontrol(start = list(b_threshold = start)))
 }, regexp="Metabolic index calcuations require columns named 'po2' and 'invtemp'")
@@ -46,6 +46,16 @@ expect_error({
                family = lognormal(),
                control = sdmTMBcontrol(start = list(b_threshold = start)))
 }, regexp="Metabolic index calcuations require columns named 'po2' and 'invtemp'")
+})
+
+test_that("Metabolic index columns are passed in the expected order", {
+  dat <- data.frame(y = 1:3, invtemp = c(0.1, 0.2, 0.3), po2 = c(4, 5, 6))
+  thresh <- check_and_parse_thresh_params(y ~ logistic(mi), dat)
+
+  expect_equal(colnames(thresh$X_threshold), c("po2", "invtemp"))
+  expect_equal(thresh$X_threshold[, "po2"], dat$po2)
+  expect_equal(thresh$X_threshold[, "invtemp"], dat$invtemp)
+})
 
 test_that("Including mi column in data",{
   beta1 <- -0.4
@@ -75,6 +85,9 @@ test_that("Including mi column in data",{
 #Dataframe without mi
 dat <- data.frame(y = obs, po2 = po2, invtemp=invtemp)
 
+#Dataframe with columns in reverse order
+dat_reversed <- data.frame(y = obs, invtemp=invtemp, po2 = po2)
+
 #Dataframe includes mi
 dat3 <- data.frame(y = obs, po2 = po2, invtemp=invtemp, mi=mi)
 
@@ -89,9 +102,14 @@ m <- sdmTMB(y ~ logistic(mi), data = dat, spatial = "off",
             family = lognormal(),
             control = sdmTMBcontrol(start = list(b_threshold = start)))
 
-m4 <- sdmTMB(y ~ logistic(mi), data = dat4, spatial = "off",
+m_reversed <- sdmTMB(y ~ logistic(mi), data = dat_reversed, spatial = "off",
              family = lognormal(),
              control = sdmTMBcontrol(start = list(b_threshold = start)))
 
+m4 <- sdmTMB(y ~ logistic(mi), data = dat3, spatial = "off",
+             family = lognormal(),
+             control = sdmTMBcontrol(start = list(b_threshold = start)))
+
+expect_equal(m$model$par, m_reversed$model$par, tolerance = 0.1)
 expect_equal(m$model$par, m4$model$par, tolerance = 0.1)
 })

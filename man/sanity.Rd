@@ -22,7 +22,7 @@ An invisible named list of checks
 Sanity check of sdmTMB model
 }
 \examples{
-\dontshow{if (inla_installed()) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+\dontshow{if (inla_installed()) withAutoprint(\{ # examplesIf}
 fit <- sdmTMB(
   present ~ s(depth),
   data = pcod_2011, mesh = pcod_mesh_2011,

@@ -202,6 +202,14 @@ NULL
 #' selectivity in fisheries, and is parameterized by the points at which f(x) =
 #' 0.5 or 0.95. See the [threshold vignette](https://pbs-assess.github.io/sdmTMB/articles/threshold-models.html).
 #'
+#' A special metabolic-index threshold can be fit with `+ logistic(mi)`. Here,
+#' `mi` is a reserved name rather than a required column in `data`. \pkg{sdmTMB}
+#' estimates the temperature-sensitivity parameter `Eo` and internally computes
+#' the metabolic index as `po2 * exp(Eo * invtemp)`. This requires columns named
+#' `po2` for oxygen partial pressure and `invtemp` for inverse temperature in
+#' both the fitting data and any prediction data. The oxygen and inverse
+#' temperature columns can appear in any order in the data frame.
+#'
 #' Note that only a single threshold covariate can be included and the same covariate
 #' is included in both components for the delta families.
 #'

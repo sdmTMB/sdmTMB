@@ -85,7 +85,7 @@ plan(multisession)
 }\if{html}{\out{</div>}}
 }
 \examples{
-\dontshow{if (inla_installed()) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+\dontshow{if (inla_installed()) withAutoprint(\{ # examplesIf}
 mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 25)
 
 # Set parallel processing first if desired with the future package.

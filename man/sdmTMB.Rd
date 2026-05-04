@@ -237,6 +237,14 @@ function of the 50\% and 95\% values. This is similar to length- or size-based
 selectivity in fisheries, and is parameterized by the points at which f(x) =
 0.5 or 0.95. See the \href{https://pbs-assess.github.io/sdmTMB/articles/threshold-models.html}{threshold vignette}.
 
+A special metabolic-index threshold can be fit with \code{+ logistic(mi)}. Here,
+\code{mi} is a reserved name rather than a required column in \code{data}. \pkg{sdmTMB}
+estimates the temperature-sensitivity parameter \code{Eo} and internally computes
+the metabolic index as \code{po2 * exp(Eo * invtemp)}. This requires columns named
+\code{po2} for oxygen partial pressure and \code{invtemp} for inverse temperature in
+both the fitting data and any prediction data. The oxygen and inverse
+temperature columns can appear in any order in the data frame.
+
 Note that only a single threshold covariate can be included and the same covariate
 is included in both components for the delta families.
 
@@ -304,7 +312,7 @@ can be shared across the models.
 See the \href{https://pbs-assess.github.io/sdmTMB/articles/delta-models.html}{delta-model vignette}.
 }
 \examples{
-\dontshow{if (inla_installed() && require("visreg", quietly = TRUE)) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+\dontshow{if (inla_installed() && require("visreg", quietly = TRUE)) withAutoprint(\{ # examplesIf}
 library(sdmTMB)
 
 # Build an SPDE mesh with INLA:

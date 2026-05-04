@@ -211,7 +211,7 @@ check_and_parse_thresh_params <- function(formula, data) {
       found_cols <- names(data) %in% c("po2", "invtemp")
       if (sum(found_cols) != 2)
         cli_abort("Metabolic index calcuations require columns named 'po2' and 'invtemp'.")
-      X_threshold <- as.matrix(data[, found_cols])
+      X_threshold <- as.matrix(data[, c("po2", "invtemp")])
       n_par <- n_par + 1
     } else {
       X_threshold <- matrix(as.numeric(data[, names(data) == threshold_parameter, drop = TRUE], ncol = 1L))

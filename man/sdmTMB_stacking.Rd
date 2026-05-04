@@ -31,7 +31,7 @@ where log scores are used to generate the stacking of predictive
 distributions
 }
 \examples{
-\dontshow{if (inla_installed()) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+\dontshow{if (inla_installed()) withAutoprint(\{ # examplesIf}
 # Set parallel processing if desired. See 'Details' in ?sdmTMB_cv
 
 # Depth as quadratic:
