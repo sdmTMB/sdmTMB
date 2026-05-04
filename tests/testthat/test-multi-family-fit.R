@@ -145,7 +145,7 @@ test_that("Stage 2 multi-family supports extra-parameter families", {
     Gamma = Gamma(link = "log"),
     tweedie = tweedie(link = "log")
   )
-  supressWarnings(fit <- sdmTMB(
+  suppressWarnings(fit <- sdmTMB(
     y ~ 1,
     data = dat,
     spatial = "off",
