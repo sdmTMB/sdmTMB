@@ -14,9 +14,20 @@
 #' @param area Grid cell area for area weighting the index. Can be: (1) a
 #'   numeric vector of length `nrow(newdata)` with area for each grid cell, (2)
 #'   a single numeric value to apply to all grid cells, or (3) a character value
-#'   giving the column name in `newdata` containing areas.
+#'   giving the column name in `newdata` containing areas. See Details for
+#'   non-spatial uses of `area` as an integration multiplier.
 #' @param silent Silent?
 #' @param ... Passed to [TMB::sdreport()].
+#'
+#' @details
+#' More generally, `area` is the multiplier used to integrate response-scale
+#' predictions. For binomial or beta-binomial models fit to proportions with
+#' `weights` specifying the number of trials, predictions are expected
+#' proportions per trial. In that case, `area` can be used as a standard number
+#' of trials (e.g., hooks per longline set) to obtain an expected-count index.
+#' The original fitting `weights` are not automatically reused for index
+#' standardization; supply the desired standardization multiplier through
+#' `area`.
 #'
 #' @seealso [get_index_sims()]
 #' @return

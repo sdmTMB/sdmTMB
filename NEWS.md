@@ -4,6 +4,13 @@
 
 * Add covariate-diffusion article/vignette.
 
+* Update `get_index()` so index totals are reported on a log-total scale after
+  integrating response-scale predictions. This preserves existing behaviour for
+  log-link abundance models and allows binomial/beta-binomial proportion models,
+  including `logit` and `cloglog` links, to use `area` as an explicit
+  standardization multiplier (e.g., hooks per longline set) for expected-count
+  indices.
+
 * Fix `se_natural` column in `get_index()` output. #523 
   Thanks to @CataRoman and @gavinfay.
 

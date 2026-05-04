@@ -350,18 +350,23 @@ test_that("Betabinomial can be used with index standardization", {
   dat$trials <- n_trials
   dat$prop <- dat$successes / dat$trials
   dat$time <- 1L
-  m <- sdmTMB(
-    prop ~ 1,
-    data = dat,
-    family = betabinomial(),
-    weights = dat$trials,
-    spatial = "off",
-    spatiotemporal = "off",
-    time = "time"
-  )
-  nd <- data.frame(time = 1L)
-  p <- predict(m, newdata = nd, return_tmb_object = TRUE)
-  i <- get_index(p, area = 10) # 10 'trials'
-  expect_equal(i$est, stats::plogis(p$data$est) * 10)
-  expect_equal(i$est, 3.452362, tolerance = 1e-5)
+
+  for (link in c("logit", "cloglog")) {
+    fam <- betabinomial(link = link)
+    m <- sdmTMB(
+      prop ~ 1,
+      data = dat,
+      family = fam,
+      weights = dat$trials,
+      spatial = "off",
+      spatiotemporal = "off",
+      time = "time"
+    )
+    nd <- data.frame(time = 1L)
+    p <- predict(m, newdata = nd, return_tmb_object = TRUE)
+    i <- get_index(p, area = n_trials, bias_correct = FALSE)
+    expected <- fam$linkinv(p$data$est) * n_trials
+    expect_equal(i$est, expected)
+    expect_equal(i$log_est, log(expected))
+  }
 })

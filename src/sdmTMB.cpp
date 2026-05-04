@@ -1562,7 +1562,6 @@ Type objective_function<Type>::operator()()
       PARAMETER_VECTOR(eps_index);
       Type t1;
       Type t2;
-      int link_tmp;
 
       for (int i = 0; i < n_p; i++) {
         if (n_m > 1) { // delta model
@@ -1581,7 +1580,6 @@ Type objective_function<Type>::operator()()
             t2 = InverseLink(proj_eta(i,1), link(1));
             mu_combined(i) = t1 * t2;
           }
-          total(proj_year(i)) += mu_combined(i) * area_i(i);
         } else { // non-delta model
           if (truncated_dist) {
             // convert from mean of *un-truncated* to mean of *truncated* distribution
@@ -1590,17 +1588,13 @@ Type objective_function<Type>::operator()()
           } else  {
             mu_combined(i) = InverseLink(proj_eta(i,0), link(0));
           }
-          total(proj_year(i)) += mu_combined(i) * area_i(i);
         }
+
+        total(proj_year(i)) += mu_combined(i) * area_i(i);
       }
       vector<Type> link_total(n_t);
-      if (n_m > 1) {
-        link_tmp = link(1); // 2nd link should always be log/exp in this case
-      } else {
-        link_tmp = link(0);
-      }
       for (int i = 0; i < n_t; i++) {
-        link_total(i) = Link(total(i), link_tmp);
+        link_total(i) = log(total(i));
       }
       if (calc_index_totals) {
         REPORT(link_total);
