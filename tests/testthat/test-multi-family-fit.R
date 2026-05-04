@@ -145,7 +145,7 @@ test_that("Stage 2 multi-family supports extra-parameter families", {
     Gamma = Gamma(link = "log"),
     tweedie = tweedie(link = "log")
   )
-  fit <- sdmTMB(
+  supressWarnings(fit <- sdmTMB(
     y ~ 1,
     data = dat,
     spatial = "off",
@@ -153,7 +153,7 @@ test_that("Stage 2 multi-family supports extra-parameter families", {
     family = fam,
     distribution_column = "dist",
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
-  )
+  ))
   expect_s3_class(fit, "sdmTMB")
   expect_equal(fit$tmb_data$ln_phi_len, c(1L, 1L, 1L))
   expect_equal(fit$tmb_data$ln_phi_start, c(0L, 1L, 2L))
