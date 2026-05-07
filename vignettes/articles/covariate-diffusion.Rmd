@@ -1,0 +1,167 @@
+---
+title: "Estimating covariate diffusion with sdmTMB"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Estimating covariate diffusion with sdmTMB}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+**If the code in this vignette has not been evaluated, a rendered version is available on the [documentation site](https://sdmTMB.github.io/sdmTMB/index.html) under 'Articles'.**
+
+```{r setup, include = FALSE, cache=FALSE}
+ggplot_installed <- require("ggplot2", quietly = TRUE)
+pkgs <- ggplot_installed
+EVAL <- identical(Sys.getenv("NOT_CRAN"), "true") && pkgs
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.asp = 0.618,
+  eval = EVAL,
+  purl = EVAL
+)
+```
+
+```{r packages, message=FALSE, warning=TRUE}
+library(ggplot2)
+library(sdmTMB)
+theme_set(theme_light())
+```
+
+This vignette demonstrates a simple spatial covariate-diffusion model with simulated data.
+We will simulate a fine-scale predictor observed at sample locations and a spatially diffused effect. Then we will fit a model that estimates the lagged covariate from the fine-scale predictor.
+
+We will suppress this simulation chunk to avoid clutter.
+
+```{r simulate, include=FALSE}
+simulate_spatial_diffusion <- function(
+  n_obs = 1200,
+  cutoff = 0.05,
+  n_hotspots = 50,
+  hotspot_sd = 0.03,
+  kappaS = 6,
+  beta = 0.7,
+  sigma = 0.05,
+  seed = 1
+) {
+  set.seed(seed)
+
+  dat <- data.frame(
+    X = runif(n_obs),
+    Y = runif(n_obs)
+  )
+
+  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = cutoff)
+  A_st <- mesh$A_st
+  M0 <- mesh$spde$c0
+  M1 <- mesh$spde$g1
+
+  centers <- cbind(runif(n_hotspots), runif(n_hotspots))
+  weights <- rnorm(n_hotspots)
+  sq_dist <- outer(dat$X, centers[, 1], "-")^2 +
+    outer(dat$Y, centers[, 2], "-")^2
+  hotspot_field <- as.numeric(exp(-sq_dist / (2 * hotspot_sd^2)) %*% weights)
+
+  # Fine-scale observed covariate at each sample location.
+  x_fine <- as.numeric(scale(hotspot_field + rnorm(n_obs, sd = 0.25)))
+
+  # Map observations to mesh vertices with barycentric weights.
+  numerator <- as.vector(Matrix::crossprod(A_st, x_fine))
+  denominator <- as.vector(Matrix::crossprod(A_st, rep(1, n_obs)))
+  x_vertex <- numeric(ncol(A_st))
+  keep <- denominator > 0
+  x_vertex[keep] <- numerator[keep] / denominator[keep]
+
+  # Apply the same spatial covariate-diffusion operator used in the model:
+  # x_diffused = (M0 + kappaS^-2 * M1)^-1 * M0 * x_vertex
+  diffusion_matrix <- M0 + (1 / kappaS^2) * M1
+  x_vertex_diffused <- as.numeric(Matrix::solve(diffusion_matrix, M0 %*% x_vertex))
+  x_diffused <- as.numeric(A_st %*% x_vertex_diffused)
+
+  dat$x1 <- x_fine
+  dat$x1_truth <- x_diffused
+  dat$observed <- beta * dat$x1_truth + rnorm(n_obs, sd = sigma)
+
+  list(
+    data = dat,
+    mesh = mesh,
+    truth = list(beta = beta, kappaS = kappaS)
+  )
+}
+
+sim <- simulate_spatial_diffusion(seed = 1)
+dat <- sim$data
+mesh <- sim$mesh
+```
+
+## Fit a covariate-diffusion model
+
+Above, in a hidden chunk, we simulated these data:
+
+```{r}
+head(dat)
+```
+
+We have coordinates `X` and `Y`, a covariate we observe `x1`, our response `observed`, and `x1_truth`, which is the diffused value of `x1` that we wouldn't normally know.
+
+Normally, we'd start by creating a mesh with `make_mesh(data, c("X", "Y"), cutoff = 0.05)`, but our simulator already created one for us named `mesh`, so we'll use that.
+
+```{r}
+plot(mesh)
+```
+
+The response is a function of the smooth field, but we only provide the fine-scale predictor (`x1`) to the model. To fit a covariate diffusion model with spatial diffusion, we add the one sided formula `~ space(x1)` to the `covariate_diffusion` argument.
+
+```{r fit}
+fit <- sdmTMB(
+  observed ~ 1,
+  mesh = mesh,
+  covariate_diffusion = ~ space(x1),
+  spatial = "off",
+  data = dat
+)
+
+fit
+tidy(fit)
+tidy(fit, effects = "ran_pars")
+```
+
+## Plot the estimated diffusion kernel
+
+```{r plot-diffusion}
+plot_covariate_diffusion(fit, component = "space")
+```
+
+## Compare true and estimated diffused covariates
+
+```{r compare}
+pred <- predict(fit)
+pred$X <- dat$X
+pred$Y <- dat$Y
+
+cor(pred$diffusion_cov_space_x1, pred$x1_truth)
+
+g1 <- ggplot(pred, aes(X, Y, colour = x1)) +
+  geom_point(size = 0.7) +
+  scale_colour_gradient2() +
+  coord_equal() +
+  ggtitle("Fine-scale observed predictor (x1)")
+
+g2 <- ggplot(pred, aes(X, Y, colour = x1_truth)) +
+  geom_point(size = 0.7) +
+  scale_colour_gradient2() +
+  coord_equal() +
+  ggtitle("True diffused covariate (from simulation)")
+
+g3 <- ggplot(pred, aes(X, Y, colour = diffusion_cov_space_x1)) +
+  geom_point(size = 0.7) +
+  scale_colour_gradient2() +
+  coord_equal() +
+  ggtitle("Estimated lagged covariate")
+
+print(g1)
+print(g2)
+print(g3)
+```

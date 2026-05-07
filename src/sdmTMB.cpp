@@ -2,6 +2,7 @@
 #define EIGEN_DONT_PARALLELIZE
 #include <TMB.hpp>
 #include "utils.h"
+#include "covariate-diffusion.h"
 // #include <omp.h>
 
 enum valid_family {
@@ -164,6 +165,14 @@ Type objective_function<Type>::operator()()
   DATA_VECTOR(proj_offset_i); // optional offset
 
   DATA_INTEGER(n_t);  // number of years
+  DATA_INTEGER(covariate_diffusion_n_terms);
+  DATA_INTEGER(covariate_diffusion_n_covariates);
+  DATA_ARRAY(covariate_diffusion_covariate_vertex_time);
+  DATA_IVECTOR(covariate_diffusion_covariate_has_spatial);
+  DATA_IVECTOR(covariate_diffusion_covariate_has_temporal);
+  DATA_IVECTOR(covariate_diffusion_covariate_has_spacetime);
+  DATA_IVECTOR(covariate_diffusion_term_component);
+  DATA_IVECTOR(covariate_diffusion_term_covariate);
 
   // Random effects
   DATA_IMATRIX(re_cov_df); // dataframe describing the random effects covariance parameters
@@ -239,6 +248,7 @@ Type objective_function<Type>::operator()()
   DATA_FACTOR(proj_year);
   DATA_MATRIX(proj_z_i);
   DATA_IVECTOR(proj_spatial_index);
+  DATA_ARRAY(proj_covariate_diffusion_covariate_vertex_time);
 
   DATA_IVECTOR(spatial_only); // !spatial_only means include spatiotemporal(!)
   DATA_INTEGER(spatial_covariate); // include SVC?
@@ -276,6 +286,9 @@ Type objective_function<Type>::operator()()
   PARAMETER_ARRAY(ln_tau_Z);    // optional spatially varying covariate process
   PARAMETER_VECTOR(ln_tau_E);    // spatio-temporal process
   PARAMETER_ARRAY(ln_kappa);    // Matern parameter
+  PARAMETER_VECTOR(log_kappaS_dl);    // covariate diffusion spatial scale
+  PARAMETER_VECTOR(log_kappaT_dl);    // covariate diffusion temporal scale
+  PARAMETER_VECTOR(kappaST_dl_unscaled);    // covariate diffusion interaction scale
 
   PARAMETER(thetaf);           // tweedie only
   PARAMETER(ln_student_df);    // student-t df (log(df - 1))
@@ -328,6 +341,33 @@ Type objective_function<Type>::operator()()
   vector<Type> rho(n_m);
   for (int m = 0; m < n_m; m++) rho(m) = sdmTMB::minus_one_to_one(ar1_phi(m));
   vector<Type> phi = exp(ln_phi);
+  if (log_kappaS_dl.size() != covariate_diffusion_n_covariates ||
+      log_kappaT_dl.size() != covariate_diffusion_n_covariates ||
+      kappaST_dl_unscaled.size() != covariate_diffusion_n_covariates) {
+    error("Distributed lag parameter vectors must have length `covariate_diffusion_n_covariates`.");
+  }
+  if (covariate_diffusion_covariate_has_spatial.size() != covariate_diffusion_n_covariates ||
+      covariate_diffusion_covariate_has_temporal.size() != covariate_diffusion_n_covariates ||
+      covariate_diffusion_covariate_has_spacetime.size() != covariate_diffusion_n_covariates) {
+    error("Distributed lag covariate component indicators must have length `covariate_diffusion_n_covariates`.");
+  }
+  vector<Type> kappaS_dl_by_covariate(covariate_diffusion_n_covariates);
+  vector<Type> kappaT_dl_by_covariate(covariate_diffusion_n_covariates);
+  vector<Type> kappaST_dl_by_covariate(covariate_diffusion_n_covariates);
+  kappaS_dl_by_covariate.setZero();
+  kappaT_dl_by_covariate.setZero();
+  kappaST_dl_by_covariate.setZero();
+  for (int cov_i = 0; cov_i < covariate_diffusion_n_covariates; cov_i++) {
+    if (covariate_diffusion_covariate_has_spatial(cov_i) == 1) {
+      kappaS_dl_by_covariate(cov_i) = exp(log_kappaS_dl(cov_i));
+    }
+    if (covariate_diffusion_covariate_has_temporal(cov_i) == 1) {
+      kappaT_dl_by_covariate(cov_i) = exp(log_kappaT_dl(cov_i));
+    }
+    if (covariate_diffusion_covariate_has_spacetime(cov_i) == 1) {
+      kappaST_dl_by_covariate(cov_i) = -invlogit(kappaST_dl_unscaled(cov_i));
+    }
+  }
 
   // ------------------ Geospatial ---------------------------------------------
 
@@ -767,6 +807,30 @@ Type objective_function<Type>::operator()()
     if (m == 0) eta_fixed_i.col(m) = X_ij(m) * b_j;
     if (m == 1) eta_fixed_i.col(m) = X_ij(m) * b_j2;
   }
+  auto add_dl_obs_for_model = [&](const vector<Type>& b_model, int model_col) {
+    sdmTMB::CovariateDiffusionContext<Type> dl_ctx = {
+      covariate_diffusion_n_terms,
+      covariate_diffusion_n_covariates,
+      n_i,
+      n_t,
+      covariate_diffusion_term_component,
+      covariate_diffusion_term_covariate,
+      covariate_diffusion_covariate_vertex_time,
+      A_st,
+      A_spatial_index,
+      year_i,
+      spde.M0,
+      spde.M1,
+      kappaS_dl_by_covariate,
+      kappaT_dl_by_covariate,
+      kappaST_dl_by_covariate,
+      b_model,
+      model_col
+    };
+    sdmTMB::add_covariate_diffusion_to_eta_fixed(eta_fixed_i, dl_ctx);
+  };
+  add_dl_obs_for_model(b_j, 0);
+  if (n_m > 1) add_dl_obs_for_model(b_j2, 1);
 
   // FIXME delta must be same in 2 components:
   // p-splines/smoothers
@@ -1229,8 +1293,35 @@ Type objective_function<Type>::operator()()
 
     for (int m = 0; m < n_m; m++) {
       if (m == 0) proj_fe.col(m) = proj_X_ij(m) * b_j;
+      if (m == 1) proj_fe.col(m) = proj_X_ij(m) * b_j2;
+    }
+    auto add_dl_proj_for_model = [&](const vector<Type>& b_model, int model_col) {
+      sdmTMB::CovariateDiffusionContext<Type> dl_ctx = {
+        covariate_diffusion_n_terms,
+        covariate_diffusion_n_covariates,
+        n_p,
+        n_t,
+        covariate_diffusion_term_component,
+        covariate_diffusion_term_covariate,
+        proj_covariate_diffusion_covariate_vertex_time,
+        proj_mesh,
+        proj_spatial_index,
+        proj_year,
+        spde.M0,
+        spde.M1,
+        kappaS_dl_by_covariate,
+        kappaT_dl_by_covariate,
+        kappaST_dl_by_covariate,
+        b_model,
+        model_col
+      };
+      sdmTMB::add_covariate_diffusion_to_eta_fixed(proj_fe, dl_ctx);
+    };
+    add_dl_proj_for_model(b_j, 0);
+    if (n_m > 1) add_dl_proj_for_model(b_j2, 1);
+    for (int m = 0; m < n_m; m++) {
       if (n_m == 1) proj_fe.col(m) += proj_offset_i;
-      if (m == 1) proj_fe.col(m) = proj_X_ij(m) * b_j2 + proj_offset_i;
+      if (m == 1) proj_fe.col(m) += proj_offset_i;
     }
 
     // add threshold effect if specified
@@ -1632,6 +1723,41 @@ Type objective_function<Type>::operator()()
     ADREPORT(range);        // Matern approximate distance at 10% correlation
     REPORT(log_range);  // log Matern approximate distance at 10% correlation
     ADREPORT(log_range);  // log Matern approximate distance at 10% correlation
+  }
+  if (covariate_diffusion_n_terms > 0) {
+    int n_S = 0, n_T = 0, n_ST = 0;
+    for (int i = 0; i < covariate_diffusion_n_covariates; i++) {
+      if (covariate_diffusion_covariate_has_spatial(i) == 1)   n_S++;
+      if (covariate_diffusion_covariate_has_temporal(i) == 1)  n_T++;
+      if (covariate_diffusion_covariate_has_spacetime(i) == 1) n_ST++;
+    }
+    vector<Type> kappaS_dl(n_S), kappaT_dl(n_T), kappaST_dl(n_ST);
+    vector<Type> rhoT(n_T), MSD(n_S), RMSD(n_S);
+    int iS = 0, iT = 0, iST = 0;
+    for (int i = 0; i < covariate_diffusion_n_covariates; i++) {
+      if (covariate_diffusion_covariate_has_temporal(i) == 1) {
+        kappaT_dl(iT) = kappaT_dl_by_covariate(i);
+        rhoT(iT) = kappaT_dl_by_covariate(i) / (Type(1.0) + kappaT_dl_by_covariate(i));
+        iT++;
+      }
+      if (covariate_diffusion_covariate_has_spacetime(i) == 1) {
+        kappaST_dl(iST++) = kappaST_dl_by_covariate(i);
+      }
+      if (covariate_diffusion_covariate_has_spatial(i) == 1) {
+        kappaS_dl(iS) = kappaS_dl_by_covariate(i);
+        Type m = Type(4.0) / (kappaS_dl_by_covariate(i) * kappaS_dl_by_covariate(i));
+        if (covariate_diffusion_covariate_has_temporal(i) == 1) {
+          Type r = kappaT_dl_by_covariate(i) / (Type(1.0) + kappaT_dl_by_covariate(i));
+          m = m * (Type(1.0) - r);
+        }
+        MSD(iS) = m;
+        RMSD(iS) = sqrt(m);
+        iS++;
+      }
+    }
+    if (n_S > 0)  { REPORT(kappaS_dl);  ADREPORT(kappaS_dl); REPORT(MSD); REPORT(RMSD); ADREPORT(MSD); ADREPORT(RMSD); }
+    if (n_T > 0)  { REPORT(kappaT_dl);  ADREPORT(kappaT_dl); REPORT(rhoT); ADREPORT(rhoT); }
+    if (n_ST > 0) { REPORT(kappaST_dl); ADREPORT(kappaST_dl); }
   }
 
   // only ADREPORT phi if a family uses it:

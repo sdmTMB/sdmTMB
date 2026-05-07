@@ -131,6 +131,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   .formula <- remove_s_and_t2(.formula)
   if (!"mgcv" %in% names(x)) x[["mgcv"]] <- FALSE
   fe_names <- colnames(model.matrix(.formula, x$data))
+  if (!is.null(x$covariate_diffusion_data)) {
+    fe_names <- c(fe_names, x$covariate_diffusion_data$term_coef_name)
+  }
 
   b_j <- est$b_j[!fe_names == "offset", drop = TRUE]
   b_j_se <- se$b_j[!fe_names == "offset", drop = TRUE]
@@ -294,6 +297,50 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
       conf.low = rho_lwr, conf.high = rho_upr, stringsAsFactors = FALSE
     )
     ii <- ii + 1
+  }
+
+  add_covariate_diffusion_parameter <- function(term_name, covariate_mask_name) {
+    if (is.null(x$covariate_diffusion_data) || !length(x$covariate_diffusion_data$covariates)) {
+      return(NULL)
+    }
+    covariates <- x$covariate_diffusion_data$covariates
+    keep <- x$covariate_diffusion_data[[covariate_mask_name]]
+    if (is.null(keep) || length(keep) != length(covariates)) {
+      return(NULL)
+    }
+    keep_idx <- which(as.logical(keep))
+    if (!length(keep_idx) || is.null(est[[term_name]])) {
+      return(NULL)
+    }
+    estimates <- rep(NA_real_, length(covariates))
+    ses <- rep(NA_real_, length(covariates))
+    estimates[keep_idx] <- est[[term_name]]
+    if (!is.null(se[[term_name]])) {
+      ses[keep_idx] <- se[[term_name]]
+    }
+    out <- data.frame(
+      term = paste0(term_name, "[", covariates, "]"),
+      estimate = estimates,
+      std.error = ses,
+      conf.low = estimates - crit * ses,
+      conf.high = estimates + crit * ses,
+      stringsAsFactors = FALSE
+    )
+    out[keep_idx, , drop = FALSE]
+  }
+  dl_term_masks <- c(
+    kappaS_dl = "covariate_has_spatial",
+    kappaT_dl = "covariate_has_temporal",
+    kappaST_dl = "covariate_has_spacetime",
+    rhoT = "covariate_has_temporal",
+    MSD = "covariate_has_spatial",
+    RMSD = "covariate_has_spatial"
+  )
+  for (term_name in names(dl_term_masks)) {
+    term_df <- add_covariate_diffusion_parameter(term_name, dl_term_masks[[term_name]])
+    if (!is.null(term_df)) {
+      out_re[[paste0("covariate_diffusion_", term_name)]] <- term_df
+    }
   }
 
   if (all(!x$tmb_data$include_spatial) && all(x$tmb_data$spatial_only)) out_re$range <- NULL

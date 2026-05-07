@@ -106,6 +106,8 @@ A data frame:
 \item \code{omega_s}: Spatial random field (models consistent spatial patterns)
 \item \code{zeta_s}: Spatially varying coefficient field (models how effects vary across space)
 \item \code{epsilon_st}: Spatiotemporal random field (models spatial patterns that vary over time)
+\item \verb{diffusion_cov_*}: Covariate diffusion transformed covariate values (one column per
+covariate-diffusion term; available when \code{covariate_diffusion} were fitted)
 }
 
 If \code{return_tmb_object = TRUE} (and \code{nsim = 0} and \code{mcmc_samples = NULL}):

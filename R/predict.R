@@ -77,6 +77,8 @@
 #' * `omega_s`: Spatial random field (models consistent spatial patterns)
 #' * `zeta_s`: Spatially varying coefficient field (models how effects vary across space)
 #' * `epsilon_st`: Spatiotemporal random field (models spatial patterns that vary over time)
+#' * `diffusion_cov_*`: Covariate diffusion transformed covariate values (one column per
+#'   covariate-diffusion term; available when `covariate_diffusion` were fitted)
 #'
 #' If `return_tmb_object = TRUE` (and `nsim = 0` and `mcmc_samples = NULL`):
 #'
@@ -323,14 +325,16 @@ predict.sdmTMB <- function(object, newdata = NULL,
   tmb_data <- object$tmb_data
   tmb_data$do_predict <- 1L
   no_spatial <- as.logical(object$tmb_data$no_spatial)
+  has_covariate_diffusion <- !is.null(object$covariate_diffusion_data)
 
   if (!is.null(newdata)) {
-    if (any(!xy_cols %in% names(newdata)) && isFALSE(pop_pred) && !no_spatial)
+    needs_xy <- if (has_covariate_diffusion) TRUE else isFALSE(pop_pred) && !no_spatial
+    if (any(!xy_cols %in% names(newdata)) && needs_xy)
       cli_abort(c("`xy_cols` (the column names for the x and y coordinates) are not in `newdata`.",
           "Did you miss specifying the argument `xy_cols` to match your data?",
           "The newer `make_mesh()` (vs. `make_spde()`) takes care of this for you."))
 
-    if (isFALSE(pop_pred) && !no_spatial) {
+    if (isFALSE(pop_pred) && (!no_spatial || has_covariate_diffusion)) {
       xy_orig <- object$data[,xy_cols]
       xy_nd <- newdata[,xy_cols]
       all_outside <- function(x1, x2) {
@@ -360,6 +364,15 @@ predict.sdmTMB <- function(object, newdata = NULL,
         "If you would like to predict on new time elements,",
         "see the `extra_time` argument in `?sdmTMB`.")
       )
+    if (has_covariate_diffusion &&
+      !is.null(object$covariate_diffusion_parsed) &&
+      isTRUE(object$covariate_diffusion_parsed$needs_time) &&
+      !setequal(new_data_time, original_time)) {
+      cli_abort(c(
+        "Temporal covariate-diffusion prediction currently requires full time coverage in `newdata`.",
+        "i" = "Include exactly the same time values used in the fitted model."
+      ))
+    }
 
     # If making population predictions (with standard errors), we don't need
     # to worry about space, so fill in dummy values if the user hasn't made any:
@@ -381,7 +394,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
     newdata$sdm_orig_id <- seq(1L, nrow(newdata))
 
-    if (!no_spatial) {
+    if (!no_spatial || has_covariate_diffusion) {
       if (requireNamespace("dplyr", quietly = TRUE)) { # faster
         unique_newdata <- dplyr::distinct(newdata[, xy_cols, drop = FALSE])
       } else {
@@ -500,6 +513,18 @@ predict.sdmTMB <- function(object, newdata = NULL,
       mf <- model.frame(Terms, newdata, xlev = object$xlevels[[i]])
       proj_X_ij[[i]] <- model.matrix(Terms, mf, contrasts.arg = object$contrasts[[i]])
     }
+    if (has_covariate_diffusion) {
+      proj_X_ij[[1]] <- .append_covariate_diffusion_coef_columns(
+        X = proj_X_ij[[1]],
+        coef_names = object$covariate_diffusion_data$term_coef_name
+      )
+      if (isTRUE(object$family$delta)) {
+        proj_X_ij[[2]] <- .append_covariate_diffusion_coef_columns(
+          X = proj_X_ij[[2]],
+          coef_names = object$covariate_diffusion_data$term_coef_name
+        )
+      }
+    }
 
     # TODO DELTA hardcoded to 1:
     sm <- parse_smoothers(object$smoothers$formula_no_bars, data = object$data,
@@ -546,6 +571,18 @@ predict.sdmTMB <- function(object, newdata = NULL,
     tmb_data$pop_pred <- as.integer(pop_pred)
     tmb_data$exclude_RE <- exclude_RE
     tmb_data$proj_spatial_index <- newdata$sdm_spatial_id
+    tmb_data$proj_covariate_diffusion_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
+    if (has_covariate_diffusion) {
+      proj_dl_data <- .build_covariate_diffusion_tmb_data(
+        covariate_diffusion = object$covariate_diffusion_parsed,
+        data = nd,
+        A_st = proj_mesh,
+        A_spatial_index = nd$sdm_spatial_id,
+        year_i = tmb_data$proj_year,
+        n_t = tmb_data$n_t
+      )
+      tmb_data$proj_covariate_diffusion_covariate_vertex_time <- proj_dl_data$covariate_vertex_time
+    }
     tmb_data$proj_Zs <- sm$Zs
     tmb_data$proj_Xs <- sm$Xs
 
@@ -717,6 +754,16 @@ predict.sdmTMB <- function(object, newdata = NULL,
     lp <- new_tmb_obj$env$last.par.best
     r <- new_tmb_obj$report(lp)
     if (return_tmb_report) return(r)
+    if (has_covariate_diffusion) {
+      nd <- .append_covariate_diffusion_term_values(
+        nd, object, new_tmb_obj, lp,
+        covariate_vertex_time = tmb_data$proj_covariate_diffusion_covariate_vertex_time,
+        A_st = tmb_data$proj_mesh,
+        A_spatial_index = tmb_data$proj_spatial_index,
+        year_i = tmb_data$proj_year,
+        n_t = tmb_data$n_t
+      )
+    }
 
     if (isFALSE(pop_pred)) {
       if (isTRUE(object$family$delta)) {
@@ -882,6 +929,16 @@ predict.sdmTMB <- function(object, newdata = NULL,
     lp <- object$tmb_obj$env$last.par.best
     # object$tmb_obj$fn(lp) # call once to update internal structures?
     r <- object$tmb_obj$report(lp)
+    if (has_covariate_diffusion) {
+      nd <- .append_covariate_diffusion_term_values(
+        nd, object, object$tmb_obj, lp,
+        covariate_vertex_time = object$tmb_data$covariate_diffusion_covariate_vertex_time,
+        A_st = object$tmb_data$A_st,
+        A_spatial_index = object$tmb_data$A_spatial_index,
+        year_i = object$tmb_data$year_i,
+        n_t = object$tmb_data$n_t
+      )
+    }
 
     nd$est <- r$eta_i[,1] # DELTA FIXME
     # The following is not an error,

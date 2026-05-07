@@ -41,6 +41,21 @@ print_model_info <- function(x) {
 
   mesh <- paste0("Mesh: ", extract_call_name(x$call$mesh), " (", covariance, " covariance)\n")
   data <- paste0("Data: ", extract_call_name(x$call$data), "\n")
+  covariate_diffusion <- NULL
+  if (!is.null(x$covariate_diffusion_parsed) &&
+      !is.null(x$covariate_diffusion_parsed$terms) &&
+      nrow(x$covariate_diffusion_parsed$terms) > 0L) {
+    dl_terms <- x$covariate_diffusion_parsed$terms
+    dl_labels <- paste0(dl_terms$component, "(", dl_terms$variable, ")")
+    covariate_diffusion <- paste0("Distributed lags: ", paste(dl_labels, collapse = " + "), "\n")
+  } else if ("covariate_diffusion" %in% names(x$call)) {
+    dl_name <- extract_call_name(x$call$covariate_diffusion)
+    if (!is.null(dl_name) && dl_name != "NULL") {
+      covariate_diffusion <- paste0("Distributed lags: ", dl_name, "\n")
+      covariate_diffusion <- gsub('\\"', "", covariate_diffusion)
+      covariate_diffusion <- gsub("\\'", "", covariate_diffusion)
+    }
+  }
 
   if ("clean_name" %in% names(x$family)) {
     overall_family <- x$family$clean_name
@@ -70,6 +85,7 @@ print_model_info <- function(x) {
     family1,
     family2,
     overall_family,
+    covariate_diffusion,
     criterion,
     covariance
   )
@@ -432,6 +448,14 @@ print_other_parameters <- function(x, m = 1L) {
     }
     a
   }
+  covariate_diffusion_term_text <- function(term_prefix = "", pretext = "") {
+    idx <- grepl(paste0("^", term_prefix, "\\["), b$term)
+    if (!any(idx)) {
+      return("")
+    }
+    a <- paste0(b$term[idx], "=", mround(b$estimate[idx], 2L))
+    paste0(pretext, ": ", paste(a, collapse = ", "), "\n")
+  }
 
   phi <- get_term_text("phi", "Dispersion parameter")
   tweedie_p <- get_term_text("tweedie_p", "Tweedie p")
@@ -444,6 +468,8 @@ print_other_parameters <- function(x, m = 1L) {
   sigma_E <- get_term_text("sigma_E",
     paste0("Spatiotemporal ", xtra, toupper(x$spatiotemporal[m]), " SD"))
   rho <- get_term_text("rho", "Spatiotemporal AR1 correlation (rho)")
+  rhoT <- covariate_diffusion_term_text("rhoT", "Distributed lag temporal persistence")
+  RMSD <- covariate_diffusion_term_text("RMSD", "Distributed lag RMSD")
 
   if ("sigma_Z" %in% b$term) {
     # tidy() takes sigma_Z from the sdreport,
@@ -459,7 +485,7 @@ print_other_parameters <- function(x, m = 1L) {
     sigma_Z <- ""
   }
 
-  named_list(phi, tweedie_p, student_df, sigma_O, sigma_E, sigma_Z, rho, gengamma_par)
+  named_list(phi, tweedie_p, student_df, sigma_O, sigma_E, sigma_Z, rho, rhoT, RMSD, gengamma_par)
 }
 
 print_header <- function(x) {
@@ -469,6 +495,7 @@ print_header <- function(x) {
   cat(info$mesh)
   cat(info$time)
   cat(info$data)
+  cat(info$covariate_diffusion)
   cat(info$overall_family)
 }
 
@@ -518,10 +545,12 @@ print_one_model <- function(x, m = 1, edf = FALSE, silent = FALSE) {
   cat(other$student_df)
   cat(other$gengamma_par)
   cat(other$rho)
+  cat(other$rhoT)
   cat(range)
   cat(other$sigma_O)
   cat(other$sigma_Z)
   cat(other$sigma_E)
+  cat(other$RMSD)
 }
 print_footer <- function(x) {
   info <- print_model_info(x)

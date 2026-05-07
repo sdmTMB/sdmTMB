@@ -31,6 +31,7 @@ sdmTMB(
   do_index = FALSE,
   predict_args = NULL,
   index_args = NULL,
+  covariate_diffusion = NULL,
   experimental = NULL
 )
 }
@@ -191,6 +192,11 @@ to \code{\link[=get_index]{get_index()}}.}
 \code{do_index = TRUE}. Currently, only \code{area} is supported. Bias correction
 can be done when calling \code{\link[=get_index]{get_index()}} on the resulting fitted object.
 Most users can ignore this option.}
+
+\item{covariate_diffusion}{An optional one-sided formula describing distributed
+lag terms with \code{space()}, \code{time()}, or \code{spacetime()} wrappers.
+Example: \code{~ space(x) + time(x) + spacetime(z)}. Lag scale parameters
+are estimated separately for each lag covariate.}
 
 \item{experimental}{A named list for esoteric or in-development options. Here
 be dragons.}

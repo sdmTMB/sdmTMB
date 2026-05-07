@@ -95,6 +95,10 @@ NULL
 #'   factor predictors, if `spatial_varying` excludes the intercept (`~ 0` or `~
 #'   -1`), set `spatial = 'off'` to match. Structure must be shared in delta
 #'   models.
+#' @param covariate_diffusion An optional one-sided formula describing distributed
+#'   lag terms with `space()`, `time()`, or `spacetime()` wrappers.
+#'   Example: `~ space(x) + time(x) + spacetime(z)`. Lag scale parameters
+#'   are estimated separately for each lag covariate.
 #' @param weights A numeric vector representing optional likelihood weights for
 #'   the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
 #'   to sum to one and are not internally modified. Can also be used for trials
@@ -607,7 +611,9 @@ sdmTMB <- function(
     do_index = FALSE,
     predict_args = NULL,
     index_args = NULL,
+    covariate_diffusion = NULL,
     experimental = NULL) {
+  mesh_missing <- missing(mesh)
   data <- droplevels(data) # if data was subset, strips absent factors
 
   delta <- isTRUE(family$delta)
@@ -666,7 +672,7 @@ sdmTMB <- function(
 
   if (!include_spatial && all(spatiotemporal == "off") || !include_spatial && all(spatial_only)) {
     no_spatial <- TRUE
-    if (missing(mesh)) {
+    if (mesh_missing) {
       mesh <- sdmTMB::pcod_mesh_2011 # internal data; fake!
     }
   } else {
@@ -681,6 +687,7 @@ sdmTMB <- function(
   spde <- mesh
   epsilon_model <- NULL
   epsilon_predictor <- NULL
+  covariate_diffusion_covariate_vertex_override <- NULL
   if (!is.null(experimental)) {
     if ("epsilon_predictor" %in% names(experimental)) {
       epsilon_predictor <- experimental$epsilon_predictor
@@ -692,6 +699,10 @@ sdmTMB <- function(
       epsilon_model <- experimental$epsilon_model
     } else {
       epsilon_model <- NULL
+    }
+
+    if ("covariate_diffusion_covariate_vertex" %in% names(experimental)) {
+      covariate_diffusion_covariate_vertex_override <- experimental$covariate_diffusion_covariate_vertex
     }
   }
 
@@ -763,6 +774,22 @@ sdmTMB <- function(
       }
     }
   }
+
+  covariate_diffusion_parsed <- .parse_covariate_diffusion_formula(covariate_diffusion)
+  covariate_diffusion_parsed <- .validate_covariate_diffusion_terms(
+    covariate_diffusion_parsed,
+    data = data,
+    time = time,
+    delta = delta,
+    multi_family = FALSE
+  )
+  if (!is.null(covariate_diffusion_parsed) && mesh_missing) {
+    cli_abort("`mesh` must be supplied when using `covariate_diffusion`.")
+  }
+  if (is.null(covariate_diffusion_parsed) && !is.null(covariate_diffusion_covariate_vertex_override)) {
+    cli_abort("`experimental$covariate_diffusion_covariate_vertex` requires `covariate_diffusion`.")
+  }
+
   if (is.null(time)) {
     time <- "_sdmTMB_time"
     data[[time]] <- 0L
@@ -822,7 +849,14 @@ sdmTMB <- function(
     offset <- data[[offset]]
   }
 
-  check_irregalar_time(data, time, spatiotemporal, time_varying, extra_time = extra_time)
+  check_irregalar_time(
+    data,
+    time,
+    spatiotemporal,
+    time_varying,
+    extra_time = extra_time,
+    covariate_diffusion_temporal = !is.null(covariate_diffusion_parsed) && isTRUE(covariate_diffusion_parsed$needs_time)
+  )
 
   spatial_varying_formula <- spatial_varying # save it
   if (!is.null(spatial_varying)) {
@@ -1162,12 +1196,49 @@ sdmTMB <- function(
   if (delta) y_i <- cbind(ifelse(y_i > 0, 1, 0), ifelse(y_i > 0, y_i, NA_real_))
   if (!delta) y_i <- matrix(y_i, ncol = 1L)
 
+  time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
+  n_t <- nrow(time_df)
+  year_i_data <- time_df$year_i[match(data[[time]], time_df$time_from_data)]
+
+  covariate_diffusion_data <- .build_covariate_diffusion_tmb_data(
+    covariate_diffusion = covariate_diffusion_parsed,
+    data = data,
+    A_st = spde$A_st,
+    A_spatial_index = spde$sdm_spatial_id - 1L,
+    year_i = year_i_data,
+    n_t = n_t,
+    covariate_vertex_time = covariate_diffusion_covariate_vertex_override
+  )
+
+  if (!is.null(covariate_diffusion_data)) {
+    for (m in seq_len(n_m)) {
+      X_ij[[m]] <- .append_covariate_diffusion_coef_columns(
+        X = X_ij[[m]],
+        coef_names = covariate_diffusion_data$term_coef_name
+      )
+    }
+    covariate_diffusion_n_terms <- as.integer(covariate_diffusion_data$n_terms)
+    covariate_diffusion_n_covariates <- as.integer(covariate_diffusion_data$n_covariates)
+    covariate_diffusion_covariate_vertex_time <- covariate_diffusion_data$covariate_vertex_time
+    covariate_diffusion_covariate_has_spatial <- as.integer(covariate_diffusion_data$covariate_has_spatial)
+    covariate_diffusion_covariate_has_temporal <- as.integer(covariate_diffusion_data$covariate_has_temporal)
+    covariate_diffusion_covariate_has_spacetime <- as.integer(covariate_diffusion_data$covariate_has_spacetime)
+    covariate_diffusion_term_component <- as.integer(covariate_diffusion_data$term_component_id - 1L)
+    covariate_diffusion_term_covariate <- as.integer(covariate_diffusion_data$term_covariate_index0)
+  } else {
+    covariate_diffusion_n_terms <- 0L
+    covariate_diffusion_n_covariates <- 0L
+    covariate_diffusion_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
+    covariate_diffusion_covariate_has_spatial <- integer(0)
+    covariate_diffusion_covariate_has_temporal <- integer(0)
+    covariate_diffusion_covariate_has_spacetime <- integer(0)
+    covariate_diffusion_term_component <- integer(0)
+    covariate_diffusion_term_covariate <- integer(0)
+  }
+
   # TODO: make this cleaner
   X_ij_list <- list()
   for (i in seq_len(n_m)) X_ij_list[[i]] <- X_ij[[i]]
-
-  time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
-  n_t <- nrow(time_df)
 
   random_walk <- if (!is.null(time_varying)) {
     switch(time_varying_type,
@@ -1188,7 +1259,16 @@ sdmTMB <- function(
     sim_re = if ("sim_re" %in% names(experimental)) as.integer(experimental$sim_re) else rep(0L, 6),
     sim_obs = 1L,
     A_spatial_index = spde$sdm_spatial_id - 1L,
-    year_i = time_df$year_i[match(data[[time]], time_df$time_from_data)],
+    year_i = year_i_data,
+    covariate_diffusion_n_terms = covariate_diffusion_n_terms,
+    covariate_diffusion_n_covariates = covariate_diffusion_n_covariates,
+    covariate_diffusion_covariate_vertex_time = covariate_diffusion_covariate_vertex_time,
+    covariate_diffusion_covariate_has_spatial = covariate_diffusion_covariate_has_spatial,
+    covariate_diffusion_covariate_has_temporal = covariate_diffusion_covariate_has_temporal,
+    covariate_diffusion_covariate_has_spacetime = covariate_diffusion_covariate_has_spacetime,
+    covariate_diffusion_term_component = covariate_diffusion_term_component,
+    covariate_diffusion_term_covariate = covariate_diffusion_term_covariate,
+    proj_covariate_diffusion_covariate_vertex_time = array(0, dim = c(1L, 1L, 1L)),
     ar1_fields = ar1_fields,
     simulate_t = rep(1L, n_t),
     rw_fields = rw_fields,
@@ -1281,6 +1361,9 @@ sdmTMB <- function(
     ln_tau_Z = matrix(0, n_z, n_m),
     ln_tau_E = rep(0, n_m),
     ln_kappa = matrix(0, 2L, n_m),
+    log_kappaS_dl = numeric(covariate_diffusion_n_covariates),
+    log_kappaT_dl = numeric(covariate_diffusion_n_covariates),
+    kappaST_dl_unscaled = numeric(covariate_diffusion_n_covariates),
     # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
     thetaf = 0,
     ln_student_df = if (family$family[1] == "student") {
@@ -1318,6 +1401,17 @@ sdmTMB <- function(
   # Map off parameters not needed
   tmb_map <- map_all_params(tmb_params)
   tmb_map$b_j <- NULL
+  .make_covariate_diffusion_kappa_map <- function(has_component) {
+    if (!length(has_component)) {
+      return(factor(integer(0)))
+    }
+    out <- seq_along(has_component)
+    out[!as.logical(has_component)] <- NA_integer_
+    factor(out)
+  }
+  tmb_map$log_kappaS_dl <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_spatial)
+  tmb_map$log_kappaT_dl <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_temporal)
+  tmb_map$kappaST_dl_unscaled <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_spacetime)
   if (delta) tmb_map$b_j2 <- NULL
   if (family$family[[1]] == "tweedie") tmb_map$thetaf <- NULL
   if (family$family[[1]] == "student") {
@@ -1453,6 +1547,31 @@ sdmTMB <- function(
 
   # this is complex; pulled it out into own function:
   tmb_map$ln_kappa <- get_kappa_map(n_m = n_m, spatial = spatial, spatiotemporal = spatiotemporal, share_range = share_range)
+
+  .validate_covariate_diffusion_control_length <- function(x, param_name, control_name) {
+    if (length(x) == covariate_diffusion_n_covariates) return(invisible(NULL))
+    cov_text <- if (covariate_diffusion_n_covariates > 0L) {
+      paste(covariate_diffusion_data$covariates, collapse = ", ")
+    } else {
+      "<none>"
+    }
+    cli_abort(c(
+      paste0(
+        "`control$", control_name, "$", param_name, "` must have length ",
+        covariate_diffusion_n_covariates, "."
+      ),
+      "i" = paste0("Distributed lag covariates (in order): ", cov_text, ".")
+    ))
+  }
+  dl_param_names <- c("log_kappaS_dl", "log_kappaT_dl", "kappaST_dl_unscaled")
+  for (param_name in dl_param_names) {
+    if (param_name %in% names(start)) {
+      .validate_covariate_diffusion_control_length(start[[param_name]], param_name, "start")
+    }
+    if (param_name %in% names(map)) {
+      .validate_covariate_diffusion_control_length(map[[param_name]], param_name, "map")
+    }
+  }
 
   for (i in seq_along(start)) {
     cli_inform(c(
@@ -1592,6 +1711,9 @@ sdmTMB <- function(
       tmb_map = tmb_map,
       tmb_random = tmb_random,
       spatial_varying = spatial_varying,
+      covariate_diffusion = covariate_diffusion,
+      covariate_diffusion_parsed = covariate_diffusion_parsed,
+      covariate_diffusion_data = covariate_diffusion_data,
       spatial = spatial,
       spatiotemporal = spatiotemporal,
       spatial_varying_formula = spatial_varying_formula,
@@ -1963,23 +2085,39 @@ parse_spatial_arg <- function(spatial) {
   spatial
 }
 
-check_irregalar_time <- function(data, time, spatiotemporal, time_varying, extra_time) {
-  if (any(spatiotemporal %in% c("ar1", "rw")) || !is.null(time_varying)) {
-    if (!is.numeric(data[[time]])) {
-      cli_abort("Time column should be integer or numeric if using AR(1) or random walk processes.")
-    }
-    ti <- sort(union(unique(data[[time]]), extra_time))
-    if (length(unique(diff(ti))) > 1L) {
-      missed <- find_missing_time(data[[time]])
-      msg <- c(
-        "Detected irregular time spacing with an AR(1) or random walk process.",
-        "Consider filling in the missing time slices with `extra_time`.",
-        if (length(missed)) {
-          paste0("`extra_time = c(", paste(missed, collapse = ", "), ")`")
-        }
-      )
-      cli_inform(msg)
-    }
+check_irregalar_time <- function(data, time, spatiotemporal, time_varying, extra_time,
+                                 covariate_diffusion_temporal = FALSE) {
+  has_ar1_rw <- any(spatiotemporal %in% c("ar1", "rw")) || !is.null(time_varying)
+  has_dl_temporal <- isTRUE(covariate_diffusion_temporal)
+  if (!(has_ar1_rw || has_dl_temporal)) return(invisible(NULL))
+
+  if (!is.numeric(data[[time]])) {
+    cli_abort("Time column should be integer or numeric if using AR(1), random walk, or temporal covariate-diffusion processes.")
+  }
+
+  ti_data <- sort(unique(data[[time]]))
+  ti <- sort(union(ti_data, extra_time))
+  irregular_fit <- length(unique(diff(ti))) > 1L
+  irregular_dl <- has_dl_temporal && length(unique(diff(ti_data))) > 1L
+
+  if (irregular_fit || irregular_dl) {
+    missed <- find_missing_time(data[[time]])
+    msg <- c(
+      "Detected irregular time spacing with an AR(1), random walk, or temporal covariate-diffusion process.",
+      if (has_ar1_rw) {
+        "Consider filling in the missing time slices with `extra_time`."
+      },
+      if (irregular_dl) {
+        c(
+          "For `covariate_diffusion` with `time()` or `spacetime()`, include rows in `data` for missing time slices so lag covariates are defined.",
+          "Using `extra_time` alone is not sufficient for temporal covariate diffusions."
+        )
+      },
+      if (length(missed)) {
+        paste0("`extra_time = c(", paste(missed, collapse = ", "), ")`")
+      }
+    )
+    if (irregular_dl) cli_abort(msg) else cli_inform(msg)
   }
 }
 

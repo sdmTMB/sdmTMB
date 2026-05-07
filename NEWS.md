@@ -1,5 +1,9 @@
 # sdmTMB (development version)
 
+* Add experimental support for covariate diffusion models.
+
+* Add covariate-diffusion article/vignette.
+
 * Fix `se_natural` column in `get_index()` output. #523 
   Thanks to @CataRoman and @gavinfay.
 

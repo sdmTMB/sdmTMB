@@ -30,3 +30,5 @@ revdep/
 ^CLAUDE.md$
 ^AGENTS.md$
 ^tests/testthat/Rplots.pdf$
+^\.positai$
+^\.claude$
