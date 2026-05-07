@@ -1235,6 +1235,14 @@ sdmTMB <- function(
     covariate_diffusion_term_component <- integer(0)
     covariate_diffusion_term_covariate <- integer(0)
   }
+  covariate_diffusion_tmb <- list(
+    n_terms = covariate_diffusion_n_terms,
+    n_covariates = covariate_diffusion_n_covariates,
+    covariate_vertex_time = covariate_diffusion_covariate_vertex_time,
+    proj_covariate_vertex_time = array(0, dim = c(1L, 1L, 1L)),
+    term_component = covariate_diffusion_term_component,
+    term_covariate = covariate_diffusion_term_covariate
+  )
 
   # TODO: make this cleaner
   X_ij_list <- list()
@@ -1260,15 +1268,7 @@ sdmTMB <- function(
     sim_obs = 1L,
     A_spatial_index = spde$sdm_spatial_id - 1L,
     year_i = year_i_data,
-    covariate_diffusion_n_terms = covariate_diffusion_n_terms,
-    covariate_diffusion_n_covariates = covariate_diffusion_n_covariates,
-    covariate_diffusion_covariate_vertex_time = covariate_diffusion_covariate_vertex_time,
-    covariate_diffusion_covariate_has_spatial = covariate_diffusion_covariate_has_spatial,
-    covariate_diffusion_covariate_has_temporal = covariate_diffusion_covariate_has_temporal,
-    covariate_diffusion_covariate_has_spacetime = covariate_diffusion_covariate_has_spacetime,
-    covariate_diffusion_term_component = covariate_diffusion_term_component,
-    covariate_diffusion_term_covariate = covariate_diffusion_term_covariate,
-    proj_covariate_diffusion_covariate_vertex_time = array(0, dim = c(1L, 1L, 1L)),
+    covariate_diffusion = covariate_diffusion_tmb,
     ar1_fields = ar1_fields,
     simulate_t = rep(1L, n_t),
     rw_fields = rw_fields,

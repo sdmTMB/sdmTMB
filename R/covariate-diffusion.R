@@ -1,3 +1,10 @@
+.as_dgC <- function(x) {
+  if (!inherits(x, "sparseMatrix")) {
+    x <- Matrix::Matrix(x, sparse = TRUE)
+  }
+  methods::as(x, "dgCMatrix")
+}
+
 .extract_covariate_diffusion_term_exprs <- function(expr) {
   if (is.call(expr)) {
     fn <- as.character(expr[[1]])
@@ -232,10 +239,7 @@
   if (!inherits(covariate_data, "data.frame")) {
     cli_abort("`covariate_data` must be a data frame.")
   }
-  if (!inherits(A_st, "sparseMatrix")) {
-    A_st <- Matrix::Matrix(A_st, sparse = TRUE)
-  }
-  A_st <- methods::as(A_st, "dgCMatrix")
+  A_st <- .as_dgC(A_st)
 
   n_obs <- nrow(covariate_data)
   if (length(year_i) != n_obs) {
@@ -450,10 +454,7 @@
                                                  A_spatial_index,
                                                  year_i,
                                                  n_t) {
-  if (!inherits(A_st, "sparseMatrix")) {
-    A_st <- Matrix::Matrix(A_st, sparse = TRUE)
-  }
-  A_st <- methods::as(A_st, "dgCMatrix")
+  A_st <- .as_dgC(A_st)
   n_i <- length(A_spatial_index)
   A_spatial_index <- .normalize_dl_index(
     A_spatial_index,
@@ -563,6 +564,169 @@
   term_out
 }
 
+.dl_plot_extract_mesh <- function(mesh) {
+  if (is.null(mesh$loc) || is.null(mesh$graph) || is.null(mesh$graph$tv)) {
+    cli_abort("Could not find mesh vertices/triangles in `object$spde$mesh`.")
+  }
+  loc <- as.matrix(mesh$loc[, 1:2, drop = FALSE])
+  tv <- as.matrix(mesh$graph$tv)
+  if (!nrow(tv) || ncol(tv) != 3L) {
+    cli_abort("Mesh triangle connectivity (`mesh$graph$tv`) must be an n x 3 matrix.")
+  }
+  if (min(tv) == 0L) tv <- tv + 1L
+  if (any(tv < 1L) || any(tv > nrow(loc))) {
+    cli_abort("Mesh triangle indices were out of bounds for mesh vertices.")
+  }
+  center <- colMeans(loc)
+  vertex_i <- which.min(rowSums((loc - matrix(center, nrow = nrow(loc), ncol = 2L, byrow = TRUE))^2))
+  list(loc = loc, tv = tv, vertex_i = vertex_i)
+}
+
+.dl_plot_resolve_time <- function(object, component, time_value, n_steps) {
+  n_t <- object$tmb_data$n_t
+  if (is.null(n_t) || !length(n_t) || n_t < 1L) {
+    cli_abort("Could not determine the number of time slices from `object$tmb_data$n_t`.")
+  }
+  if (!is.null(object$time_lu) &&
+      "time_from_data" %in% names(object$time_lu) &&
+      nrow(object$time_lu) == n_t) {
+    time_values <- object$time_lu$time_from_data
+  } else {
+    time_values <- seq_len(n_t)
+  }
+  if (is.null(time_value)) {
+    time_i <- 1L
+  } else {
+    time_i <- match(time_value, time_values)
+    if (is.na(time_i) && is.numeric(time_value) && length(time_value) == 1L) {
+      candidate <- as.integer(round(time_value))
+      if (is.finite(candidate) && candidate >= 1L && candidate <= n_t) {
+        time_i <- candidate
+      }
+    }
+    if (is.na(time_i)) {
+      preview <- paste(utils::head(time_values, 12L), collapse = ", ")
+      cli_abort(c(
+        "Could not match `time_value` to modeled time slices.",
+        "x" = "Available times include: {.code {preview}}."
+      ))
+    }
+  }
+  if (component == "space") {
+    time_idx <- time_i
+  } else {
+    time_idx <- seq.int(time_i, min(n_t, time_i + n_steps - 1L))
+    if (length(time_idx) < n_steps) {
+      cli_inform("Requested `n_steps` exceeded modeled time range; using available trailing slices.")
+    }
+  }
+  list(n_t = n_t, time_values = time_values, time_i = time_i, time_idx = time_idx)
+}
+
+.dl_plot_extract_kappas <- function(object, cov_i) {
+  if (!is.null(object$model) &&
+      !is.null(object$model$par) &&
+      !is.null(object$tmb_obj) &&
+      !is.null(object$tmb_obj$env)) {
+    params <- object$tmb_obj$env$parList(object$model$par)
+  } else if (!is.null(object$tmb_params)) {
+    params <- object$tmb_params
+  } else {
+    cli_abort("Could not extract covariate-diffusion parameters from `object`.")
+  }
+  list(
+    kappaS = exp(params$log_kappaS_dl[cov_i]),
+    kappaT = exp(params$log_kappaT_dl[cov_i]),
+    kappaST = -stats::plogis(params$kappaST_dl_unscaled[cov_i])
+  )
+}
+
+.dl_plot_panel_dfs <- function(loc, tv, panel_fields, panel_titles, vertex_i, common_scale) {
+  n_tri <- nrow(tv)
+  triangle_values <- vapply(panel_fields, function(v) {
+    rowMeans(matrix(v[tv], nrow = n_tri, ncol = 3L))
+  }, numeric(n_tri))
+  if (!is.matrix(triangle_values)) {
+    triangle_values <- matrix(triangle_values, ncol = 1L)
+  }
+  colnames(triangle_values) <- panel_titles
+
+  tri_x <- matrix(loc[tv, 1], nrow = n_tri, ncol = 3L)
+  tri_y <- matrix(loc[tv, 2], nrow = n_tri, ncol = 3L)
+
+  triangle_df <- do.call(rbind, lapply(seq_len(ncol(triangle_values)), function(j) {
+    data.frame(
+      panel = panel_titles[j],
+      tri = rep(seq_len(n_tri), each = 3L),
+      x = as.vector(t(tri_x)),
+      y = as.vector(t(tri_y)),
+      value = rep(triangle_values[, j], each = 3L),
+      stringsAsFactors = FALSE
+    )
+  }))
+  triangle_df$panel <- factor(triangle_df$panel, levels = panel_titles)
+  point_df <- data.frame(
+    panel = factor(panel_titles, levels = panel_titles),
+    x = rep(loc[vertex_i, 1], length(panel_titles)),
+    y = rep(loc[vertex_i, 2], length(panel_titles))
+  )
+
+  triangle_df$value_plot <- triangle_df$value
+  fill_name <- "Value"
+  if (!isTRUE(common_scale)) {
+    fill_name <- "Relative value"
+    for (p in levels(triangle_df$panel)) {
+      i <- which(triangle_df$panel == p)
+      rng <- range(triangle_df$value[i], finite = TRUE)
+      if (!all(is.finite(rng)) || rng[1] == rng[2]) {
+        triangle_df$value_plot[i] <- 0
+      } else {
+        triangle_df$value_plot[i] <- (triangle_df$value[i] - rng[1]) / (rng[2] - rng[1])
+      }
+    }
+  }
+  fill_limits <- if (isTRUE(common_scale)) NULL else c(0, 1)
+
+  list(
+    triangle_values = triangle_values,
+    triangle_df = triangle_df,
+    point_df = point_df,
+    fill_name = fill_name,
+    fill_limits = fill_limits
+  )
+}
+
+.dl_plot_ggplot <- function(triangle_df, point_df, fill_limits, fill_name, xlim, ylim, xlab, ylab) {
+  ggplot2::ggplot(
+    triangle_df,
+    ggplot2::aes(x = .data$x, y = .data$y, group = interaction(.data$panel, .data$tri))
+  ) +
+    ggplot2::geom_polygon(
+      ggplot2::aes(fill = .data$value_plot),
+      color = "#FFFFFF10", linewidth = 0.4
+    ) +
+    ggplot2::geom_point(
+      data = point_df,
+      ggplot2::aes(x = .data$x, y = .data$y),
+      inherit.aes = FALSE,
+      shape = 21,
+      fill = "black",
+      color = "black",
+      size = 1.4
+    ) +
+    ggplot2::facet_wrap(stats::as.formula("~ panel"), nrow = 1L) +
+    ggplot2::coord_equal(xlim = xlim, ylim = ylim, expand = FALSE) +
+    ggplot2::scale_fill_viridis_c(
+      limits = fill_limits,
+      name = fill_name, option = "C"
+    ) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      panel.grid = ggplot2::element_blank()
+    ) +
+    ggplot2::labs(x = xlab, y = ylab)
+}
+
 #' Plot Covariate Diffusion from a Point on the Mesh
 #'
 #' Diagnostic visualization of an impulse covariate diffusing through one
@@ -652,59 +816,16 @@ plot_covariate_diffusion <- function(object,
     ))
   }
 
-  mesh <- object$spde$mesh
-  if (is.null(mesh$loc) || is.null(mesh$graph) || is.null(mesh$graph$tv)) {
-    cli_abort("Could not find mesh vertices/triangles in `object$spde$mesh`.")
-  }
-  loc <- as.matrix(mesh$loc[, 1:2, drop = FALSE])
-  tv <- as.matrix(mesh$graph$tv)
-  if (!nrow(tv) || ncol(tv) != 3L) {
-    cli_abort("Mesh triangle connectivity (`mesh$graph$tv`) must be an n x 3 matrix.")
-  }
-  if (min(tv) == 0L) tv <- tv + 1L
-  if (any(tv < 1L) || any(tv > nrow(loc))) {
-    cli_abort("Mesh triangle indices were out of bounds for mesh vertices.")
-  }
-  center <- colMeans(loc)
-  vertex_i <- which.min(rowSums((loc - matrix(center, nrow = nrow(loc), ncol = 2L, byrow = TRUE))^2))
+  mesh_info <- .dl_plot_extract_mesh(object$spde$mesh)
+  loc <- mesh_info$loc
+  tv <- mesh_info$tv
+  vertex_i <- mesh_info$vertex_i
 
-  n_t <- object$tmb_data$n_t
-  if (is.null(n_t) || !length(n_t) || n_t < 1L) {
-    cli_abort("Could not determine the number of time slices from `object$tmb_data$n_t`.")
-  }
-  if (!is.null(object$time_lu) &&
-      "time_from_data" %in% names(object$time_lu) &&
-      nrow(object$time_lu) == n_t) {
-    time_values <- object$time_lu$time_from_data
-  } else {
-    time_values <- seq_len(n_t)
-  }
-  if (is.null(time_value)) {
-    time_i <- 1L
-  } else {
-    time_i <- match(time_value, time_values)
-    if (is.na(time_i) && is.numeric(time_value) && length(time_value) == 1L) {
-      candidate <- as.integer(round(time_value))
-      if (is.finite(candidate) && candidate >= 1L && candidate <= n_t) {
-        time_i <- candidate
-      }
-    }
-    if (is.na(time_i)) {
-      preview <- paste(utils::head(time_values, 12L), collapse = ", ")
-      cli_abort(c(
-        "Could not match `time_value` to modeled time slices.",
-        "x" = "Available times include: {.code {preview}}."
-      ))
-    }
-  }
-  if (component == "space") {
-    time_idx <- time_i
-  } else {
-    time_idx <- seq.int(time_i, min(n_t, time_i + n_steps - 1L))
-    if (length(time_idx) < n_steps) {
-      cli_inform("Requested `n_steps` exceeded modeled time range; using available trailing slices.")
-    }
-  }
+  time_info <- .dl_plot_resolve_time(object, component, time_value, n_steps)
+  n_t <- time_info$n_t
+  time_values <- time_info$time_values
+  time_i <- time_info$time_i
+  time_idx <- time_info$time_idx
 
   covariates <- object$covariate_diffusion_data$covariates
   cov_i <- match(covariate, covariates)
@@ -712,19 +833,7 @@ plot_covariate_diffusion <- function(object,
     cli_abort("Internal mismatch: selected covariate not found in `covariate_diffusion_data$covariates`.")
   }
 
-  if (!is.null(object$model) &&
-      !is.null(object$model$par) &&
-      !is.null(object$tmb_obj) &&
-      !is.null(object$tmb_obj$env)) {
-    params <- object$tmb_obj$env$parList(object$model$par)
-  } else if (!is.null(object$tmb_params)) {
-    params <- object$tmb_params
-  } else {
-    cli_abort("Could not extract covariate-diffusion parameters from `object`.")
-  }
-  kappaS <- exp(params$log_kappaS_dl[cov_i])
-  kappaT <- exp(params$log_kappaT_dl[cov_i])
-  kappaST <- -stats::plogis(params$kappaST_dl_unscaled[cov_i])
+  kappas <- .dl_plot_extract_kappas(object, cov_i)
 
   has_space <- as.logical(object$covariate_diffusion_data$covariate_has_spatial[cov_i])
   has_time <- as.logical(object$covariate_diffusion_data$covariate_has_temporal[cov_i])
@@ -743,16 +852,14 @@ plot_covariate_diffusion <- function(object,
   impulse_vertex_time <- matrix(0, nrow = n_vertices, ncol = n_t)
   impulse_vertex_time[vertex_i, time_i] <- 1
 
-  M0 <- object$tmb_data$spde$M0
-  M1 <- object$tmb_data$spde$M1
   transformed_vertex_time <- .solve_covariate_diffusion_vertex_time(
     component = component,
     vertex_time_input = impulse_vertex_time,
-    M0 = M0,
-    M1 = M1,
-    kappaS = kappaS,
-    kappaT = kappaT,
-    kappaST = kappaST
+    M0 = object$tmb_data$spde$M0,
+    M1 = object$tmb_data$spde$M1,
+    kappaS = kappas$kappaS,
+    kappaT = kappas$kappaT,
+    kappaST = kappas$kappaST
   )
 
   panel_fields <- vector("list", length(time_idx) + 1L)
@@ -770,83 +877,20 @@ plot_covariate_diffusion <- function(object,
     }
   }
 
-  n_tri <- nrow(tv)
-  triangle_values <- vapply(panel_fields, function(v) {
-    rowMeans(matrix(v[tv], nrow = n_tri, ncol = 3L))
-  }, numeric(n_tri))
-  if (!is.matrix(triangle_values)) {
-    triangle_values <- matrix(triangle_values, ncol = 1L)
-  }
-  colnames(triangle_values) <- panel_titles
+  panel <- .dl_plot_panel_dfs(loc, tv, panel_fields, panel_titles, vertex_i, common_scale)
 
-  tri_x <- matrix(loc[tv, 1], nrow = n_tri, ncol = 3L)
-  tri_y <- matrix(loc[tv, 2], nrow = n_tri, ncol = 3L)
-  xlim <- range(loc[, 1])
-  ylim <- range(loc[, 2])
-
-  triangle_df <- do.call(rbind, lapply(seq_len(ncol(triangle_values)), function(j) {
-    data.frame(
-      panel = panel_titles[j],
-      tri = rep(seq_len(n_tri), each = 3L),
-      x = as.vector(t(tri_x)),
-      y = as.vector(t(tri_y)),
-      value = rep(triangle_values[, j], each = 3L),
-      stringsAsFactors = FALSE
-    )
-  }))
-  triangle_df$panel <- factor(triangle_df$panel, levels = panel_titles)
-  point_df <- data.frame(
-    panel = factor(panel_titles, levels = panel_titles),
-    x = rep(loc[vertex_i, 1], length(panel_titles)),
-    y = rep(loc[vertex_i, 2], length(panel_titles))
-  )
-
-  triangle_df$value_plot <- triangle_df$value
-  fill_name <- "Value"
-  if (!isTRUE(common_scale)) {
-    fill_name <- "Relative value"
-    for (p in levels(triangle_df$panel)) {
-      i <- which(triangle_df$panel == p)
-      rng <- range(triangle_df$value[i], finite = TRUE)
-      if (!all(is.finite(rng)) || rng[1] == rng[2]) {
-        triangle_df$value_plot[i] <- 0
-      } else {
-        triangle_df$value_plot[i] <- (triangle_df$value[i] - rng[1]) / (rng[2] - rng[1])
-      }
-    }
-  }
-
-  fill_limits <- if (isTRUE(common_scale)) NULL else c(0, 1)
   xlab <- if (!is.null(object$spde$xy_cols) && length(object$spde$xy_cols) >= 2L) object$spde$xy_cols[1] else "x"
   ylab <- if (!is.null(object$spde$xy_cols) && length(object$spde$xy_cols) >= 2L) object$spde$xy_cols[2] else "y"
-  plot_obj <- ggplot2::ggplot(
-    triangle_df,
-    ggplot2::aes(x = .data$x, y = .data$y, group = interaction(.data$panel, .data$tri))
-  ) +
-    ggplot2::geom_polygon(
-      ggplot2::aes(fill = .data$value_plot),
-      color = "#FFFFFF10", linewidth = 0.4
-    ) +
-    ggplot2::geom_point(
-      data = point_df,
-      ggplot2::aes(x = .data$x, y = .data$y),
-      inherit.aes = FALSE,
-      shape = 21,
-      fill = "black",
-      color = "black",
-      size = 1.4
-    ) +
-    ggplot2::facet_wrap(stats::as.formula("~ panel"), nrow = 1L) +
-    ggplot2::coord_equal(xlim = xlim, ylim = ylim, expand = FALSE) +
-    ggplot2::scale_fill_viridis_c(
-      limits = fill_limits,
-      name = fill_name, option = "C"
-    ) +
-    ggplot2::theme_bw() +
-    ggplot2::theme(
-      panel.grid = ggplot2::element_blank()
-    ) +
-    ggplot2::labs(x = xlab, y = ylab)
+  plot_obj <- .dl_plot_ggplot(
+    triangle_df = panel$triangle_df,
+    point_df = panel$point_df,
+    fill_limits = panel$fill_limits,
+    fill_name = panel$fill_name,
+    xlim = range(loc[, 1]),
+    ylim = range(loc[, 2]),
+    xlab = xlab,
+    ylab = ylab
+  )
 
   if (plot) {
     print(plot_obj)
@@ -863,8 +907,8 @@ plot_covariate_diffusion <- function(object,
     transformed_time_values = time_values[time_idx],
     impulse_vertex_time = impulse_vertex_time,
     transformed_vertex_time = transformed_vertex_time,
-    triangle_values = triangle_values,
-    triangle_df = triangle_df,
+    triangle_values = panel$triangle_values,
+    triangle_df = panel$triangle_df,
     plot = plot_obj,
     mesh_loc = loc,
     mesh_triangles = tv

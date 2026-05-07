@@ -571,7 +571,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     tmb_data$pop_pred <- as.integer(pop_pred)
     tmb_data$exclude_RE <- exclude_RE
     tmb_data$proj_spatial_index <- newdata$sdm_spatial_id
-    tmb_data$proj_covariate_diffusion_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
+    tmb_data$covariate_diffusion$proj_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
     if (has_covariate_diffusion) {
       proj_dl_data <- .build_covariate_diffusion_tmb_data(
         covariate_diffusion = object$covariate_diffusion_parsed,
@@ -581,7 +581,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
         year_i = tmb_data$proj_year,
         n_t = tmb_data$n_t
       )
-      tmb_data$proj_covariate_diffusion_covariate_vertex_time <- proj_dl_data$covariate_vertex_time
+      tmb_data$covariate_diffusion$proj_covariate_vertex_time <- proj_dl_data$covariate_vertex_time
     }
     tmb_data$proj_Zs <- sm$Zs
     tmb_data$proj_Xs <- sm$Xs
@@ -757,7 +757,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     if (has_covariate_diffusion) {
       nd <- .append_covariate_diffusion_term_values(
         nd, object, new_tmb_obj, lp,
-        covariate_vertex_time = tmb_data$proj_covariate_diffusion_covariate_vertex_time,
+        covariate_vertex_time = tmb_data$covariate_diffusion$proj_covariate_vertex_time,
         A_st = tmb_data$proj_mesh,
         A_spatial_index = tmb_data$proj_spatial_index,
         year_i = tmb_data$proj_year,
@@ -932,7 +932,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     if (has_covariate_diffusion) {
       nd <- .append_covariate_diffusion_term_values(
         nd, object, object$tmb_obj, lp,
-        covariate_vertex_time = object$tmb_data$covariate_diffusion_covariate_vertex_time,
+        covariate_vertex_time = object$tmb_data$covariate_diffusion$covariate_vertex_time,
         A_st = object$tmb_data$A_st,
         A_spatial_index = object$tmb_data$A_spatial_index,
         year_i = object$tmb_data$year_i,

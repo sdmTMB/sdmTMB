@@ -27,14 +27,12 @@ test_that("covariate diffusion tmb_data includes safe defaults when feature is o
     do_fit = FALSE
   )
 
-  expect_equal(fit$tmb_data$covariate_diffusion_n_terms, 0L)
-  expect_equal(fit$tmb_data$covariate_diffusion_n_covariates, 0L)
-  expect_equal(dim(fit$tmb_data$covariate_diffusion_covariate_vertex_time), c(1L, 1L, 1L))
-  expect_length(fit$tmb_data$covariate_diffusion_covariate_has_spatial, 0L)
-  expect_length(fit$tmb_data$covariate_diffusion_covariate_has_temporal, 0L)
-  expect_length(fit$tmb_data$covariate_diffusion_covariate_has_spacetime, 0L)
-  expect_length(fit$tmb_data$covariate_diffusion_term_component, 0L)
-  expect_length(fit$tmb_data$covariate_diffusion_term_covariate, 0L)
+  expect_equal(fit$tmb_data$covariate_diffusion$n_terms, 0L)
+  expect_equal(fit$tmb_data$covariate_diffusion$n_covariates, 0L)
+  expect_equal(dim(fit$tmb_data$covariate_diffusion$covariate_vertex_time), c(1L, 1L, 1L))
+  expect_length(fit$tmb_data$covariate_diffusion$term_component, 0L)
+  expect_length(fit$tmb_data$covariate_diffusion$term_covariate, 0L)
+  expect_null(fit$covariate_diffusion_data)
 
   expect_true(all(c("log_kappaS_dl", "log_kappaT_dl", "kappaST_dl_unscaled") %in% names(fit$tmb_params)))
   expect_length(fit$tmb_params$log_kappaS_dl, 0L)
@@ -68,15 +66,15 @@ test_that("covariate diffusion coefficient slots are appended and lag parameters
   )
 
   expect_equal(length(fit$tmb_params$b_j), ncol(x_mat))
-  expect_equal(fit$tmb_data$covariate_diffusion_n_terms, 2L)
-  expect_equal(fit$tmb_data$covariate_diffusion_n_covariates, 2L)
-  expect_equal(fit$tmb_data$covariate_diffusion_covariate_has_spatial, c(1L, 0L))
-  expect_equal(fit$tmb_data$covariate_diffusion_covariate_has_temporal, c(0L, 1L))
-  expect_equal(fit$tmb_data$covariate_diffusion_covariate_has_spacetime, c(0L, 0L))
-  expect_equal(fit$tmb_data$covariate_diffusion_term_component, c(0L, 1L))
-  expect_equal(fit$tmb_data$covariate_diffusion_term_covariate, c(0L, 1L))
+  expect_equal(fit$tmb_data$covariate_diffusion$n_terms, 2L)
+  expect_equal(fit$tmb_data$covariate_diffusion$n_covariates, 2L)
+  expect_equal(fit$covariate_diffusion_data$covariate_has_spatial, c(1L, 0L))
+  expect_equal(fit$covariate_diffusion_data$covariate_has_temporal, c(0L, 1L))
+  expect_equal(fit$covariate_diffusion_data$covariate_has_spacetime, c(0L, 0L))
+  expect_equal(fit$tmb_data$covariate_diffusion$term_component, c(0L, 1L))
+  expect_equal(fit$tmb_data$covariate_diffusion$term_covariate, c(0L, 1L))
   expect_equal(
-    dim(fit$tmb_data$covariate_diffusion_covariate_vertex_time),
+    dim(fit$tmb_data$covariate_diffusion$covariate_vertex_time),
     c(ncol(fit$tmb_data$A_st), fit$tmb_data$n_t, 2L)
   )
 
@@ -136,9 +134,9 @@ test_that("covariate diffusion parameter lengths follow used components", {
   expect_length(fit$tmb_params$log_kappaS_dl, 1L)
   expect_length(fit$tmb_params$log_kappaT_dl, 1L)
   expect_length(fit$tmb_params$kappaST_dl_unscaled, 1L)
-  expect_equal(fit$tmb_data$covariate_diffusion_covariate_has_spatial, 1L)
-  expect_equal(fit$tmb_data$covariate_diffusion_covariate_has_temporal, 0L)
-  expect_equal(fit$tmb_data$covariate_diffusion_covariate_has_spacetime, 1L)
+  expect_equal(fit$covariate_diffusion_data$covariate_has_spatial, 1L)
+  expect_equal(fit$covariate_diffusion_data$covariate_has_temporal, 0L)
+  expect_equal(fit$covariate_diffusion_data$covariate_has_spacetime, 1L)
   expect_true(is.na(as.integer(fit$tmb_map$log_kappaT_dl)))
 })
 

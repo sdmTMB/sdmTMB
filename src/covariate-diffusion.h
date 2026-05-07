@@ -2,6 +2,37 @@
 
 namespace sdmTMB {
 
+template <class Type>
+struct covariate_diffusion_data_t {
+  int n_terms;
+  int n_covariates;
+  array<Type> covariate_vertex_time;
+  array<Type> proj_covariate_vertex_time;
+  vector<int> term_component;
+  vector<int> term_covariate;
+  matrix<int> has; // [n_covariates x 3], cols = {space, time, spacetime}
+
+  covariate_diffusion_data_t(SEXP x) {
+    n_terms      = CppAD::Integer(asVector<Type>(getListElement(x, "n_terms"))[0]);
+    n_covariates = CppAD::Integer(asVector<Type>(getListElement(x, "n_covariates"))[0]);
+    covariate_vertex_time =
+      tmbutils::asArray<Type>(getListElement(x, "covariate_vertex_time"));
+    proj_covariate_vertex_time =
+      tmbutils::asArray<Type>(getListElement(x, "proj_covariate_vertex_time"));
+    term_component = asVector<int>(getListElement(x, "term_component"));
+    term_covariate = asVector<int>(getListElement(x, "term_covariate"));
+    has.resize(n_covariates, 3);
+    has.setZero();
+    for (int t = 0; t < n_terms; t++) {
+      int cov_i = term_covariate(t);
+      int comp = term_component(t);
+      if (cov_i >= 0 && cov_i < n_covariates && comp >= 0 && comp < 3) {
+        has(cov_i, comp) = 1;
+      }
+    }
+  }
+};
+
 // Bundle of covariate-diffusion inputs; lag coefficients live at the tail of b_j.
 template <class Type>
 struct CovariateDiffusionContext {
@@ -129,8 +160,6 @@ Eigen::Matrix<Type, Eigen::Dynamic, 1> dl_project_vertex_time_to_observations(
   return term_i;
 }
 
-// Dimensional consistency is enforced by the R layer; here we only check
-// runtime conditions (factorization failure, parameter presence).
 template <class Type>
 void add_covariate_diffusion_to_eta_fixed(
     array<Type>& eta_fixed_i,
@@ -148,7 +177,7 @@ void add_covariate_diffusion_to_eta_fixed(
   int n_vertices_dl = ctx.covariate_vertex_time.dim[0];
   int n_t_dl = ctx.covariate_vertex_time.dim[1];
 
-  // Determine required solvers/scales by scanning terms.
+  // Determine required solvers/scales by scanning terms
   std::vector<int> cov_needs_spatial_scale(ctx.n_covariates, 0);
   std::vector<int> cov_needs_spatial_solver(ctx.n_covariates, 0);
   bool need_m0_solver = false;
@@ -171,7 +200,7 @@ void add_covariate_diffusion_to_eta_fixed(
     }
   }
 
-  // Compute per-covariate derived scales.
+  // Compute per-covariate derived scales
   vector<Type> kappaS_scale(ctx.n_covariates);
   vector<Type> kappaST_scale(ctx.n_covariates);
   kappaS_scale.setZero();
@@ -183,7 +212,7 @@ void add_covariate_diffusion_to_eta_fixed(
     }
   }
 
-  // Factorize per-covariate spatial systems once.
+  // Factorize per-covariate spatial systems once
   std::vector< Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> > >
     lu_spatial_by_covariate(ctx.n_covariates);
   for (int cov_i = 0; cov_i < ctx.n_covariates; cov_i++) {
