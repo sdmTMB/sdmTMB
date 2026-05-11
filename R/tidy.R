@@ -64,6 +64,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   if (exponentiate) trans <- exp else trans <- I
 
   reinitialize(x)
+  is_areal <- is_areal_fit(x)
 
   delta <- isTRUE(x$family$delta)
   assert_that(is.numeric(model))
@@ -90,27 +91,52 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   se$ln_H_input <- NULL
 
   subset_pars <- function(p, model) {
+    .subset_model <- function(x) {
+      if (is.null(x) || !length(x)) {
+        return(NULL)
+      }
+      if (is.null(dim(x))) {
+        if (length(x) >= model) {
+          return(as.numeric(x[model]))
+        }
+        return(as.numeric(x))
+      }
+      if (length(dim(x)) >= 2L) {
+        return(as.numeric(x[, model, drop = TRUE]))
+      }
+      as.numeric(x)
+    }
     p$b_j <- if (model == 1) p$b_j else p$b_j2
-    p$ln_tau_O <- p$ln_tau_O[model]
-    p$ln_tau_Z <- p$ln_tau_Z[model]
-    p$ln_tau_E <- p$ln_tau_E[model]
-    p$ln_kappa <- as.numeric(p$ln_kappa[,model])
-    p$ln_phi <- p$ln_phi[model]
-    p$ln_tau_V <- as.numeric(p$ln_tau_V[,model])
-    p$ar1_phi <- as.numeric(p$ar1_phi[model])
-    p$log_sigma_O <- as.numeric(p$log_sigma_O[1,model])
-    p$log_sigma_E <- as.numeric(p$log_sigma_E[1,model])
-    p$log_sigma_Z <- as.numeric(p$log_sigma_Z[,model])
-    p$log_range <- as.numeric(p$log_range[,model])
+    p$ln_tau_O <- .subset_model(p$ln_tau_O)
+    p$ln_tau_Z <- .subset_model(p$ln_tau_Z)
+    p$ln_tau_E <- .subset_model(p$ln_tau_E)
+    p$ln_kappa <- .subset_model(p$ln_kappa)
+    p$ln_phi <- .subset_model(p$ln_phi)
+    p$ln_tau_V <- .subset_model(p$ln_tau_V)
+    p$ar1_phi <- .subset_model(p$ar1_phi)
+    p$log_sigma_O <- .subset_model(p$log_sigma_O)
+    p$log_sigma_E <- .subset_model(p$log_sigma_E)
+    p$log_sigma_Z <- .subset_model(p$log_sigma_Z)
+    p$log_range <- .subset_model(p$log_range)
+    p$logit_rho_sar <- .subset_model(p$logit_rho_sar)
 
-    p$phi <- p$phi[model]
-    p$range <- as.numeric(p$range[,model])
-    p$sigma_E <- as.numeric(p$sigma_E[1,model])
-    p$sigma_O <- as.numeric(p$sigma_O[1,model])
-    p$sigma_Z <- as.numeric(p$sigma_Z[,model])
+    p$phi <- .subset_model(p$phi)
+    p$range <- .subset_model(p$range)
+    p$sigma_E <- .subset_model(p$sigma_E)
+    p$sigma_O <- .subset_model(p$sigma_O)
+    p$sigma_Z <- .subset_model(p$sigma_Z)
+    p$rho_sar <- .subset_model(p$rho_sar)
 
-    # if delta, a single AR1 -> rho_time_unscaled is a 1x2 matrix
-    p$rho_time <- 2 * plogis(p$rho_time_unscaled[,model]) - 1
+    if (!is.null(p$rho_time_unscaled) && length(p$rho_time_unscaled)) {
+      p$rho_time_unscaled <- .subset_model(p$rho_time_unscaled)
+      p$rho_time <- 2 * plogis(p$rho_time_unscaled) - 1
+    } else {
+      p$rho_time <- numeric(0)
+    }
+    if (!is.null(p$logit_rho_sar) && length(p$logit_rho_sar) &&
+        (is.null(p$rho_sar) || !length(p$rho_sar))) {
+      p$rho_sar <- 2 * plogis(p$logit_rho_sar) - 1
+    }
     p
   }
 
@@ -182,8 +208,12 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   if (exponentiate) out$std.error <- NULL
 
   out_re <- list()
-  log_name <- c("log_range")
-  name <- c("range")
+  log_name <- character(0)
+  name <- character(0)
+  if (!is_areal) {
+    log_name <- c(log_name, "log_range")
+    name <- c(name, "range")
+  }
   if (!isTRUE(is.na(x$tmb_map$ln_phi))) {
     log_name <- c(log_name, "ln_phi")
     name <- c(name, "phi")
@@ -208,9 +238,13 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     log_name <- c(log_name, "rho_time_unscaled")
     name <- c(name, "rho_time")
   }
+  if (is_areal && "logit_rho_sar" %in% names(est) && length(est$logit_rho_sar)) {
+    log_name <- c(log_name, "logit_rho_sar")
+    name <- c(name, "rho_sar")
+  }
 
   j <- 0
-  if (!"log_range" %in% names(est)) {
+  if (!is_areal && !"log_range" %in% names(est)) {
     cli_warn("This model was fit with an old version of sdmTMB. Some parameters may not be available to the tidy() method. Re-fit the model with the current version of sdmTMB if you need access to any missing parameters.")
   }
 
@@ -226,9 +260,13 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
       this <- non_log_name[j]
       if (this == "tau_V") this <- "sigma_V"
       if (this == "rho_time_unscaled") this <- "rho_time"
+      if (this == "logit_rho_sar") this <- "rho_sar"
 
       this_se <- as.numeric(se[[this]])
       this_est <- as.numeric(est[[this]])
+      if (!length(this_se) && length(this_est)) {
+        this_se <- rep(NA_real_, length(this_est))
+      }
       if (length(this_est) && !(all(this_se == 0) && all(this_est == 0))) {
         out_re[[i]] <- data.frame(
           term = i, estimate = this_est, std.error = this_se,
@@ -236,18 +274,17 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
           conf.high = exp(.e + crit * .se),
           stringsAsFactors = FALSE
         )
-        if(this == "rho_time") {
+        if (this %in% c("rho_time", "rho_sar")) {
           out_re[[i]] <- data.frame(
             term = i,
-            estimate = this_est,
+            estimate = 2 * plogis(.e) - 1,
             # use delta method to get SE in normal space
-            std.error = 2 * plogis (.e[,model]) * (1 - plogis (.e[,model])) * .se[,model],
+            std.error = 2 * plogis(.e) * (1 - plogis(.e)) * .se,
             # don't use delta-method for CIs, because they can be outside (-1,1)
-            conf.low = 2 * plogis(.e[,model] - crit * .se[,model]) - 1,
-            conf.high = 2 * plogis(.e[,model] + crit * .se[,model]) - 1,
+            conf.low = 2 * plogis(.e - crit * .se) - 1,
+            conf.high = 2 * plogis(.e + crit * .se) - 1,
             stringsAsFactors = FALSE
           )
-
         }
       }
       ii <- ii + 1
@@ -344,6 +381,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
 
   if (all(!x$tmb_data$include_spatial) && all(x$tmb_data$spatial_only)) out_re$range <- NULL
+  if (is_areal) out_re$range <- NULL
 
   out_re <- do.call("rbind", out_re)
   row.names(out_re) <- NULL

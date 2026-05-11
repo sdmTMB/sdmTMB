@@ -44,3 +44,11 @@ The following are licensed under GPL-2:
 
 4. TMB anisotropy R implementation from TMB examples folder (R/mesh.R
    make_anisotropy_spde()) and corresponding code in src/sdmTMB.cpp
+
+The following data objects are derived from `geodaData::ohio_lung`:
+
+- `ohio_df`
+- `ohio_sf`
+
+The `geodaData` package is distributed under CC0.
+Original spatial dataset creator credited by `geodaData`: Luc Anselin / GeoDa Center.

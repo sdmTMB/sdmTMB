@@ -614,6 +614,8 @@ sdmTMB <- function(
     covariate_diffusion = NULL,
     experimental = NULL) {
   mesh_missing <- missing(mesh)
+  spatial_model <- if (!mesh_missing && is_areal_domain(mesh)) "areal" else "spde"
+  is_areal <- identical(spatial_model, "areal")
   data <- droplevels(data) # if data was subset, strips absent factors
 
   delta <- isTRUE(family$delta)
@@ -680,6 +682,7 @@ sdmTMB <- function(
   }
 
   share_range <- unlist(share_range)
+  share_range_user <- share_range
   if (length(share_range) == 1L) share_range <- rep(share_range, n_m)
   share_range[spatiotemporal == "off"] <- TRUE
   share_range[spatial == "off"] <- TRUE
@@ -745,7 +748,11 @@ sdmTMB <- function(
   assert_that(is.list(priors))
   assert_that(is.list(.control))
   if (!is.null(time)) assert_that(is.character(time))
-  assert_that(inherits(spde, "sdmTMBmesh"))
+  if (is_areal) {
+    assert_that(inherits(spde, "sdmTMBareal"))
+  } else {
+    assert_that(inherits(spde, "sdmTMBmesh"))
+  }
   assert_that(class(formula) %in% c("formula", "list"))
   assert_that(inherits(data, "data.frame"))
   time_varying_type <- match.arg(time_varying_type)
@@ -807,7 +814,21 @@ sdmTMB <- function(
     }
   }
 
-  if (!no_spatial) {
+  domain <- prepare_spatial_domain(
+    mesh = spde,
+    data = data,
+    mesh_missing = mesh_missing,
+    share_range = share_range,
+    anisotropy = anisotropy,
+    covariate_diffusion = covariate_diffusion_parsed,
+    priors = priors,
+    normalize = normalize,
+    experimental = experimental,
+    share_range_user = share_range_user
+  )
+  is_areal <- identical(domain$type, "areal")
+
+  if (!no_spatial && !is_areal) {
     if (!identical(nrow(spde$loc_xy), nrow(data))) {
       msg <- c(
         "Number of x-y coordinates in `mesh` does not match `nrow(data)`.",
@@ -1097,17 +1118,7 @@ sdmTMB <- function(
     X_rw_ik <- matrix(0, nrow = nrow(data), ncol = 1)
   }
 
-  n_s <- nrow(spde$mesh$loc)
-
-  barrier <- "spde_barrier" %in% names(spde)
-  if (barrier && anisotropy) {
-    cli_warn("Using a barrier mesh; therefore, anistropy will be disabled.")
-    anisotropy <- FALSE
-  }
-  if (any(c(!is.na(priors$matern_s[1:2]), !is.na(priors$matern_st[1:2]))) && anisotropy) {
-    cli_warn("Using PC Matern priors; therefore, anistropy will be disabled.")
-    anisotropy <- FALSE
-  }
+  n_s <- domain$n_s
 
   # Student-t df: can be NULL (estimate, default) or numeric (fix)
   student_df_fixed <- if (family$family[1] == "student" && "df" %in% names(family)) {
@@ -1192,7 +1203,8 @@ sdmTMB <- function(
     cli_abort("sigma_V (time-varying SD) priors do not match the fitted model.")
   }
 
-  if (!"A_st" %in% names(spde)) cli_abort("`mesh` was created with an old version of `make_mesh()`.")
+  A_st <- domain$A_st
+  A_spatial_index <- domain$A_spatial_index
   if (delta) y_i <- cbind(ifelse(y_i > 0, 1, 0), ifelse(y_i > 0, y_i, NA_real_))
   if (!delta) y_i <- matrix(y_i, ncol = 1L)
 
@@ -1203,8 +1215,8 @@ sdmTMB <- function(
   covariate_diffusion_data <- .build_covariate_diffusion_tmb_data(
     covariate_diffusion = covariate_diffusion_parsed,
     data = data,
-    A_st = spde$A_st,
-    A_spatial_index = spde$sdm_spatial_id - 1L,
+    A_st = A_st,
+    A_spatial_index = A_spatial_index,
     year_i = year_i_data,
     n_t = n_t,
     covariate_vertex_time = covariate_diffusion_covariate_vertex_override
@@ -1263,10 +1275,12 @@ sdmTMB <- function(
     z_i = z_i,
     offset_i = offset,
     proj_offset_i = 0,
-    A_st = spde$A_st,
+    A_st = A_st,
+    spatial_model = if (is_areal) 1L else 0L,
+    W_ss = domain$W_ss,
     sim_re = if ("sim_re" %in% names(experimental)) as.integer(experimental$sim_re) else rep(0L, 6),
     sim_obs = 1L,
-    A_spatial_index = spde$sdm_spatial_id - 1L,
+    A_spatial_index = A_spatial_index,
     year_i = year_i_data,
     covariate_diffusion = covariate_diffusion_tmb,
     ar1_fields = ar1_fields,
@@ -1305,21 +1319,21 @@ sdmTMB <- function(
     share_range = as.integer(if (length(share_range) == 1L) rep(share_range, 2L) else share_range),
     include_spatial = as.integer(include_spatial), # changed later
     omit_spatial_intercept = as.integer(omit_spatial_intercept),
-    proj_mesh = Matrix::Matrix(c(0, 0, 2:0), 3, 5), # dummy
+    proj_mesh = if (is_areal) dummy_sparse_1x1() else Matrix::Matrix(c(0, 0, 2:0), 3, 5), # dummy
     proj_X_ij = list(matrix(0, ncol = 1, nrow = 1)), # dummy
     proj_X_rw_ik = matrix(0, ncol = 1, nrow = 1), # dummy
     proj_year = 0, # dummy
     proj_time_include = rep(1L, n_t),
-    proj_spatial_index = 0, # dummy
+    proj_spatial_index = 0L, # dummy
     proj_z_i = matrix(0, nrow = 1, ncol = n_m), # dummy
     indexes_total = numeric(0), # dummy
     n_integration = 0L, # dummy
-    spde_aniso = make_anisotropy_spde(spde, anisotropy),
-    spde = get_spde_matrices(spde),
-    barrier = as.integer(barrier),
-    spde_barrier = make_barrier_spde(spde),
-    barrier_scaling = if (barrier) spde$barrier_scaling else c(1, 1),
-    anisotropy = as.integer(anisotropy),
+    spde_aniso = domain$spde_aniso_struct,
+    spde = domain$spde_struct,
+    barrier = domain$barrier,
+    spde_barrier = domain$spde_barrier_struct,
+    barrier_scaling = domain$barrier_scaling,
+    anisotropy = domain$anisotropy,
     family = .valid_family[family$family],
     size = c(size),
     link = .valid_link[family$link],
@@ -1378,6 +1392,7 @@ sdmTMB <- function(
     ln_tau_V = matrix(0, ncol(X_rw_ik), n_m),
     rho_time_unscaled = matrix(0, ncol(X_rw_ik), n_m),
     ar1_phi = rep(0, n_m),
+    logit_rho_sar = if (is_areal) rep(0, n_m) else numeric(0),
     re_cov_pars = matrix(0, max_re_cov, n_m), # defined above, mapping off pars as needed
     re_b_pars = matrix(0, max_re_betas, n_m), # defined above, mapping off pars as needed
     b_rw_t = array(0, dim = c(tmb_data$n_t, ncol(X_rw_ik), n_m)),
@@ -1490,7 +1505,7 @@ sdmTMB <- function(
     tmb_random <- c(tmb_random, "zeta_s")
     tmb_map <- unmap(tmb_map, c("zeta_s", "ln_tau_Z"))
   }
-  if (anisotropy) tmb_map <- unmap(tmb_map, "ln_H_input")
+  if (isTRUE(domain$anisotropy == 1L)) tmb_map <- unmap(tmb_map, "ln_H_input")
   if (!is.null(time_varying)) {
     tmb_random <- c(tmb_random, "b_rw_t")
     tmb_map <- unmap(tmb_map, c("b_rw_t", "ln_tau_V"))
@@ -1540,13 +1555,22 @@ sdmTMB <- function(
     tmb_params <- previous_fit$tmb_obj$env$parList()
   }
 
-  tmb_data$normalize_in_r <- as.integer(normalize)
+  tmb_data$normalize_in_r <- domain$normalize_in_r
   tmb_data$include_spatial <- as.integer(spatial == "on")
 
   if (!is.null(previous_fit)) tmb_map <- previous_fit$tmb_map
 
   # this is complex; pulled it out into own function:
   tmb_map$ln_kappa <- get_kappa_map(n_m = n_m, spatial = spatial, spatiotemporal = spatiotemporal, share_range = share_range)
+  if (is_areal) {
+    tmb_map$ln_kappa <- factor(rep(NA_integer_, length(tmb_params$ln_kappa)))
+    sar_field_active <- any(spatial == "on" & !omit_spatial_intercept) ||
+      !all(spatiotemporal == "off") ||
+      !is.null(spatial_varying)
+    if (sar_field_active) {
+      tmb_map <- unmap(tmb_map, "logit_rho_sar")
+    }
+  }
 
   .validate_covariate_diffusion_control_length <- function(x, param_name, control_name) {
     if (length(x) == covariate_diffusion_n_covariates) return(invisible(NULL))
@@ -1631,7 +1655,7 @@ sdmTMB <- function(
     tmb_map$ln_tau_O <- as.factor(tmb_map$ln_tau_O)
   }
 
-  if (anisotropy && delta && !"ln_H_input" %in% names(map)) {
+  if (isTRUE(domain$anisotropy == 1L) && delta && !"ln_H_input" %in% names(map)) {
     tmb_map$ln_H_input <- factor(c(1, 2, 1, 2)) # share anisotropy as in VAST
   }
 
@@ -1779,7 +1803,7 @@ sdmTMB <- function(
   )
   lim <- set_limits(tmb_obj,
     lower = lower, upper = upper,
-    loc = spde$mesh$loc, silent = FALSE
+    loc = if (is_areal) NULL else spde$mesh$loc, silent = FALSE
   )
 
   out_structure$tmb_obj <- tmb_obj
@@ -1793,7 +1817,9 @@ sdmTMB <- function(
     return(out_structure)
   }
 
-  if (normalize) tmb_obj <- TMB::normalize(tmb_obj, flag = "flag", value = 0)
+  if (isTRUE(domain$normalize_in_r == 1L) && normalize) {
+    tmb_obj <- TMB::normalize(tmb_obj, flag = "flag", value = 0)
+  }
 
   if (length(tmb_obj$par)) {
     tmb_opt <- stats::nlminb(
@@ -2044,6 +2070,11 @@ set_limits <- function(tmb_obj, lower, upper, loc = NULL, silent = TRUE) {
     !"ar1_phi" %in% union(names(lower), names(upper))) {
     .lower["ar1_phi"] <- stats::qlogis((-0.999 + 1) / 2)
     .upper["ar1_phi"] <- stats::qlogis((0.999 + 1) / 2)
+  }
+  if ("logit_rho_sar" %in% names(tmb_obj$par) &&
+    !"logit_rho_sar" %in% union(names(lower), names(upper))) {
+    .lower["logit_rho_sar"] <- stats::qlogis((-0.999 + 1) / 2)
+    .upper["logit_rho_sar"] <- stats::qlogis((0.999 + 1) / 2)
   }
 
   list(lower = .lower, upper = .upper)

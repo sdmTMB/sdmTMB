@@ -67,7 +67,10 @@ spread_sims <- function(object, nsim = 200) {
   row.names(samps) <- pn
   row.names(samps)[row.names(samps) == "b_j"] <- fe_names
   out <- as.data.frame(t(samps))
-  if ("ln_kappa" %in% names(out)) {
+  is_areal <- is_areal_fit(object)
+  has_ln_kappa <- "ln_kappa" %in% names(out)
+
+  if (has_ln_kappa && !is_areal) {
     out$range <- sqrt(8) / exp(out$ln_kappa)
   }
   if ("ln_phi" %in% names(out)) {
@@ -79,17 +82,39 @@ spread_sims <- function(object, nsim = 200) {
   if ("ar1_phi" %in% names(out)) {
     out$ar1_rho <- 2 * stats::plogis(out$ar1_phi) - 1
   }
+  if ("logit_rho_sar" %in% names(out)) {
+    out$rho_sar <- 2 * stats::plogis(out$logit_rho_sar) - 1
+  }
   if ("ln_tau_O" %in% names(out)) {
-    out$sigma_O <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_O + 2 * out$ln_kappa))
+    if (is_areal || !has_ln_kappa) {
+      out$sigma_O <- exp(-out$ln_tau_O)
+    } else {
+      out$sigma_O <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_O + 2 * out$ln_kappa))
+    }
   }
   if ("ln_tau_E" %in% names(out)) {
-    out$sigma_E <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_E + 2 * out$ln_kappa))
+    if (is_areal || !has_ln_kappa) {
+      out$sigma_E <- exp(-out$ln_tau_E)
+    } else {
+      out$sigma_E <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_E + 2 * out$ln_kappa))
+    }
+  }
+  if ("ln_tau_Z" %in% names(out)) {
+    if (is_areal || !has_ln_kappa) {
+      out$sigma_Z <- exp(-out$ln_tau_Z)
+    } else {
+      out$sigma_Z <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_Z + 2 * out$ln_kappa))
+    }
   }
   if ("ln_tau_O_trend" %in% names(out)) {
-    out$sigma_O_trend <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_O_trend + 2 * out$ln_kappa))
+    if (is_areal || !has_ln_kappa) {
+      out$sigma_O_trend <- exp(-out$ln_tau_O_trend)
+    } else {
+      out$sigma_O_trend <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_O_trend + 2 * out$ln_kappa))
+    }
   }
   out$ln_kappa <- out$ln_tau_O <- out$ln_tau_E <- out$ln_tau_O_trend <-
-    out$ar1_phi <- out$thetaf <- out$ln_phi <- NULL
+    out$ln_tau_Z <- out$ar1_phi <- out$thetaf <- out$ln_phi <- out$logit_rho_sar <- NULL
   data.frame(.iteration = seq_len(n_sims), out)
 }
 

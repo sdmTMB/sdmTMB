@@ -266,12 +266,19 @@ predict.sdmTMB <- function(object, newdata = NULL,
     cli_abort(c("This looks like a very old version of a model fit.",
         "Re-fit the model before predicting with it."))
   }
-  if (!"xy_cols" %in% names(object$spde)) {
-    cli_warn(c("It looks like this model was fit with make_spde().",
-    "Using `xy_cols`, but future versions of sdmTMB may not be compatible with this.",
-    "Please replace make_spde() with make_mesh()."))
-  } else {
-    xy_cols <- object$spde$xy_cols
+  is_areal <- identical(object$tmb_data$spatial_model, 1L)
+  if (!is_areal && is_areal_domain(object$spde)) {
+    is_areal <- TRUE
+  }
+  xy_cols <- NULL
+  if (!is_areal) {
+    if (!"xy_cols" %in% names(object$spde)) {
+      cli_warn(c("It looks like this model was fit with make_spde().",
+      "Using `xy_cols`, but future versions of sdmTMB may not be compatible with this.",
+      "Please replace make_spde() with make_mesh()."))
+    } else {
+      xy_cols <- object$spde$xy_cols
+    }
   }
 
   if (object$version < numeric_version("0.5.0.9001")) {
@@ -328,13 +335,13 @@ predict.sdmTMB <- function(object, newdata = NULL,
   has_covariate_diffusion <- !is.null(object$covariate_diffusion_data)
 
   if (!is.null(newdata)) {
-    needs_xy <- if (has_covariate_diffusion) TRUE else isFALSE(pop_pred) && !no_spatial
+    needs_xy <- if (has_covariate_diffusion) TRUE else isFALSE(pop_pred) && !no_spatial && !is_areal
     if (any(!xy_cols %in% names(newdata)) && needs_xy)
       cli_abort(c("`xy_cols` (the column names for the x and y coordinates) are not in `newdata`.",
           "Did you miss specifying the argument `xy_cols` to match your data?",
           "The newer `make_mesh()` (vs. `make_spde()`) takes care of this for you."))
 
-    if (isFALSE(pop_pred) && (!no_spatial || has_covariate_diffusion)) {
+    if (isFALSE(pop_pred) && !is_areal && (!no_spatial || has_covariate_diffusion)) {
       xy_orig <- object$data[,xy_cols]
       xy_nd <- newdata[,xy_cols]
       all_outside <- function(x1, x2) {
@@ -377,7 +384,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     # If making population predictions (with standard errors), we don't need
     # to worry about space, so fill in dummy values if the user hasn't made any:
     fake_spatial_added <- FALSE
-    if (pop_pred) {
+    if (pop_pred && !is_areal) {
       for (i in c(1, 2)) {
         if (!xy_cols[[i]] %in% names(newdata)) {
           suppressWarnings({
@@ -394,7 +401,25 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
     newdata$sdm_orig_id <- seq(1L, nrow(newdata))
 
-    if (!no_spatial || has_covariate_diffusion) {
+    if (is_areal) {
+      newdata[["sdm_spatial_id"]] <- seq_len(nrow(newdata)) - 1L
+      if (isFALSE(pop_pred) && !no_spatial) {
+        if (!object$spde$space_column %in% names(newdata)) {
+          cli_abort("Areal space column {.field {object$spde$space_column}} was not found in `newdata`.")
+        }
+        if (anyNA(newdata[[object$spde$space_column]])) {
+          cli_abort("Areal space column {.field {object$spde$space_column}} contains missing values in `newdata`.")
+        }
+        proj_mesh <- areal_projection_matrix(object$spde, newdata)
+      } else {
+        proj_mesh <- Matrix::sparseMatrix(
+          i = integer(0L),
+          j = integer(0L),
+          x = numeric(0L),
+          dims = c(nrow(newdata), object$spde$n_s)
+        )
+      }
+    } else if (!no_spatial || has_covariate_diffusion) {
       if (requireNamespace("dplyr", quietly = TRUE)) { # faster
         unique_newdata <- dplyr::distinct(newdata[, xy_cols, drop = FALSE])
       } else {
@@ -565,8 +590,13 @@ predict.sdmTMB <- function(object, newdata = NULL,
     time_lu <- object$time_lu
     tmb_data$proj_year <- time_lu$year_i[match(nd[[object$time]], time_lu$time_from_data)] # was make_year_i(nd[[object$time]])
     tmb_data$proj_time_include <- as.integer(time_lu$time_from_data %in% nd[[object$time]])
-    tmb_data$proj_lon <- newdata[[xy_cols[[1]]]]
-    tmb_data$proj_lat <- newdata[[xy_cols[[2]]]]
+    if (is_areal) {
+      tmb_data$proj_lon <- rep(0, nrow(newdata))
+      tmb_data$proj_lat <- rep(0, nrow(newdata))
+    } else {
+      tmb_data$proj_lon <- if (xy_cols[[1]] %in% names(newdata)) newdata[[xy_cols[[1]]]] else rep(0, nrow(newdata))
+      tmb_data$proj_lat <- if (xy_cols[[2]] %in% names(newdata)) newdata[[xy_cols[[2]]]] else rep(0, nrow(newdata))
+    }
     tmb_data$calc_se <- as.integer(se_fit)
     tmb_data$pop_pred <- as.integer(pop_pred)
     tmb_data$exclude_RE <- exclude_RE
@@ -978,7 +1008,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     nd$zeta_s <- NULL
   }
 
-  if (no_spatial) nd[,xy_cols] <- NULL
+  if (no_spatial && !is.null(xy_cols)) nd[,xy_cols] <- NULL
   nd[["_sdmTMB_time"]] <- NULL
   if (no_spatial) nd[["est_rf"]] <- NULL
   if (no_spatial) nd[["est_non_rf"]] <- NULL

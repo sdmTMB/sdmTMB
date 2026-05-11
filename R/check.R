@@ -241,26 +241,30 @@ sanity <- function(object, big_sd_log10 = 2, gradient_thresh = 0.001, silent = F
     if (!silent) cli::cli_alert_success(msg)
   }
 
-  r1 <- diff(range(object$data[[object$spde$xy_cols[1]]]))
-  r2 <- diff(range(object$data[[object$spde$xy_cols[2]]]))
-  r <- max(r1, r2)
   range_ok <- TRUE
-  if ("range" %in% b$term) {
-    if (max(b$estimate[b$term == "range"]) > r * 1.5) {
-      msg <- "A `range` parameter looks fairly large (> 1.5 the greatest distance in data)"
-      if (!silent) {
-        cli::cli_alert_danger(msg)
-        cli::cli_alert_info(simplify_msg)
-        cli::cli_alert_info("Also make sure your spatial coordinates are not too big or small (e.g., work in UTM km instead of UTM m)", wrap = TRUE)
-        cat("\n")
+  if (!is_areal_fit(object) && "xy_cols" %in% names(object$spde)) {
+    r1 <- diff(range(object$data[[object$spde$xy_cols[1]]]))
+    r2 <- diff(range(object$data[[object$spde$xy_cols[2]]]))
+    r <- max(r1, r2)
+    if ("range" %in% b$term) {
+      if (max(b$estimate[b$term == "range"]) > r * 1.5) {
+        msg <- "A `range` parameter looks fairly large (> 1.5 the greatest distance in data)"
+        if (!silent) {
+          cli::cli_alert_danger(msg)
+          cli::cli_alert_info(simplify_msg)
+          cli::cli_alert_info("Also make sure your spatial coordinates are not too big or small (e.g., work in UTM km instead of UTM m)", wrap = TRUE)
+          cat("\n")
+        }
+        range_ok <- FALSE
+      } else {
+        nr <- length(grep("range", b$term))
+        if (nr == 1L) msg <- "Range parameter doesn't look unreasonably large"
+        if (nr > 1L) msg <- "Range parameters don't look unreasonably large"
+        if (!silent) cli::cli_alert_success(msg)
       }
-      range_ok <- FALSE
-    } else {
-      nr <- length(grep("range", b$term))
-      if (nr == 1L) msg <- "Range parameter doesn't look unreasonably large"
-      if (nr > 1L) msg <- "Range parameters don't look unreasonably large"
-      if (!silent) cli::cli_alert_success(msg)
     }
+  } else if (is_areal_fit(object) && !silent) {
+    cli::cli_alert_info("Skipping coordinate/range sanity checks for areal domains.")
   }
 
   ret <- named_list(

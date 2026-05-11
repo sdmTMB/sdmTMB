@@ -349,6 +349,9 @@ print_time_varying <- function(x, m = 1) {
 }
 
 print_range <- function(x, m = 1L, digits = 2L) {
+  if (is_areal_fit(x)) {
+    return(NULL)
+  }
   b <- tidy(x, effects = "ran_pars", model = m, silent = TRUE)
   range <- b$estimate[b$term == "range"]
   if (is.null(range)) {
@@ -434,6 +437,7 @@ print_anisotropy <- function(x, m = 1L, digits = 1L, return_dat = FALSE) {
 
 print_other_parameters <- function(x, m = 1L) {
   b <- tidy(x, "ran_pars", model = m, silent = TRUE)
+  is_areal <- is_areal_fit(x)
 
   get_term_text <- function(term_name = "", pretext = "") {
     b2 <- as.list(x$sd_report, what = "Estimate")
@@ -463,11 +467,21 @@ print_other_parameters <- function(x, m = 1L) {
   gengamma_par <- if ('gengamma' %in% family(x)[[m]]) {
     get_term_text("gengamma_Q", "Generalized gamma Q")
     } else ""
-  sigma_O <- get_term_text("sigma_O", "Spatial SD")
+  sigma_O <- if (is_areal) {
+    get_term_text("sigma_O", "Spatial SAR field scale")
+  } else {
+    get_term_text("sigma_O", "Spatial SD")
+  }
   xtra <- if (x$spatiotemporal[m] == "ar1") "marginal " else ""
-  sigma_E <- get_term_text("sigma_E",
-    paste0("Spatiotemporal ", xtra, toupper(x$spatiotemporal[m]), " SD"))
+  sigma_E <- if (is_areal) {
+    get_term_text("sigma_E",
+      paste0("Spatiotemporal ", xtra, toupper(x$spatiotemporal[m]), " SAR field scale"))
+  } else {
+    get_term_text("sigma_E",
+      paste0("Spatiotemporal ", xtra, toupper(x$spatiotemporal[m]), " SD"))
+  }
   rho <- get_term_text("rho", "Spatiotemporal AR1 correlation (rho)")
+  rho_sar <- get_term_text("rho_sar", "SAR spatial correlation")
   rhoT <- covariate_diffusion_term_text("rhoT", "Distributed lag temporal persistence")
   RMSD <- covariate_diffusion_term_text("RMSD", "Distributed lag RMSD")
 
@@ -477,7 +491,8 @@ print_other_parameters <- function(x, m = 1L) {
     sigma_Z <- x$tmb_obj$report(x$tmb_obj$env$last.par.best)$sigma_Z
     sigma_Z <- sigma_Z[,m,drop=TRUE]
     a <- mround(sigma_Z, 2L)
-    sigma_Z <- paste0("Spatially varying coefficient SD (", x$spatial_varying,  "): ", a, "\n")
+    sigma_label <- if (is_areal) "Spatially varying coefficient SAR field scale" else "Spatially varying coefficient SD"
+    sigma_Z <- paste0(sigma_label, " (", x$spatial_varying,  "): ", a, "\n")
     sigma_Z <- gsub("\\(\\(", "\\(", sigma_Z) # ((Intercept))
     sigma_Z <- gsub("\\)\\)", "\\)", sigma_Z) # ((Intercept))
     sigma_Z <- paste(sigma_Z, collapse = "")
@@ -485,7 +500,7 @@ print_other_parameters <- function(x, m = 1L) {
     sigma_Z <- ""
   }
 
-  named_list(phi, tweedie_p, student_df, sigma_O, sigma_E, sigma_Z, rho, rhoT, RMSD, gengamma_par)
+  named_list(phi, tweedie_p, student_df, sigma_O, sigma_E, sigma_Z, rho, rho_sar, rhoT, RMSD, gengamma_par)
 }
 
 print_header <- function(x) {
@@ -545,6 +560,7 @@ print_one_model <- function(x, m = 1, edf = FALSE, silent = FALSE) {
   cat(other$student_df)
   cat(other$gengamma_par)
   cat(other$rho)
+  cat(other$rho_sar)
   cat(other$rhoT)
   cat(range)
   cat(other$sigma_O)
