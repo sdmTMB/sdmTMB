@@ -43,8 +43,6 @@ test_that("make_areal_domain handles islands", {
 })
 
 test_that("make_areal_domain works with named igraph input", {
-  skip_if_not_installed("igraph")
-
   g <- igraph::make_empty_graph(n = 3, directed = FALSE)
   igraph::V(g)$name <- c("a", "b", "c")
   g <- igraph::add_edges(g, c("a", "b", "b", "c"))
@@ -172,7 +170,6 @@ test_that("make_areal_domain validates required membership column and missing va
 })
 
 test_that("make_areal_domain validates malformed graph/matrix inputs", {
-  skip_if_not_installed("igraph")
 
   g_unnamed <- igraph::make_ring(3, directed = FALSE)
   expect_error(

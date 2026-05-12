@@ -70,6 +70,7 @@ Imports:
     fishMod,
     generics,
     graphics,
+    igraph,
     lifecycle,
     Matrix,
     methods,

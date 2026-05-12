@@ -32,3 +32,6 @@ revdep/
 ^tests/testthat/Rplots.pdf$
 ^\.positai$
 ^\.claude$
+^\.agents
+^\.codex-plugins
+^Rplots.pdf$

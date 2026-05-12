@@ -32,9 +32,6 @@ make_areal_domain <- function(data, spatial_domain, space_column,
   from_igraph <- FALSE
   if (inherits(spatial_domain, "igraph")) {
     from_igraph <- TRUE
-    if (!requireNamespace("igraph", quietly = TRUE)) {
-      cli::cli_abort("`igraph` must be installed to use an igraph `spatial_domain` input.")
-    }
     unit_names <- igraph::V(spatial_domain)$name
     if (is.null(unit_names) || anyNA(unit_names) || any(!nzchar(unit_names))) {
       cli::cli_abort(c(
