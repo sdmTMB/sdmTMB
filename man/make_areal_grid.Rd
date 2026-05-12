@@ -10,7 +10,7 @@ make_areal_grid(
   spatial_domain = NULL,
   cellsize = NULL,
   n = NULL,
-  square = FALSE,
+  square = TRUE,
   space_column = "grid_cell",
   adjacency = c("rook", "queen"),
   crs = NA
@@ -49,5 +49,5 @@ supplied to \code{\link[=sdmTMB]{sdmTMB()}} via the \code{mesh} argument.
 \description{
 Build or use an \code{sf} polygon grid, overlay point observations onto grid
 cells, construct grid-cell adjacency, and return labelled data plus an
-\code{sdmTMBareal} domain for SAR models.
+\code{sdmTMBareal} domain for SAR/CAR models.
 }

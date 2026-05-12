@@ -180,8 +180,8 @@ Type objective_function<Type>::operator()()
 
   DATA_SPARSE_MATRIX(A_st); // INLA 'A' projection matrix for unique stations
   DATA_IVECTOR(A_spatial_index); // Vector of stations to match up A_st output
-  DATA_INTEGER(spatial_model); // 0 = SPDE, 1 = areal SAR
-  DATA_SPARSE_MATRIX(W_ss); // row-normalized areal weights matrix
+  DATA_INTEGER(spatial_model); // 0 = SPDE, 1 = areal SAR, 2 = areal CAR
+  DATA_SPARSE_MATRIX(W_ss); // areal weights matrix: row-normalized SAR or raw CAR adjacency
 
   // Indices for factors
   DATA_FACTOR(year_i);
@@ -295,7 +295,7 @@ Type objective_function<Type>::operator()()
   PARAMETER_ARRAY(ln_tau_V);  // random walk sigma
   PARAMETER_ARRAY(rho_time_unscaled); // (k, m) dimension ar1 time correlation rho -Inf to Inf
   PARAMETER_VECTOR(ar1_phi);          // AR1 fields correlation
-  PARAMETER_VECTOR(logit_rho_sar);    // SAR rho (areal domains)
+  PARAMETER_VECTOR(logit_rho_sar);    // areal dependence parameter
 
   // Random effects
   PARAMETER_ARRAY(re_cov_pars); // covariance parameters for random slopes/intercepts
@@ -337,8 +337,10 @@ Type objective_function<Type>::operator()()
   vector<Type> rho(n_m);
   for (int m = 0; m < n_m; m++) rho(m) = sdmTMB::minus_one_to_one(ar1_phi(m));
   vector<Type> rho_sar(logit_rho_sar.size());
+  vector<Type> alpha_car(logit_rho_sar.size());
   for (int m = 0; m < logit_rho_sar.size(); m++) {
     rho_sar(m) = sdmTMB::minus_one_to_one(logit_rho_sar(m));
+    alpha_car(m) = invlogit(logit_rho_sar(m));
   }
   vector<Type> phi = exp(ln_phi);
 
@@ -520,11 +522,18 @@ Type objective_function<Type>::operator()()
     }
     if (share_range(0)) Q_st = Q_s;
     if (share_range(1)) Q_st2 = Q_s2;
-  } else {
+  } else if (spatial_model == 1) {
     Q_s = Q_st = sdmTMB::Q_SAR(rho_sar(0), W_ss);
     if (n_m > 1) {
       Q_s2 = Q_st2 = sdmTMB::Q_SAR(rho_sar(1), W_ss);
     }
+  } else if (spatial_model == 2) {
+    Q_s = Q_st = sdmTMB::Q_CAR(alpha_car(0), W_ss);
+    if (n_m > 1) {
+      Q_s2 = Q_st2 = sdmTMB::Q_CAR(alpha_car(1), W_ss);
+    }
+  } else {
+    error("Spatial model not implemented.");
   }
 
   bool s = true;
@@ -1742,6 +1751,10 @@ Type objective_function<Type>::operator()()
   if (spatial_model == 1) {
     REPORT(rho_sar);
     ADREPORT(rho_sar);
+  }
+  if (spatial_model == 2) {
+    REPORT(alpha_car);
+    ADREPORT(alpha_car);
   }
   if (!no_spatial) {
     REPORT(rho);          // AR1 correlation in -1 to 1 space

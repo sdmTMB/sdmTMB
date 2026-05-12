@@ -68,6 +68,7 @@ spread_sims <- function(object, nsim = 200) {
   row.names(samps)[row.names(samps) == "b_j"] <- fe_names
   out <- as.data.frame(t(samps))
   is_areal <- is_areal_fit(object)
+  is_car <- is_car_fit(object)
   has_ln_kappa <- "ln_kappa" %in% names(out)
 
   if (has_ln_kappa && !is_areal) {
@@ -83,7 +84,11 @@ spread_sims <- function(object, nsim = 200) {
     out$ar1_rho <- 2 * stats::plogis(out$ar1_phi) - 1
   }
   if ("logit_rho_sar" %in% names(out)) {
-    out$rho_sar <- 2 * stats::plogis(out$logit_rho_sar) - 1
+    if (is_car) {
+      out$alpha_car <- stats::plogis(out$logit_rho_sar)
+    } else {
+      out$rho_sar <- 2 * stats::plogis(out$logit_rho_sar) - 1
+    }
   }
   if ("ln_tau_O" %in% names(out)) {
     if (is_areal || !has_ln_kappa) {

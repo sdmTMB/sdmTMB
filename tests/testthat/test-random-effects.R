@@ -57,7 +57,7 @@ test_that("Model with random intercepts fits appropriately.", {
     n_sims <- 200
     tmb_sd <- object$sd_report
     set.seed(1)
-    samps <- sdmTMB:::rmvnorm_prec(object$tmb_obj$env$last.par.best, tmb_sd, n_sims)
+    samps <- rmvnorm_prec(object$tmb_obj$env$last.par.best, tmb_sd, n_sims)
     pars <- c(tmb_sd$par.fixed, tmb_sd$par.random)
     pn <- names(pars)
     samps[1:20,1:3]

@@ -12,6 +12,7 @@ sdmTMB(
   family = gaussian(link = "identity"),
   spatial = c("on", "off"),
   spatiotemporal = c("iid", "ar1", "rw", "off"),
+  spatial_model = c("spde", "sar", "car"),
   share_range = TRUE,
   time_varying = NULL,
   time_varying_type = c("rw", "rw0", "ar1"),
@@ -44,7 +45,8 @@ examples and details below.}
 
 \item{data}{A data frame.}
 
-\item{mesh}{An object from \code{\link[=make_mesh]{make_mesh()}}.}
+\item{mesh}{An object from \code{\link[=make_mesh]{make_mesh()}} for \code{spatial_model = "spde"} or
+from \code{\link[=make_areal_domain]{make_areal_domain()}} / \code{\link[=make_areal_grid]{make_areal_grid()}} for \code{"sar"} or \code{"car"}.}
 
 \item{time}{An optional time column name (as character). Can be left as
 \code{NULL} for a model with only spatial random fields; however, if the data
@@ -90,6 +92,11 @@ the AR1 correlation coefficient (rho) is estimated close to 1 (say > 0.99),
 consider switching to \code{'rw'}. See the \href{https://sdmTMB.github.io/sdmTMB/articles/model-description.html}{model description vignette} for
 mathematical details. Capitalization is ignored. \code{TRUE} gets converted to
 \code{'iid'} and \code{FALSE} gets converted to \code{'off'}.}
+
+\item{spatial_model}{Spatial process model. \code{"spde"} uses the default
+continuous-space SPDE approximation. \code{"sar"} and \code{"car"} use areal spatial
+autoregressive models with an areal domain supplied to \code{mesh}. Capitalization is
+ignored.}
 
 \item{share_range}{Logical: estimate a shared spatial and spatiotemporal
 range parameter (\code{TRUE}, default) or independent range parameters

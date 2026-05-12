@@ -1,7 +1,8 @@
-#' Create an areal spatial domain for SAR models
+#' Create an areal spatial domain for SAR/CAR models
 #'
 #' Build a reusable areal domain object with adjacency weights and unit labels.
-#' The returned object can be supplied to `mesh` in [sdmTMB()] in SAR workflows.
+#' The returned object can be supplied to `mesh` in [sdmTMB()] in areal
+#' SAR/CAR workflows.
 #'
 #' @param data A data frame used for membership validation against the domain.
 #' @param spatial_domain A named `igraph` object or a square numeric matrix /
@@ -70,7 +71,8 @@ make_areal_domain <- function(data, spatial_domain, space_column,
   unit_names <- as.character(rownames(W))
 
   .validate_areal_matrix_values(W, stage = "before normalization")
-  W <- .normalize_areal_W(W)
+  W_raw <- methods::as(W, "dgCMatrix")
+  W <- .normalize_areal_W(W_raw)
   .validate_areal_matrix_values(W, stage = "after normalization")
   .validate_areal_row_sums(W)
   .validate_areal_data_membership(
@@ -82,6 +84,7 @@ make_areal_domain <- function(data, spatial_domain, space_column,
   structure(
     list(
       W = W,
+      W_raw = W_raw,
       n_s = as.integer(length(unit_names)),
       unit_names = unit_names,
       space_column = space_column
@@ -94,7 +97,7 @@ make_areal_domain <- function(data, spatial_domain, space_column,
 #'
 #' Build or use an `sf` polygon grid, overlay point observations onto grid
 #' cells, construct grid-cell adjacency, and return labelled data plus an
-#' `sdmTMBareal` domain for SAR models.
+#' `sdmTMBareal` domain for SAR/CAR models.
 #'
 #' @param data A data frame containing point coordinates.
 #' @param xy_cols Character vector of length 2 naming coordinate columns in
@@ -373,11 +376,17 @@ is_areal_domain <- function(x) inherits(x, "sdmTMBareal")
 
 is_areal_fit <- function(object) {
   if (!is.null(object$tmb_data) && "spatial_model" %in% names(object$tmb_data)) {
-    if (identical(object$tmb_data$spatial_model, 1L)) {
+    if (object$tmb_data$spatial_model %in% c(1L, 2L)) {
       return(TRUE)
     }
   }
   !is.null(object$spde) && is_areal_domain(object$spde)
+}
+
+is_car_fit <- function(object) {
+  !is.null(object$tmb_data) &&
+    "spatial_model" %in% names(object$tmb_data) &&
+    identical(object$tmb_data$spatial_model, 2L)
 }
 
 domain_n_s <- function(mesh) {
@@ -409,12 +418,21 @@ areal_projection_matrix <- function(mesh, data) {
   )
 }
 
-prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range,
-                                   anisotropy, covariate_diffusion, priors,
+prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
+                                   anisotropy = FALSE, covariate_diffusion, priors = sdmTMBpriors(),
                                    normalize, experimental = NULL,
-                                   share_range_user = share_range) {
+                                   share_range_user = share_range,
+                                   spatial_model = c("spde", "sar", "car")) {
+  spatial_model <- match.arg(tolower(spatial_model[1L]), c("spde", "sar", "car"))
   is_areal <- !mesh_missing && is_areal_domain(mesh)
   spde <- mesh
+
+  if (spatial_model == "spde" && is_areal) {
+    cli::cli_abort("`spatial_model = \"spde\"` requires an SPDE mesh from `make_mesh()`. Use `spatial_model = \"sar\"` or `\"car\"` with an areal domain.")
+  }
+  if (spatial_model %in% c("sar", "car") && !is_areal) {
+    cli::cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain from `make_areal_domain()` or `make_areal_grid()`.")
+  }
 
   if (is_areal) {
     space_column <- spde$space_column
@@ -450,14 +468,18 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range,
         !is.null(experimental$epsilon_model)) {
       cli::cli_abort("`experimental$epsilon_model` is not supported with areal domains.")
     }
+    if (spatial_model == "car" && !Matrix::isSymmetric(spde$W_raw)) {
+      cli::cli_abort("`spatial_model = \"car\"` requires a symmetric areal adjacency matrix.")
+    }
 
     return(list(
       type = "areal",
+      spatial_model = spatial_model,
       spde = spde,
       n_s = spde$n_s,
       A_st = areal_projection_matrix(spde, data),
       A_spatial_index = seq_len(nrow(data)) - 1L,
-      W_ss = spde$W,
+      W_ss = if (spatial_model == "car") spde$W_raw else spde$W,
       normalize_in_r = 0L,
       barrier = 0L,
       barrier_scaling = c(1, 1),
@@ -483,6 +505,7 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range,
 
   list(
     type = "spde",
+    spatial_model = spatial_model,
     spde = spde,
     n_s = nrow(spde$mesh$loc),
     A_st = spde$A_st,

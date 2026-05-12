@@ -31,6 +31,7 @@ fit <- sdmTMB(
   cases ~ 0 + as.factor(year) + pct_male,
   data = dat,
   mesh = domain,
+  spatial_model = "sar",
   time = "year",
   family = poisson(link = "log"),
   spatial = "on",

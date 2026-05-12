@@ -1,11 +1,4 @@
-## SAR example: pcod data on a regular areal grid.
-##
-## This is a simple areal-vs-SPDE comparison using the 2011 pcod data.
-## The workflow is:
-## - build an sf boundary from the point cloud
-## - overlay the points on a regular areal grid with `make_areal_grid()`
-## - fit the same model with an areal SAR domain and a standard SPDE mesh
-## - predict both models back onto the same grid
+# CAR/SAR example: dogfish data on a regular areal grid.
 
 pkgload::load_all(".", quiet = TRUE)
 
@@ -24,7 +17,7 @@ dogfish_grid_obj <- make_areal_grid(
   dogfish,
   xy_cols = c("X", "Y"),
   spatial_domain = dogfish_boundary,
-  n = c(20L, 15L),
+  n = c(25L, 20L),
   space_column = "cell_id"
 )
 plot(dogfish_grid_obj$grid[[1]])
@@ -47,6 +40,7 @@ fit_dogfish <- sdmTMB(
   catch_weight ~ log_depth,
   data = cell_data,
   mesh = dogfish_grid_obj$domain,
+  spatial_model = "car",
   time = "year",
   family = tweedie(link = "log"),
   spatial = "on",
@@ -86,8 +80,23 @@ pred_dogfish <- predict(
 
 pred_dogfish_grid <- left_join(
   dogfish_grid_obj$grid,
-  mutate(pred_data, est = pred_dogfish$est)
+  mutate(pred_data,
+    est = pred_dogfish$est,
+    omega_s = pred_dogfish$omega_s,
+    epsilon_st = pred_dogfish$epsilon_st
+  )
 )
+
+ggplot(pred_dogfish_grid) +
+  geom_sf(aes(fill = omega_s), colour = "grey40") +
+  scale_fill_gradient2() +
+  labs(fill = "Spatial random effects")
+
+ggplot(pred_dogfish_grid) +
+  geom_sf(aes(fill = epsilon_st), colour = "grey40") +
+  facet_wrap(~year) +
+  scale_fill_gradient2() +
+  labs(fill = "Spatiotemporal random effects")
 
 ggplot(pred_dogfish_grid) +
   geom_sf(aes(fill = est), colour = "grey40") +

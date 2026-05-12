@@ -65,6 +65,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
 
   reinitialize(x)
   is_areal <- is_areal_fit(x)
+  is_car <- is_car_fit(x)
 
   delta <- isTRUE(x$family$delta)
   assert_that(is.numeric(model))
@@ -126,6 +127,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     p$sigma_O <- .subset_model(p$sigma_O)
     p$sigma_Z <- .subset_model(p$sigma_Z)
     p$rho_sar <- .subset_model(p$rho_sar)
+    p$alpha_car <- .subset_model(p$alpha_car)
 
     if (!is.null(p$rho_time_unscaled) && length(p$rho_time_unscaled)) {
       p$rho_time_unscaled <- .subset_model(p$rho_time_unscaled)
@@ -134,8 +136,13 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
       p$rho_time <- numeric(0)
     }
     if (!is.null(p$logit_rho_sar) && length(p$logit_rho_sar) &&
-        (is.null(p$rho_sar) || !length(p$rho_sar))) {
-      p$rho_sar <- 2 * plogis(p$logit_rho_sar) - 1
+        (is.null(p$rho_sar) || !length(p$rho_sar)) &&
+        (is.null(p$alpha_car) || !length(p$alpha_car))) {
+      if (is_car) {
+        p$alpha_car <- plogis(p$logit_rho_sar)
+      } else {
+        p$rho_sar <- 2 * plogis(p$logit_rho_sar) - 1
+      }
     }
     p
   }
@@ -240,7 +247,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
   if (is_areal && "logit_rho_sar" %in% names(est) && length(est$logit_rho_sar)) {
     log_name <- c(log_name, "logit_rho_sar")
-    name <- c(name, "rho_sar")
+    name <- c(name, if (is_car) "alpha_car" else "rho_sar")
   }
 
   j <- 0
@@ -260,7 +267,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
       this <- non_log_name[j]
       if (this == "tau_V") this <- "sigma_V"
       if (this == "rho_time_unscaled") this <- "rho_time"
-      if (this == "logit_rho_sar") this <- "rho_sar"
+      if (this == "logit_rho_sar") this <- if (is_car) "alpha_car" else "rho_sar"
 
       this_se <- as.numeric(se[[this]])
       this_est <- as.numeric(est[[this]])
@@ -283,6 +290,16 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
             # don't use delta-method for CIs, because they can be outside (-1,1)
             conf.low = 2 * plogis(.e - crit * .se) - 1,
             conf.high = 2 * plogis(.e + crit * .se) - 1,
+            stringsAsFactors = FALSE
+          )
+        }
+        if (this == "alpha_car") {
+          out_re[[i]] <- data.frame(
+            term = i,
+            estimate = plogis(.e),
+            std.error = plogis(.e) * (1 - plogis(.e)) * .se,
+            conf.low = plogis(.e - crit * .se),
+            conf.high = plogis(.e + crit * .se),
             stringsAsFactors = FALSE
           )
         }

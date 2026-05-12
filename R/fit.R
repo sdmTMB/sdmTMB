@@ -17,7 +17,12 @@ NULL
 #'   \pkg{mgcv} with `s()`. Optionally a list for delta (hurdle) models.  See
 #'   examples and details below.
 #' @param data A data frame.
-#' @param mesh An object from [make_mesh()].
+#' @param mesh An object from [make_mesh()] for `spatial_model = "spde"` or
+#'   from [make_areal_domain()] / [make_areal_grid()] for `"sar"` or `"car"`.
+#' @param spatial_model Spatial process model. `"spde"` uses the default
+#'   continuous-space SPDE approximation. `"sar"` and `"car"` use areal spatial
+#'   autoregressive models with an areal domain supplied to `mesh`.
+#'   Capitalization is ignored.
 #' @param time An optional time column name (as character). Can be left as
 #'   `NULL` for a model with only spatial random fields; however, if the data
 #'   are actually spatiotemporal and you wish to use [get_index()] or [get_cog()]
@@ -592,6 +597,7 @@ sdmTMB <- function(
     family = gaussian(link = "identity"),
     spatial = c("on", "off"),
     spatiotemporal = c("iid", "ar1", "rw", "off"),
+    spatial_model = c("spde", "sar", "car"),
     share_range = TRUE,
     time_varying = NULL,
     time_varying_type = c("rw", "rw0", "ar1"),
@@ -614,8 +620,11 @@ sdmTMB <- function(
     covariate_diffusion = NULL,
     experimental = NULL) {
   mesh_missing <- missing(mesh)
-  spatial_model <- if (!mesh_missing && is_areal_domain(mesh)) "areal" else "spde"
-  is_areal <- identical(spatial_model, "areal")
+  spatial_model <- match.arg(tolower(spatial_model[1L]), c("spde", "sar", "car"))
+  if (mesh_missing && spatial_model %in% c("sar", "car")) {
+    cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain supplied to `mesh`.")
+  }
+  is_areal <- spatial_model %in% c("sar", "car")
   data <- droplevels(data) # if data was subset, strips absent factors
 
   delta <- isTRUE(family$delta)
@@ -688,6 +697,12 @@ sdmTMB <- function(
   share_range[spatial == "off"] <- TRUE
 
   spde <- mesh
+  if (!mesh_missing && spatial_model == "spde" && is_areal_domain(spde)) {
+    cli_abort("`spatial_model = \"spde\"` requires an SPDE mesh from `make_mesh()`. Use `spatial_model = \"sar\"` or `\"car\"` with an areal domain.")
+  }
+  if (!mesh_missing && spatial_model %in% c("sar", "car") && !is_areal_domain(spde)) {
+    cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain from `make_areal_domain()` or `make_areal_grid()`.")
+  }
   epsilon_model <- NULL
   epsilon_predictor <- NULL
   covariate_diffusion_covariate_vertex_override <- NULL
@@ -824,7 +839,8 @@ sdmTMB <- function(
     priors = priors,
     normalize = normalize,
     experimental = experimental,
-    share_range_user = share_range_user
+    share_range_user = share_range_user,
+    spatial_model = spatial_model
   )
   is_areal <- identical(domain$type, "areal")
 
@@ -1276,7 +1292,7 @@ sdmTMB <- function(
     offset_i = offset,
     proj_offset_i = 0,
     A_st = A_st,
-    spatial_model = if (is_areal) 1L else 0L,
+    spatial_model = switch(domain$spatial_model, spde = 0L, sar = 1L, car = 2L),
     W_ss = domain$W_ss,
     sim_re = if ("sim_re" %in% names(experimental)) as.integer(experimental$sim_re) else rep(0L, 6),
     sim_obs = 1L,
@@ -1476,7 +1492,8 @@ sdmTMB <- function(
       profile = control$profile,
       map = tmb_map, DLL = "sdmTMB", silent = silent
     )
-    lim <- set_limits(tmb_obj1, lower = lower, upper = upper, silent = TRUE)
+    lim <- set_limits(tmb_obj1, lower = lower, upper = upper,
+      spatial_model = tmb_data$spatial_model, silent = TRUE)
 
     tmb_opt1 <- stats::nlminb(
       start = tmb_obj1$par, objective = tmb_obj1$fn,
@@ -1564,10 +1581,10 @@ sdmTMB <- function(
   tmb_map$ln_kappa <- get_kappa_map(n_m = n_m, spatial = spatial, spatiotemporal = spatiotemporal, share_range = share_range)
   if (is_areal) {
     tmb_map$ln_kappa <- factor(rep(NA_integer_, length(tmb_params$ln_kappa)))
-    sar_field_active <- any(spatial == "on" & !omit_spatial_intercept) ||
+    areal_field_active <- any(spatial == "on" & !omit_spatial_intercept) ||
       !all(spatiotemporal == "off") ||
       !is.null(spatial_varying)
-    if (sar_field_active) {
+    if (areal_field_active) {
       tmb_map <- unmap(tmb_map, "logit_rho_sar")
     }
   }
@@ -1803,7 +1820,8 @@ sdmTMB <- function(
   )
   lim <- set_limits(tmb_obj,
     lower = lower, upper = upper,
-    loc = if (is_areal) NULL else spde$mesh$loc, silent = FALSE
+    loc = if (is_areal) NULL else spde$mesh$loc,
+    spatial_model = tmb_data$spatial_model, silent = FALSE
   )
 
   out_structure$tmb_obj <- tmb_obj
@@ -2041,7 +2059,8 @@ check_and_collapse_random_fields <- function(
   )
 }
 
-set_limits <- function(tmb_obj, lower, upper, loc = NULL, silent = TRUE) {
+set_limits <- function(tmb_obj, lower, upper, loc = NULL, spatial_model = 0L,
+                       silent = TRUE) {
   .lower <- stats::setNames(rep(-Inf, length(tmb_obj$par)), names(tmb_obj$par))
   .upper <- stats::setNames(rep(Inf, length(tmb_obj$par)), names(tmb_obj$par))
   for (i_name in names(lower)) {
@@ -2073,8 +2092,12 @@ set_limits <- function(tmb_obj, lower, upper, loc = NULL, silent = TRUE) {
   }
   if ("logit_rho_sar" %in% names(tmb_obj$par) &&
     !"logit_rho_sar" %in% union(names(lower), names(upper))) {
-    .lower["logit_rho_sar"] <- stats::qlogis((-0.999 + 1) / 2)
-    .upper["logit_rho_sar"] <- stats::qlogis((0.999 + 1) / 2)
+    if (identical(spatial_model, 2L)) {
+      .upper["logit_rho_sar"] <- stats::qlogis(0.999)
+    } else {
+      .lower["logit_rho_sar"] <- stats::qlogis((-0.999 + 1) / 2)
+      .upper["logit_rho_sar"] <- stats::qlogis((0.999 + 1) / 2)
+    }
   }
 
   list(lower = .lower, upper = .upper)

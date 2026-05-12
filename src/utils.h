@@ -227,6 +227,19 @@ Eigen::SparseMatrix<Type> Q_SAR(Type rho, const Eigen::SparseMatrix<Type>& W) {
   return B.transpose() * B;
 }
 
+template<class Type>
+Eigen::SparseMatrix<Type> Q_CAR(Type alpha, const Eigen::SparseMatrix<Type>& W) {
+  int n_s = W.rows();
+  vector<Type> one(n_s);
+  one.setOnes();
+  vector<Type> D = W * one;
+  Eigen::SparseMatrix<Type> Dmat(n_s, n_s);
+  for (int i = 0; i < n_s; ++i) {
+    Dmat.coeffRef(i, i) = D(i) > Type(0) ? D(i) : Type(1);
+  }
+  return Dmat - alpha * W;
+}
+
 // Alternative barrier SPDE function matching INLAspacetime implementation
 // This version uses INLAspacetime's mathematical formulation but lets sdmTMB
 // handle variance scaling through its existing tau mechanism

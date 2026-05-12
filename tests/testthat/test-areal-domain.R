@@ -17,6 +17,7 @@ test_that("make_areal_domain normalizes sparse matrix input", {
   expect_s3_class(d, "sdmTMBareal")
   expect_identical(d$n_s, 3L)
   expect_identical(d$unit_names, c("a", "b", "c"))
+  expect_equal(as.matrix(d$W_raw), as.matrix(W))
   expect_equal(as.numeric(Matrix::rowSums(d$W)), c(1, 1, 1))
   expect_equal(unname(Matrix::diag(d$W)), c(0, 0, 0))
 })
@@ -216,10 +217,10 @@ test_that("areal projection helpers map memberships", {
   rownames(W) <- colnames(W) <- c("a", "b")
   d <- make_areal_domain(data.frame(region = c("a", "b")), W, space_column = "region")
 
-  idx <- sdmTMB:::domain_obs_index(d, data.frame(region = c("b", "a", "b")))
+  idx <- domain_obs_index(d, data.frame(region = c("b", "a", "b")))
   expect_identical(idx, c(2L, 1L, 2L))
 
-  A <- sdmTMB:::areal_projection_matrix(d, data.frame(region = c("b", "a", "b")))
+  A <- areal_projection_matrix(d, data.frame(region = c("b", "a", "b")))
   expect_equal(dim(A), c(3, 2))
   expect_equal(as.vector(as.matrix(A)), as.vector(matrix(c(
     0, 1,
@@ -242,15 +243,13 @@ test_that("prepare_spatial_domain returns areal domain pieces", {
   dat <- data.frame(region = c("a", "b", "a"))
   d <- make_areal_domain(dat, W, space_column = "region")
 
-  out <- sdmTMB:::prepare_spatial_domain(
+  out <- prepare_spatial_domain(
     mesh = d,
     data = dat,
     mesh_missing = FALSE,
-    share_range = TRUE,
     anisotropy = FALSE,
     covariate_diffusion = NULL,
-    priors = sdmTMBpriors(),
-    normalize = TRUE
+    spatial_model = "sar"
   )
 
   expect_identical(out$type, "areal")
@@ -259,9 +258,39 @@ test_that("prepare_spatial_domain returns areal domain pieces", {
   expect_equal(out$A_spatial_index, 0:2)
   expect_s4_class(out$W_ss, "dgCMatrix")
   expect_equal(dim(out$W_ss), c(2L, 2L))
+  expect_equal(as.matrix(out$W_ss), as.matrix(d$W))
   expect_identical(out$normalize_in_r, 0L)
   expect_identical(out$barrier, 0L)
   expect_identical(out$anisotropy, 0L)
+})
+
+test_that("prepare_spatial_domain returns raw adjacency for CAR", {
+  W <- Matrix::Matrix(
+    c(
+      0, 1, 0,
+      1, 0, 1,
+      0, 1, 0
+    ),
+    nrow = 3,
+    byrow = TRUE,
+    sparse = TRUE
+  )
+  rownames(W) <- colnames(W) <- c("a", "b", "c")
+  dat <- data.frame(region = c("a", "b", "c", "a"))
+  d <- make_areal_domain(dat, W, space_column = "region")
+
+  out <- prepare_spatial_domain(
+    mesh = d,
+    data = dat,
+    mesh_missing = FALSE,
+    anisotropy = FALSE,
+    covariate_diffusion = NULL,
+    spatial_model = "car"
+  )
+
+  expect_identical(out$type, "areal")
+  expect_identical(out$spatial_model, "car")
+  expect_equal(as.matrix(out$W_ss), as.matrix(d$W_raw))
 })
 
 test_that("prepare_spatial_domain validates unsupported areal options", {
@@ -279,73 +308,64 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
   d <- make_areal_domain(dat, W, space_column = "region")
 
   expect_error(
-    sdmTMB:::prepare_spatial_domain(
+    prepare_spatial_domain(
       mesh = d,
       data = dat,
       mesh_missing = FALSE,
       share_range = FALSE,
       anisotropy = FALSE,
       covariate_diffusion = NULL,
-      priors = sdmTMBpriors(),
-      normalize = TRUE
+      spatial_model = "sar"
     ),
     "share_range = FALSE"
   )
 
   expect_error(
-    sdmTMB:::prepare_spatial_domain(
+    prepare_spatial_domain(
       mesh = d,
       data = dat,
       mesh_missing = FALSE,
-      share_range = TRUE,
       anisotropy = TRUE,
       covariate_diffusion = NULL,
-      priors = sdmTMBpriors(),
-      normalize = TRUE
+      spatial_model = "sar"
     ),
     "anisotropy.*not supported"
   )
 
   expect_error(
-    sdmTMB:::prepare_spatial_domain(
+    prepare_spatial_domain(
       mesh = d,
       data = dat,
       mesh_missing = FALSE,
-      share_range = TRUE,
       anisotropy = FALSE,
       covariate_diffusion = list(dummy = 1),
-      priors = sdmTMBpriors(),
-      normalize = TRUE
+      spatial_model = "sar"
     ),
     "covariate_diffusion.*not supported"
   )
 
   expect_error(
-    sdmTMB:::prepare_spatial_domain(
+    prepare_spatial_domain(
       mesh = d,
       data = dat["x"],
       mesh_missing = FALSE,
-      share_range = TRUE,
       anisotropy = FALSE,
       covariate_diffusion = NULL,
-      priors = sdmTMBpriors(),
-      normalize = TRUE
+      spatial_model = "sar"
     ),
     "areal domain was not found in `data`"
   )
 
-  pri <- sdmTMBpriors()
-  pri$matern_s[1] <- 1
+  pri <- sdmTMBpriors(matern_s = pc_matern(range_gt = 2, sigma_lt = 2))
   expect_error(
-    sdmTMB:::prepare_spatial_domain(
+    prepare_spatial_domain(
       mesh = d,
       data = dat,
       mesh_missing = FALSE,
-      share_range = TRUE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
       priors = pri,
-      normalize = TRUE
+      covariate_diffusion = NULL,
+      spatial_model = "sar"
     ),
     "PC Matern priors.*not supported"
   )
@@ -353,30 +373,26 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
   d_barrier <- d
   d_barrier$spde_barrier <- TRUE
   expect_error(
-    sdmTMB:::prepare_spatial_domain(
+    prepare_spatial_domain(
       mesh = d_barrier,
       data = dat,
       mesh_missing = FALSE,
-      share_range = TRUE,
       anisotropy = FALSE,
       covariate_diffusion = NULL,
-      priors = sdmTMBpriors(),
-      normalize = TRUE
+      spatial_model = "sar"
     ),
     "Barrier models are not supported"
   )
 
   expect_error(
-    sdmTMB:::prepare_spatial_domain(
+    prepare_spatial_domain(
       mesh = d,
       data = dat,
       mesh_missing = FALSE,
-      share_range = TRUE,
       anisotropy = FALSE,
       covariate_diffusion = NULL,
-      priors = sdmTMBpriors(),
-      normalize = TRUE,
-      experimental = list(epsilon_model = ~x)
+      experimental = list(epsilon_model = ~x),
+      spatial_model = "sar"
     ),
     "epsilon_model.*not supported"
   )
@@ -384,7 +400,7 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
 
 test_that("set_limits applies default bounds for SAR rho", {
   tmb_obj <- list(par = c(logit_rho_sar = 0))
-  lim <- sdmTMB:::set_limits(
+  lim <- set_limits(
     tmb_obj = tmb_obj,
     lower = list(),
     upper = list()
@@ -397,6 +413,18 @@ test_that("set_limits applies default bounds for SAR rho", {
     unname(lim$upper["logit_rho_sar"]),
     stats::qlogis((0.999 + 1) / 2)
   )
+})
+
+test_that("set_limits applies default bounds for CAR alpha", {
+  tmb_obj <- list(par = c(logit_rho_sar = 0))
+  lim <- set_limits(
+    tmb_obj = tmb_obj,
+    lower = list(),
+    upper = list(),
+    spatial_model = 2L
+  )
+  expect_equal(unname(lim$lower["logit_rho_sar"]), -Inf)
+  expect_equal(unname(lim$upper["logit_rho_sar"]), stats::qlogis(0.999))
 })
 
 build_predict_stub_with_areal_domain <- function(getsd = FALSE) {
@@ -490,10 +518,7 @@ test_that("areal tidy/print/sanity reporting paths avoid Matérn assumptions", {
   expect_match(txt, "SAR field scale")
   expect_false(grepl("Mat..rn range", txt))
 
-  expect_message(
-    s <- suppressWarnings(sanity(fit)),
-    regexp = "Skipping coordinate/range sanity checks for areal domains."
-  )
+  s <- suppressMessages(suppressWarnings(sanity(fit)))
   expect_true(is.list(s))
   expect_true("range_ok" %in% names(s))
 })
@@ -565,6 +590,7 @@ test_that("minimal areal do_fit FALSE model builds TMB object", {
     y ~ 1,
     data = smoke$data,
     mesh = smoke$domain,
+    spatial_model = "sar",
     family = gaussian(),
     do_fit = FALSE,
     silent = TRUE
@@ -572,6 +598,38 @@ test_that("minimal areal do_fit FALSE model builds TMB object", {
 
   expect_s3_class(fit, "sdmTMB")
   expect_true("logit_rho_sar" %in% names(fit$tmb_obj$par))
+})
+
+test_that("areal domains require explicit SAR or CAR spatial_model", {
+  skip_if_not_installed("TMB")
+
+  smoke <- build_areal_smoke_domain()
+  expect_error(
+    sdmTMB(
+      y ~ 1,
+      data = smoke$data,
+      mesh = smoke$domain,
+      family = gaussian(),
+      do_fit = FALSE,
+      silent = TRUE
+    ),
+    "spatial_model = \"spde\""
+  )
+
+  dat <- data.frame(y = stats::rnorm(8), X = seq_len(8), Y = rep(1:2, each = 4))
+  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.1)
+  expect_error(
+    sdmTMB(
+      y ~ 1,
+      data = dat,
+      mesh = mesh,
+      spatial_model = "sar",
+      family = gaussian(),
+      do_fit = FALSE,
+      silent = TRUE
+    ),
+    "requires an areal domain"
+  )
 })
 
 test_that("minimal Gaussian spatial-only areal SAR model fits", {
@@ -582,6 +640,7 @@ test_that("minimal Gaussian spatial-only areal SAR model fits", {
     y ~ 1,
     data = smoke$data,
     mesh = smoke$domain,
+    spatial_model = "sar",
     family = gaussian(),
     control = sdmTMBcontrol(getsd = FALSE, newton_loops = 0),
     silent = TRUE
@@ -599,6 +658,7 @@ test_that("tidy reports SAR rho on transformed scale for areal models", {
     y ~ 1,
     data = smoke$data,
     mesh = smoke$domain,
+    spatial_model = "sar",
     family = gaussian(),
     control = sdmTMBcontrol(newton_loops = 0),
     silent = TRUE
@@ -612,6 +672,48 @@ test_that("tidy reports SAR rho on transformed scale for areal models", {
   expect_true(all(rho$conf.low >= -1 & rho$conf.high <= 1))
 })
 
+test_that("minimal Gaussian spatial-only areal CAR model fits", {
+  skip_if_not_installed("TMB")
+
+  smoke <- build_areal_smoke_domain()
+  fit <- sdmTMB(
+    y ~ 1,
+    data = smoke$data,
+    mesh = smoke$domain,
+    spatial_model = "car",
+    family = gaussian(),
+    control = sdmTMBcontrol(getsd = FALSE, newton_loops = 0),
+    silent = TRUE
+  )
+
+  expect_s3_class(fit, "sdmTMB")
+  expect_true("logit_rho_sar" %in% names(fit$tmb_obj$par))
+  expect_identical(fit$tmb_data$spatial_model, 2L)
+})
+
+test_that("tidy reports CAR alpha on transformed scale for areal models", {
+  skip_if_not_installed("TMB")
+
+  smoke <- build_areal_smoke_domain()
+  fit <- sdmTMB(
+    y ~ 1,
+    data = smoke$data,
+    mesh = smoke$domain,
+    spatial_model = "car",
+    family = gaussian(),
+    control = sdmTMBcontrol(newton_loops = 0),
+    silent = TRUE
+  )
+  td <- tidy(fit, "ran_pars", silent = TRUE)
+  alpha <- td[td$term == "alpha_car", , drop = FALSE]
+
+  expect_false("range" %in% td$term)
+  expect_false("rho_sar" %in% td$term)
+  expect_equal(nrow(alpha), 1L)
+  expect_true(all(alpha$estimate >= 0 & alpha$estimate <= 1))
+  expect_true(all(alpha$conf.low >= 0 & alpha$conf.high <= 1))
+})
+
 test_that("areal share_range FALSE errors before TMB object construction", {
   skip_if_not_installed("TMB")
 
@@ -621,6 +723,7 @@ test_that("areal share_range FALSE errors before TMB object construction", {
       y ~ 1,
       data = smoke$data,
       mesh = smoke$domain,
+      spatial_model = "sar",
       family = gaussian(),
       share_range = FALSE,
       spatial = "off",
@@ -639,6 +742,7 @@ test_that("no-spatial areal models do not estimate SAR rho", {
     y ~ 1,
     data = smoke$data,
     mesh = smoke$domain,
+    spatial_model = "sar",
     family = gaussian(),
     spatial = "off",
     do_fit = FALSE,

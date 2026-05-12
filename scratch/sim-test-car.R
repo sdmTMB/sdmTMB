@@ -7,9 +7,8 @@ sim_car <- function(seed) {
   distance <- as.matrix(dist(grid))
   W <- array(0, c(n, n))
   W[distance == 1] <- 1
+  rownames(W) <- colnames(W) <- as.character(seq_len(n))
 
-  CAR_nb <- W
-  diag(CAR_nb) <- rowSums(W)
   D <- rowSums(W)
   alpha <- 0.8
   tau <- 2
@@ -47,19 +46,19 @@ sim_car <- function(seed) {
   # try with limits, no priors
   m <- sdmTMB(y ~ 1,
     data = df, time = "year",
-    mesh = make_mesh(df, c("lon", "lat"), n_knots = 8),
+    mesh = make_areal_domain(df, W, space_column = "car_region"),
+    spatial_model = "car",
     spatiotemporal = "off",
-    spatial = "on", silent = TRUE,
-    CAR_neighbours = CAR_nb
+    spatial = "on", silent = TRUE
   )
 
-  est_ln_tau_inv <- as.numeric(m$sd_report$par.fixed[which(names(m$sd_report$par.fixed) == "ln_car_tau_s")])
-  est_tau <- (1 / exp(est_ln_tau_inv))^2
+  est_ln_tau <- as.numeric(m$sd_report$par.fixed[which(names(m$sd_report$par.fixed) == "ln_tau_O")])
+  est_tau <- exp(est_ln_tau)^2
   # expect_equal(est_tau, tau, tolerance = 0.1)
 
-  alpha_est <- as.numeric(m$sd_report$par.fixed[which(names(m$sd_report$par.fixed) == "logit_car_alpha_s")])
-  alpha_est <- plogis(alpha_est)
-  # expect_equal(plogis(alpha_est), alpha, tolerance = 0.07)
+  td <- tidy(m, "ran_pars")
+  alpha_est <- td$estimate[td$term == "alpha_car"]
+  # expect_equal(alpha_est, alpha, tolerance = 0.07)
 
   # names(ln_phi) = "ln_phi"
   ln_phi <- m$sd_report$par.fixed[which(names(m$sd_report$par.fixed) == "ln_phi")]

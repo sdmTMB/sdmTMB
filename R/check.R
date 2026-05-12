@@ -263,8 +263,6 @@ sanity <- function(object, big_sd_log10 = 2, gradient_thresh = 0.001, silent = F
         if (!silent) cli::cli_alert_success(msg)
       }
     }
-  } else if (is_areal_fit(object) && !silent) {
-    cli::cli_alert_info("Skipping coordinate/range sanity checks for areal domains.")
   }
 
   ret <- named_list(

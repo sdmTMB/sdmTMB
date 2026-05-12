@@ -2,7 +2,7 @@
 % Please edit documentation in R/areal.R
 \name{make_areal_domain}
 \alias{make_areal_domain}
-\title{Create an areal spatial domain for SAR models}
+\title{Create an areal spatial domain for SAR/CAR models}
 \usage{
 make_areal_domain(
   data,
@@ -34,5 +34,6 @@ A list with class \code{c("sdmTMBareal", "sdmTMBdomain")}.
 }
 \description{
 Build a reusable areal domain object with adjacency weights and unit labels.
-The returned object can be supplied to \code{mesh} in \code{\link[=sdmTMB]{sdmTMB()}} in SAR workflows.
+The returned object can be supplied to \code{mesh} in \code{\link[=sdmTMB]{sdmTMB()}} in areal
+SAR/CAR workflows.
 }

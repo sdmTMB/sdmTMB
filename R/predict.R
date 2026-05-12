@@ -266,7 +266,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     cli_abort(c("This looks like a very old version of a model fit.",
         "Re-fit the model before predicting with it."))
   }
-  is_areal <- identical(object$tmb_data$spatial_model, 1L)
+  is_areal <- object$tmb_data$spatial_model %in% c(1L, 2L)
   if (!is_areal && is_areal_domain(object$spde)) {
     is_areal <- TRUE
   }

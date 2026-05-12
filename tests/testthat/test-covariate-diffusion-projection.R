@@ -13,7 +13,7 @@ test_that(".build_vertex_time_covariates matches hand-computed normalization", {
     x2 = c(1, 3, 5, 7)
   )
 
-  out <- sdmTMB:::.build_vertex_time_covariates(
+  out <- .build_vertex_time_covariates(
     covariate_data = dat,
     covariates = c("x1", "x2"),
     A_st = A_st,
@@ -57,7 +57,7 @@ test_that(".build_vertex_time_covariates is isolated by time slice", {
   year_i <- c(0L, 0L, 1L, 1L)
   spatial_i <- c(0L, 1L, 2L, 1L)
 
-  out1 <- sdmTMB:::.build_vertex_time_covariates(
+  out1 <- .build_vertex_time_covariates(
     covariate_data = dat,
     covariates = "x1",
     A_st = A_st,
@@ -69,7 +69,7 @@ test_that(".build_vertex_time_covariates is isolated by time slice", {
   dat2 <- dat
   dat2$x1[year_i == 1L] <- dat2$x1[year_i == 1L] + 100
 
-  out2 <- sdmTMB:::.build_vertex_time_covariates(
+  out2 <- .build_vertex_time_covariates(
     covariate_data = dat2,
     covariates = "x1",
     A_st = A_st,
@@ -103,7 +103,7 @@ test_that(".build_vertex_time_covariates rejects non-integer indices", {
   dat <- data.frame(x1 = c(2, 4, 6, 8))
 
   expect_error(
-    sdmTMB:::.build_vertex_time_covariates(
+    .build_vertex_time_covariates(
       covariate_data = dat,
       covariates = "x1",
       A_st = A_st,
@@ -115,7 +115,7 @@ test_that(".build_vertex_time_covariates rejects non-integer indices", {
   )
 
   expect_error(
-    sdmTMB:::.build_vertex_time_covariates(
+    .build_vertex_time_covariates(
       covariate_data = dat,
       covariates = "x1",
       A_st = A_st,
@@ -143,10 +143,10 @@ test_that(".build_covariate_diffusion_tmb_data returns term-covariate mapping", 
     year = c(1, 1, 2, 2)
   )
 
-  parsed <- sdmTMB:::.parse_covariate_diffusion_formula(
+  parsed <- .parse_covariate_diffusion_formula(
     ~ space(x1) + time(x2) + spacetime(x1)
   )
-  parsed <- sdmTMB:::.validate_covariate_diffusion_terms(
+  parsed <- .validate_covariate_diffusion_terms(
     parsed,
     data = dat,
     time = "year",
@@ -154,7 +154,7 @@ test_that(".build_covariate_diffusion_tmb_data returns term-covariate mapping", 
     multi_family = FALSE
   )
 
-  out <- sdmTMB:::.build_covariate_diffusion_tmb_data(
+  out <- .build_covariate_diffusion_tmb_data(
     covariate_diffusion = parsed,
     data = dat,
     A_st = A_st,
