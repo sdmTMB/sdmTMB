@@ -1,0 +1,242 @@
+---
+title: "Areal models in sdmTMB: SAR, CAR, and SPDE comparison"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Areal models in sdmTMB: SAR, CAR, and SPDE comparison}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+**If the code in this vignette has not been evaluated, a rendered version is available on the [documentation site](https://sdmTMB.github.io/sdmTMB/index.html) under 'Articles'.**
+
+```{r setup, include = FALSE, cache=FALSE}
+dplyr_installed <- require("dplyr", quietly = TRUE)
+ggplot_installed <- require("ggplot2", quietly = TRUE)
+sf_installed <- require("sf", quietly = TRUE)
+pkgs <- dplyr_installed && ggplot_installed && sf_installed
+EVAL <- identical(Sys.getenv("NOT_CRAN"), "true") && pkgs
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.asp = 0.618,
+  eval = EVAL,
+  purl = EVAL
+)
+```
+
+```{r packages, message=FALSE, warning=TRUE}
+library(dplyr)
+library(ggplot2)
+library(sdmTMB)
+library(sf)
+```
+
+This vignette demonstrates three ways to model spatial structure in areal data using the built-in Ohio lung cancer dataset:
+
+- SAR (`spatial_model = "sar"`) on polygons
+- CAR (`spatial_model = "car"`) on polygons
+- SPDE (`spatial_model = "spde"`) on polygon centroids as a geostatistical point-based version
+
+The areal response is counts (`cases`) with population offset (`log(pop)`), so fitted values are interpreted as expected counts or rates.
+
+```{r data}
+dat <- ohio_df
+glimpse(dat)
+```
+
+## Build an areal domain from polygons
+
+For SAR and CAR models, we pass an areal domain (adjacency + IDs) to `mesh` via `make_areal_domain()`:
+
+```{r domain}
+domain <- make_areal_domain(
+  data = dat,
+  spatial_domain = ohio_sf,
+  space_column = "county",
+  id_column = "county"
+)
+```
+
+## Fit SAR and CAR areal models
+
+Both models use the same fixed effects and random-effects structure. The difference is the spatial process (`sar` vs `car`).
+
+```{r fits-areal}
+fit_sar <- sdmTMB(
+  cases ~ 0 + as.factor(year) + pct_male,
+  data = dat,
+  mesh = domain,
+  spatial_model = "sar",
+  time = "year",
+  family = poisson(link = "log"),
+  spatial = "on",
+  spatiotemporal = "iid",
+  offset = log(dat$pop)
+)
+
+fit_car <- sdmTMB(
+  cases ~ 0 + as.factor(year) + pct_male,
+  data = dat,
+  mesh = domain,
+  spatial_model = "car",
+  time = "year",
+  family = poisson(link = "log"),
+  spatial = "on",
+  spatiotemporal = "iid",
+  offset = log(dat$pop)
+)
+```
+
+```{r sanity-and-print}
+sanity(fit_sar)
+sanity(fit_car)
+fit_sar
+fit_car
+```
+
+You can inspect random-effect parameters and compare model fit summaries:
+
+```{r model-summaries}
+tidy(fit_sar, "ran_pars")
+tidy(fit_car, "ran_pars")
+AIC(fit_sar, fit_car)
+```
+
+## Predict fitted rates for SAR and CAR
+
+We predict fitted counts at observed county-year combinations and convert to rates per 100,000.
+
+```{r predict-areal}
+pred_sar <- predict(fit_sar, newdata = dat, type = "response", offset = log(dat$pop))
+pred_car <- predict(fit_car, newdata = dat, type = "response", offset = log(dat$pop))
+
+pred_dat <- data.frame(
+  county = dat$county,
+  year = dat$year,
+  pop = dat$pop,
+  cases = dat$cases,
+  rate_obs = 1e5 * dat$cases / dat$pop,
+  rate_fit_sar = 1e5 * pred_sar$est / dat$pop,
+  rate_fit_car = 1e5 * pred_car$est / dat$pop,
+  omega_s_sar = pred_sar$omega_s,
+  omega_s_car = pred_car$omega_s,
+  epsilon_st_sar = pred_sar$epsilon_st,
+  epsilon_st_car = pred_car$epsilon_st
+)
+
+pred_map <- left_join(ohio_sf, pred_dat, by = "county")
+```
+
+```{r map-rates-areal}
+ggplot(pred_map) +
+  geom_sf(aes(fill = rate_fit_sar), colour = "grey40") +
+  facet_wrap(~year) +
+  scale_fill_viridis_c() +
+  labs(title = "SAR fitted mortality rate per 100,000")
+```
+
+```{r map-rates-car}
+ggplot(pred_map) +
+  geom_sf(aes(fill = rate_fit_car), colour = "grey40") +
+  facet_wrap(~year) +
+  scale_fill_viridis_c() +
+  labs(title = "CAR fitted mortality rate per 100,000")
+```
+
+## SPDE approximation using county centroids
+
+SPDE is a continuous-space model and does not directly use areal polygons. A common approximation is to collapse each polygon to a centroid and fit a point-based model. This may be reasonable when polygons are relatively small/similar and the latent field is smooth within polygons.
+
+```{r spde-prep}
+ohio_centroids <- suppressWarnings(st_centroid(ohio_sf))
+ohio_xy <- st_coordinates(ohio_centroids)
+
+ohio_spde_dat <- left_join(
+  ohio_df,
+  data.frame(
+    county = ohio_sf$county,
+    X = ohio_xy[, "X"] / 1000,
+    Y = ohio_xy[, "Y"] / 1000
+  ),
+  by = "county"
+)
+
+ohio_spde_mesh <- make_mesh(ohio_spde_dat, c("X", "Y"), cutoff = 20)
+plot(ohio_spde_mesh)
+```
+
+```{r spde-fit}
+fit_spde <- sdmTMB(
+  cases ~ 0 + as.factor(year) + pct_male,
+  data = ohio_spde_dat,
+  mesh = ohio_spde_mesh,
+  spatial_model = "spde",
+  family = poisson(link = "log"),
+  time = "year",
+  spatial = "on",
+  spatiotemporal = "iid",
+  offset = log(ohio_spde_dat$pop)
+)
+
+fit_spde
+```
+
+```{r spde-predict}
+pred_spde <- predict(
+  fit_spde,
+  newdata = ohio_spde_dat,
+  type = "response",
+  offset = log(ohio_spde_dat$pop)
+)
+
+pred_spde_dat <- data.frame(
+  county = ohio_spde_dat$county,
+  year = ohio_spde_dat$year,
+  rate_fit_spde = 1e5 * pred_spde$est / ohio_spde_dat$pop
+)
+
+pred_map_spde <- left_join(ohio_sf, pred_spde_dat, by = "county")
+```
+
+```{r map-rates-spde}
+ggplot(pred_map_spde) +
+  geom_sf(aes(fill = rate_fit_spde), colour = "grey40") +
+  facet_wrap(~year) +
+  scale_fill_viridis_c() +
+  labs(title = "SPDE (centroid approximation) fitted mortality rate per 100,000")
+```
+
+## Compare fitted rates across models
+
+```{r compare-rates}
+combined <- pred_map_spde
+combined$rate_fit_sar <- pred_map$rate_fit_sar
+combined$rate_fit_car <- pred_map$rate_fit_car
+
+ggplot(combined, aes(rate_fit_sar, rate_fit_spde)) +
+  geom_point(alpha = 0.6) +
+  coord_fixed() +
+  geom_abline(intercept = 0, slope = 1) +
+  labs(title = "SAR vs SPDE fitted rates")
+```
+
+```{r compare-rates-car-spde}
+ggplot(combined, aes(rate_fit_car, rate_fit_spde)) +
+  geom_point(alpha = 0.6) +
+  coord_fixed() +
+  geom_abline(intercept = 0, slope = 1) +
+  labs(title = "CAR vs SPDE fitted rates")
+```
+
+```{r compare-rates-sar-car}
+ggplot(combined, aes(rate_fit_sar, rate_fit_car)) +
+  geom_point(alpha = 0.6) +
+  coord_fixed() +
+  geom_abline(intercept = 0, slope = 1) +
+  labs(title = "SAR vs CAR fitted rates")
+```
+
+For areal outcomes, SAR/CAR are usually the most straightforward models to fit because they encode adjacency among polygons explicitly. The SPDE method, on the other hand, assumes an underlying continuous spatial process.
+

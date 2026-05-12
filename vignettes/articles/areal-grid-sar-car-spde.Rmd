@@ -1,0 +1,322 @@
+---
+title: "Grid areal models in sdmTMB: CAR, SAR, and SPDE comparison"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Grid areal models in sdmTMB: CAR, SAR, and SPDE comparison}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+**If the code in this vignette has not been evaluated, a rendered version is available on the [documentation site](https://sdmTMB.github.io/sdmTMB/index.html) under 'Articles'.**
+
+```{r setup, include = FALSE, cache=FALSE}
+dplyr_installed <- require("dplyr", quietly = TRUE)
+ggplot_installed <- require("ggplot2", quietly = TRUE)
+sf_installed <- require("sf", quietly = TRUE)
+pkgs <- dplyr_installed && ggplot_installed && sf_installed
+EVAL <- identical(Sys.getenv("NOT_CRAN"), "true") && pkgs
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.asp = 0.618,
+  eval = EVAL,
+  purl = EVAL
+)
+```
+
+```{r packages, message=FALSE, warning=TRUE}
+library(dplyr)
+library(ggplot2)
+library(sdmTMB)
+library(sf)
+```
+
+This vignette converts point-based dogfish observations into an areal grid and compares:
+
+- CAR model on the areal grid
+- SAR model on the areal grid
+- SPDE model on point data, aggregated back to the same grid for comparison
+
+The practical goal is to show how model choice changes spatial borrowing across neighbouring cells and whether conclusions are robust to treating space as areal (CAR/SAR) versus continuous (SPDE).
+
+## Build an areal grid and aggregate observations
+
+The original `dogfish` data are tow-level points. To fit CAR/SAR, we first define polygonal areal units (grid cells), assign each tow to a cell, and then aggregate to one observation per `cell_id` and `year`.
+
+```{r grid-build}
+dogfish_points <- st_as_sf(dogfish, coords = c("X", "Y"), crs = NA)
+
+dogfish_boundary <- st_union(dogfish_points) |>
+  st_convex_hull() |>
+  st_as_sf()
+
+dogfish_grid_obj <- make_areal_grid(
+  dogfish,
+  xy_cols = c("X", "Y"),
+  spatial_domain = dogfish_boundary,
+  n = c(25L, 20L),
+  space_column = "cell_id"
+)
+
+plot(dogfish_grid_obj$grid[[1]])
+```
+
+Now we'll create a cell-aggregated version of our data. We'll sum the catch weight and area swept by cell and year and take the mean depth.
+
+```{r aggregate}
+raw_points <- dogfish_grid_obj$data
+
+cell_data <- raw_points |>
+  group_by(cell_id, year) |>
+  summarise(
+    catch_weight = sum(catch_weight, na.rm = TRUE),
+    area_swept = sum(area_swept, na.rm = TRUE),
+    depth = mean(depth, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(log_depth = log(depth))
+```
+
+## Fit CAR and SAR areal models
+
+We fit the same linear predictor and distribution in both models so the only intended difference is the spatial structure. That makes subsequent CAR-vs-SAR differences easier to attribute to the neighbourhood process rather than to formula changes.
+
+```{r fit-areal}
+fit_car <- sdmTMB(
+  catch_weight ~ log_depth,
+  data = cell_data,
+  mesh = dogfish_grid_obj$domain,
+  spatial_model = "car",
+  time = "year",
+  family = tweedie(link = "log"),
+  spatial = "on",
+  spatiotemporal = "iid",
+  offset = log(cell_data$area_swept)
+)
+
+fit_sar <- sdmTMB(
+  catch_weight ~ log_depth,
+  data = cell_data,
+  mesh = dogfish_grid_obj$domain,
+  spatial_model = "sar",
+  time = "year",
+  family = tweedie(link = "log"),
+  spatial = "on",
+  spatiotemporal = "iid",
+  offset = log(cell_data$area_swept)
+)
+```
+
+```{r checks-areal}
+fit_car
+fit_sar
+AIC(fit_car, fit_sar)
+```
+
+At this stage, check that both models converge and that fixed-effect magnitudes are broadly comparable. Large differences can indicate sensitivity to the areal dependence specification.
+
+## Predict CAR/SAR on observed cells only
+
+Here we predict on the observed `cell_id`-`year` rows (`cell_data`) rather than expanding to all cell-year combinations. This keeps predictions aligned to where data support exists.
+
+```{r pred-areal}
+pred_car <- predict(
+  fit_car,
+  newdata = cell_data,
+  type = "response",
+  offset = rep(0, nrow(cell_data))
+)
+
+pred_sar <- predict(
+  fit_sar,
+  newdata = cell_data,
+  type = "response",
+  offset = rep(0, nrow(cell_data))
+)
+
+pred_grid <- left_join(
+  dogfish_grid_obj$grid,
+  cell_data |>
+    mutate(
+      est_car = pred_car$est,
+      est_sar = pred_sar$est,
+      omega_s_car = pred_car$omega_s,
+      omega_s_sar = pred_sar$omega_s,
+      epsilon_st_car = pred_car$epsilon_st,
+      epsilon_st_sar = pred_sar$epsilon_st
+    )
+) |> 
+  filter(!is.na(year))
+```
+
+```{r map-car}
+ggplot(pred_grid) +
+  geom_sf(aes(fill = est_car), colour = "grey40") +
+  facet_wrap(~year) +
+  scale_fill_viridis_c(trans = "log10") +
+  labs(fill = "Predicted catch", title = "CAR fitted catch (per unit effort)")
+```
+
+```{r map-sar}
+ggplot(pred_grid) +
+  geom_sf(aes(fill = est_sar), colour = "grey40") +
+  facet_wrap(~year) +
+  scale_fill_viridis_c(trans = "log10") +
+  labs(fill = "Predicted catch", title = "SAR fitted catch (per unit effort)")
+```
+
+```{r map-car-omega}
+ggplot(pred_grid) +
+  geom_sf(aes(fill = omega_s_car), colour = "grey40") +
+  scale_fill_gradient2() +
+  labs(fill = "Omega", title = "CAR spatial random effect (omega_s)")
+```
+
+```{r map-car-epsilon}
+ggplot(pred_grid) +
+  geom_sf(aes(fill = epsilon_st_car), colour = "grey40") +
+  facet_wrap(~year) +
+  scale_fill_gradient2() +
+  labs(fill = "Epsilon", title = "CAR spatiotemporal random effect (epsilon_st)")
+```
+
+## Fit an SPDE model on the original point data
+
+Next we fit a continuous-space SPDE model to the original tow locations. This treats observations as point-referenced rather than area-averaged and therefore answers a slightly different spatial question.
+
+```{r spde-fit}
+spde_mesh <- make_mesh(dogfish, c("X", "Y"), cutoff = 10)
+plot(spde_mesh)
+
+fit_spde <- sdmTMB(
+  catch_weight ~ log(depth),
+  data = dogfish,
+  mesh = spde_mesh,
+  spatial_model = "spde",
+  time = "year",
+  family = tweedie(link = "log"),
+  spatial = "on",
+  spatiotemporal = "iid",
+  offset = log(dogfish$area_swept)
+)
+
+fit_spde
+```
+
+## Fit an SPDE model on the gridded data
+
+We can also fit SPDE directly to the gridded response (`cell_data`) by attaching cell-center coordinates. This lets us compare point-data and gridded-data SPDE fits on the same prediction support.
+
+```{r spde-grid-fit}
+grid_centers <- dogfish_grid_obj$grid |>
+  st_drop_geometry() |>
+  select(cell_id, X, Y)
+
+cell_data_xy <- cell_data |>
+  left_join(grid_centers, by = "cell_id")
+
+spde_grid_mesh <- make_mesh(cell_data_xy, c("X", "Y"), cutoff = 10)
+plot(spde_grid_mesh)
+
+fit_spde_grid <- sdmTMB(
+  catch_weight ~ log_depth,
+  data = cell_data_xy,
+  mesh = spde_grid_mesh,
+  spatial_model = "spde",
+  time = "year",
+  family = tweedie(link = "log"),
+  spatial = "on",
+  spatiotemporal = "iid",
+  offset = log(cell_data_xy$area_swept)
+)
+
+fit_spde_grid
+```
+
+## Project SPDE predictions onto observed grid-cell locations
+
+To align supports directly, we predict both SPDE variants at grid-cell center locations for the same observed `cell_id`-`year` rows used by the CAR/SAR fits.
+
+```{r spde-to-grid}
+spde_newdata <- cell_data_xy |>
+  select(cell_id, year, depth) |>
+  left_join(grid_centers, by = "cell_id")
+
+pred_spde_grid <- predict(
+  fit_spde,
+  newdata = spde_newdata,
+  type = "response",
+  offset = rep(0, nrow(spde_newdata))
+)
+
+pred_spde_gridfit <- predict(
+  fit_spde_grid,
+  newdata = cell_data_xy,
+  type = "response",
+  offset = rep(0, nrow(cell_data_xy))
+)
+
+pred_grid_compare <- left_join(
+  pred_grid,
+  spde_newdata |>
+    mutate(est_spde = pred_spde_grid$est) |>
+    select(cell_id, year, est_spde) |>
+    left_join(
+      cell_data_xy |>
+        mutate(est_spde_gridfit = pred_spde_gridfit$est) |>
+        select(cell_id, year, est_spde_gridfit),
+      by = c("cell_id", "year")
+    ),
+  by = c("cell_id", "year")
+)
+```
+
+```{r map-spde-grid}
+ggplot(pred_grid_compare) +
+  geom_sf(aes(fill = est_spde), colour = "grey40") +
+  facet_wrap(~year) +
+  scale_fill_viridis_c(trans = "log10", na.value = "grey90") +
+  labs(fill = "Predicted catch", title = "SPDE fitted catch from point-data fit, predicted at grid centers")
+```
+
+```{r map-spde-gridfit}
+ggplot(pred_grid_compare) +
+  geom_sf(aes(fill = est_spde_gridfit), colour = "grey40") +
+  facet_wrap(~year) +
+  scale_fill_viridis_c(trans = "log10", na.value = "grey90") +
+  labs(fill = "Predicted catch", title = "SPDE fitted catch from gridded-data fit")
+```
+
+## Compare fitted values
+
+These scatter plots are a quick agreement diagnostic:
+
+```{r compare-models}
+ggplot(st_drop_geometry(pred_grid_compare), aes(est_car, est_sar)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1) +
+  coord_fixed() +
+  labs(title = "CAR vs SAR fitted values")
+```
+
+```{r compare-car-spde}
+ggplot(st_drop_geometry(pred_grid_compare), aes(est_car, est_spde)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1) +
+  coord_fixed() +
+  labs(title = "CAR vs SPDE fitted values")
+```
+
+```{r compare-car-spde-gridded}
+ggplot(st_drop_geometry(pred_grid_compare), aes(est_car, est_spde_gridfit)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1) +
+  coord_fixed() +
+  labs(title = "SPDE point-data fit vs SPDE gridded-data fit")
+```
+
+For gridded areal responses, CAR/SAR define spatial dependence directly on cell adjacency and are usually the primary formulations.
+
+For continuous data, a geostatistical SPDE model is a more natural approach. However, sometimes with very large datasets, there may be an advantage to aggregating to a grid and using a CAR or SAR model.
