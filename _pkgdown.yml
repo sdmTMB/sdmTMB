@@ -23,6 +23,7 @@ articles:
   - articles/residual-checking
   - articles/cross-validation
   - articles/bayesian
+  - articles/covariate-diffusion
 
 - title: Predictions and Applications
   contents:
@@ -30,6 +31,8 @@ articles:
   - articles/forecasting
   - articles/spatial-trend-models
   - articles/range-edges
+  - articles/areal-sar-car-spde
+  - articles/areal-grid-sar-car-spde
 
 - title: Visualization
   contents:
@@ -59,6 +62,8 @@ reference:
   contents:
   - add_utm_columns
   - get_crs
+  - make_areal_domain
+  - make_areal_grid
   - make_mesh
   - add_barrier_mesh
 
@@ -130,6 +135,7 @@ reference:
     Functions for plotting.
   contents:
   - plot_anisotropy
+  - plot_covariate_diffusion
   - plot_smooth
   - plot_pc_matern
   - visreg_delta
