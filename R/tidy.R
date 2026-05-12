@@ -96,7 +96,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
       if (is.null(x) || !length(x)) {
         return(NULL)
       }
-      if (is.null(dim(x))) {
+      if (is.null(dim(x)) || length(dim(x)) == 1L) {
         if (length(x) >= model) {
           return(as.numeric(x[model]))
         }
@@ -251,7 +251,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
 
   j <- 0
-  if (!is_areal && !"log_range" %in% names(est)) {
+  expects_range <- !is_areal &&
+    (x$tmb_data$include_spatial[model] || !x$tmb_data$spatial_only[model])
+  if (expects_range && !"log_range" %in% names(est)) {
     cli_warn("This model was fit with an old version of sdmTMB. Some parameters may not be available to the tidy() method. Re-fit the model with the current version of sdmTMB if you need access to any missing parameters.")
   }
 
