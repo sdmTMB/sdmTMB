@@ -361,6 +361,82 @@ where $O_{\s,t}$ is an offset term---a **log transformed** variable without a co
 The offset is *not* included in the prediction.
 Therefore, if `offset` represents a measure of effort, for example, the prediction is for one unit of effort (`log(1) = 0`).
 
+## Covariate diffusion (distributed lags)
+
+Covariate diffusion terms [@lindmark2025; @thorson2026] can be added with the `covariate_diffusion` argument to `sdmTMB()` as a one-sided formula using `space()`, `time()`, and/or `spacetime()` wrappers.
+For example: `~ space(x) + time(x) + spacetime(x)`.
+Conceptually, covariate diffusion lets the effect of a covariate be distributed over nearby locations and/or previous time steps, rather than acting only locally and instantaneously.
+This can be useful when ecological responses are delayed, transported, or accumulated through space and time.
+Users should consult (and cite) @lindmark2025 (spatial) and @thorson2026 (extention to time and space-time) for details on the model formulation and interpretation.
+
+These diffused terms enter the linear predictor as transformed covariates with estimated coefficients:
+
+$$
+\mu_{\s,t} = f^{-1} \left(\ldots + \sum_{r=1}^{R} \beta^{\RM{dl}}_{r}\,\tilde{x}_{r,\s,t} + \ldots \right),
+$$
+
+where each transformed covariate $\tilde{x}_{r,\s,t}$ is constructed from the corresponding observed covariate using one of the components below.
+
+For `space(x)`, each time slice is spatially smoothed:
+
+$$
+\left(\mathbf{M}_0 + \kappa_{S}^{-2}\mathbf{M}_1\right)\tilde{\mathbf{x}}_{t} = \mathbf{M}_0\mathbf{x}_{t},
+$$
+
+where $\mathbf{x}_t$ is the covariate evaluated at mesh vertices at time $t$, and $\mathbf{M}_0$ and $\mathbf{M}_1$ are SPDE mass and stiffness matrices.
+
+For `time(x)`, the transformed covariate follows a temporal recursion at each vertex:
+
+$$
+\tilde{x}_{\s,1} = x_{\s,1}, \qquad
+\tilde{x}_{\s,t} = x_{\s,t} + \kappa_{T}\tilde{x}_{\s,t-1} \quad (t > 1).
+$$
+
+For `spacetime(x)`, temporal recursion is coupled to spatial structure:
+
+$$
+\tilde{\mathbf{x}}_{1} = \mathbf{x}_{1}, \qquad
+\mathbf{M}_0\tilde{\mathbf{x}}_{t} = \mathbf{M}_0\mathbf{x}_{t} - \kappa_{ST}\kappa_S^{-2}\mathbf{M}_1\tilde{\mathbf{x}}_{t-1} \quad (t > 1).
+$$
+
+Lag-scale parameters are estimated separately for each covariate included in `covariate_diffusion`.
+`time()` and `spacetime()` terms require a `time` argument in `sdmTMB()`.
+
+For spatial diffusion terms, the model output also reports `MSD[...]` and `RMSD[...]`, the implied mean squared displacement and root mean squared displacement.
+With the current parameterization, `\mathrm{MSD} = 4/\kappa_S^2` and `\mathrm{RMSD} = 2/\kappa_S`; `RMSD` is a typical diffusion distance (a blur radius) in coordinate units, where larger values imply broader smoothing and smaller values imply more local diffusion.
+
+## Areal autoregressive models (SAR/CAR)
+
+In addition to continuous-space SPDE random fields, sdmTMB can fit areal spatial autoregressive models with `spatial_model = "sar"` or `spatial_model = "car"`.
+These require an areal domain supplied to `mesh` with the help of `make_areal_domain()` or `make_areal_grid()`.
+
+For both areal options, the latent spatial and spatiotemporal effects are Gaussian Markov random fields with precision defined by the areal weight matrix $\mathbf{W}$:
+
+$$
+\bomega \sim \RM{MVNormal}\left(\bs{0}, \sigma_\omega^2 \bQ^{-1}\right), \:
+\beps_t \sim \RM{MVNormal}\left(\bs{0}, \sigma_\epsilon^2 \bQ^{-1}\right).
+$$
+
+For SAR (`spatial_model = "sar"`), the precision matrix is
+
+$$
+\bQ_{\mathrm{SAR}} = \left(\mathbf{I} - \rho_{\mathrm{SAR}}\mathbf{W}\right)^\top
+\left(\mathbf{I} - \rho_{\mathrm{SAR}}\mathbf{W}\right),
+$$
+
+where $\rho_{\mathrm{SAR}} \in (-1, 1)$ is reported as `rho_sar`.
+By default, SAR uses a row-normalized $\mathbf{W}$ (`sar_weight_style = "row"`), with an option to use raw weights.
+With `sar_weight_style = "raw"`, SAR uses the unnormalized adjacency/weight matrix directly, so neighbor influence depends on the original edge weights (and, if unweighted, on the number of neighbors) rather than being scaled to sum to 1 within each row.
+
+For CAR (`spatial_model = "car"`), the precision matrix is
+
+$$
+\bQ_{\mathrm{CAR}} = \mathbf{D} - \alpha_{\mathrm{CAR}}\mathbf{W},
+$$
+
+where $\mathbf{D}$ is diagonal with elements $D_{ii} = \sum_j W_{ij}$ and $\alpha_{\mathrm{CAR}} \in (0, 1)$ is reported as `alpha_car`.
+CAR requires a symmetric adjacency matrix.
+
 # Observation model families
 
 Here we describe the main observation families that are available in sdmTMB and comment on their parametrization, statistical properties, utility, and code representation in sdmTMB.
