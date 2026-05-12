@@ -363,8 +363,8 @@ Therefore, if `offset` represents a measure of effort, for example, the predicti
 
 ## Covariate diffusion (distributed lags)
 
-Covariate diffusion terms [@lindmark2025; @thorson2026] can be added with the `covariate_diffusion` argument to `sdmTMB()` as a one-sided formula using `space()`, `time()`, and/or `spacetime()` wrappers.
-For example: `~ space(x) + time(x) + spacetime(x)`.
+Covariate diffusion terms [@lindmark2025; @thorson2026] can be added with the `covariate_diffusion` argument to `sdmTMB()` as a one-sided formula using `space()` and/or `time()` wrappers.
+For example: `~ space(x) + time(x)`.
 Conceptually, covariate diffusion lets the effect of a covariate be distributed over nearby locations and/or previous time steps, rather than acting only locally and instantaneously.
 This can be useful when ecological responses are delayed, transported, or accumulated through space and time.
 Users should consult (and cite) @lindmark2025 (spatial) and @thorson2026 (extention to time and space-time) for details on the model formulation and interpretation.
@@ -392,15 +392,8 @@ $$
 \tilde{x}_{\s,t} = x_{\s,t} + \kappa_{T}\tilde{x}_{\s,t-1} \quad (t > 1).
 $$
 
-For `spacetime(x)`, temporal recursion is coupled to spatial structure:
-
-$$
-\tilde{\mathbf{x}}_{1} = \mathbf{x}_{1}, \qquad
-\mathbf{M}_0\tilde{\mathbf{x}}_{t} = \mathbf{M}_0\mathbf{x}_{t} - \kappa_{ST}\kappa_S^{-2}\mathbf{M}_1\tilde{\mathbf{x}}_{t-1} \quad (t > 1).
-$$
-
 Lag-scale parameters are estimated separately for each covariate included in `covariate_diffusion`.
-`time()` and `spacetime()` terms require a `time` argument in `sdmTMB()`.
+`time()` terms require a `time` argument in `sdmTMB()`.
 
 For spatial diffusion terms, the model output also reports `MSD[...]` and `RMSD[...]`, the implied mean squared displacement and root mean squared displacement.
 With the current parameterization, `\mathrm{MSD} = 4/\kappa_S^2` and `\mathrm{RMSD} = 2/\kappa_S`; `RMSD` is a typical diffusion distance (a blur radius) in coordinate units, where larger values imply broader smoothing and smaller values imply more local diffusion.

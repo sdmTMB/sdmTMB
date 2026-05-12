@@ -159,6 +159,12 @@
     )
   }
 
+  if (any(covariate_diffusion$terms$component == "spacetime")) {
+    cli_warn(
+      "`spacetime()` in `covariate_diffusion` is currently experimental and not yet fully tested; use with caution."
+    )
+  }
+
   missing_covariates <- setdiff(covariate_diffusion$covariates, names(data))
   if (length(missing_covariates)) {
     cli_abort(c(
@@ -730,7 +736,7 @@
 #' Plot Covariate Diffusion from a Point on the Mesh
 #'
 #' Diagnostic visualization of an impulse covariate diffusing through one
-#' covariate-diffusion component (`space()`, `time()`, or `spacetime()`).
+#' covariate-diffusion component (`space()` or `time()`).
 #' Values are plotted as colored mesh triangles, so no prediction grid is
 #' required.
 #'
@@ -738,10 +744,10 @@
 #' @param covariate Optional covariate name from `covariate_diffusion`.
 #'   Required when multiple lag covariates were fitted.
 #' @param component Covariate diffusion component name. Must be exactly one of
-#'   `"space"`, `"time"`, or `"spacetime"`.
+#'   `"space"` or `"time"`.
 #' @param time_value Optional time slice for the impulse. Supply either a
 #'   modeled time value or a 1-based time index. Required only when the fitted
-#'   covariate-diffusion specification includes `time()` or `spacetime()` terms with
+#'   covariate-diffusion specification includes `time()` terms with
 #'   a model time column.
 #' @param n_steps Number of transformed slices to plot starting at
 #'   `time_value`. Defaults to 3.

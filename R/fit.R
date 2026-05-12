@@ -101,8 +101,8 @@ NULL
 #'   -1`), set `spatial = 'off'` to match. Structure must be shared in delta
 #'   models.
 #' @param covariate_diffusion An optional one-sided formula describing distributed
-#'   lag terms with `space()`, `time()`, or `spacetime()` wrappers.
-#'   Example: `~ space(x) + time(x) + spacetime(z)`. Lag scale parameters
+#'   lag terms with `space()` or `time()` wrappers.
+#'   Example: `~ space(x) + time(x)`. Lag scale parameters
 #'   are estimated separately for each lag covariate.
 #' @param weights A numeric vector representing optional likelihood weights for
 #'   the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have

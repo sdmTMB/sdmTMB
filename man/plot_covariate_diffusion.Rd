@@ -21,11 +21,11 @@ plot_covariate_diffusion(
 Required when multiple lag covariates were fitted.}
 
 \item{component}{Covariate diffusion component name. Must be exactly one of
-\code{"space"}, \code{"time"}, or \code{"spacetime"}.}
+\code{"space"} or \code{"time"}.}
 
 \item{time_value}{Optional time slice for the impulse. Supply either a
 modeled time value or a 1-based time index. Required only when the fitted
-covariate-diffusion specification includes \code{time()} or \code{spacetime()} terms with
+covariate-diffusion specification includes \code{time()} terms with
 a model time column.}
 
 \item{n_steps}{Number of transformed slices to plot starting at
@@ -43,7 +43,7 @@ object (when \pkg{ggplot2} is available).
 }
 \description{
 Diagnostic visualization of an impulse covariate diffusing through one
-covariate-diffusion component (\code{space()}, \code{time()}, or \code{spacetime()}).
+covariate-diffusion component (\code{space()} or \code{time()}).
 Values are plotted as colored mesh triangles, so no prediction grid is
 required.
 }

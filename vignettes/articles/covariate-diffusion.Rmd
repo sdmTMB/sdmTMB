@@ -119,8 +119,8 @@ The response is a function of the smooth field, but we only provide the fine-sca
 To fit a covariate diffusion model with spatial diffusion, we add the one sided formula `~ space(x1)` to the `covariate_diffusion` argument.
 Users applying this spatial diffusion method should cite @lindmark2025.
 
-In other contexts, we could add a time-diffused predictor with `time(x1)` and a diffused predictor in which the spatial diffusion changes with time with `space(x1) + time(x1) + spacetime(x1)`.
-Users applying the time and space-time diffusion extensions should cite @thorson2026.
+In other contexts, we could add a time-diffused predictor with `time(x1)`.
+Users applying the time diffusion extension should cite @thorson2026.
 
 We will omit the spatial random field in this simple example.
 In other more realistic scenarios, you may choose to estimate both.

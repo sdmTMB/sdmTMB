@@ -13,15 +13,18 @@ test_that("covariate_diffusion parses valid terms", {
   )
   mesh <- make_dl_mesh(dat)
 
-  fit <- sdmTMB(
-    y ~ 1,
-    data = dat,
-    mesh = mesh,
-    time = "year",
-    spatial = "off",
-    spatiotemporal = "off",
-    covariate_diffusion = ~ space(x_num) + time(x_lag) + spacetime(x_num),
-    do_fit = FALSE
+  expect_warning(
+    fit <- sdmTMB(
+      y ~ 1,
+      data = dat,
+      mesh = mesh,
+      time = "year",
+      spatial = "off",
+      spatiotemporal = "off",
+      covariate_diffusion = ~ space(x_num) + time(x_lag) + spacetime(x_num),
+      do_fit = FALSE
+    ),
+    regexp = "experimental and not yet fully tested"
   )
 
   expect_equal(
