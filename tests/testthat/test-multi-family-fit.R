@@ -161,6 +161,39 @@ test_that("Stage 2 multi-family supports extra-parameter families", {
   expect_equal(fit$tmb_data$thetaf_start, c(-1L, -1L, 0L))
 })
 
+test_that("Multi-family parameter slots skip families without extra parameters", {
+  dat <- data.frame(
+    y = c(1.1, 2, 0, 0.4, 1.5, 0, 3, 1, 2.5, 0.7),
+    dist = c(
+      "gaussian", "poisson", "binomial", "tweedie", "student",
+      "gaussian", "poisson", "binomial", "tweedie", "student"
+    )
+  )
+  fam <- list(
+    gaussian = gaussian(),
+    poisson = poisson(),
+    binomial = binomial(),
+    tweedie = tweedie(link = "log"),
+    student = student()
+  )
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = fam,
+    distribution_column = "dist",
+    do_fit = FALSE
+  )
+
+  expect_equal(fit$tmb_data$ln_phi_len, c(1L, 0L, 0L, 1L, 1L))
+  expect_equal(fit$tmb_data$ln_phi_start, c(0L, -1L, -1L, 1L, 2L))
+  expect_equal(fit$tmb_data$thetaf_len, c(0L, 0L, 0L, 1L, 0L))
+  expect_equal(fit$tmb_data$thetaf_start, c(-1L, -1L, -1L, 0L, -1L))
+  expect_equal(fit$tmb_data$ln_student_df_len, c(0L, 0L, 0L, 0L, 1L))
+  expect_equal(fit$tmb_data$ln_student_df_start, c(-1L, -1L, -1L, -1L, 0L))
+})
+
 test_that("Stage 2 multi-family supports Beta and betabinomial", {
   dat <- data.frame(
     y = c(0.2, 0.5, 0.8, 0.1, 0.4, 0.7),

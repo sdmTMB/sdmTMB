@@ -99,6 +99,39 @@ test_that("Multi-family predictions transform per-family links", {
   expect_equal(pred_resp$est, expected, tolerance = 1e-6)
 })
 
+test_that("Multi-family validation handles distribution_column edge cases", {
+  fam <- list(
+    gaussian = gaussian(),
+    poisson = poisson()
+  )
+  dat <- data.frame(
+    y = c(1, 2, 3, 4),
+    dist = factor(c("gaussian", "poisson", "gaussian", "poisson"))
+  )
+
+  res <- sdmTMB:::.validate_multi_family_list(fam, data = dat, distribution_column = "dist")
+  expect_equal(res$e_i, c(1L, 2L, 1L, 2L))
+
+  expect_error(
+    sdmTMB:::.validate_multi_family_list(fam, data = dat, distribution_column = "missing"),
+    regexp = "must be a column"
+  )
+
+  dat_na <- dat
+  dat_na$dist[2] <- NA
+  expect_error(
+    sdmTMB:::.validate_multi_family_list(fam, data = dat_na, distribution_column = "dist"),
+    regexp = "must not contain missing"
+  )
+
+  fam_dup <- list(gaussian(), poisson())
+  names(fam_dup) <- c("same", "same")
+  expect_error(
+    sdmTMB:::.validate_multi_family_list(fam_dup),
+    regexp = "unique"
+  )
+})
+
 test_that("Multi-family predictions handle delta families", {
   dat <- data.frame(
     y = c(0, 2, 0, 3, 1, 0, 5),

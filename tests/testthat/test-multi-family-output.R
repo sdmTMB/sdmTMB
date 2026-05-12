@@ -22,6 +22,99 @@ test_that("Multi-family residuals are blocked", {
   )
 })
 
+test_that("Single-family multi-family model matches ordinary single-family model", {
+  set.seed(11)
+  x <- seq(-1, 1, length.out = 40)
+  dat <- data.frame(
+    y = 0.4 + 0.7 * x + stats::rnorm(length(x), sd = 0.15),
+    x = x,
+    dist = "gaussian"
+  )
+  ctrl <- sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+  fit_regular <- sdmTMB(
+    y ~ x,
+    data = dat,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    control = ctrl
+  )
+  fit_mf <- sdmTMB(
+    y ~ x,
+    data = dat,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = list(gaussian = gaussian()),
+    distribution_column = "dist",
+    control = ctrl
+  )
+
+  expect_equal(as.numeric(logLik(fit_mf)), as.numeric(logLik(fit_regular)), tolerance = 1e-6)
+
+  nd_regular <- data.frame(x = seq(-0.8, 0.8, length.out = 12))
+  nd_mf <- transform(nd_regular, dist = "gaussian")
+  expect_equal(
+    predict(fit_mf, newdata = nd_mf, type = "link")$est,
+    predict(fit_regular, newdata = nd_regular, type = "link")$est,
+    tolerance = 1e-6
+  )
+  expect_equal(
+    predict(fit_mf, newdata = nd_mf, type = "response")$est,
+    predict(fit_regular, newdata = nd_regular, type = "response")$est,
+    tolerance = 1e-6
+  )
+})
+
+test_that("Single-family multi-family delta model matches ordinary delta predictions", {
+  set.seed(12)
+  x <- seq(-1, 1, length.out = 80)
+  eta1 <- -0.2 + 0.6 * x
+  eta2 <- 0.3 + 0.4 * x
+  present <- stats::rbinom(length(x), size = 1, prob = stats::plogis(eta1))
+  y_pos <- stats::rgamma(length(x), shape = 8, scale = exp(eta2) / 8)
+  dat <- data.frame(
+    y = ifelse(present == 1, y_pos, 0),
+    x = x,
+    dist = "delta_gamma"
+  )
+  ctrl <- sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+  fit_regular <- sdmTMB(
+    y ~ x,
+    data = dat,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = delta_gamma(),
+    control = ctrl
+  )
+  fit_mf <- sdmTMB(
+    y ~ x,
+    data = dat,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = list(delta_gamma = delta_gamma()),
+    distribution_column = "dist",
+    control = ctrl
+  )
+
+  nd_regular <- data.frame(x = seq(-0.8, 0.8, length.out = 12))
+  nd_mf <- transform(nd_regular, dist = "delta_gamma")
+  for (type in c("link", "response")) {
+    pred_regular <- predict(fit_regular, newdata = nd_regular, type = type, model = NA)
+    pred_mf <- predict(fit_mf, newdata = nd_mf, type = type, model = NA)
+    expected_est <- pred_regular$est
+    if (is.null(expected_est)) {
+      if (type == "response") {
+        expected_est <- pred_regular$est1 * pred_regular$est2
+      } else {
+        expected_est <- log(stats::plogis(pred_regular$est1) * exp(pred_regular$est2))
+      }
+    }
+    expect_equal(pred_mf$est, expected_est, tolerance = 1e-5)
+    expect_equal(pred_mf$est1, pred_regular$est1, tolerance = 1e-5)
+    expect_equal(pred_mf$est2, pred_regular$est2, tolerance = 1e-5)
+  }
+})
+
 test_that("Multi-family simulation respects model = 1 vs model = 2", {
   skip_on_cran()
 
@@ -70,13 +163,130 @@ test_that("Multi-family delta simulations return combined responses", {
     spatial = "off",
     family = fam,
     distribution_column = "dist",
-    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+    control = sdmTMBcontrol(newton_loops = 0, getsd = TRUE)
   )
   sims <- simulate(fit, nsim = 3, silent = TRUE)
   expect_true(is.matrix(sims))
   expect_equal(nrow(sims), nrow(dat))
   expect_equal(ncol(sims), 3L)
   expect_true(rlang::is_integerish(sims[dat$dist == "poisson",1L]))
+})
+
+test_that("Multi-family mixed delta/non-delta response predictions use row families", {
+  dat <- data.frame(
+    y = c(0, 2, 0, 3, 1, 0, 5, 0.5, 1.2, -0.3),
+    dist = c(
+      "delta_gamma", "delta_gamma", "delta_gamma", "delta_gamma",
+      "poisson", "poisson", "poisson",
+      "gaussian", "gaussian", "gaussian"
+    )
+  )
+  fam <- list(
+    delta_gamma = delta_gamma(),
+    poisson = poisson(),
+    gaussian = gaussian()
+  )
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    spatial = "off",
+    family = fam,
+    distribution_column = "dist",
+    control = sdmTMBcontrol(newton_loops = 0, getsd = TRUE)
+  )
+
+  pred_link <- predict(fit, newdata = dat, type = "link")
+  pred_response <- predict(fit, newdata = dat, type = "response")
+
+  delta_rows <- dat$dist == "delta_gamma"
+  poisson_rows <- dat$dist == "poisson"
+  gaussian_rows <- dat$dist == "gaussian"
+
+  expect_equal(
+    pred_response$est[delta_rows],
+    pred_response$est1[delta_rows] * pred_response$est2[delta_rows],
+    tolerance = 1e-6
+  )
+  expect_equal(
+    pred_response$est[poisson_rows],
+    exp(pred_link$est[poisson_rows]),
+    tolerance = 1e-6
+  )
+  expect_equal(
+    pred_response$est[gaussian_rows],
+    pred_link$est[gaussian_rows],
+    tolerance = 1e-6
+  )
+  expect_true(all(is.na(pred_response$est2[poisson_rows | gaussian_rows])))
+})
+
+test_that("Component-specific predictions work for mixed multi-family delta models", {
+  skip("Enable when refactoring multi-family prediction assembly; current code ignores `model` here.")
+
+  dat <- data.frame(
+    y = c(0, 2, 0, 3, 1, 0, 5, 0.5, 1.2, -0.3),
+    dist = c(
+      "delta_gamma", "delta_gamma", "delta_gamma", "delta_gamma",
+      "poisson", "poisson", "poisson",
+      "gaussian", "gaussian", "gaussian"
+    )
+  )
+  fam <- list(
+    delta_gamma = delta_gamma(),
+    poisson = poisson(),
+    gaussian = gaussian()
+  )
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    spatial = "off",
+    family = fam,
+    distribution_column = "dist",
+    control = sdmTMBcontrol(newton_loops = 0, getsd = TRUE)
+  )
+
+  pred_1 <- predict(fit, newdata = dat, type = "link", model = 1)
+  pred_2 <- predict(fit, newdata = dat, type = "link", model = 2)
+  pred_combined <- predict(fit, newdata = dat, type = "link", model = NA)
+
+  delta_rows <- dat$dist == "delta_gamma"
+  non_delta_rows <- !delta_rows
+
+  expect_equal(pred_1$est[delta_rows], pred_combined$est1[delta_rows], tolerance = 1e-6)
+  expect_equal(pred_2$est[delta_rows], pred_combined$est2[delta_rows], tolerance = 1e-6)
+  expect_equal(pred_1$est[non_delta_rows], pred_combined$est[non_delta_rows], tolerance = 1e-6)
+  expect_true(all(is.na(pred_2$est[non_delta_rows])))
+})
+
+test_that("Multi-family delta simulated prediction guards unsupported combinations", {
+  dat <- data.frame(
+    y = c(0, 2, 0, 3, 1, 0, 5),
+    dist = c(
+      "delta_gamma", "delta_gamma", "delta_gamma", "delta_gamma",
+      "poisson", "poisson", "poisson"
+    )
+  )
+  fam <- list(
+    delta_gamma = delta_gamma(),
+    poisson = poisson()
+  )
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    spatial = "off",
+    family = fam,
+    distribution_column = "dist",
+    control = sdmTMBcontrol(newton_loops = 0, getsd = TRUE)
+  )
+
+  expect_error(
+    predict(fit, newdata = dat, nsim = 2, model = NA, type = "link"),
+    regexp = "Combined delta simulations"
+  )
+  expect_error(
+    predict(fit, newdata = dat, nsim = 2, model = 1, type = "response"),
+    regexp = "type = 'response'"
+  )
 })
 
 test_that("Multi-family predict rejects NAs in prediction columns", {
