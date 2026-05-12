@@ -1,8 +1,10 @@
 # sdmTMB (development version)
 
-* Add experimental support for covariate diffusion models.
+* Add experimental support for CAR/SAR areal/lattice models.
 
 * Add covariate-diffusion article/vignette.
+
+* Add experimental support for covariate diffusion models.
 
 * Update `get_index()` so index totals are reported on a log-total scale after
   integrating response-scale predictions. This preserves existing behaviour for

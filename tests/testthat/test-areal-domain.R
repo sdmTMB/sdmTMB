@@ -293,6 +293,35 @@ test_that("prepare_spatial_domain returns raw adjacency for CAR", {
   expect_equal(as.matrix(out$W_ss), as.matrix(d$W_raw))
 })
 
+test_that("prepare_spatial_domain can return raw adjacency for SAR", {
+  W <- Matrix::Matrix(
+    c(
+      0, 1, 0,
+      1, 0, 1,
+      0, 1, 0
+    ),
+    nrow = 3,
+    byrow = TRUE,
+    sparse = TRUE
+  )
+  rownames(W) <- colnames(W) <- c("a", "b", "c")
+  dat <- data.frame(region = c("a", "b", "c", "a"))
+  d <- make_areal_domain(dat, W, space_column = "region")
+
+  out <- prepare_spatial_domain(
+    mesh = d,
+    data = dat,
+    mesh_missing = FALSE,
+    anisotropy = FALSE,
+    covariate_diffusion = NULL,
+    spatial_model = "sar",
+    sar_weight_style = "raw"
+  )
+
+  expect_identical(out$spatial_model, "sar")
+  expect_equal(as.matrix(out$W_ss), as.matrix(d$W_raw))
+})
+
 test_that("prepare_spatial_domain validates unsupported areal options", {
   W <- Matrix::Matrix(
     c(
@@ -670,6 +699,26 @@ test_that("tidy reports SAR rho on transformed scale for areal models", {
   expect_equal(nrow(rho), 1L)
   expect_true(all(rho$estimate >= -1 & rho$estimate <= 1))
   expect_true(all(rho$conf.low >= -1 & rho$conf.high <= 1))
+})
+
+test_that("areal SAR can use raw weights", {
+  smoke <- build_areal_smoke_domain()
+  fit <- sdmTMB(
+    y ~ 1,
+    data = smoke$data,
+    mesh = smoke$domain,
+    spatial_model = "sar",
+    family = gaussian(),
+    control = sdmTMBcontrol(
+      getsd = FALSE,
+      newton_loops = 0,
+      sar_weight_style = "raw"
+    ),
+    do_fit = FALSE,
+    silent = TRUE
+  )
+
+  expect_equal(as.matrix(fit$tmb_data$W_ss), as.matrix(smoke$domain$W_raw))
 })
 
 test_that("minimal Gaussian spatial-only areal CAR model fits", {

@@ -739,12 +739,14 @@ sdmTMB <- function(
   suppress_nlminb_warnings <- control$suppress_nlminb_warnings
   collapse_spatial_variance <- control$collapse_spatial_variance
   collapse_threshold <- control$collapse_threshold
+  sar_weight_style <- control$sar_weight_style
 
   dot_checks <- c(
     "lower", "upper", "profile", "parallel", "censored_upper", "getsd",
     "nlminb_loops", "newton_steps", "mgcv", "quadratic_roots", "multiphase",
     "newton_loops", "start", "map", "get_joint_precision", "normalize",
-    "suppress_nlminb_warnings", "collapse_spatial_variance", "collapse_threshold"
+    "suppress_nlminb_warnings", "collapse_spatial_variance", "collapse_threshold",
+    "sar_weight_style"
   )
   .control <- control
   # FIXME; automate this from sdmTMcontrol args?
@@ -840,7 +842,8 @@ sdmTMB <- function(
     normalize = normalize,
     experimental = experimental,
     share_range_user = share_range_user,
-    spatial_model = spatial_model
+    spatial_model = spatial_model,
+    sar_weight_style = sar_weight_style
   )
   is_areal <- identical(domain$type, "areal")
 
@@ -1294,6 +1297,7 @@ sdmTMB <- function(
     A_st = A_st,
     spatial_model = switch(domain$spatial_model, spde = 0L, sar = 1L, car = 2L),
     W_ss = domain$W_ss,
+    sar_rho_transform = 0L,
     sim_re = if ("sim_re" %in% names(experimental)) as.integer(experimental$sim_re) else rep(0L, 6),
     sim_obs = 1L,
     A_spatial_index = A_spatial_index,
@@ -1493,7 +1497,8 @@ sdmTMB <- function(
       map = tmb_map, DLL = "sdmTMB", silent = silent
     )
     lim <- set_limits(tmb_obj1, lower = lower, upper = upper,
-      spatial_model = tmb_data$spatial_model, silent = TRUE)
+      spatial_model = tmb_data$spatial_model,
+      silent = TRUE)
 
     tmb_opt1 <- stats::nlminb(
       start = tmb_obj1$par, objective = tmb_obj1$fn,
@@ -1821,7 +1826,8 @@ sdmTMB <- function(
   lim <- set_limits(tmb_obj,
     lower = lower, upper = upper,
     loc = if (is_areal) NULL else spde$mesh$loc,
-    spatial_model = tmb_data$spatial_model, silent = FALSE
+    spatial_model = tmb_data$spatial_model,
+    silent = FALSE
   )
 
   out_structure$tmb_obj <- tmb_obj

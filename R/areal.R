@@ -422,8 +422,10 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
                                    anisotropy = FALSE, covariate_diffusion, priors = sdmTMBpriors(),
                                    normalize, experimental = NULL,
                                    share_range_user = share_range,
-                                   spatial_model = c("spde", "sar", "car")) {
+                                   spatial_model = c("spde", "sar", "car"),
+                                   sar_weight_style = c("row", "raw")) {
   spatial_model <- match.arg(tolower(spatial_model[1L]), c("spde", "sar", "car"))
+  sar_weight_style <- match.arg(sar_weight_style)
   is_areal <- !mesh_missing && is_areal_domain(mesh)
   spde <- mesh
 
@@ -479,7 +481,8 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
       n_s = spde$n_s,
       A_st = areal_projection_matrix(spde, data),
       A_spatial_index = seq_len(nrow(data)) - 1L,
-      W_ss = if (spatial_model == "car") spde$W_raw else spde$W,
+      W_ss = if (spatial_model == "car" || sar_weight_style == "raw") spde$W_raw else spde$W,
+      sar_weight_style = sar_weight_style,
       normalize_in_r = 0L,
       barrier = 0L,
       barrier_scaling = c(1, 1),
@@ -511,6 +514,7 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
     A_st = spde$A_st,
     A_spatial_index = spde$sdm_spatial_id - 1L,
     W_ss = dummy_sparse_1x1(),
+    sar_weight_style = "row",
     normalize_in_r = as.integer(normalize),
     barrier = as.integer(barrier),
     barrier_scaling = if (barrier) spde$barrier_scaling else c(1, 1),

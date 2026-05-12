@@ -95,8 +95,8 @@ mathematical details. Capitalization is ignored. \code{TRUE} gets converted to
 
 \item{spatial_model}{Spatial process model. \code{"spde"} uses the default
 continuous-space SPDE approximation. \code{"sar"} and \code{"car"} use areal spatial
-autoregressive models with an areal domain supplied to \code{mesh}. Capitalization is
-ignored.}
+autoregressive models with an areal domain supplied to \code{mesh}.
+Capitalization is ignored.}
 
 \item{share_range}{Logical: estimate a shared spatial and spatiotemporal
 range parameter (\code{TRUE}, default) or independent range parameters

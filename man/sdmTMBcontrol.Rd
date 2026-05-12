@@ -24,6 +24,7 @@ sdmTMBcontrol(
   suppress_nlminb_warnings = TRUE,
   collapse_spatial_variance = FALSE,
   collapse_threshold = 0.01,
+  sar_weight_style = c("row", "raw"),
   ...
 )
 }
@@ -122,6 +123,10 @@ reliable inference. Default is \code{FALSE} for backwards compatibility.}
 fields are considered to be collapsing to zero. Only used when
 \code{collapse_spatial_variance = TRUE}. Values are on the standard deviation
 scale (i.e., square root of variance). Default is 0.01.}
+
+\item{sar_weight_style}{Weight matrix to use for areal SAR models. \code{"row"}
+uses row-normalized weights and is the default. \code{"raw"} uses the raw
+adjacency/weight matrix for direct comparisons to packages that do so.}
 
 \item{...}{Anything else. See the 'Control parameters' section of
 \code{\link[stats:nlminb]{stats::nlminb()}}.}

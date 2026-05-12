@@ -78,6 +78,9 @@
 #'   fields are considered to be collapsing to zero. Only used when
 #'   `collapse_spatial_variance = TRUE`. Values are on the standard deviation
 #'   scale (i.e., square root of variance). Default is 0.01.
+#' @param sar_weight_style Weight matrix to use for areal SAR models. `"row"`
+#'   uses row-normalized weights and is the default. `"raw"` uses the raw
+#'   adjacency/weight matrix for direct comparisons to packages that do so.
 #' @param ... Anything else. See the 'Control parameters' section of
 #'   [stats::nlminb()].
 #'
@@ -111,6 +114,7 @@ sdmTMBcontrol <- function(
   suppress_nlminb_warnings = TRUE,
   collapse_spatial_variance = FALSE,
   collapse_threshold = 0.01,
+  sar_weight_style = c("row", "raw"),
   ...) {
 
   assert_that(is.numeric(nlminb_loops), is.numeric(newton_loops))
@@ -128,6 +132,7 @@ sdmTMBcontrol <- function(
   assert_that(is.logical(profile) || is.character(profile))
   assert_that(is.logical(collapse_spatial_variance))
   assert_that(is.numeric(collapse_threshold), collapse_threshold > 0)
+  sar_weight_style <- match.arg(sar_weight_style)
 
   out <- named_list(
     eval.max,
@@ -147,7 +152,8 @@ sdmTMBcontrol <- function(
     parallel,
     get_joint_precision,
     collapse_spatial_variance,
-    collapse_threshold
+    collapse_threshold,
+    sar_weight_style
   )
   c(out, list(...))
 }
