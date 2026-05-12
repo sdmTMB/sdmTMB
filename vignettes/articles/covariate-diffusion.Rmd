@@ -2,6 +2,8 @@
 title: "Estimating covariate diffusion with sdmTMB"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
+bibliography: '../refs.bib'
+csl: '../mee.csl'
 vignette: >
   %\VignetteIndexEntry{Estimating covariate diffusion with sdmTMB}
   %\VignetteEngine{knitr::rmarkdown}
@@ -31,7 +33,8 @@ theme_set(theme_light())
 ```
 
 This vignette demonstrates a simple spatial covariate-diffusion model with simulated data.
-We will simulate a fine-scale predictor observed at sample locations and a spatially diffused effect. Then we will fit a model that estimates the lagged covariate from the fine-scale predictor.
+We will simulate a fine-scale predictor observed at sample locations and a spatially diffused effect.
+Then we will fit a model that estimates the diffused covariate from the fine-scale predictor.
 
 We will suppress this simulation chunk to avoid clutter.
 
@@ -106,13 +109,21 @@ head(dat)
 
 We have coordinates `X` and `Y`, a covariate we observe `x1`, our response `observed`, and `x1_truth`, which is the diffused value of `x1` that we wouldn't normally know.
 
-Normally, we'd start by creating a mesh with `make_mesh(data, c("X", "Y"), cutoff = 0.05)`, but our simulator already created one for us named `mesh`, so we'll use that.
+We'll create a mesh as usual:
 
 ```{r}
-plot(mesh)
+mesh <- make_mesh(dat, c("X", "Y"), cutoff = 0.05)
 ```
 
-The response is a function of the smooth field, but we only provide the fine-scale predictor (`x1`) to the model. To fit a covariate diffusion model with spatial diffusion, we add the one sided formula `~ space(x1)` to the `covariate_diffusion` argument.
+The response is a function of the smooth field, but we only provide the fine-scale predictor (`x1`) to the model.
+To fit a covariate diffusion model with spatial diffusion, we add the one sided formula `~ space(x1)` to the `covariate_diffusion` argument.
+Users applying this spatial diffusion method should cite @lindmark2025.
+
+In other contexts, we could add a time-diffused predictor with `time(x1)` and a diffused predictor in which the spatial diffusion changes with time with `space(x1) + time(x1) + spacetime(x1)`.
+Users applying the time and space-time diffusion extensions should cite @thorson2026.
+
+We will omit the spatial random field in this simple example.
+In other more realistic scenarios, you may choose to estimate both.
 
 ```{r fit}
 fit <- sdmTMB(
@@ -128,13 +139,26 @@ tidy(fit)
 tidy(fit, effects = "ran_pars")
 ```
 
+Here we see `kappaS_dl[x1]`, which is the estimated spatial diffusion scale parameter for `x1` (larger values imply less smoothing).
+
+We also see `MSD[x1]` and `RMSD[x1]` which are the implied mean squared displacement (`4 / kappaS_dl[x1]^2`) and root mean squared displacement (`2 / kappaS_dl[x1]`).
+Intuitively, `RMSD[x1]` is a typical diffusion distance (a blur radius) in the same units as the coordinates.
+Larger `RMSD[x1]` means the covariate is smoothed over longer distances, while smaller `RMSD[x1]` means diffusion is more local.
+`MSD[x1]` contains the same information on a squared-distance scale.
+Users using these MSD and RMSD metrics should consult and cite @thorson2026.
+
 ## Plot the estimated diffusion kernel
+
+We can plot the diffusion kernel:
 
 ```{r plot-diffusion}
 plot_covariate_diffusion(fit, component = "space")
 ```
 
 ## Compare true and estimated diffused covariates
+
+Compare the known true diffused covariate with our estimated one.
+We wouldn't normally know the truth.
 
 ```{r compare}
 pred <- predict(fit)
@@ -165,3 +189,7 @@ print(g1)
 print(g2)
 print(g3)
 ```
+
+Here they match fairly well.
+
+# References
