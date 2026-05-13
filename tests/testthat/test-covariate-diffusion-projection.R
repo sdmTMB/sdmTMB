@@ -143,16 +143,16 @@ test_that(".build_covariate_diffusion_tmb_data returns term-covariate mapping", 
     year = c(1, 1, 2, 2)
   )
 
-  parsed <- .parse_covariate_diffusion_formula(
+  parsed <- suppressWarnings(.parse_covariate_diffusion_formula(
     ~ space(x1) + time(x2) + spacetime(x1)
-  )
-  parsed <- .validate_covariate_diffusion_terms(
+  ))
+  parsed <- suppressWarnings(.validate_covariate_diffusion_terms(
     parsed,
     data = dat,
     time = "year",
     delta = FALSE,
     multi_family = FALSE
-  )
+  ))
 
   out <- .build_covariate_diffusion_tmb_data(
     covariate_diffusion = parsed,

@@ -84,7 +84,7 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
     control = ctrl
   )
 
-  fit_st <- sdmTMB(
+  fit_st <- suppressWarnings(sdmTMB(
     y_st ~ 1,
     data = dat,
     mesh = mesh,
@@ -94,7 +94,7 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
     family = gaussian(),
     covariate_diffusion = ~ spacetime(x_st),
     control = ctrl
-  )
+  ))
 
   expect_equal(as.numeric(logLik(fit_space)), 92.0763, tolerance = 1e-4)
   expect_equal(as.numeric(logLik(fit_time)), -240.2167, tolerance = 1e-4)

@@ -120,7 +120,7 @@ test_that("covariate diffusion parameter lengths follow used components", {
   dat <- make_dl_plumbing_data()
   mesh <- make_dl_plumbing_mesh(dat)
 
-  fit <- sdmTMB(
+  fit <- suppressWarnings(sdmTMB(
     y ~ 1,
     data = dat,
     mesh = mesh,
@@ -129,7 +129,7 @@ test_that("covariate diffusion parameter lengths follow used components", {
     spatiotemporal = "off",
     covariate_diffusion = ~ spacetime(x1),
     do_fit = FALSE
-  )
+  ))
 
   expect_length(fit$tmb_params$log_kappaS_dl, 1L)
   expect_length(fit$tmb_params$log_kappaT_dl, 1L)
