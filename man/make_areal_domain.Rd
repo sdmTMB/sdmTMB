@@ -13,13 +13,12 @@ make_areal_domain(
 )
 }
 \arguments{
-\item{data}{A data frame used for membership validation against the domain.}
+\item{data}{A data frame.}
 
-\item{spatial_domain}{A named \code{igraph} object or a square numeric matrix /
-sparse matrix with matching row and column names. Can also be an \code{sf}/\code{sfc}
+\item{spatial_domain}{A named \code{igraph} object or an \code{sf}/\code{sfc}
 polygon object when \code{id_column} identifies areal units.}
 
-\item{space_column}{Column name in \code{data} / \code{newdata} that identifies areal
+\item{space_column}{Column name in \code{data} that identifies areal
 unit membership.}
 
 \item{id_column}{Optional column name in an \code{sf} polygon \code{spatial_domain}

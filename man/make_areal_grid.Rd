@@ -19,8 +19,8 @@ make_areal_grid(
 \arguments{
 \item{data}{A data frame containing point coordinates.}
 
-\item{xy_cols}{Character vector of length 2 naming coordinate columns in
-\code{data}.}
+\item{xy_cols}{Character vector of length 2 naming spatial coordinate columns
+in \code{data}.}
 
 \item{spatial_domain}{Optional \code{sf}/\code{sfc} polygon object. If \code{cellsize} or
 \code{n} is supplied, this object is treated as a boundary from which a grid is

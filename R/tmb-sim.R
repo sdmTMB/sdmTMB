@@ -23,6 +23,9 @@
 #' @param family Family as in [sdmTMB()]. Delta families are not supported.
 #'   Instead, simulate the two component models separately and combine.
 #' @param B A vector of beta values (fixed-effect coefficient values).
+#'   If `covariate_diffusion` is used, include regular fixed-effect
+#'   coefficients followed by covariate-diffusion coefficients in formula term
+#'   order.
 #' @param range Parameter that controls the decay of spatial correlation. If a
 #'   vector of length 2, `share_range` will be set to `FALSE` and the spatial
 #'   and spatiotemporal ranges will be unique.
@@ -52,6 +55,15 @@
 #' @param rho_time Autoregressive correlation(s) for time-varying parameters
 #'   when `time_varying_type = "ar1"`. Values must lie between -1 and 1 and may
 #'   be supplied as a single value or a vector the same length as `sigma_V`.
+#' @param covariate_diffusion An optional one-sided formula describing
+#'   covariate-diffusion terms to pass to [sdmTMB()]. Supported wrappers are
+#'   `space()` and `time()`.
+#' @param diffusion_kappaS Spatial diffusion scale for `space()` terms.
+#'   Must be positive and finite. Supply a single value or
+#'   one value per covariate needing a spatial scale.
+#' @param diffusion_rhoT Temporal diffusion persistence for `time()` terms.
+#'   Must be finite and satisfy `0 <= rhoT < 1`. Supply a single value or one
+#'   value per covariate needing temporal diffusion.
 #' @param ... Any other arguments to pass to [sdmTMB()].
 #'
 #' @return A data frame where:
@@ -125,6 +137,10 @@ simulate_new <- function(formula,
                          time_varying_type = c("rw", "rw0", "ar1"),
                          sigma_V = NULL,
                          rho_time = NULL,
+                         covariate_diffusion = NULL,
+                         diffusion_kappaS = NULL,
+                         diffusion_rhoT = NULL,
+                         diffusion_kappaST = NULL,
                          ...) {
 
   if (!is.null(previous_fit)) stop("`previous_fit` is deprecated. See `simulate.sdmTMB()`", call. = FALSE)
@@ -209,7 +225,8 @@ simulate_new <- function(formula,
         do_fit = FALSE,
         share_range = length(range) == 1L,
         time_varying = time_varying,
-        time_varying_type = time_varying_type
+        time_varying_type = time_varying_type,
+        covariate_diffusion = covariate_diffusion
       ),
       dots
     )
@@ -229,9 +246,69 @@ simulate_new <- function(formula,
     assert_that(ncol(fit$tmb_data$X_ij[[1]]) == length(B),
       msg = paste0(
         "Number of specified fixed-effect `B` parameters does ",
-        "not match model matrix columns implied by the formula."
+        "not match model matrix columns implied by the formula ",
+        "and any `covariate_diffusion` terms."
       )
     )
+  }
+
+  .set_diffusion_parameter <- function(params, param_name, user_value, mask,
+                                       label, valid, transform = identity) {
+    mask <- as.logical(mask)
+    n_needed <- sum(mask)
+    if (n_needed == 0L) {
+      if (!is.null(user_value)) {
+        cli::cli_warn("Ignoring `{label}` because no matching `covariate_diffusion` terms were supplied.")
+      }
+      return(params)
+    }
+    if (is.null(user_value)) {
+      cli::cli_abort("`{label}` must be supplied for the requested `covariate_diffusion` terms.")
+    }
+    user_value <- as.numeric(user_value)
+    if (!(length(user_value) %in% c(1L, n_needed))) {
+      cli::cli_abort(
+        "`{label}` must have length 1 or match the number of relevant `covariate_diffusion` covariates ({n_needed})."
+      )
+    }
+    user_value <- rep_len(user_value, n_needed)
+    if (!valid(user_value)) {
+      cli::cli_abort("Invalid `{label}` value for the requested `covariate_diffusion` terms.")
+    }
+    params[[param_name]][mask] <- transform(user_value)
+    params
+  }
+
+  if (!is.null(fit$covariate_diffusion_data)) {
+    dl_data <- fit$covariate_diffusion_data
+    params <- .set_diffusion_parameter(
+      params = params,
+      param_name = "log_kappaS_dl",
+      user_value = diffusion_kappaS,
+      mask = dl_data$covariate_has_spatial,
+      label = "diffusion_kappaS",
+      valid = function(x) all(is.finite(x) & x > 0),
+      transform = log
+    )
+    params <- .set_diffusion_parameter(
+      params = params,
+      param_name = "kappaT_dl_raw",
+      user_value = diffusion_rhoT,
+      mask = dl_data$covariate_has_temporal,
+      label = "diffusion_rhoT",
+      valid = function(x) all(is.finite(x) & x >= 0 & x < 1),
+      transform = function(x) x / (1 - x)
+    )
+    params <- .set_diffusion_parameter(
+      params = params,
+      param_name = "kappaST_dl_raw",
+      user_value = diffusion_kappaST,
+      mask = dl_data$covariate_has_spacetime,
+      label = "diffusion_kappaST",
+      valid = function(x) all(is.finite(x))
+    )
+  } else if (!is.null(diffusion_kappaS) || !is.null(diffusion_rhoT) || !is.null(diffusion_kappaST)) {
+    cli::cli_abort("Diffusion parameters require `covariate_diffusion`.")
   }
 
   if (tmb_data$threshold_func > 0) {
@@ -386,6 +463,27 @@ simulate_new <- function(formula,
   d[["observed"]] <- s$y_i
   d <- do.call("data.frame", d)
   d <- cbind(d, fit$tmb_data$X_ij)
+  dl_cols <- grepl("^dl_", names(d))
+  if (any(dl_cols)) d <- d[, !dl_cols, drop = FALSE]
+
+  if (!is.null(fit$covariate_diffusion_data) &&
+      isTRUE(fit$covariate_diffusion_data$n_terms > 0L)) {
+    dl_truth <- .compute_covariate_diffusion_term_values(
+      covariate_diffusion_data = fit$covariate_diffusion_data,
+      covariate_vertex_time = fit$covariate_diffusion_data$covariate_vertex_time,
+      A_st = fit$tmb_data$A_st,
+      A_spatial_index = fit$tmb_data$A_spatial_index,
+      year_i = fit$tmb_data$year_i,
+      n_t = fit$tmb_data$n_t,
+      M0 = fit$tmb_data$spde$M0,
+      M1 = fit$tmb_data$spde$M1,
+      log_kappaS_dl = as.numeric(params$log_kappaS_dl),
+      kappaT_dl_raw = as.numeric(params$kappaT_dl_raw),
+      kappaST_dl_raw = as.numeric(params$kappaST_dl_raw)
+    )
+    colnames(dl_truth) <- sub("^diffusion_cov_", "diffusion_truth_", colnames(dl_truth))
+    d <- cbind(d, as.data.frame(dl_truth))
+  }
 
   tpar <- fit$threshold_parameter
   if (tmb_data$threshold_func == 1L) {

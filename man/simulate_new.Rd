@@ -28,6 +28,10 @@ simulate_new(
   time_varying_type = c("rw", "rw0", "ar1"),
   sigma_V = NULL,
   rho_time = NULL,
+  covariate_diffusion = NULL,
+  diffusion_kappaS = NULL,
+  diffusion_rhoT = NULL,
+  diffusion_kappaST = NULL,
   ...
 )
 
@@ -54,6 +58,10 @@ sdmTMB_simulate(
   time_varying_type = c("rw", "rw0", "ar1"),
   sigma_V = NULL,
   rho_time = NULL,
+  covariate_diffusion = NULL,
+  diffusion_kappaS = NULL,
+  diffusion_rhoT = NULL,
+  diffusion_kappaST = NULL,
   ...
 )
 }
@@ -72,7 +80,10 @@ Instead, simulate the two component models separately and combine.}
 
 \item{time}{The time column name.}
 
-\item{B}{A vector of beta values (fixed-effect coefficient values).}
+\item{B}{A vector of beta values (fixed-effect coefficient values).
+If \code{covariate_diffusion} is used, include regular fixed-effect
+coefficients followed by covariate-diffusion coefficients in formula term
+order.}
 
 \item{range}{Parameter that controls the decay of spatial correlation. If a
 vector of length 2, \code{share_range} will be set to \code{FALSE} and the spatial
@@ -123,6 +134,18 @@ vector matching the number of time-varying coefficients.}
 \item{rho_time}{Autoregressive correlation(s) for time-varying parameters
 when \code{time_varying_type = "ar1"}. Values must lie between -1 and 1 and may
 be supplied as a single value or a vector the same length as \code{sigma_V}.}
+
+\item{covariate_diffusion}{An optional one-sided formula describing
+covariate-diffusion terms to pass to \code{\link[=sdmTMB]{sdmTMB()}}. Supported wrappers are
+\code{space()} and \code{time()}.}
+
+\item{diffusion_kappaS}{Spatial diffusion scale for \code{space()} terms.
+Must be positive and finite. Supply a single value or
+one value per covariate needing a spatial scale.}
+
+\item{diffusion_rhoT}{Temporal diffusion persistence for \code{time()} terms.
+Must be finite and satisfy \verb{0 <= rhoT < 1}. Supply a single value or one
+value per covariate needing temporal diffusion.}
 
 \item{...}{Any other arguments to pass to \code{\link[=sdmTMB]{sdmTMB()}}.}
 }

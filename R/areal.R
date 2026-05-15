@@ -4,11 +4,10 @@
 #' The returned object can be supplied to `mesh` in [sdmTMB()] in areal
 #' SAR/CAR workflows.
 #'
-#' @param data A data frame used for membership validation against the domain.
-#' @param spatial_domain A named `igraph` object or a square numeric matrix /
-#'   sparse matrix with matching row and column names. Can also be an `sf`/`sfc`
+#' @param data A data frame.
+#' @param spatial_domain A named `igraph` object or an `sf`/`sfc`
 #'   polygon object when `id_column` identifies areal units.
-#' @param space_column Column name in `data` / `newdata` that identifies areal
+#' @param space_column Column name in `data` that identifies areal
 #'   unit membership.
 #' @param id_column Optional column name in an `sf` polygon `spatial_domain`
 #'   containing areal unit IDs. If omitted for `sf` polygons, stable IDs are
@@ -97,8 +96,8 @@ make_areal_domain <- function(data, spatial_domain, space_column,
 #' `sdmTMBareal` domain for SAR/CAR models.
 #'
 #' @param data A data frame containing point coordinates.
-#' @param xy_cols Character vector of length 2 naming coordinate columns in
-#'   `data`.
+#' @param xy_cols Character vector of length 2 naming spatial coordinate columns
+#'   in `data`.
 #' @param spatial_domain Optional `sf`/`sfc` polygon object. If `cellsize` or
 #'   `n` is supplied, this object is treated as a boundary from which a grid is
 #'   generated and clipped. Otherwise it is treated as the grid itself.

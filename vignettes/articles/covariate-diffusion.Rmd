@@ -32,100 +32,49 @@ library(sdmTMB)
 theme_set(theme_light())
 ```
 
-This vignette demonstrates a simple spatial covariate-diffusion model with simulated data.
-We will simulate a fine-scale predictor observed at sample locations and a spatially diffused effect.
-Then we will fit a model that estimates the diffused covariate from the fine-scale predictor.
+This vignette demonstrates covariate-diffusion models with simulated data.
+We start with a simple spatial diffusion example and then fit a an example that combines `space()` and `time()` terms.
 
-We will suppress this simulation chunk to avoid clutter.
+## Simple spatial diffusion example
 
-```{r simulate, include=FALSE}
-simulate_spatial_diffusion <- function(
-  n_obs = 1200,
-  cutoff = 0.05,
-  n_hotspots = 50,
-  hotspot_sd = 0.03,
-  kappaS = 6,
-  beta = 0.7,
-  sigma = 0.05,
+Simulate data with a fine-scale predictor (`x1`) and a spatially diffused effect:
+
+```{r simulate-space}
+set.seed(1)
+n_sites <- 220
+site <- data.frame(X = runif(n_sites), Y = runif(n_sites))
+dat <- transform(
+  site,
+  x1 = as.numeric(scale(
+    sin(6 * pi * X) + cos(6 * pi * Y) + rnorm(n_sites, sd = 1)
+  ))
+)
+mesh <- make_mesh(dat, c("X", "Y"), cutoff = 0.05)
+
+sim_space <- simulate_new(
+  formula = ~ 1,
+  data = dat,
+  mesh = mesh,
+  family = gaussian(),
+  spatial = "off",
+  spatiotemporal = "off",
+  range = 0.2,
+  sigma_O = 0,
+  phi = 0.1,
+  B = c(0, 0.8),
+  covariate_diffusion = ~ space(x1),
+  diffusion_kappaS = 1.5,
   seed = 1
-) {
-  set.seed(seed)
+)
 
-  dat <- data.frame(
-    X = runif(n_obs),
-    Y = runif(n_obs)
-  )
-
-  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = cutoff)
-  A_st <- mesh$A_st
-  M0 <- mesh$spde$c0
-  M1 <- mesh$spde$g1
-
-  centers <- cbind(runif(n_hotspots), runif(n_hotspots))
-  weights <- rnorm(n_hotspots)
-  sq_dist <- outer(dat$X, centers[, 1], "-")^2 +
-    outer(dat$Y, centers[, 2], "-")^2
-  hotspot_field <- as.numeric(exp(-sq_dist / (2 * hotspot_sd^2)) %*% weights)
-
-  # Fine-scale observed covariate at each sample location.
-  x_fine <- as.numeric(scale(hotspot_field + rnorm(n_obs, sd = 0.25)))
-
-  # Map observations to mesh vertices with barycentric weights.
-  numerator <- as.vector(Matrix::crossprod(A_st, x_fine))
-  denominator <- as.vector(Matrix::crossprod(A_st, rep(1, n_obs)))
-  x_vertex <- numeric(ncol(A_st))
-  keep <- denominator > 0
-  x_vertex[keep] <- numerator[keep] / denominator[keep]
-
-  # Apply the same spatial covariate-diffusion operator used in the model:
-  # x_diffused = (M0 + kappaS^-2 * M1)^-1 * M0 * x_vertex
-  diffusion_matrix <- M0 + (1 / kappaS^2) * M1
-  x_vertex_diffused <- as.numeric(Matrix::solve(diffusion_matrix, M0 %*% x_vertex))
-  x_diffused <- as.numeric(A_st %*% x_vertex_diffused)
-
-  dat$x1 <- x_fine
-  dat$x1_truth <- x_diffused
-  dat$observed <- beta * dat$x1_truth + rnorm(n_obs, sd = sigma)
-
-  list(
-    data = dat,
-    mesh = mesh,
-    truth = list(beta = beta, kappaS = kappaS)
-  )
-}
-
-sim <- simulate_spatial_diffusion(seed = 1)
-dat <- sim$data
-mesh <- sim$mesh
-```
-
-## Fit a covariate-diffusion model
-
-Above, in a hidden chunk, we simulated these data:
-
-```{r}
+dat$observed <- sim_space$observed
+dat$x1_truth <- sim_space$diffusion_truth_space_x1
 head(dat)
 ```
 
-We have coordinates `X` and `Y`, a covariate we observe `x1`, our response `observed`, and `x1_truth`, which is the diffused value of `x1` that we wouldn't normally know.
+Fit the matching covariate-diffusion model:
 
-We'll create a mesh as usual:
-
-```{r}
-mesh <- make_mesh(dat, c("X", "Y"), cutoff = 0.05)
-```
-
-The response is a function of the smooth field, but we only provide the fine-scale predictor (`x1`) to the model.
-To fit a covariate diffusion model with spatial diffusion, we add the one sided formula `~ space(x1)` to the `covariate_diffusion` argument.
-Users applying this spatial diffusion method should cite @lindmark2025.
-
-In other contexts, we could add a time-diffused predictor with `time(x1)`.
-Users applying the time diffusion extension should cite @thorson2026.
-
-We will omit the spatial random field in this simple example.
-In other more realistic scenarios, you may choose to estimate both.
-
-```{r fit}
+```{r fit-space}
 fit <- sdmTMB(
   observed ~ 1,
   mesh = mesh,
@@ -139,28 +88,16 @@ tidy(fit)
 tidy(fit, effects = "ran_pars")
 ```
 
-Here we see `kappaS_dl[x1]`, which is the estimated spatial diffusion scale parameter for `x1` (larger values imply less smoothing).
+Here `kappaS_dl[x1]` is the estimated spatial diffusion scale parameter for `x1` (larger values imply less smoothing).
 
-We also see `MSD[x1]` and `RMSD[x1]` which are the implied mean squared displacement (`4 / kappaS_dl[x1]^2`) and root mean squared displacement (`2 / kappaS_dl[x1]`).
-Intuitively, `RMSD[x1]` is a typical diffusion distance (a blur radius) in the same units as the coordinates.
-Larger `RMSD[x1]` means the covariate is smoothed over longer distances, while smaller `RMSD[x1]` means diffusion is more local.
-`MSD[x1]` contains the same information on a squared-distance scale.
+The output also reports `MSD[x1]` and `RMSD[x1]`, the implied mean squared displacement (`4 / kappaS_dl[x1]^2`) and root mean squared displacement (`2 / kappaS_dl[x1]`).
+`RMSD[x1]` is a typical diffusion distance (a blur radius) in coordinate units.
+Users applying this spatial diffusion method should cite @lindmark2025.
 Users using these MSD and RMSD metrics should consult and cite @thorson2026.
 
-## Plot the estimated diffusion kernel
+Compare true and estimated diffused covariates:
 
-We can plot the diffusion kernel:
-
-```{r plot-diffusion}
-plot_covariate_diffusion(fit, component = "space")
-```
-
-## Compare true and estimated diffused covariates
-
-Compare the known true diffused covariate with our estimated one.
-We wouldn't normally know the truth.
-
-```{r compare}
+```{r compare-space}
 pred <- predict(fit)
 pred$X <- dat$X
 pred$Y <- dat$Y
@@ -190,6 +127,82 @@ print(g2)
 print(g3)
 ```
 
-Here they match fairly well.
+We can visualize the diffusion operator:
+
+```{r}
+plot_covariate_diffusion(fit, component = "space")
+```
+
+Users applying spatial diffusion should read and cite @lindmark2025.
+
+## Space-time example with additive terms
+
+Now simulate and fit a model containing additive spatial and temporal components: `~ space(x1) + time(x1)`.
+
+```{r fit-space-time-all}
+set.seed(1)
+n_t <- 16
+n_sites <- 300
+site_st <- data.frame(X = runif(n_sites), Y = runif(n_sites))
+dat_st <- data.frame(
+  X = rep(site_st$X, times = n_t),
+  Y = rep(site_st$Y, times = n_t),
+  year = rep(seq_len(n_t), each = n_sites)
+)
+dat_st$x1 <- as.numeric(scale(
+  sin(2 * pi * (dat_st$X + dat_st$year / 8)) +
+    cos(2 * pi * (dat_st$Y - dat_st$year / 10)) +
+    0.6 * sin(4 * pi * dat_st$X) * cos(dat_st$year / 3) +
+    rnorm(nrow(dat_st), sd = 0.15)
+))
+mesh_st <- make_mesh(dat_st, c("X", "Y"), cutoff = 0.07)
+
+sim_st <- simulate_new(
+  formula = ~ 1,
+  data = dat_st,
+  mesh = mesh_st,
+  time = "year",
+  family = gaussian(),
+  spatial = "on",
+  spatiotemporal = "off",
+  range = 0.3,
+  sigma_O = 0.2,
+  phi = 0.1,
+  B = c(0, 0.7, 0.6),
+  covariate_diffusion = ~ space(x1) + time(x1),
+  diffusion_kappaS = 4.4,
+  diffusion_rhoT = 0.3,
+  seed = 123
+)
+
+dat_st$observed <- sim_st$observed
+```
+
+```{r fit-st}
+fit_st <- sdmTMB(
+  observed ~ 1,
+  mesh = mesh_st,
+  time = "year",
+  covariate_diffusion = ~ space(x1) + time(x1),
+  spatial = "on",
+  spatiotemporal = "off",
+  data = dat_st
+)
+
+tidy(fit_st, effects = "ran_pars")
+```
+
+In the random-effect parameters, `kappaS_dl[x1]` controls spatial smoothing and `kappaT_dl[x1]` controls temporal carryover.
+Users applying the time diffusion extension should read and cite @thorson2026.
+
+## Plot diffusion kernels
+
+We can separately visualize the spatial diffusion, time diffusion, or their combined effects:
+
+```{r plot-diffusion}
+plot_covariate_diffusion(fit_st, component = "space")
+plot_covariate_diffusion(fit_st, component = "time")
+plot_covariate_diffusion(fit_st, component = "combined")
+```
 
 # References

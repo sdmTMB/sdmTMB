@@ -367,7 +367,7 @@ Covariate diffusion terms [@lindmark2025; @thorson2026] can be added with the `c
 For example: `~ space(x) + time(x)`.
 Conceptually, covariate diffusion lets the effect of a covariate be distributed over nearby locations and/or previous time steps, rather than acting only locally and instantaneously.
 This can be useful when ecological responses are delayed, transported, or accumulated through space and time.
-Users should consult (and cite) @lindmark2025 (spatial) and @thorson2026 (extention to time and space-time) for details on the model formulation and interpretation.
+Users should consult (and cite) @lindmark2025 (spatial) and @thorson2026 (extension to time) for details on the model formulation and interpretation.
 
 These diffused terms enter the linear predictor as transformed covariates with estimated coefficients:
 

@@ -89,8 +89,6 @@ bool dl_solve_transformed_vertex_time(
     Type kappaST_scale,
     bool has_spatial_solver,
     Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> >& lu_spatial,
-    bool has_m0_solver,
-    Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> >& lu_m0,
     Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic>& transformed_vertex_time) {
   transformed_vertex_time.setZero();
   if (!dl_is_valid_component(component)) return false;
@@ -108,29 +106,31 @@ bool dl_solve_transformed_vertex_time(
   }
 
   if (component == dl_time) {
+    Type denom = Type(1.0) + kappaT_dl;
     for (int v = 0; v < n_vertices; v++) {
-      transformed_vertex_time(v, 0) = covariate_vertex_time(v, 0, cov_i);
+      transformed_vertex_time(v, 0) = covariate_vertex_time(v, 0, cov_i) / denom;
     }
     for (int t = 1; t < n_t; t++) {
       for (int v = 0; v < n_vertices; v++) {
         transformed_vertex_time(v, t) =
-          covariate_vertex_time(v, t, cov_i) + kappaT_dl * transformed_vertex_time(v, t - 1);
+          (covariate_vertex_time(v, t, cov_i) + kappaT_dl * transformed_vertex_time(v, t - 1)) / denom;
       }
     }
     return true;
   }
 
   if (component == dl_spacetime) {
-    if (!has_m0_solver || lu_m0.info() != Eigen::Success) return false;
-    for (int v = 0; v < n_vertices; v++) {
-      transformed_vertex_time(v, 0) = covariate_vertex_time(v, 0, cov_i);
-    }
-    for (int t = 1; t < n_t; t++) {
+    Eigen::SparseMatrix<Type> spacetime_system =
+      M0_dl + (kappaS_scale - kappaST_scale) * M1_dl;
+    Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> > lu_spacetime;
+    lu_spacetime.compute(spacetime_system);
+    if (lu_spacetime.info() != Eigen::Success) return false;
+    for (int t = 0; t < n_t; t++) {
       Eigen::Matrix<Type, Eigen::Dynamic, 1> rhs =
-        M0_dl * dl_get_covariate_col(covariate_vertex_time, cov_i, t, n_vertices) -
-        kappaST_scale * (M1_dl * transformed_vertex_time.col(t - 1));
-      Eigen::Matrix<Type, Eigen::Dynamic, 1> solved = lu_m0.solve(rhs);
-      if (lu_m0.info() != Eigen::Success) return false;
+        M0_dl * dl_get_covariate_col(covariate_vertex_time, cov_i, t, n_vertices);
+      if (t > 0) rhs -= kappaST_scale * (M1_dl * transformed_vertex_time.col(t - 1));
+      Eigen::Matrix<Type, Eigen::Dynamic, 1> solved = lu_spacetime.solve(rhs);
+      if (lu_spacetime.info() != Eigen::Success) return false;
       transformed_vertex_time.col(t) = solved;
     }
     return true;
@@ -180,7 +180,6 @@ void add_covariate_diffusion_to_eta_fixed(
   // Determine required solvers/scales by scanning terms
   std::vector<int> cov_needs_spatial_scale(ctx.n_covariates, 0);
   std::vector<int> cov_needs_spatial_solver(ctx.n_covariates, 0);
-  bool need_m0_solver = false;
   for (int term = 0; term < ctx.n_terms; term++) {
     int component = ctx.term_component(term);
     int cov_i = ctx.term_covariate(term);
@@ -196,7 +195,6 @@ void add_covariate_diffusion_to_eta_fixed(
     }
     if (component == dl_spacetime) {
       cov_needs_spatial_scale[cov_i] = 1;
-      need_m0_solver = true;
     }
   }
 
@@ -224,15 +222,6 @@ void add_covariate_diffusion_to_eta_fixed(
     }
   }
 
-  // Factorize M0 once for spatiotemporal terms
-  Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> > lu_m0;
-  if (need_m0_solver) {
-    lu_m0.compute(ctx.M0);
-    if (lu_m0.info() != Eigen::Success) {
-      error("Distributed lag sparse solve failed while factorizing M0.");
-    }
-  }
-
   int dl_coef_start = ctx.b_j.size() - ctx.n_terms;
   for (int term = 0; term < ctx.n_terms; term++) {
     int component = ctx.term_component(term);
@@ -252,8 +241,6 @@ void add_covariate_diffusion_to_eta_fixed(
       kappaST_scale(cov_i),
       cov_needs_spatial_solver[cov_i] == 1,
       lu_spatial_by_covariate[cov_i],
-      need_m0_solver,
-      lu_m0,
       transformed_vertex_time
     );
     if (!solved) {

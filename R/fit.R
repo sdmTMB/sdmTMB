@@ -895,7 +895,9 @@ sdmTMB <- function(
     spatiotemporal,
     time_varying,
     extra_time = extra_time,
-    covariate_diffusion_temporal = !is.null(covariate_diffusion_parsed) && isTRUE(covariate_diffusion_parsed$needs_time)
+    covariate_diffusion_temporal = !is.null(covariate_diffusion_parsed) &&
+      isTRUE(covariate_diffusion_parsed$needs_time) &&
+      is.null(covariate_diffusion_covariate_vertex_override)
   )
 
   spatial_varying_formula <- spatial_varying # save it
@@ -1396,8 +1398,8 @@ sdmTMB <- function(
     ln_tau_E = rep(0, n_m),
     ln_kappa = matrix(0, 2L, n_m),
     log_kappaS_dl = numeric(covariate_diffusion_n_covariates),
-    log_kappaT_dl = numeric(covariate_diffusion_n_covariates),
-    kappaST_dl_unscaled = numeric(covariate_diffusion_n_covariates),
+    kappaT_dl_raw = numeric(covariate_diffusion_n_covariates),
+    kappaST_dl_raw = numeric(covariate_diffusion_n_covariates),
     # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
     thetaf = 0,
     ln_student_df = if (family$family[1] == "student") {
@@ -1445,8 +1447,8 @@ sdmTMB <- function(
     factor(out)
   }
   tmb_map$log_kappaS_dl <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_spatial)
-  tmb_map$log_kappaT_dl <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_temporal)
-  tmb_map$kappaST_dl_unscaled <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_spacetime)
+  tmb_map$kappaT_dl_raw <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_temporal)
+  tmb_map$kappaST_dl_raw <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_spacetime)
   if (delta) tmb_map$b_j2 <- NULL
   if (family$family[[1]] == "tweedie") tmb_map$thetaf <- NULL
   if (family$family[[1]] == "student") {
@@ -1609,7 +1611,7 @@ sdmTMB <- function(
       "i" = paste0("Distributed lag covariates (in order): ", cov_text, ".")
     ))
   }
-  dl_param_names <- c("log_kappaS_dl", "log_kappaT_dl", "kappaST_dl_unscaled")
+  dl_param_names <- c("log_kappaS_dl", "kappaT_dl_raw", "kappaST_dl_raw")
   for (param_name in dl_param_names) {
     if (param_name %in% names(start)) {
       .validate_covariate_diffusion_control_length(start[[param_name]], param_name, "start")
@@ -2096,6 +2098,10 @@ set_limits <- function(tmb_obj, lower, upper, loc = NULL, spatial_model = 0L,
     .lower["ar1_phi"] <- stats::qlogis((-0.999 + 1) / 2)
     .upper["ar1_phi"] <- stats::qlogis((0.999 + 1) / 2)
   }
+  if ("kappaT_dl_raw" %in% names(tmb_obj$par) &&
+    !"kappaT_dl_raw" %in% names(lower)) {
+    .lower[names(.lower) == "kappaT_dl_raw"] <- -1 + 1e-6
+  }
   if ("logit_rho_sar" %in% names(tmb_obj$par) &&
     !"logit_rho_sar" %in% union(names(lower), names(upper))) {
     if (identical(spatial_model, 2L)) {
@@ -2169,7 +2175,7 @@ check_irregalar_time <- function(data, time, spatiotemporal, time_varying, extra
       },
       if (irregular_dl) {
         c(
-          "For `covariate_diffusion` with `time()` or `spacetime()`, include rows in `data` for missing time slices so lag covariates are defined.",
+          "For temporal `covariate_diffusion` terms, include rows in `data` for missing time slices so lag covariates are defined.",
           "Using `extra_time` alone is not sufficient for temporal covariate diffusions."
         )
       },

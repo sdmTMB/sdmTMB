@@ -35,34 +35,17 @@ test_that("covariate diffusion fits run for each wrapper and combined terms", {
   )
 
   for (nm in names(lag_forms)) {
-    if (nm %in% c("spatiotemporal", "combined")) {
-      expect_warning(
-        fit <- sdmTMB(
-          y ~ x1 + x2,
-          data = dat,
-          mesh = mesh,
-          time = "year",
-          spatial = "off",
-          spatiotemporal = "off",
-          family = gaussian(),
-          covariate_diffusion = lag_forms[[nm]],
-          control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
-        ),
-        "`spacetime\\(\\)` in `covariate_diffusion` is currently experimental"
-      )
-    } else {
-      fit <- sdmTMB(
-        y ~ x1 + x2,
-        data = dat,
-        mesh = mesh,
-        time = "year",
-        spatial = "off",
-        spatiotemporal = "off",
-        family = gaussian(),
-        covariate_diffusion = lag_forms[[nm]],
-        control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
-      )
-    }
+    fit <- sdmTMB(
+      y ~ x1 + x2,
+      data = dat,
+      mesh = mesh,
+      time = "year",
+      spatial = "off",
+      spatiotemporal = "off",
+      family = gaussian(),
+      covariate_diffusion = lag_forms[[nm]],
+      control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+    )
     expect_true(is.finite(fit$model$objective), info = nm)
   }
 })

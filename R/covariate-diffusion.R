@@ -93,7 +93,7 @@
     if (!is.call(expr)) {
       cli_abort(c(
         "Unsupported term in `covariate_diffusion`.",
-        "i" = "Terms must be wrapped in `space()`, `time()`, or `spacetime()`.",
+        "i" = "Terms must be wrapped in `space()` or `time()`.",
         "x" = "Problematic term: {.code {term_label}}"
       ))
     }
@@ -102,7 +102,7 @@
     if (!wrapper %in% allowed_wrappers) {
       cli_abort(c(
         "Unsupported wrapper in `covariate_diffusion`.",
-        "i" = "Allowed wrappers are `space()`, `time()`, and `spacetime()`.",
+        "i" = "Allowed wrappers are `space()` and `time()`.",
         "x" = "Problematic term: {.code {term_label}}"
       ))
     }
@@ -155,13 +155,7 @@
 
   if (isTRUE(covariate_diffusion$needs_time) && is.null(time)) {
     cli_abort(
-      "`covariate_diffusion` terms wrapped in `time()` or `spacetime()` require a `time` argument."
-    )
-  }
-
-  if (any(covariate_diffusion$terms$component == "spacetime")) {
-    cli_warn(
-      "`spacetime()` in `covariate_diffusion` is currently experimental and not yet fully tested; use with caution."
+      "Temporal `covariate_diffusion` terms require a `time` argument."
     )
   }
 
@@ -353,20 +347,42 @@
     n_vertices <- vertex_cov$n_vertices
     n_t <- vertex_cov$n_t
   } else {
-    if (length(covariate_diffusion$covariates) != 1L) {
-      cli_abort("`experimental$covariate_diffusion_covariate_vertex` currently supports exactly one covariate-diffusion covariate.")
-    }
     if (!is.numeric(covariate_vertex_time) || any(!is.finite(covariate_vertex_time))) {
-      cli_abort("`experimental$covariate_diffusion_covariate_vertex` must be a finite numeric vector.")
+      cli_abort("`experimental$covariate_diffusion_covariate_vertex` must be finite numeric values.")
     }
-    if (length(covariate_vertex_time) != n_vertices) {
-      cli_abort("`experimental$covariate_diffusion_covariate_vertex` must have length equal to the number of mesh vertices.")
+    if (is.null(dim(covariate_vertex_time))) {
+      if (length(covariate_diffusion$covariates) != 1L) {
+        cli_abort("A vector `experimental$covariate_diffusion_covariate_vertex` supports exactly one covariate-diffusion covariate.")
+      }
+      if (length(covariate_vertex_time) != n_vertices) {
+        cli_abort("A vector `experimental$covariate_diffusion_covariate_vertex` must have length equal to the number of mesh vertices.")
+      }
+      covariate_vertex_time <- array(
+        rep(covariate_vertex_time, n_t),
+        dim = c(n_vertices, n_t, 1L),
+        dimnames = list(NULL, NULL, covariate_diffusion$covariates)
+      )
+    } else if (length(dim(covariate_vertex_time)) == 2L) {
+      if (length(covariate_diffusion$covariates) != 1L) {
+        cli_abort("A matrix `experimental$covariate_diffusion_covariate_vertex` supports exactly one covariate-diffusion covariate.")
+      }
+      if (!all(dim(covariate_vertex_time) == c(n_vertices, n_t))) {
+        cli_abort("A matrix `experimental$covariate_diffusion_covariate_vertex` must have dimensions `n_vertices` by `n_t`.")
+      }
+      covariate_vertex_time <- array(
+        covariate_vertex_time,
+        dim = c(n_vertices, n_t, 1L),
+        dimnames = list(NULL, NULL, covariate_diffusion$covariates)
+      )
+    } else if (length(dim(covariate_vertex_time)) == 3L) {
+      expected_dim <- c(n_vertices, n_t, length(covariate_diffusion$covariates))
+      if (!all(dim(covariate_vertex_time) == expected_dim)) {
+        cli_abort("An array `experimental$covariate_diffusion_covariate_vertex` must have dimensions `n_vertices` by `n_t` by `n_covariates`.")
+      }
+      dimnames(covariate_vertex_time) <- list(NULL, NULL, covariate_diffusion$covariates)
+    } else {
+      cli_abort("`experimental$covariate_diffusion_covariate_vertex` must be a vector, matrix, or 3D array.")
     }
-    covariate_vertex_time <- array(
-      rep(covariate_vertex_time, n_t),
-      dim = c(n_vertices, n_t, 1L),
-      dimnames = list(NULL, NULL, covariate_diffusion$covariates)
-    )
   }
 
   component_levels <- c("space", "time", "spacetime")
@@ -401,7 +417,11 @@
   )
 }
 
-.solve_covariate_diffusion_vertex_time <- function(component, vertex_time_input, M0, M1, kappaS, kappaT, kappaST) {
+.solve_covariate_diffusion_vertex_time <- function(component, vertex_time_input, M0, M1,
+                                                  kappaS, kappaT, kappaST,
+                                                  has_space = NULL,
+                                                  has_time = NULL,
+                                                  has_spacetime = NULL) {
   n_vertices <- nrow(vertex_time_input)
   n_t <- ncol(vertex_time_input)
   out <- matrix(0, nrow = n_vertices, ncol = n_t)
@@ -418,6 +438,29 @@
     )
   }
 
+  if (component == "combined") {
+    has_space <- isTRUE(has_space)
+    has_time <- isTRUE(has_time)
+    has_spacetime <- isTRUE(has_spacetime)
+    kappaS_scale <- if (has_space || has_spacetime) 1 / (kappaS^2) else 0
+    kappaT_scale <- if (has_time) kappaT else 0
+    kappaST_scale <- if (has_spacetime) kappaST * kappaS_scale else 0
+    system_mat <- M0 + kappaS_scale * M1
+    for (tt in seq_len(n_t)) {
+      rhs <- as.numeric(M0 %*% vertex_time_input[, tt, drop = TRUE])
+      if (tt > 1L) {
+        if (kappaT_scale != 0) {
+          rhs <- rhs + as.numeric(kappaT_scale * (M0 %*% out[, tt - 1L, drop = TRUE]))
+        }
+        if (kappaST_scale != 0) {
+          rhs <- rhs - as.numeric(kappaST_scale * (M1 %*% out[, tt - 1L, drop = TRUE]))
+        }
+      }
+      out[, tt] <- solve_sparse(system_mat, rhs, "combined system (space + time + spacetime)")
+    }
+    return(out)
+  }
+
   if (component == "space") {
     kappaS_scale <- 1 / (kappaS^2)
     system_mat <- M0 + kappaS_scale * M1
@@ -429,10 +472,11 @@
   }
 
   if (component == "time") {
-    out[, 1L] <- vertex_time_input[, 1L]
+    denom <- 1 + kappaT
+    out[, 1L] <- vertex_time_input[, 1L] / denom
     if (n_t > 1L) {
       for (tt in 2:n_t) {
-        out[, tt] <- vertex_time_input[, tt] + kappaT * out[, tt - 1L]
+        out[, tt] <- (vertex_time_input[, tt] + kappaT * out[, tt - 1L]) / denom
       }
     }
     return(out)
@@ -441,13 +485,13 @@
   if (component == "spacetime") {
     kappaS_scale <- 1 / (kappaS^2)
     kappaST_scale <- kappaST * kappaS_scale
-    out[, 1L] <- vertex_time_input[, 1L]
-    if (n_t > 1L) {
-      for (tt in 2:n_t) {
-        rhs <- as.numeric(M0 %*% vertex_time_input[, tt, drop = TRUE] -
-          kappaST_scale * (M1 %*% out[, tt - 1L, drop = TRUE]))
-        out[, tt] <- solve_sparse(M0, rhs, "spatiotemporal system (M0)")
+    system_mat <- M0 + (kappaS_scale - kappaST_scale) * M1
+    for (tt in seq_len(n_t)) {
+      rhs <- as.numeric(M0 %*% vertex_time_input[, tt, drop = TRUE])
+      if (tt > 1L) {
+        rhs <- rhs - as.numeric(kappaST_scale * (M1 %*% out[, tt - 1L, drop = TRUE]))
       }
+      out[, tt] <- solve_sparse(system_mat, rhs, "spatiotemporal system (M0 + (kappaS^-2 - kappaST * kappaS^-2) * M1)")
     }
     return(out)
   }
@@ -497,8 +541,8 @@
     M0 = object$tmb_data$spde$M0,
     M1 = object$tmb_data$spde$M1,
     log_kappaS_dl = par_list$log_kappaS_dl,
-    log_kappaT_dl = par_list$log_kappaT_dl,
-    kappaST_dl_unscaled = par_list$kappaST_dl_unscaled
+    kappaT_dl_raw = par_list$kappaT_dl_raw,
+    kappaST_dl_raw = par_list$kappaST_dl_raw
   )
   cbind(nd, as.data.frame(dl_term_values))
 }
@@ -512,8 +556,8 @@
                                                  M0,
                                                  M1,
                                                  log_kappaS_dl,
-                                                 log_kappaT_dl,
-                                                 kappaST_dl_unscaled) {
+                                                 kappaT_dl_raw,
+                                                 kappaST_dl_raw) {
   if (is.null(covariate_diffusion_data)) {
     return(NULL)
   }
@@ -523,8 +567,8 @@
   }
   n_covariates <- covariate_diffusion_data$n_covariates
   if (length(log_kappaS_dl) != n_covariates ||
-      length(log_kappaT_dl) != n_covariates ||
-      length(kappaST_dl_unscaled) != n_covariates) {
+      length(kappaT_dl_raw) != n_covariates ||
+      length(kappaST_dl_raw) != n_covariates) {
     cli_abort("Covariate diffusion parameter vectors did not match the expected number of lag covariates.")
   }
 
@@ -547,8 +591,8 @@
       ncol = dim(covariate_vertex_time)[2]
     )
     kappaS <- exp(log_kappaS_dl[[cov_i]])
-    kappaT <- exp(log_kappaT_dl[[cov_i]])
-    kappaST <- -stats::plogis(kappaST_dl_unscaled[[cov_i]])
+    kappaT <- kappaT_dl_raw[[cov_i]]
+    kappaST <- kappaST_dl_raw[[cov_i]]
     transformed_vertex_time <- .solve_covariate_diffusion_vertex_time(
       component = component,
       vertex_time_input = cov_slice,
@@ -642,12 +686,26 @@
   }
   list(
     kappaS = exp(params$log_kappaS_dl[cov_i]),
-    kappaT = exp(params$log_kappaT_dl[cov_i]),
-    kappaST = -stats::plogis(params$kappaST_dl_unscaled[cov_i])
+    kappaT = params$kappaT_dl_raw[cov_i],
+    kappaST = params$kappaST_dl_raw[cov_i]
   )
 }
 
-.dl_plot_panel_dfs <- function(loc, tv, panel_fields, panel_titles, vertex_i, common_scale) {
+.dl_plot_transform_values <- function(x, value_transform) {
+  switch(value_transform,
+    identity = x,
+    sqrt = {
+      if (any(x < 0, na.rm = TRUE)) {
+        cli_abort("`value_transform = \"sqrt\"` requires non-negative values. Use `\"signed_sqrt\"` for signed values.")
+      }
+      sqrt(x)
+    },
+    signed_sqrt = sign(x) * sqrt(abs(x))
+  )
+}
+
+.dl_plot_panel_dfs <- function(loc, tv, panel_fields, panel_titles, vertex_i,
+                               common_scale, value_transform) {
   n_tri <- nrow(tv)
   triangle_values <- vapply(panel_fields, function(v) {
     rowMeans(matrix(v[tv], nrow = n_tri, ncol = 3L))
@@ -677,17 +735,17 @@
     y = rep(loc[vertex_i, 2], length(panel_titles))
   )
 
-  triangle_df$value_plot <- triangle_df$value
-  fill_name <- "Value"
+  triangle_df$value_plot <- .dl_plot_transform_values(triangle_df$value, value_transform)
+  fill_name <- if (value_transform == "identity") "Value" else paste0("Value (", value_transform, ")")
   if (!isTRUE(common_scale)) {
-    fill_name <- "Relative value"
+    fill_name <- if (value_transform == "identity") "Relative value" else paste0("Relative value (", value_transform, ")")
     for (p in levels(triangle_df$panel)) {
       i <- which(triangle_df$panel == p)
-      rng <- range(triangle_df$value[i], finite = TRUE)
+      rng <- range(triangle_df$value_plot[i], finite = TRUE)
       if (!all(is.finite(rng)) || rng[1] == rng[2]) {
         triangle_df$value_plot[i] <- 0
       } else {
-        triangle_df$value_plot[i] <- (triangle_df$value[i] - rng[1]) / (rng[2] - rng[1])
+        triangle_df$value_plot[i] <- (triangle_df$value_plot[i] - rng[1]) / (rng[2] - rng[1])
       }
     }
   }
@@ -733,6 +791,143 @@
     ggplot2::labs(x = xlab, y = ylab)
 }
 
+.dl_plot_grid_centers <- function(loc, grid_resolution) {
+  if (!is.numeric(grid_resolution) || length(grid_resolution) != 1L ||
+      !is.finite(grid_resolution) || grid_resolution < 2L) {
+    cli_abort("`grid_resolution` must be a single integer greater than or equal to 2.")
+  }
+  grid_resolution <- as.integer(round(grid_resolution))
+  xlim <- range(loc[, 1])
+  ylim <- range(loc[, 2])
+  x_span <- diff(xlim)
+  y_span <- diff(ylim)
+  if (!is.finite(x_span) || !is.finite(y_span) || x_span <= 0 || y_span <= 0) {
+    cli_abort("Mesh bounding box must have positive width and height.")
+  }
+  if (x_span >= y_span) {
+    nx <- grid_resolution
+    ny <- max(1L, as.integer(round(grid_resolution * y_span / x_span)))
+  } else {
+    ny <- grid_resolution
+    nx <- max(1L, as.integer(round(grid_resolution * x_span / y_span)))
+  }
+  dx <- x_span / nx
+  dy <- y_span / ny
+  x <- xlim[1] + (seq_len(nx) - 0.5) * dx
+  y <- ylim[1] + (seq_len(ny) - 0.5) * dy
+  centers <- expand.grid(x = x, y = y)
+  list(centers = centers, nx = nx, ny = ny, dx = dx, dy = dy, xlim = xlim, ylim = ylim)
+}
+
+.dl_plot_mesh_edges <- function(loc, tv) {
+  edges <- rbind(tv[, c(1L, 2L), drop = FALSE], tv[, c(2L, 3L), drop = FALSE], tv[, c(3L, 1L), drop = FALSE])
+  edges <- t(apply(edges, 1L, sort))
+  edges <- unique(edges)
+  data.frame(
+    x = loc[edges[, 1L], 1],
+    y = loc[edges[, 1L], 2],
+    xend = loc[edges[, 2L], 1],
+    yend = loc[edges[, 2L], 2]
+  )
+}
+
+.dl_plot_grid_msd <- function(values, centers, panel) {
+  if (any(values < 0, na.rm = TRUE)) {
+    cli_warn("Projected grid values for `{panel}` include negative weights; returning `NA` for MSD.")
+    return(NA_real_)
+  }
+  total <- sum(values, na.rm = TRUE)
+  if (!is.finite(total) || total <= 0) {
+    return(NA_real_)
+  }
+  x_bar <- sum(values * centers$x, na.rm = TRUE) / total
+  y_bar <- sum(values * centers$y, na.rm = TRUE) / total
+  sum(values * ((centers$x - x_bar)^2 + (centers$y - y_bar)^2), na.rm = TRUE) / total
+}
+
+.dl_plot_grid_panel_df <- function(grid_info, panel_matrix, panel_names, scale, value_transform) {
+  totals <- colSums(panel_matrix, na.rm = TRUE)
+  msd <- vapply(seq_along(panel_names), function(j) {
+    .dl_plot_grid_msd(panel_matrix[, j], grid_info$centers, panel_names[j])
+  }, numeric(1L))
+  panel_titles <- paste0(
+    panel_names,
+    "\ntotal: ", formatC(totals, format = "fg", digits = 4L),
+    " | MSD: ", ifelse(is.na(msd), "NA", formatC(msd, format = "fg", digits = 5L))
+  )
+
+  grid_df <- do.call(rbind, lapply(seq_along(panel_titles), function(j) {
+    data.frame(
+      panel = panel_titles[j],
+      x = grid_info$centers$x,
+      y = grid_info$centers$y,
+      value = panel_matrix[, j],
+      stringsAsFactors = FALSE
+    )
+  }))
+  grid_df$panel <- factor(grid_df$panel, levels = panel_titles)
+  grid_df$value_plot <- .dl_plot_transform_values(grid_df$value, value_transform)
+
+  fill_name <- if (value_transform == "identity") "Value" else paste0("Value (", value_transform, ")")
+  fill_limits <- NULL
+  if (identical(scale, "panel")) {
+    fill_name <- if (value_transform == "identity") "Relative value" else paste0("Relative value (", value_transform, ")")
+    for (p in levels(grid_df$panel)) {
+      i <- which(grid_df$panel == p)
+      rng <- range(grid_df$value_plot[i], finite = TRUE)
+      if (!all(is.finite(rng)) || rng[1] == rng[2]) {
+        grid_df$value_plot[i] <- 0
+      } else {
+        grid_df$value_plot[i] <- (grid_df$value_plot[i] - rng[1]) / (rng[2] - rng[1])
+      }
+    }
+    fill_limits <- c(0, 1)
+  }
+
+  list(
+    grid_df = grid_df,
+    totals = totals,
+    msd = msd,
+    panel_titles = panel_titles,
+    fill_name = fill_name,
+    fill_limits = fill_limits
+  )
+}
+
+.dl_plot_grid_ggplot <- function(grid_df, edge_df, point_df, fill_limits, fill_name,
+                                 xlim, ylim, xlab, ylab) {
+  ggplot2::ggplot(grid_df, ggplot2::aes(x = .data$x, y = .data$y)) +
+    ggplot2::geom_raster(ggplot2::aes(fill = .data$value_plot)) +
+    ggplot2::geom_segment(
+      data = edge_df,
+      ggplot2::aes(x = .data$x, y = .data$y, xend = .data$xend, yend = .data$yend),
+      inherit.aes = FALSE,
+      color = "grey65",
+      linewidth = 0.2,
+      alpha = 0.55
+    ) +
+    ggplot2::geom_point(
+      data = point_df,
+      ggplot2::aes(x = .data$x, y = .data$y),
+      inherit.aes = FALSE,
+      shape = 21,
+      fill = "black",
+      color = "black",
+      size = 1.4
+    ) +
+    ggplot2::facet_wrap(stats::as.formula("~ panel"), nrow = 1L) +
+    ggplot2::coord_equal(xlim = xlim, ylim = ylim, expand = FALSE) +
+    ggplot2::scale_fill_viridis_c(
+      limits = fill_limits,
+      name = fill_name, option = "C"
+    ) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      panel.grid = ggplot2::element_blank()
+    ) +
+    ggplot2::labs(x = xlab, y = ylab)
+}
+
 #' Plot Covariate Diffusion from a Point on the Mesh
 #'
 #' Diagnostic visualization of an impulse covariate diffusing through one
@@ -744,16 +939,15 @@
 #' @param covariate Optional covariate name from `covariate_diffusion`.
 #'   Required when multiple lag covariates were fitted.
 #' @param component Covariate diffusion component name. Must be exactly one of
-#'   `"space"` or `"time"`.
+#'   `"space"`, `"time"`, or `"combined"`. `"combined"`
+#'   plots the joint response of all covariate-diffusion components fitted for
+#'   `covariate`.
 #' @param time_value Optional time slice for the impulse. Supply either a
-#'   modeled time value or a 1-based time index. Required only when the fitted
-#'   covariate-diffusion specification includes `time()` terms with
-#'   a model time column.
+#'   modeled time value or a 1-based time index. Defaults to 1.
 #' @param n_steps Number of transformed slices to plot starting at
 #'   `time_value`. Defaults to 3.
 #' @param common_scale Should transformed panels share a common color scale?
 #'   Defaults to `FALSE`.
-#' @param plot Logical. If `TRUE` (default), draw the plot.
 #'
 #' @return Invisibly returns a list with impulse/transformed fields on vertices,
 #'   triangle summaries used for plotting, selected indices, and a `ggplot`
@@ -762,19 +956,18 @@
 plot_covariate_diffusion <- function(object,
                                            covariate = NULL,
                                            component,
-                                           time_value = NULL,
+                                           time_value = 1,
                                            n_steps = 3L,
-                                           common_scale = FALSE,
-                                           plot = TRUE) {
+                                           common_scale = FALSE) {
   stopifnot(inherits(object, "sdmTMB"))
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     cli_abort("`ggplot2` must be installed to use `plot_covariate_diffusion()`.")
   }
   if (missing(component)) {
-    cli_abort("`component` is required and must be one of `space`, `time`, or `spacetime`.")
+    cli_abort("`component` is required and must be one of `space`, `time`, or `combined`.")
   }
-  if (!component %in% c("space", "time", "spacetime")) {
-    cli_abort("`component` must be exactly one of `space`, `time`, or `spacetime`.")
+  if (!component %in% c("space", "time", "spacetime", "combined")) {
+    cli_abort("`component` must be exactly one of `space`, `time`, or `combined`.")
   }
   if (is.null(object$covariate_diffusion_data)) {
     cli_abort("`object` does not contain `covariate_diffusion_data`.")
@@ -783,20 +976,12 @@ plot_covariate_diffusion <- function(object,
     cli_abort("`n_steps` must be a single positive integer.")
   }
   n_steps <- as.integer(round(n_steps))
-  if (!is.logical(plot) || length(plot) != 1L) {
-    cli_abort("`plot` must be `TRUE` or `FALSE`.")
-  }
   if (is.null(object$covariate_diffusion_parsed) ||
       is.null(object$covariate_diffusion_parsed$terms) ||
       nrow(object$covariate_diffusion_parsed$terms) == 0L) {
     cli_abort("`object` does not contain covariate-diffusion terms.")
   }
   terms_df <- object$covariate_diffusion_parsed$terms
-  has_temporal_covariate_diffusion <- any(terms_df$component %in% c("time", "spacetime"))
-  model_has_time <- !is.null(object$time) && !identical(object$time, "_sdmTMB_time")
-  if (is.null(time_value) && model_has_time && has_temporal_covariate_diffusion) {
-    cli_abort("`time_value` is required for models with temporal covariate-diffusion terms.")
-  }
   covariates <- unique(terms_df$variable)
   if (is.null(covariate)) {
     if (length(covariates) != 1L) {
@@ -815,19 +1000,20 @@ plot_covariate_diffusion <- function(object,
     ))
   }
   components_for_covariate <- unique(terms_df$component[terms_df$variable == covariate])
-  if (!component %in% components_for_covariate) {
+  if (component != "combined" && !component %in% components_for_covariate) {
     cli_abort(c(
       "Requested component/covariate term was not fitted.",
       "x" = "No term `{component}({covariate})` in `object$covariate_diffusion`."
     ))
   }
+  component_for_time <- if (component == "combined" && !any(components_for_covariate %in% c("time", "spacetime"))) "space" else component
 
   mesh_info <- .dl_plot_extract_mesh(object$spde$mesh)
   loc <- mesh_info$loc
   tv <- mesh_info$tv
   vertex_i <- mesh_info$vertex_i
 
-  time_info <- .dl_plot_resolve_time(object, component, time_value, n_steps)
+  time_info <- .dl_plot_resolve_time(object, component_for_time, time_value, n_steps)
   n_t <- time_info$n_t
   time_values <- time_info$time_values
   time_i <- time_info$time_i
@@ -865,7 +1051,10 @@ plot_covariate_diffusion <- function(object,
     M1 = object$tmb_data$spde$M1,
     kappaS = kappas$kappaS,
     kappaT = kappas$kappaT,
-    kappaST = kappas$kappaST
+    kappaST = kappas$kappaST,
+    has_space = has_space,
+    has_time = has_time,
+    has_spacetime = has_spacetime
   )
 
   panel_fields <- vector("list", length(time_idx) + 1L)
@@ -883,7 +1072,11 @@ plot_covariate_diffusion <- function(object,
     }
   }
 
-  panel <- .dl_plot_panel_dfs(loc, tv, panel_fields, panel_titles, vertex_i, common_scale)
+  panel <- .dl_plot_panel_dfs(
+    loc, tv, panel_fields, panel_titles, vertex_i,
+    common_scale = common_scale,
+    value_transform = "identity"
+  )
 
   xlab <- if (!is.null(object$spde$xy_cols) && length(object$spde$xy_cols) >= 2L) object$spde$xy_cols[1] else "x"
   ylab <- if (!is.null(object$spde$xy_cols) && length(object$spde$xy_cols) >= 2L) object$spde$xy_cols[2] else "y"
@@ -898,9 +1091,7 @@ plot_covariate_diffusion <- function(object,
     ylab = ylab
   )
 
-  if (plot) {
-    print(plot_obj)
-  }
+  print(plot_obj)
 
   invisible(list(
     covariate = covariate,

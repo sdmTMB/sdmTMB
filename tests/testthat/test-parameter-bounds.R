@@ -36,3 +36,15 @@ test_that("lower and upper work", {
     })}, regexp = "bound")
   expect_equal(m$model$par[[2]], -0.45, tolerance = 1e-6)
 })
+
+test_that("covariate diffusion temporal raw parameter has a default lower bound", {
+  obj <- list(par = c(kappaT_dl_raw = -0.5, kappaT_dl_raw = 0.2, b_j = 1))
+
+  lim <- set_limits(obj, lower = list(), upper = list())
+  expect_equal(unname(lim$lower[names(lim$lower) == "kappaT_dl_raw"]), rep(-1 + 1e-6, 2L))
+  expect_true(all(is.infinite(lim$upper[names(lim$upper) == "kappaT_dl_raw"])))
+
+  lim_override <- set_limits(obj, lower = list(kappaT_dl_raw = -0.5), upper = list(kappaT_dl_raw = 2))
+  expect_equal(unname(lim_override$lower[names(lim_override$lower) == "kappaT_dl_raw"]), rep(-0.5, 2L))
+  expect_equal(unname(lim_override$upper[names(lim_override$upper) == "kappaT_dl_raw"]), rep(2, 2L))
+})

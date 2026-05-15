@@ -8,10 +8,9 @@ plot_covariate_diffusion(
   object,
   covariate = NULL,
   component,
-  time_value = NULL,
+  time_value = 1,
   n_steps = 3L,
-  common_scale = FALSE,
-  plot = TRUE
+  common_scale = FALSE
 )
 }
 \arguments{
@@ -21,20 +20,18 @@ plot_covariate_diffusion(
 Required when multiple lag covariates were fitted.}
 
 \item{component}{Covariate diffusion component name. Must be exactly one of
-\code{"space"} or \code{"time"}.}
+\code{"space"}, \code{"time"}, or \code{"combined"}. \code{"combined"}
+plots the joint response of all covariate-diffusion components fitted for
+\code{covariate}.}
 
 \item{time_value}{Optional time slice for the impulse. Supply either a
-modeled time value or a 1-based time index. Required only when the fitted
-covariate-diffusion specification includes \code{time()} terms with
-a model time column.}
+modeled time value or a 1-based time index. Defaults to 1.}
 
 \item{n_steps}{Number of transformed slices to plot starting at
 \code{time_value}. Defaults to 3.}
 
 \item{common_scale}{Should transformed panels share a common color scale?
 Defaults to \code{FALSE}.}
-
-\item{plot}{Logical. If \code{TRUE} (default), draw the plot.}
 }
 \value{
 Invisibly returns a list with impulse/transformed fields on vertices,

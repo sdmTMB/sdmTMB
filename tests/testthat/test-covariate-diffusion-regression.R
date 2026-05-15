@@ -98,7 +98,7 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
 
   expect_equal(as.numeric(logLik(fit_space)), 92.0763, tolerance = 1e-4)
   expect_equal(as.numeric(logLik(fit_time)), -240.2167, tolerance = 1e-4)
-  expect_equal(as.numeric(logLik(fit_st)), -675.0656, tolerance = 1e-4)
+  expect_equal(as.numeric(logLik(fit_st)), -278.3500, tolerance = 1e-4)
 
   get_beta <- function(fit) {
     b <- fit$tmb_obj$env$parList()$b_j
@@ -113,17 +113,17 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
   expect_equal(beta_space[["dl_space_x_space"]], 0.3733943, tolerance = 1e-4)
 
   expect_equal(beta_time[["(Intercept)"]], -0.1992140, tolerance = 1e-4)
-  expect_equal(beta_time[["dl_time_x_time"]], 0.7212362, tolerance = 1e-4)
+  expect_equal(beta_time[["dl_time_x_time"]], 0.7224500, tolerance = 1e-4)
 
-  expect_equal(beta_st[["(Intercept)"]], 0.1143770, tolerance = 1e-4)
-  expect_equal(beta_st[["dl_spacetime_x_st"]], -0.00003495343, tolerance = 1e-4)
+  expect_equal(beta_st[["(Intercept)"]], 0.1152084, tolerance = 1e-4)
+  expect_equal(beta_st[["dl_spacetime_x_st"]], 0.7260176, tolerance = 1e-4)
 
   rep_space <- fit_space$tmb_obj$report()
   rep_time <- fit_time$tmb_obj$report()
   rep_st <- fit_st$tmb_obj$report()
 
   expect_equal(rep_space$kappaS_dl[1], 10.206683946, tolerance = 1e-4)
-  expect_equal(rep_time$kappaT_dl[1], 0.001680177, tolerance = 1e-4)
-  expect_equal(rep_time$rhoT[1], 0.001677359, tolerance = 1e-4)
-  expect_equal(rep_st$kappaST_dl[1], -1.0, tolerance = 1e-4)
+  expect_equal(rep_time$kappaT_dl[1], 0.001683076, tolerance = 1e-4)
+  expect_equal(rep_time$rhoT[1], 0.001680248, tolerance = 1e-4)
+  expect_equal(rep_st$kappaST_dl[1], 25514.0, tolerance = 1e-4)
 })
