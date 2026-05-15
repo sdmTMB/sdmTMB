@@ -31,7 +31,6 @@ simulate_new(
   covariate_diffusion = NULL,
   diffusion_kappaS = NULL,
   diffusion_rhoT = NULL,
-  diffusion_kappaST = NULL,
   ...
 )
 
@@ -61,7 +60,6 @@ sdmTMB_simulate(
   covariate_diffusion = NULL,
   diffusion_kappaS = NULL,
   diffusion_rhoT = NULL,
-  diffusion_kappaST = NULL,
   ...
 )
 }

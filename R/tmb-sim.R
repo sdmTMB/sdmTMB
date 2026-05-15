@@ -140,7 +140,6 @@ simulate_new <- function(formula,
                          covariate_diffusion = NULL,
                          diffusion_kappaS = NULL,
                          diffusion_rhoT = NULL,
-                         diffusion_kappaST = NULL,
                          ...) {
 
   if (!is.null(previous_fit)) stop("`previous_fit` is deprecated. See `simulate.sdmTMB()`", call. = FALSE)
@@ -164,6 +163,9 @@ simulate_new <- function(formula,
   assert_that(all(sigma_Z >= 0) || is.null(sigma_Z))
 
   dots <- list(...)
+  if ("diffusion_kappaST" %in% names(dots)) {
+    cli::cli_abort("`diffusion_kappaST` is not currently supported by `simulate_new()`.")
+  }
   dots$time_varying <- NULL
   dots$time_varying_type <- NULL
   time_varying_type <- match.arg(time_varying_type)
@@ -299,15 +301,8 @@ simulate_new <- function(formula,
       valid = function(x) all(is.finite(x) & x >= 0 & x < 1),
       transform = function(x) x / (1 - x)
     )
-    params <- .set_diffusion_parameter(
-      params = params,
-      param_name = "kappaST_dl_raw",
-      user_value = diffusion_kappaST,
-      mask = dl_data$covariate_has_spacetime,
-      label = "diffusion_kappaST",
-      valid = function(x) all(is.finite(x))
-    )
-  } else if (!is.null(diffusion_kappaS) || !is.null(diffusion_rhoT) || !is.null(diffusion_kappaST)) {
+    params$kappaST_dl_raw[as.logical(dl_data$covariate_has_spacetime)] <- 0
+  } else if (!is.null(diffusion_kappaS) || !is.null(diffusion_rhoT)) {
     cli::cli_abort("Diffusion parameters require `covariate_diffusion`.")
   }
 

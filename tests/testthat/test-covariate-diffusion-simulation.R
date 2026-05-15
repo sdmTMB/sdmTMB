@@ -95,7 +95,6 @@ test_that("simulate_new supports combined covariate diffusion terms", {
     covariate_diffusion = ~ space(x_s) + time(x_t) + spacetime(x_st),
     diffusion_kappaS = c(1.3, 1.1),
     diffusion_rhoT = 0.4,
-    diffusion_kappaST = 0.2,
     seed = 3
   )
 
@@ -162,9 +161,10 @@ test_that("simulate_new errors for missing covariate diffusion parameters", {
       phi = 0.1,
       B = c(0.2, 0.7),
       covariate_diffusion = ~ spacetime(x_st),
-      diffusion_kappaS = 1.3
+      diffusion_kappaS = 1.3,
+      diffusion_kappaST = 0.3
     ),
-    "diffusion_kappaST"
+    "not currently supported"
   )
 })
 
@@ -286,54 +286,4 @@ test_that("simulated time diffusion recovers kappaT reasonably well", {
 
   est_rho <- fit$tmb_obj$report()$rhoT[1]
   expect_equal(est_rho, true_kappa, tolerance = 0.01)
-})
-
-test_that("simulated spacetime diffusion recovers kappaST reasonably well", {
-  skip_on_cran()
-
-  dat <- expand.grid(
-    X = seq(0, 1, length.out = 8),
-    Y = seq(0, 1, length.out = 8),
-    year = 1:8
-  )
-  dat$x_st <- as.numeric(scale(
-    sin(dat$X * 2 * pi) * cos(dat$Y * 2 * pi) *
-      as.numeric(scale(dat$year)) + rnorm(nrow(dat), sd = 0.15)
-  ))
-  mesh <- make_dl_sim_mesh(dat)
-
-  true_kappa <- 0.3
-  sim <- simulate_new(
-    formula = ~ 1,
-    data = dat,
-    mesh = mesh,
-    time = "year",
-    family = gaussian(),
-    spatial = "off",
-    spatiotemporal = "off",
-    range = 0.5,
-    sigma_O = 0,
-    phi = 0.02,
-    B = c(0.3, 1.1),
-    covariate_diffusion = ~ spacetime(x_st),
-    diffusion_kappaS = 1.3,
-    diffusion_kappaST = true_kappa,
-    seed = 42
-  )
-
-  dat$y <- sim$observed
-  fit <- sdmTMB(
-    y ~ 1,
-    data = dat,
-    mesh = mesh,
-    time = "year",
-    family = gaussian(),
-    spatial = "off",
-    spatiotemporal = "off",
-    covariate_diffusion = ~ spacetime(x_st),
-    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
-  )
-
-  est_kappa <- fit$tmb_obj$report()$kappaST_dl[1]
-  expect_equal(est_kappa, true_kappa, tolerance = 0.15)
 })
