@@ -458,7 +458,7 @@ simulate_new <- function(formula,
   d[["observed"]] <- s$y_i
   d <- do.call("data.frame", d)
   d <- cbind(d, fit$tmb_data$X_ij)
-  dl_cols <- grepl("^dl_", names(d))
+  dl_cols <- grepl("^cov_diff_", names(d))
   if (any(dl_cols)) d <- d[, !dl_cols, drop = FALSE]
 
   if (!is.null(fit$covariate_diffusion_data) &&

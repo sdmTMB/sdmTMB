@@ -41,7 +41,7 @@ test_that("simulate_new supports space covariate diffusion", {
   expect_equal(nrow(sim), nrow(dat))
   expect_true(all(c("observed", "eta") %in% names(sim)))
   expect_true("diffusion_truth_space_x_s" %in% names(sim))
-  expect_false(any(grepl("^dl_", names(sim))))
+  expect_false(any(grepl("^cov_diff_", names(sim))))
 })
 
 test_that("simulate_new supports time covariate diffusion", {
@@ -71,7 +71,7 @@ test_that("simulate_new supports time covariate diffusion", {
   expect_equal(nrow(sim), nrow(dat))
   expect_true(all(c("observed", "eta") %in% names(sim)))
   expect_true("diffusion_truth_time_x_t" %in% names(sim))
-  expect_false(any(grepl("^dl_", names(sim))))
+  expect_false(any(grepl("^cov_diff_", names(sim))))
 })
 
 test_that("simulate_new supports combined covariate diffusion terms", {
@@ -104,7 +104,7 @@ test_that("simulate_new supports combined covariate diffusion terms", {
     "diffusion_truth_time_x_t",
     "diffusion_truth_spacetime_x_st"
   ) %in% names(sim)))
-  expect_false(any(grepl("^dl_", names(sim))))
+  expect_false(any(grepl("^cov_diff_", names(sim))))
 })
 
 test_that("simulate_new errors for missing covariate diffusion parameters", {

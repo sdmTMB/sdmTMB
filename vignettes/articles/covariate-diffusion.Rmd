@@ -88,9 +88,9 @@ tidy(fit)
 tidy(fit, effects = "ran_pars")
 ```
 
-Here `kappaS_dl[x1]` is the estimated spatial diffusion scale parameter for `x1` (larger values imply less smoothing).
+Here `kappaS_cov_diff[x1]` is the estimated spatial diffusion scale parameter for `x1` (larger values imply less smoothing).
 
-The output also reports `MSD[x1]` and `RMSD[x1]`, the implied mean squared displacement (`4 / kappaS_dl[x1]^2`) and root mean squared displacement (`2 / kappaS_dl[x1]`).
+The output also reports `MSD[x1]` and `RMSD[x1]`, the implied mean squared displacement (`4 / kappaS_cov_diff[x1]^2`) and root mean squared displacement (`2 / kappaS_cov_diff[x1]`).
 `RMSD[x1]` is a typical diffusion distance (a blur radius) in coordinate units.
 Users applying this spatial diffusion method should cite @lindmark2025.
 Users using these MSD and RMSD metrics should consult and cite @thorson2026.
@@ -193,7 +193,7 @@ fit_st <- sdmTMB(
 tidy(fit_st, effects = "ran_pars")
 ```
 
-In the random-effect parameters, `kappaS_dl[x1]` controls spatial smoothing and `kappaT_dl[x1]` controls temporal carryover.
+In the random-effect parameters, `kappaS_cov_diff[x1]` controls spatial smoothing and `kappaT_cov_diff[x1]` controls temporal carryover.
 Users applying the time diffusion extension should read and cite @thorson2026.
 
 ## Plot diffusion kernels

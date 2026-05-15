@@ -355,7 +355,8 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     ii <- ii + 1
   }
 
-  add_covariate_diffusion_parameter <- function(term_name, covariate_mask_name) {
+  add_covariate_diffusion_parameter <- function(term_name, covariate_mask_name,
+                                                display_name = term_name) {
     if (is.null(x$covariate_diffusion_data) || !length(x$covariate_diffusion_data$covariates)) {
       return(NULL)
     }
@@ -375,7 +376,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
       ses[keep_idx] <- se[[term_name]]
     }
     out <- data.frame(
-      term = paste0(term_name, "[", covariates, "]"),
+      term = paste0(display_name, "[", covariates, "]"),
       estimate = estimates,
       std.error = ses,
       conf.low = estimates - crit * ses,
@@ -384,18 +385,22 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     )
     out[keep_idx, , drop = FALSE]
   }
-  dl_term_masks <- c(
-    kappaS_dl = "covariate_has_spatial",
-    kappaT_dl = "covariate_has_temporal",
-    kappaST_dl = "covariate_has_spacetime",
-    rhoT = "covariate_has_temporal",
-    MSD = "covariate_has_spatial",
-    RMSD = "covariate_has_spatial"
+  covariate_diffusion_term_masks <- list(
+    list(term_name = "kappaS_dl", display_name = "kappaS_cov_diff", covariate_mask_name = "covariate_has_spatial"),
+    list(term_name = "kappaT_dl", display_name = "kappaT_cov_diff", covariate_mask_name = "covariate_has_temporal"),
+    list(term_name = "kappaST_dl", display_name = "kappaST_cov_diff", covariate_mask_name = "covariate_has_spacetime"),
+    list(term_name = "rhoT", display_name = "rhoT", covariate_mask_name = "covariate_has_temporal"),
+    list(term_name = "MSD", display_name = "MSD", covariate_mask_name = "covariate_has_spatial"),
+    list(term_name = "RMSD", display_name = "RMSD", covariate_mask_name = "covariate_has_spatial")
   )
-  for (term_name in names(dl_term_masks)) {
-    term_df <- add_covariate_diffusion_parameter(term_name, dl_term_masks[[term_name]])
+  for (term_info in covariate_diffusion_term_masks) {
+    term_df <- add_covariate_diffusion_parameter(
+      term_info$term_name,
+      term_info$covariate_mask_name,
+      term_info$display_name
+    )
     if (!is.null(term_df)) {
-      out_re[[paste0("covariate_diffusion_", term_name)]] <- term_df
+      out_re[[paste0("covariate_diffusion_", term_info$display_name)]] <- term_df
     }
   }
 

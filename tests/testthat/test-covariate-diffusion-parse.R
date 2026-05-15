@@ -34,7 +34,7 @@ test_that("covariate_diffusion parses valid terms", {
   )
   expect_equal(
     fit$covariate_diffusion_parsed$terms$coef_name,
-    c("dl_space_x_num", "dl_time_x_lag", "dl_spacetime_x_num")
+    c("cov_diff_space_x_num", "cov_diff_time_x_lag", "cov_diff_spacetime_x_num")
   )
 })
 
@@ -193,8 +193,8 @@ test_that("covariate_diffusion supports single-family delta", {
     covariate_diffusion = ~ space(x_num),
     do_fit = FALSE
   )
-  expect_true(all(c("dl_space_x_num") %in% colnames(fit_delta$tmb_data$X_ij[[1]])))
-  expect_true(all(c("dl_space_x_num") %in% colnames(fit_delta$tmb_data$X_ij[[2]])))
+  expect_true(all(c("cov_diff_space_x_num") %in% colnames(fit_delta$tmb_data$X_ij[[1]])))
+  expect_true(all(c("cov_diff_space_x_num") %in% colnames(fit_delta$tmb_data$X_ij[[2]])))
 
 })
 

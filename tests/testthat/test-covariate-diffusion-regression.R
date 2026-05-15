@@ -110,13 +110,13 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
   beta_st <- get_beta(fit_st)
 
   expect_equal(beta_space[["(Intercept)"]], 0.4815081, tolerance = 1e-4)
-  expect_equal(beta_space[["dl_space_x_space"]], 0.3733943, tolerance = 1e-4)
+  expect_equal(beta_space[["cov_diff_space_x_space"]], 0.3733943, tolerance = 1e-4)
 
   expect_equal(beta_time[["(Intercept)"]], -0.1992140, tolerance = 1e-4)
-  expect_equal(beta_time[["dl_time_x_time"]], 0.7224500, tolerance = 1e-4)
+  expect_equal(beta_time[["cov_diff_time_x_time"]], 0.7224500, tolerance = 1e-4)
 
   expect_equal(beta_st[["(Intercept)"]], 0.1152084, tolerance = 1e-4)
-  expect_equal(beta_st[["dl_spacetime_x_st"]], 0.7260176, tolerance = 1e-4)
+  expect_equal(beta_st[["cov_diff_spacetime_x_st"]], 0.7260176, tolerance = 1e-4)
 
   rep_space <- fit_space$tmb_obj$report()
   rep_time <- fit_time$tmb_obj$report()

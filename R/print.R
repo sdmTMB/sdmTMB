@@ -47,11 +47,11 @@ print_model_info <- function(x) {
       nrow(x$covariate_diffusion_parsed$terms) > 0L) {
     dl_terms <- x$covariate_diffusion_parsed$terms
     dl_labels <- paste0(dl_terms$component, "(", dl_terms$variable, ")")
-    covariate_diffusion <- paste0("Distributed lags: ", paste(dl_labels, collapse = " + "), "\n")
+    covariate_diffusion <- paste0("Covariate diffusion: ", paste(dl_labels, collapse = " + "), "\n")
   } else if ("covariate_diffusion" %in% names(x$call)) {
     dl_name <- extract_call_name(x$call$covariate_diffusion)
     if (!is.null(dl_name) && dl_name != "NULL") {
-      covariate_diffusion <- paste0("Distributed lags: ", dl_name, "\n")
+      covariate_diffusion <- paste0("Covariate diffusion: ", dl_name, "\n")
       covariate_diffusion <- gsub('\\"', "", covariate_diffusion)
       covariate_diffusion <- gsub("\\'", "", covariate_diffusion)
     }
@@ -485,8 +485,8 @@ print_other_parameters <- function(x, m = 1L) {
   rho <- get_term_text("rho", "Spatiotemporal AR1 correlation (rho)")
   rho_sar <- get_term_text("rho_sar", "SAR spatial correlation")
   alpha_car <- get_term_text("alpha_car", "CAR spatial dependence")
-  rhoT <- covariate_diffusion_term_text("rhoT", "Distributed lag temporal persistence")
-  RMSD <- covariate_diffusion_term_text("RMSD", "Distributed lag RMSD")
+  rhoT <- covariate_diffusion_term_text("rhoT", "Covariate diffusion temporal persistence")
+  RMSD <- covariate_diffusion_term_text("RMSD", "Covariate diffusion RMSD")
 
   if ("sigma_Z" %in% b$term) {
     # tidy() takes sigma_Z from the sdreport,

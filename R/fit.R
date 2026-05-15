@@ -1607,7 +1607,7 @@ sdmTMB <- function(
         "`control$", control_name, "$", param_name, "` must have length ",
         covariate_diffusion_n_covariates, "."
       ),
-      "i" = paste0("Distributed lag covariates (in order): ", cov_text, ".")
+      "i" = paste0("Covariate diffusion covariates (in order): ", cov_text, ".")
     ))
   }
   dl_param_names <- c("log_kappaS_dl", "kappaT_dl_raw", "kappaST_dl_raw")

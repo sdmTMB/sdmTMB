@@ -71,15 +71,15 @@ test_that("covariate diffusion ran_pars include lag scales and derived diagnosti
 
   td <- tidy(fit, effects = "ran_pars", silent = TRUE)
   expected_terms <- c(
-    "kappaS_dl[x1]", "kappaS_dl[x2]",
-    "kappaT_dl[x1]",
-    "kappaST_dl[x2]",
+    "kappaS_cov_diff[x1]", "kappaS_cov_diff[x2]",
+    "kappaT_cov_diff[x1]",
+    "kappaST_cov_diff[x2]",
     "rhoT[x1]",
     "MSD[x1]", "MSD[x2]",
     "RMSD[x1]", "RMSD[x2]"
   )
   expect_true(all(expected_terms %in% td$term), info = paste(setdiff(expected_terms, td$term), collapse = ", "))
-  expect_false("kappaT_dl[x2]" %in% td$term)
+  expect_false("kappaT_cov_diff[x2]" %in% td$term)
 
   rep_est <- as.list(fit$sd_report, "Estimate", report = TRUE)
   rep_se <- as.list(fit$sd_report, "Std. Error", report = TRUE)
@@ -115,7 +115,7 @@ test_that("print output reports covariate diffusion structure and diagnostics", 
   ))
 
   out <- paste(capture.output(print(fit)), collapse = "\n")
-  expect_match(out, "Distributed lags: space\\(x1\\) \\+ time\\(x1\\) \\+ spacetime\\(x2\\)")
+  expect_match(out, "Covariate diffusion: space\\(x1\\) \\+ time\\(x1\\) \\+ spacetime\\(x2\\)")
   expect_match(out, "rhoT\\[x1\\]=")
   expect_match(out, "RMSD\\[x1\\]=")
 })

@@ -33,7 +33,7 @@
   existing <- intersect(colnames(X), coef_names)
   if (length(existing)) {
     cli_abort(c(
-      "Distributed lag coefficient names collide with existing fixed-effect columns.",
+      "Covariate diffusion coefficient names collide with existing fixed-effect columns.",
       "x" = "Conflicting name(s): {.code {paste(existing, collapse = ', ')}}"
     ))
   }
@@ -134,7 +134,7 @@
 
   unique_covariates <- unique(terms_df$variable)
   terms_df$covariate_id <- match(terms_df$variable, unique_covariates)
-  terms_df$coef_name <- paste0("dl_", terms_df$component, "_", make.names(terms_df$variable))
+  terms_df$coef_name <- paste0("cov_diff_", terms_df$component, "_", make.names(terms_df$variable))
 
   list(
     formula = covariate_diffusion,
@@ -173,7 +173,7 @@
 
   if (length(non_numeric)) {
     cli_abort(c(
-      "Distributed lag covariates must be numeric.",
+      "Covariate diffusion covariates must be numeric.",
       "x" = "Non-numeric covariate(s): {.code {paste(non_numeric, collapse = ', ')}}"
     ))
   }
@@ -524,7 +524,7 @@
 }
 
 .covariate_diffusion_predict_colnames <- function(term_coef_name) {
-  paste0("diffusion_cov_", sub("^dl_", "", term_coef_name))
+  paste0("diffusion_cov_", sub("^cov_diff_", "", term_coef_name))
 }
 
 .append_covariate_diffusion_term_values <- function(nd, object, tmb_obj, lp,

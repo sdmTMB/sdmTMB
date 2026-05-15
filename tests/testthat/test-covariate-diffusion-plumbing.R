@@ -59,9 +59,9 @@ test_that("covariate diffusion coefficient slots are appended and lag parameters
   )
 
   x_mat <- fit$tmb_data$X_ij[[1]]
-  expect_true(all(c("dl_space_x1", "dl_time_x2") %in% colnames(x_mat)))
+  expect_true(all(c("cov_diff_space_x1", "cov_diff_time_x2") %in% colnames(x_mat)))
   expect_equal(
-    unname(colSums(abs(x_mat[, c("dl_space_x1", "dl_time_x2"), drop = FALSE]))),
+    unname(colSums(abs(x_mat[, c("cov_diff_space_x1", "cov_diff_time_x2"), drop = FALSE]))),
     c(0, 0)
   )
 
@@ -110,8 +110,8 @@ test_that("covariate diffusion coefficient slots are appended to both delta comp
     do_fit = FALSE
   )
 
-  expect_true(all(c("dl_space_x1", "dl_time_x2") %in% colnames(fit$tmb_data$X_ij[[1]])))
-  expect_true(all(c("dl_space_x1", "dl_time_x2") %in% colnames(fit$tmb_data$X_ij[[2]])))
+  expect_true(all(c("cov_diff_space_x1", "cov_diff_time_x2") %in% colnames(fit$tmb_data$X_ij[[1]])))
+  expect_true(all(c("cov_diff_space_x1", "cov_diff_time_x2") %in% colnames(fit$tmb_data$X_ij[[2]])))
   expect_equal(length(fit$tmb_params$b_j), ncol(fit$tmb_data$X_ij[[1]]))
   expect_equal(length(fit$tmb_params$b_j2), ncol(fit$tmb_data$X_ij[[2]]))
 })
