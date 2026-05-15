@@ -130,7 +130,8 @@ print(g3)
 We can visualize the diffusion operator:
 
 ```{r}
-plot_covariate_diffusion(fit, component = "space")
+plot_diffusion_kernel(fit, component = "space")
+plot_diffused_covariate(fit, component = "space")
 ```
 
 Users applying spatial diffusion should read and cite @lindmark2025.
@@ -200,9 +201,16 @@ Users applying the time diffusion extension should read and cite @thorson2026.
 We can separately visualize the spatial diffusion, time diffusion, or their combined effects:
 
 ```{r plot-diffusion}
-plot_covariate_diffusion(fit_st, component = "space")
-plot_covariate_diffusion(fit_st, component = "time")
-plot_covariate_diffusion(fit_st, component = "combined")
+plot_diffusion_kernel(fit_st, component = "space")
+plot_diffusion_kernel(fit_st, component = "time")
+plot_diffusion_kernel(fit_st, component = "combined")
 ```
+
+```{r}
+plot_diffused_covariate(fit_st, component = "space")
+plot_diffused_covariate(fit_st, component = "time")
+plot_diffused_covariate(fit_st, component = "combined")
+```
+
 
 # References

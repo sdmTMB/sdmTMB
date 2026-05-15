@@ -1,5 +1,9 @@
 # sdmTMB (development version)
 
+* Add `plot_diffusion_kernel()` for plotting covariate-diffusion impulse
+  responses and `plot_diffused_covariate()` for plotting original and estimated
+  diffused covariate fields on the fitted mesh.
+
 * Add experimental support for CAR/SAR areal/lattice models.
 
 * Add covariate-diffusion article/vignette.

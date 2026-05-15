@@ -632,7 +632,8 @@
   list(loc = loc, tv = tv, vertex_i = vertex_i)
 }
 
-.dl_plot_resolve_time <- function(object, component, time_value, n_steps) {
+.dl_plot_resolve_time <- function(object, component, time_value, n_steps,
+                                  allow_spatial_steps = FALSE) {
   n_t <- object$tmb_data$n_t
   if (is.null(n_t) || !length(n_t) || n_t < 1L) {
     cli_abort("Could not determine the number of time slices from `object$tmb_data$n_t`.")
@@ -662,7 +663,7 @@
       ))
     }
   }
-  if (component == "space") {
+  if (component == "space" && !isTRUE(allow_spatial_steps)) {
     time_idx <- time_i
   } else {
     time_idx <- seq.int(time_i, min(n_t, time_i + n_steps - 1L))
@@ -928,46 +929,313 @@
     ggplot2::labs(x = xlab, y = ylab)
 }
 
-#' Plot Covariate Diffusion from a Point on the Mesh
+#' Plot Covariate-Diffusion Diagnostics on the Mesh
 #'
-#' Diagnostic visualization of an impulse covariate diffusing through one
-#' covariate-diffusion component (`space()` or `time()`).
+#' Visualize fitted covariate-diffusion transforms or impulse-response kernels
+#' for one selected covariate-diffusion term.
 #' Values are plotted as colored mesh triangles, so no prediction grid is
 #' required.
 #'
 #' @param object A fitted [sdmTMB()] model with `covariate_diffusion`.
 #' @param covariate Optional covariate name from `covariate_diffusion`.
 #'   Required when multiple lag covariates were fitted.
-#' @param component Covariate diffusion component name. Must be exactly one of
+#' @param component Covariate-diffusion component name. Must be one of
 #'   `"space"`, `"time"`, or `"combined"`. `"combined"`
 #'   plots the joint response of all covariate-diffusion components fitted for
 #'   `covariate`.
-#' @param time_value Optional time slice for the impulse. Supply either a
-#'   modeled time value or a 1-based time index. Defaults to 1.
+#' @param time_value Optional time slice to plot or use for the impulse. Supply
+#'   either a modeled time value or a 1-based time index. Defaults to 1.
 #' @param n_steps Number of transformed slices to plot starting at
-#'   `time_value`. Defaults to 3.
-#' @param common_scale Should transformed panels share a common color scale?
-#'   Defaults to `FALSE`.
+#'   `time_value`. Defaults to 1 for `plot_diffused_covariate()` and 3 for
+#'   `plot_diffusion_kernel()`.
+#' @param common_scale Should plotted panels share a common color scale?
+#'   Defaults to `TRUE` for `plot_diffused_covariate()` and `FALSE` for
+#'   `plot_diffusion_kernel()`.
+#' @param plot Should the plot be printed? Defaults to `TRUE`.
 #'
-#' @return Invisibly returns a list with impulse/transformed fields on vertices,
-#'   triangle summaries used for plotting, selected indices, and a `ggplot`
-#'   object (when \pkg{ggplot2} is available).
+#' @details
+#' `plot_diffused_covariate()` visualizes the original mesh-vertex covariate
+#' field and its fitted covariate-diffusion transform of one selected covariate
+#' time slice over one or more lagged output time slices.
+#'
+#' `plot_diffusion_kernel()` visualizes an impulse covariate diffusing through
+#' one covariate-diffusion component.
+#'
+#' @return Invisibly returns a list with fields on vertices, triangle summaries
+#'   used for plotting, selected indices, and a `ggplot` object.
+#'
+#' @examplesIf ggplot2_installed()
+#' set.seed(1)
+#' n_t <- 6
+#' n_sites <- 80
+#' sites <- data.frame(X = runif(n_sites), Y = runif(n_sites))
+#' dat <- data.frame(
+#'   X = rep(sites$X, times = n_t),
+#'   Y = rep(sites$Y, times = n_t),
+#'   year = rep(seq_len(n_t), each = n_sites)
+#' )
+#' dat$x1 <- as.numeric(scale(
+#'   sin(2 * pi * (dat$X + dat$year / 6)) +
+#'     cos(2 * pi * (dat$Y - dat$year / 8)) +
+#'     0.4 * sin(4 * pi * dat$X) * cos(dat$year / 2) +
+#'     rnorm(nrow(dat), sd = 0.15)
+#' ))
+#'
+#' mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.12)
+#' sim <- simulate_new(
+#'   formula = ~ 1,
+#'   data = dat,
+#'   mesh = mesh,
+#'   time = "year",
+#'   family = gaussian(),
+#'   spatial = "off",
+#'   spatiotemporal = "off",
+#'   range = 0.3,
+#'   sigma_O = 0,
+#'   sigma_E = 0,
+#'   phi = 0.1,
+#'   B = c(0, 0.7, 0.6),
+#'   covariate_diffusion = ~ space(x1) + time(x1),
+#'   diffusion_kappaS = 4.4,
+#'   diffusion_rhoT = 0.3,
+#'   seed = 123
+#' )
+#' dat$observed <- sim$observed
+#'
+#' fit <- sdmTMB(
+#'   observed ~ 1,
+#'   data = dat,
+#'   mesh = mesh,
+#'   time = "year",
+#'   spatial = "off",
+#'   spatiotemporal = "off",
+#'   family = gaussian(),
+#'   covariate_diffusion = ~ space(x1) + time(x1)
+#' )
+#'
+#' plot_diffused_covariate(
+#'   fit,
+#'   covariate = "x1",
+#'   component = "space"
+#' )
+#' plot_diffused_covariate(
+#'   fit,
+#'   covariate = "x1",
+#'   component = "time",
+#'   time_value = 1,
+#'   n_steps = 2
+#' )
+#' plot_diffused_covariate(
+#'   fit,
+#'   covariate = "x1",
+#'   component = "combined",
+#'   time_value = 1,
+#'   n_steps = 2
+#' )
+#' plot_diffusion_kernel(
+#'   fit,
+#'   covariate = "x1",
+#'   component = "space"
+#' )
+#' plot_diffusion_kernel(
+#'   fit,
+#'   covariate = "x1",
+#'   component = "time",
+#'   time_value = 1,
+#'   n_steps = 2,
+#'   common_scale = TRUE #<
+#' )
+#' plot_diffusion_kernel(
+#'   fit,
+#'   covariate = "x1",
+#'   component = "combined",
+#'   time_value = 1,
+#'   n_steps = 2
+#' )
+#' @rdname covariate_diffusion_plots
 #' @export
-plot_covariate_diffusion <- function(object,
+plot_diffused_covariate <- function(object,
+                                    covariate = NULL,
+                                    component,
+                                    time_value = 1,
+                                    n_steps = 1L,
+                                    common_scale = TRUE,
+                                    plot = TRUE) {
+  stopifnot(inherits(object, "sdmTMB"))
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    cli_abort("`ggplot2` must be installed to use `plot_diffused_covariate()`.")
+  }
+  if (missing(component)) {
+    cli_abort("`component` is required and must be one of `space`, `time`, `spacetime`, or `combined`.")
+  }
+  if (!component %in% c("space", "time", "spacetime", "combined")) {
+    cli_abort("`component` must be exactly one of `space`, `time`, `spacetime`, or `combined`.")
+  }
+  if (is.null(object$covariate_diffusion_data)) {
+    cli_abort("`object` does not contain `covariate_diffusion_data`.")
+  }
+  if (!is.numeric(n_steps) || length(n_steps) != 1L || !is.finite(n_steps) || n_steps < 1L) {
+    cli_abort("`n_steps` must be a single positive integer.")
+  }
+  n_steps <- as.integer(round(n_steps))
+  if (is.null(object$covariate_diffusion_parsed) ||
+      is.null(object$covariate_diffusion_parsed$terms) ||
+      nrow(object$covariate_diffusion_parsed$terms) == 0L) {
+    cli_abort("`object` does not contain covariate-diffusion terms.")
+  }
+
+  terms_df <- object$covariate_diffusion_parsed$terms
+  covariates <- unique(terms_df$variable)
+  if (is.null(covariate)) {
+    if (length(covariates) != 1L) {
+      cli_abort(c(
+        "Multiple covariate-diffusion covariates are present.",
+        "x" = "Set `covariate` to one of: {.code {paste(covariates, collapse = ', ')}}."
+      ))
+    }
+    covariate <- covariates[[1L]]
+  }
+  covariate <- as.character(covariate[[1L]])
+  if (!covariate %in% covariates) {
+    cli_abort(c(
+      "Unknown covariate-diffusion covariate.",
+      "x" = "Could not find `{covariate}` in the fitted covariate-diffusion terms."
+    ))
+  }
+  components_for_covariate <- unique(terms_df$component[terms_df$variable == covariate])
+  if (component != "combined" && !component %in% components_for_covariate) {
+    cli_abort(c(
+      "Requested component/covariate term was not fitted.",
+      "x" = "No term `{component}({covariate})` in `object$covariate_diffusion`."
+    ))
+  }
+  component_for_time <- if (component == "combined" && !any(components_for_covariate %in% c("time", "spacetime"))) "space" else component
+
+  mesh_info <- .dl_plot_extract_mesh(object$spde$mesh)
+  loc <- mesh_info$loc
+  tv <- mesh_info$tv
+  time_info <- .dl_plot_resolve_time(
+    object, component_for_time, time_value, n_steps,
+    allow_spatial_steps = FALSE
+  )
+  n_t <- time_info$n_t
+  time_values <- time_info$time_values
+  time_i <- time_info$time_i
+  time_idx <- time_info$time_idx
+
+  covariates_data <- object$covariate_diffusion_data$covariates
+  cov_i <- match(covariate, covariates_data)
+  if (is.na(cov_i)) {
+    cli_abort("Internal mismatch: selected covariate not found in `covariate_diffusion_data$covariates`.")
+  }
+
+  original_vertex_time <- matrix(
+    object$covariate_diffusion_data$covariate_vertex_time[, , cov_i],
+    nrow = object$covariate_diffusion_data$n_vertices,
+    ncol = n_t
+  )
+  kappas <- .dl_plot_extract_kappas(object, cov_i)
+  has_space <- as.logical(object$covariate_diffusion_data$covariate_has_spatial[cov_i])
+  has_time <- as.logical(object$covariate_diffusion_data$covariate_has_temporal[cov_i])
+  has_spacetime <- as.logical(object$covariate_diffusion_data$covariate_has_spacetime[cov_i])
+
+  source_vertex_time <- matrix(0, nrow = nrow(original_vertex_time), ncol = n_t)
+  source_vertex_time[, time_i] <- original_vertex_time[, time_i]
+
+  transformed_vertex_time <- .solve_covariate_diffusion_vertex_time(
+    component = component,
+    vertex_time_input = source_vertex_time,
+    M0 = object$tmb_data$spde$M0,
+    M1 = object$tmb_data$spde$M1,
+    kappaS = kappas$kappaS,
+    kappaT = kappas$kappaT,
+    kappaST = kappas$kappaST,
+    has_space = has_space,
+    has_time = has_time,
+    has_spacetime = has_spacetime
+  )
+
+  panel_fields <- vector("list", length(time_idx) + 1L)
+  panel_titles <- character(length(panel_fields))
+  panel_fields[[1L]] <- original_vertex_time[, time_i]
+  panel_titles[[1L]] <- paste0("original (t=", time_values[time_i], ")")
+  for (j in seq_along(time_idx)) {
+    tt <- time_idx[j]
+    lag <- tt - time_i
+    panel_fields[[j + 1L]] <- transformed_vertex_time[, tt]
+    panel_titles[[j + 1L]] <- if (lag == 0L) {
+      paste0("diffused (t=", time_values[tt], ")")
+    } else {
+      paste0("lag+", lag, " (t=", time_values[tt], ")")
+    }
+  }
+  panel <- .dl_plot_panel_dfs(
+    loc = loc,
+    tv = tv,
+    panel_fields = panel_fields,
+    panel_titles = panel_titles,
+    vertex_i = mesh_info$vertex_i,
+    common_scale = common_scale,
+    value_transform = "identity"
+  )
+  point_df <- data.frame(
+    panel = factor(character(0L), levels = panel_titles),
+    x = numeric(0L),
+    y = numeric(0L)
+  )
+  xlab <- if (!is.null(object$spde$xy_cols) && length(object$spde$xy_cols) >= 2L) object$spde$xy_cols[1] else "x"
+  ylab <- if (!is.null(object$spde$xy_cols) && length(object$spde$xy_cols) >= 2L) object$spde$xy_cols[2] else "y"
+  plot_obj <- .dl_plot_ggplot(
+    triangle_df = panel$triangle_df,
+    point_df = point_df,
+    fill_limits = panel$fill_limits,
+    fill_name = panel$fill_name,
+    xlim = range(loc[, 1]),
+    ylim = range(loc[, 2]),
+    xlab = xlab,
+    ylab = ylab
+  )
+
+  if (isTRUE(plot)) {
+    print(plot_obj)
+  }
+
+  invisible(list(
+    covariate = covariate,
+    component = component,
+    time_index = time_i,
+    time_value = time_values[time_i],
+    transformed_time_index = time_idx,
+    transformed_time_values = time_values[time_idx],
+    original_vertex_time = original_vertex_time,
+    source_vertex_time = source_vertex_time,
+    transformed_vertex_time = transformed_vertex_time,
+    triangle_values = panel$triangle_values,
+    triangle_df = panel$triangle_df,
+    plot = plot_obj,
+    mesh_loc = loc,
+    mesh_triangles = tv
+  ))
+}
+
+#' @rdname covariate_diffusion_plots
+#' @export
+plot_diffusion_kernel <- function(object,
                                            covariate = NULL,
                                            component,
                                            time_value = 1,
                                            n_steps = 3L,
-                                           common_scale = FALSE) {
+                                           common_scale = FALSE,
+                                           plot = TRUE) {
   stopifnot(inherits(object, "sdmTMB"))
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
-    cli_abort("`ggplot2` must be installed to use `plot_covariate_diffusion()`.")
+    cli_abort("`ggplot2` must be installed to use `plot_diffusion_kernel()`.")
   }
   if (missing(component)) {
-    cli_abort("`component` is required and must be one of `space`, `time`, or `combined`.")
+    cli_abort("`component` is required and must be one of `space`, `time`, `spacetime`, or `combined`.")
   }
   if (!component %in% c("space", "time", "spacetime", "combined")) {
-    cli_abort("`component` must be exactly one of `space`, `time`, or `combined`.")
+    cli_abort("`component` must be exactly one of `space`, `time`, `spacetime`, or `combined`.")
   }
   if (is.null(object$covariate_diffusion_data)) {
     cli_abort("`object` does not contain `covariate_diffusion_data`.")
@@ -1091,7 +1359,9 @@ plot_covariate_diffusion <- function(object,
     ylab = ylab
   )
 
-  print(plot_obj)
+  if (isTRUE(plot)) {
+    print(plot_obj)
+  }
 
   invisible(list(
     covariate = covariate,
