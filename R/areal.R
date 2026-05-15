@@ -17,6 +17,24 @@
 #'
 #' @return A list with class `c("sdmTMBareal", "sdmTMBdomain")`.
 #' @export
+#'
+#' @examples
+#' W <- Matrix::Matrix(
+#'   c(
+#'     0, 1, 0,
+#'     1, 0, 1,
+#'     0, 1, 0
+#'   ),
+#'   nrow = 3,
+#'   byrow = TRUE,
+#'   sparse = TRUE
+#' )
+#' rownames(W) <- colnames(W) <- c("north", "central", "south")
+#'
+#' dat <- data.frame(region = c("north", "central", "south", "central"))
+#' domain <- make_areal_domain(dat, W, space_column = "region")
+#' domain$n_s
+#' domain$unit_names
 make_areal_domain <- function(data, spatial_domain, space_column,
                               id_column = NULL,
                               adjacency = c("rook", "queen")) {
@@ -115,6 +133,27 @@ make_areal_domain <- function(data, spatial_domain, space_column,
 #' @return A list with `data`, `grid`, and `domain` elements. `domain` can be
 #'   supplied to [sdmTMB()] via the `mesh` argument.
 #' @export
+#'
+#' @examplesIf require("sf", quietly = TRUE)
+#' dat <- data.frame(
+#'   x = c(0.25, 1.25, 0.25, 1.25),
+#'   y = c(0.25, 0.25, 1.25, 1.25),
+#'   depth = c(12, 18, 9, 15)
+#' )
+#'
+#' boundary <- sf::st_as_sf(
+#'   sf::st_as_sfc(sf::st_bbox(c(xmin = 0, ymin = 0, xmax = 2, ymax = 2)))
+#' )
+#'
+#' areal_grid <- make_areal_grid(
+#'   data = dat,
+#'   xy_cols = c("x", "y"),
+#'   spatial_domain = boundary,
+#'   n = c(2, 2)
+#' )
+#'
+#' head(areal_grid$data)
+#' areal_grid$domain$n_s
 make_areal_grid <- function(data, xy_cols, spatial_domain = NULL,
                             cellsize = NULL, n = NULL, square = TRUE,
                             space_column = "grid_cell",

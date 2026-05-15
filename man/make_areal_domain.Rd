@@ -36,3 +36,21 @@ Build a reusable areal domain object with adjacency weights and unit labels.
 The returned object can be supplied to \code{mesh} in \code{\link[=sdmTMB]{sdmTMB()}} in areal
 SAR/CAR workflows.
 }
+\examples{
+W <- Matrix::Matrix(
+  c(
+    0, 1, 0,
+    1, 0, 1,
+    0, 1, 0
+  ),
+  nrow = 3,
+  byrow = TRUE,
+  sparse = TRUE
+)
+rownames(W) <- colnames(W) <- c("north", "central", "south")
+
+dat <- data.frame(region = c("north", "central", "south", "central"))
+domain <- make_areal_domain(dat, W, space_column = "region")
+domain$n_s
+domain$unit_names
+}

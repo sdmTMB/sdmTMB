@@ -51,3 +51,26 @@ Build or use an \code{sf} polygon grid, overlay point observations onto grid
 cells, construct grid-cell adjacency, and return labelled data plus an
 \code{sdmTMBareal} domain for SAR/CAR models.
 }
+\examples{
+\dontshow{if (require("sf", quietly = TRUE)) withAutoprint(\{ # examplesIf}
+dat <- data.frame(
+  x = c(0.25, 1.25, 0.25, 1.25),
+  y = c(0.25, 0.25, 1.25, 1.25),
+  depth = c(12, 18, 9, 15)
+)
+
+boundary <- sf::st_as_sf(
+  sf::st_as_sfc(sf::st_bbox(c(xmin = 0, ymin = 0, xmax = 2, ymax = 2)))
+)
+
+areal_grid <- make_areal_grid(
+  data = dat,
+  xy_cols = c("x", "y"),
+  spatial_domain = boundary,
+  n = c(2, 2)
+)
+
+head(areal_grid$data)
+areal_grid$domain$n_s
+\dontshow{\}) # examplesIf}
+}
