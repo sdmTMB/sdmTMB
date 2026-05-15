@@ -147,7 +147,7 @@ ggplot(pred_map) +
 
 ## SPDE approximation using county centroids
 
-SPDE is a continuous-space model and does not directly use areal polygons. A common approximation is to collapse each polygon to a centroid and fit a point-based model. This may be reasonable when polygons are relatively small/similar and the latent field is smooth within polygons.
+The SPDE approach is a continuous-space geostatistical model and does not directly use areal polygons. A common approximation is to collapse each polygon to a centroid and fit a point-based model. This may be reasonable when polygons are relatively small and similar in size and the latent field is smooth within polygons.
 
 ```{r spde-prep}
 ohio_centroids <- suppressWarnings(st_centroid(ohio_sf))
@@ -181,6 +181,8 @@ fit_spde <- sdmTMB(
 )
 
 fit_spde
+
+AIC(fit_spde, fit_car, fit_sar)
 ```
 
 ```{r spde-predict}
@@ -238,5 +240,5 @@ ggplot(combined, aes(rate_fit_sar, rate_fit_car)) +
   labs(title = "SAR vs CAR fitted rates")
 ```
 
-For areal outcomes, SAR/CAR are usually the most straightforward models to fit because they encode adjacency among polygons explicitly. The SPDE method, on the other hand, assumes an underlying continuous spatial process.
+For areal outcomes, SAR/CAR are usually the most straightforward models to fit because they encode adjacency among polygons explicitly. The SPDE method, on the other hand, assumes an underlying continuous spatial process. In this case, we find similar support for all 3 models with a slightly higher log likelihood for the geostatistical SPDE model.
 

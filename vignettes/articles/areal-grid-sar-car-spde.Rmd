@@ -43,7 +43,7 @@ The practical goal is to show how model choice changes spatial borrowing across 
 
 ## Build an areal grid and assign observations
 
-The original `dogfish` data are tow-level points. To fit CAR/SAR, we first define polygonal areal units (grid cells) and assign each tow to a cell. We keep the tow-level observations for model fitting so that the model sees the original catch, effort, and tow-specific covariates.
+The original `dogfish` data are tow-level points. To fit CAR/SAR, we first define polygon areal units (grid cells) and assign each tow to a cell. We keep the tow-level observations for model fitting so that the model sees the original catch, effort, and tow-specific covariates.
 
 ```{r grid-build}
 dogfish_points <- st_as_sf(dogfish, coords = c("X", "Y"), crs = NA)
@@ -68,35 +68,44 @@ For very large datasets, one could aggregate observations to one row per `cell_i
 ```{r areal-data}
 areal_data <- dogfish_grid_obj$data |>
   mutate(log_depth = log(depth))
+
+cell_centres <- dogfish_grid_obj$grid |>
+  st_drop_geometry() |>
+  select(cell_id, X_cell = X, Y_cell = Y)
+
+areal_data_xy <- left_join(areal_data, cell_centres, by = "cell_id")
 ```
 
 ## Fit CAR and SAR areal models
 
-We fit the same linear predictor and distribution in both models so the only intended difference is the spatial structure. That makes subsequent CAR-vs-SAR differences easier to attribute to the neighbourhood process rather than to formula changes.
+We fit the same linear predictor and distribution in both models so the only intended difference is the spatial structure.
 
 ```{r fit-areal}
-fit_car <- sdmTMB(
-  catch_weight ~ log_depth,
-  data = areal_data,
-  mesh = dogfish_grid_obj$domain,
-  spatial_model = "car",
-  time = "year",
-  family = tweedie(link = "log"),
-  spatial = "on",
-  spatiotemporal = "iid",
-  offset = log(areal_data$area_swept)
+system.time(
+  fit_car <- sdmTMB(
+    catch_weight ~ log_depth,
+    data = areal_data,
+    mesh = dogfish_grid_obj$domain,
+    spatial_model = "car",
+    time = "year",
+    family = tweedie(link = "log"),
+    spatial = "on",
+    spatiotemporal = "iid",
+    offset = log(areal_data$area_swept)
+  )
 )
-
-fit_sar <- sdmTMB(
-  catch_weight ~ log_depth,
-  data = areal_data,
-  mesh = dogfish_grid_obj$domain,
-  spatial_model = "sar",
-  time = "year",
-  family = tweedie(link = "log"),
-  spatial = "on",
-  spatiotemporal = "iid",
-  offset = log(areal_data$area_swept)
+system.time(
+  fit_sar <- sdmTMB(
+    catch_weight ~ log_depth,
+    data = areal_data,
+    mesh = dogfish_grid_obj$domain,
+    spatial_model = "sar",
+    time = "year",
+    family = tweedie(link = "log"),
+    spatial = "on",
+    spatiotemporal = "iid",
+    offset = log(areal_data$area_swept)
+  )
 )
 ```
 
@@ -193,9 +202,12 @@ ggplot(pred_grid) +
 Next we fit a continuous-space geostatistical SPDE model to the original tow locations. 
 
 ```{r spde-fit}
-spde_mesh <- make_mesh(dogfish, c("X", "Y"), cutoff = 10)
+spde_mesh <- make_mesh(dogfish, c("X", "Y"), cutoff = 8.5)
+spde_mesh$mesh$n
+dogfish_grid_obj$domain$n_s
 plot(spde_mesh)
 
+system.time(
 fit_spde <- sdmTMB(
   catch_weight ~ log(depth),
   data = dogfish,
@@ -207,15 +219,15 @@ fit_spde <- sdmTMB(
   spatiotemporal = "iid",
   offset = log(dogfish$area_swept)
 )
-
+)
 fit_spde
 
-AIC(fit_spde, fit_car)
+AIC(fit_spde, fit_sar)
 ```
 
 ## Project SPDE predictions onto observed grid-cell locations
 
-To align supports directly, we predict both SPDE variants at grid-cell center locations for the same observed tow rows used by the CAR/SAR fits. We then summarize fitted values to `cell_id`-`year` rows for maps and model-comparison plots.
+To align supports directly, we predict the SPDE model at grid-cell center locations for the same observed tow rows used by the CAR/SAR fits. We then summarize fitted values to `cell_id`-`year` rows for maps and model-comparison plots.
 
 ```{r spde-to-grid}
 spde_newdata <- areal_data_xy |>
@@ -228,22 +240,13 @@ pred_spde_grid <- predict(
   offset = rep(0, nrow(spde_newdata))
 )
 
-pred_spde_gridfit <- predict(
-  fit_spde_grid,
-  newdata = areal_data_xy,
-  type = "response",
-  offset = rep(0, nrow(areal_data_xy))
-)
-
 pred_spde_cell_year <- spde_newdata |>
   mutate(
-    est_spde = pred_spde_grid$est,
-    est_spde_gridfit = pred_spde_gridfit$est
+    est_spde = pred_spde_grid$est
   ) |>
   group_by(cell_id, year) |>
   summarise(
     est_spde = mean(est_spde),
-    est_spde_gridfit = mean(est_spde_gridfit),
     .groups = "drop"
   )
 
@@ -282,6 +285,4 @@ ggplot(st_drop_geometry(pred_grid_compare), aes(est_car, est_spde)) +
   labs(title = "CAR vs SPDE fitted values")
 ```
 
-For gridded areal responses, CAR/SAR define spatial dependence directly on cell adjacency and are usually the primary formulations.
-
-For continuous data, a geostatistical SPDE model is a more natural approach. However, sometimes with very large datasets, there may be a computational advantage to aggregating to a grid and using a CAR or SAR model. That aggregation trades speed for loss of tow-level information.
+For continuous data, a geostatistical SPDE model is a more natural approach and it better fits the data here. However, sometimes with very large datasets, there may be a computational advantage to aggregating to a grid and using a CAR or SAR model. That aggregation trades speed for loss of tow-level information. Even without aggregation, the CAR model followed by the SAR model were faster than the SPDE model (approximately twice as fast in this case).
