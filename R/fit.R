@@ -804,7 +804,6 @@ sdmTMB <- function(
     covariate_diffusion_parsed,
     data = data,
     time = time,
-    delta = delta,
     multi_family = FALSE
   )
   if (!is.null(covariate_diffusion_parsed) && mesh_missing) {

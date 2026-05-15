@@ -150,7 +150,6 @@ test_that(".build_covariate_diffusion_tmb_data returns term-covariate mapping", 
     parsed,
     data = dat,
     time = "year",
-    delta = FALSE,
     multi_family = FALSE
   ))
 
@@ -180,7 +179,7 @@ test_that(".build_covariate_diffusion_tmb_data accepts explicit vertex-time over
   dat <- data.frame(x1 = c(2, 4, 6, 8), x2 = c(1, 3, 5, 7), year = c(1, 1, 2, 2))
 
   parsed_one <- .parse_covariate_diffusion_formula(~ space(x1))
-  parsed_one <- .validate_covariate_diffusion_terms(parsed_one, dat, time = "year", delta = FALSE, multi_family = FALSE)
+  parsed_one <- .validate_covariate_diffusion_terms(parsed_one, dat, time = "year", multi_family = FALSE)
   vertex_mat <- matrix(1:4, nrow = 2L)
   out_mat <- .build_covariate_diffusion_tmb_data(
     covariate_diffusion = parsed_one,
@@ -194,7 +193,7 @@ test_that(".build_covariate_diffusion_tmb_data accepts explicit vertex-time over
   expect_equal(out_mat$covariate_vertex_time[, , 1], vertex_mat)
 
   parsed_two <- .parse_covariate_diffusion_formula(~ space(x1) + time(x2))
-  parsed_two <- .validate_covariate_diffusion_terms(parsed_two, dat, time = "year", delta = FALSE, multi_family = FALSE)
+  parsed_two <- .validate_covariate_diffusion_terms(parsed_two, dat, time = "year", multi_family = FALSE)
   vertex_arr <- array(1:8, dim = c(2L, 2L, 2L))
   out_arr <- .build_covariate_diffusion_tmb_data(
     covariate_diffusion = parsed_two,

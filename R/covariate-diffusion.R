@@ -144,7 +144,7 @@
   )
 }
 
-.validate_covariate_diffusion_terms <- function(covariate_diffusion, data, time, delta, multi_family) {
+.validate_covariate_diffusion_terms <- function(covariate_diffusion, data, time, multi_family) {
   if (is.null(covariate_diffusion)) {
     return(NULL)
   }
@@ -692,6 +692,86 @@
   )
 }
 
+.dl_plot_context <- function(object, covariate, component, component_missing,
+                             time_value, n_steps, allow_spatial_steps,
+                             function_name) {
+  stopifnot(inherits(object, "sdmTMB"))
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    cli_abort("`ggplot2` must be installed to use `{function_name}()`.")
+  }
+  if (isTRUE(component_missing)) {
+    cli_abort("`component` is required and must be one of `space`, `time`, `spacetime`, or `combined`.")
+  }
+  if (!component %in% c("space", "time", "spacetime", "combined")) {
+    cli_abort("`component` must be exactly one of `space`, `time`, `spacetime`, or `combined`.")
+  }
+  if (is.null(object$covariate_diffusion_data)) {
+    cli_abort("`object` does not contain `covariate_diffusion_data`.")
+  }
+  if (!is.numeric(n_steps) || length(n_steps) != 1L || !is.finite(n_steps) || n_steps < 1L) {
+    cli_abort("`n_steps` must be a single positive integer.")
+  }
+  n_steps <- as.integer(round(n_steps))
+  if (is.null(object$covariate_diffusion_parsed) ||
+      is.null(object$covariate_diffusion_parsed$terms) ||
+      nrow(object$covariate_diffusion_parsed$terms) == 0L) {
+    cli_abort("`object` does not contain covariate-diffusion terms.")
+  }
+
+  terms_df <- object$covariate_diffusion_parsed$terms
+  covariates <- unique(terms_df$variable)
+  if (is.null(covariate)) {
+    if (length(covariates) != 1L) {
+      cli_abort(c(
+        "Multiple covariate-diffusion covariates are present.",
+        "x" = "Set `covariate` to one of: {.code {paste(covariates, collapse = ', ')}}."
+      ))
+    }
+    covariate <- covariates[[1L]]
+  }
+  covariate <- as.character(covariate[[1L]])
+  if (!covariate %in% covariates) {
+    cli_abort(c(
+      "Unknown covariate-diffusion covariate.",
+      "x" = "Could not find `{covariate}` in the fitted covariate-diffusion terms."
+    ))
+  }
+  components_for_covariate <- unique(terms_df$component[terms_df$variable == covariate])
+  if (component != "combined" && !component %in% components_for_covariate) {
+    cli_abort(c(
+      "Requested component/covariate term was not fitted.",
+      "x" = "No term `{component}({covariate})` in `object$covariate_diffusion`."
+    ))
+  }
+  component_for_time <- if (component == "combined" && !any(components_for_covariate %in% c("time", "spacetime"))) "space" else component
+
+  mesh_info <- .dl_plot_extract_mesh(object$spde$mesh)
+  time_info <- .dl_plot_resolve_time(
+    object, component_for_time, time_value, n_steps,
+    allow_spatial_steps = allow_spatial_steps
+  )
+
+  cov_i <- match(covariate, object$covariate_diffusion_data$covariates)
+  if (is.na(cov_i)) {
+    cli_abort("Internal mismatch: selected covariate not found in `covariate_diffusion_data$covariates`.")
+  }
+
+  xy_cols <- object$spde$xy_cols
+  list(
+    covariate = covariate,
+    component = component,
+    mesh_info = mesh_info,
+    time_info = time_info,
+    cov_i = cov_i,
+    kappas = .dl_plot_extract_kappas(object, cov_i),
+    has_space = as.logical(object$covariate_diffusion_data$covariate_has_spatial[cov_i]),
+    has_time = as.logical(object$covariate_diffusion_data$covariate_has_temporal[cov_i]),
+    has_spacetime = as.logical(object$covariate_diffusion_data$covariate_has_spacetime[cov_i]),
+    xlab = if (!is.null(xy_cols) && length(xy_cols) >= 2L) xy_cols[1] else "x",
+    ylab = if (!is.null(xy_cols) && length(xy_cols) >= 2L) xy_cols[2] else "y"
+  )
+}
+
 .dl_plot_transform_values <- function(x, value_transform) {
   switch(value_transform,
     identity = x,
@@ -703,6 +783,25 @@
     },
     signed_sqrt = sign(x) * sqrt(abs(x))
   )
+}
+
+.dl_plot_time_panels <- function(first_field, first_title, transformed_vertex_time,
+                                 time_i, time_idx, time_values) {
+  panel_fields <- vector("list", length(time_idx) + 1L)
+  panel_titles <- character(length(panel_fields))
+  panel_fields[[1L]] <- first_field
+  panel_titles[[1L]] <- first_title
+  for (j in seq_along(time_idx)) {
+    tt <- time_idx[j]
+    lag <- tt - time_i
+    panel_fields[[j + 1L]] <- transformed_vertex_time[, tt]
+    panel_titles[[j + 1L]] <- if (lag == 0L) {
+      paste0("diffused (t=", time_values[tt], ")")
+    } else {
+      paste0("lag+", lag, " (t=", time_values[tt], ")")
+    }
+  }
+  list(fields = panel_fields, titles = panel_titles)
 }
 
 .dl_plot_panel_dfs <- function(loc, tv, panel_fields, panel_titles, vertex_i,
@@ -769,143 +868,6 @@
     ggplot2::geom_polygon(
       ggplot2::aes(fill = .data$value_plot),
       color = "#FFFFFF10", linewidth = 0.4
-    ) +
-    ggplot2::geom_point(
-      data = point_df,
-      ggplot2::aes(x = .data$x, y = .data$y),
-      inherit.aes = FALSE,
-      shape = 21,
-      fill = "black",
-      color = "black",
-      size = 1.4
-    ) +
-    ggplot2::facet_wrap(stats::as.formula("~ panel"), nrow = 1L) +
-    ggplot2::coord_equal(xlim = xlim, ylim = ylim, expand = FALSE) +
-    ggplot2::scale_fill_viridis_c(
-      limits = fill_limits,
-      name = fill_name, option = "C"
-    ) +
-    ggplot2::theme_bw() +
-    ggplot2::theme(
-      panel.grid = ggplot2::element_blank()
-    ) +
-    ggplot2::labs(x = xlab, y = ylab)
-}
-
-.dl_plot_grid_centers <- function(loc, grid_resolution) {
-  if (!is.numeric(grid_resolution) || length(grid_resolution) != 1L ||
-      !is.finite(grid_resolution) || grid_resolution < 2L) {
-    cli_abort("`grid_resolution` must be a single integer greater than or equal to 2.")
-  }
-  grid_resolution <- as.integer(round(grid_resolution))
-  xlim <- range(loc[, 1])
-  ylim <- range(loc[, 2])
-  x_span <- diff(xlim)
-  y_span <- diff(ylim)
-  if (!is.finite(x_span) || !is.finite(y_span) || x_span <= 0 || y_span <= 0) {
-    cli_abort("Mesh bounding box must have positive width and height.")
-  }
-  if (x_span >= y_span) {
-    nx <- grid_resolution
-    ny <- max(1L, as.integer(round(grid_resolution * y_span / x_span)))
-  } else {
-    ny <- grid_resolution
-    nx <- max(1L, as.integer(round(grid_resolution * x_span / y_span)))
-  }
-  dx <- x_span / nx
-  dy <- y_span / ny
-  x <- xlim[1] + (seq_len(nx) - 0.5) * dx
-  y <- ylim[1] + (seq_len(ny) - 0.5) * dy
-  centers <- expand.grid(x = x, y = y)
-  list(centers = centers, nx = nx, ny = ny, dx = dx, dy = dy, xlim = xlim, ylim = ylim)
-}
-
-.dl_plot_mesh_edges <- function(loc, tv) {
-  edges <- rbind(tv[, c(1L, 2L), drop = FALSE], tv[, c(2L, 3L), drop = FALSE], tv[, c(3L, 1L), drop = FALSE])
-  edges <- t(apply(edges, 1L, sort))
-  edges <- unique(edges)
-  data.frame(
-    x = loc[edges[, 1L], 1],
-    y = loc[edges[, 1L], 2],
-    xend = loc[edges[, 2L], 1],
-    yend = loc[edges[, 2L], 2]
-  )
-}
-
-.dl_plot_grid_msd <- function(values, centers, panel) {
-  if (any(values < 0, na.rm = TRUE)) {
-    cli_warn("Projected grid values for `{panel}` include negative weights; returning `NA` for MSD.")
-    return(NA_real_)
-  }
-  total <- sum(values, na.rm = TRUE)
-  if (!is.finite(total) || total <= 0) {
-    return(NA_real_)
-  }
-  x_bar <- sum(values * centers$x, na.rm = TRUE) / total
-  y_bar <- sum(values * centers$y, na.rm = TRUE) / total
-  sum(values * ((centers$x - x_bar)^2 + (centers$y - y_bar)^2), na.rm = TRUE) / total
-}
-
-.dl_plot_grid_panel_df <- function(grid_info, panel_matrix, panel_names, scale, value_transform) {
-  totals <- colSums(panel_matrix, na.rm = TRUE)
-  msd <- vapply(seq_along(panel_names), function(j) {
-    .dl_plot_grid_msd(panel_matrix[, j], grid_info$centers, panel_names[j])
-  }, numeric(1L))
-  panel_titles <- paste0(
-    panel_names,
-    "\ntotal: ", formatC(totals, format = "fg", digits = 4L),
-    " | MSD: ", ifelse(is.na(msd), "NA", formatC(msd, format = "fg", digits = 5L))
-  )
-
-  grid_df <- do.call(rbind, lapply(seq_along(panel_titles), function(j) {
-    data.frame(
-      panel = panel_titles[j],
-      x = grid_info$centers$x,
-      y = grid_info$centers$y,
-      value = panel_matrix[, j],
-      stringsAsFactors = FALSE
-    )
-  }))
-  grid_df$panel <- factor(grid_df$panel, levels = panel_titles)
-  grid_df$value_plot <- .dl_plot_transform_values(grid_df$value, value_transform)
-
-  fill_name <- if (value_transform == "identity") "Value" else paste0("Value (", value_transform, ")")
-  fill_limits <- NULL
-  if (identical(scale, "panel")) {
-    fill_name <- if (value_transform == "identity") "Relative value" else paste0("Relative value (", value_transform, ")")
-    for (p in levels(grid_df$panel)) {
-      i <- which(grid_df$panel == p)
-      rng <- range(grid_df$value_plot[i], finite = TRUE)
-      if (!all(is.finite(rng)) || rng[1] == rng[2]) {
-        grid_df$value_plot[i] <- 0
-      } else {
-        grid_df$value_plot[i] <- (grid_df$value_plot[i] - rng[1]) / (rng[2] - rng[1])
-      }
-    }
-    fill_limits <- c(0, 1)
-  }
-
-  list(
-    grid_df = grid_df,
-    totals = totals,
-    msd = msd,
-    panel_titles = panel_titles,
-    fill_name = fill_name,
-    fill_limits = fill_limits
-  )
-}
-
-.dl_plot_grid_ggplot <- function(grid_df, edge_df, point_df, fill_limits, fill_name,
-                                 xlim, ylim, xlab, ylab) {
-  ggplot2::ggplot(grid_df, ggplot2::aes(x = .data$x, y = .data$y)) +
-    ggplot2::geom_raster(ggplot2::aes(fill = .data$value_plot)) +
-    ggplot2::geom_segment(
-      data = edge_df,
-      ggplot2::aes(x = .data$x, y = .data$y, xend = .data$xend, yend = .data$yend),
-      inherit.aes = FALSE,
-      color = "grey65",
-      linewidth = 0.2,
-      alpha = 0.55
     ) +
     ggplot2::geom_point(
       data = point_df,
@@ -1061,139 +1023,73 @@ plot_diffused_covariate <- function(object,
                                     n_steps = 1L,
                                     common_scale = TRUE,
                                     plot = TRUE) {
-  stopifnot(inherits(object, "sdmTMB"))
-  if (!requireNamespace("ggplot2", quietly = TRUE)) {
-    cli_abort("`ggplot2` must be installed to use `plot_diffused_covariate()`.")
-  }
-  if (missing(component)) {
-    cli_abort("`component` is required and must be one of `space`, `time`, `spacetime`, or `combined`.")
-  }
-  if (!component %in% c("space", "time", "spacetime", "combined")) {
-    cli_abort("`component` must be exactly one of `space`, `time`, `spacetime`, or `combined`.")
-  }
-  if (is.null(object$covariate_diffusion_data)) {
-    cli_abort("`object` does not contain `covariate_diffusion_data`.")
-  }
-  if (!is.numeric(n_steps) || length(n_steps) != 1L || !is.finite(n_steps) || n_steps < 1L) {
-    cli_abort("`n_steps` must be a single positive integer.")
-  }
-  n_steps <- as.integer(round(n_steps))
-  if (is.null(object$covariate_diffusion_parsed) ||
-      is.null(object$covariate_diffusion_parsed$terms) ||
-      nrow(object$covariate_diffusion_parsed$terms) == 0L) {
-    cli_abort("`object` does not contain covariate-diffusion terms.")
-  }
-
-  terms_df <- object$covariate_diffusion_parsed$terms
-  covariates <- unique(terms_df$variable)
-  if (is.null(covariate)) {
-    if (length(covariates) != 1L) {
-      cli_abort(c(
-        "Multiple covariate-diffusion covariates are present.",
-        "x" = "Set `covariate` to one of: {.code {paste(covariates, collapse = ', ')}}."
-      ))
-    }
-    covariate <- covariates[[1L]]
-  }
-  covariate <- as.character(covariate[[1L]])
-  if (!covariate %in% covariates) {
-    cli_abort(c(
-      "Unknown covariate-diffusion covariate.",
-      "x" = "Could not find `{covariate}` in the fitted covariate-diffusion terms."
-    ))
-  }
-  components_for_covariate <- unique(terms_df$component[terms_df$variable == covariate])
-  if (component != "combined" && !component %in% components_for_covariate) {
-    cli_abort(c(
-      "Requested component/covariate term was not fitted.",
-      "x" = "No term `{component}({covariate})` in `object$covariate_diffusion`."
-    ))
-  }
-  component_for_time <- if (component == "combined" && !any(components_for_covariate %in% c("time", "spacetime"))) "space" else component
-
-  mesh_info <- .dl_plot_extract_mesh(object$spde$mesh)
-  loc <- mesh_info$loc
-  tv <- mesh_info$tv
-  time_info <- .dl_plot_resolve_time(
-    object, component_for_time, time_value, n_steps,
+  ctx <- .dl_plot_context(
+    object = object,
+    covariate = covariate,
+    component = if (missing(component)) NULL else component,
+    component_missing = missing(component),
+    time_value = time_value,
+    n_steps = n_steps,
+    function_name = "plot_diffused_covariate",
     allow_spatial_steps = FALSE
   )
-  n_t <- time_info$n_t
-  time_values <- time_info$time_values
-  time_i <- time_info$time_i
-  time_idx <- time_info$time_idx
-
-  covariates_data <- object$covariate_diffusion_data$covariates
-  cov_i <- match(covariate, covariates_data)
-  if (is.na(cov_i)) {
-    cli_abort("Internal mismatch: selected covariate not found in `covariate_diffusion_data$covariates`.")
-  }
 
   original_vertex_time <- matrix(
-    object$covariate_diffusion_data$covariate_vertex_time[, , cov_i],
+    object$covariate_diffusion_data$covariate_vertex_time[, , ctx$cov_i],
     nrow = object$covariate_diffusion_data$n_vertices,
-    ncol = n_t
+    ncol = ctx$time_info$n_t
   )
-  kappas <- .dl_plot_extract_kappas(object, cov_i)
-  has_space <- as.logical(object$covariate_diffusion_data$covariate_has_spatial[cov_i])
-  has_time <- as.logical(object$covariate_diffusion_data$covariate_has_temporal[cov_i])
-  has_spacetime <- as.logical(object$covariate_diffusion_data$covariate_has_spacetime[cov_i])
 
-  source_vertex_time <- matrix(0, nrow = nrow(original_vertex_time), ncol = n_t)
-  source_vertex_time[, time_i] <- original_vertex_time[, time_i]
+  source_vertex_time <- matrix(0, nrow = nrow(original_vertex_time), ncol = ctx$time_info$n_t)
+  source_vertex_time[, ctx$time_info$time_i] <- original_vertex_time[, ctx$time_info$time_i]
 
   transformed_vertex_time <- .solve_covariate_diffusion_vertex_time(
-    component = component,
+    component = ctx$component,
     vertex_time_input = source_vertex_time,
     M0 = object$tmb_data$spde$M0,
     M1 = object$tmb_data$spde$M1,
-    kappaS = kappas$kappaS,
-    kappaT = kappas$kappaT,
-    kappaST = kappas$kappaST,
-    has_space = has_space,
-    has_time = has_time,
-    has_spacetime = has_spacetime
+    kappaS = ctx$kappas$kappaS,
+    kappaT = ctx$kappas$kappaT,
+    kappaST = ctx$kappas$kappaST,
+    has_space = ctx$has_space,
+    has_time = ctx$has_time,
+    has_spacetime = ctx$has_spacetime
   )
 
-  panel_fields <- vector("list", length(time_idx) + 1L)
-  panel_titles <- character(length(panel_fields))
-  panel_fields[[1L]] <- original_vertex_time[, time_i]
-  panel_titles[[1L]] <- paste0("original (t=", time_values[time_i], ")")
-  for (j in seq_along(time_idx)) {
-    tt <- time_idx[j]
-    lag <- tt - time_i
-    panel_fields[[j + 1L]] <- transformed_vertex_time[, tt]
-    panel_titles[[j + 1L]] <- if (lag == 0L) {
-      paste0("diffused (t=", time_values[tt], ")")
-    } else {
-      paste0("lag+", lag, " (t=", time_values[tt], ")")
-    }
-  }
+  time_values <- ctx$time_info$time_values
+  time_i <- ctx$time_info$time_i
+  time_idx <- ctx$time_info$time_idx
+  panels <- .dl_plot_time_panels(
+    first_field = original_vertex_time[, time_i],
+    first_title = paste0("original (t=", time_values[time_i], ")"),
+    transformed_vertex_time = transformed_vertex_time,
+    time_i = time_i,
+    time_idx = time_idx,
+    time_values = time_values
+  )
   panel <- .dl_plot_panel_dfs(
-    loc = loc,
-    tv = tv,
-    panel_fields = panel_fields,
-    panel_titles = panel_titles,
-    vertex_i = mesh_info$vertex_i,
+    loc = ctx$mesh_info$loc,
+    tv = ctx$mesh_info$tv,
+    panel_fields = panels$fields,
+    panel_titles = panels$titles,
+    vertex_i = ctx$mesh_info$vertex_i,
     common_scale = common_scale,
     value_transform = "identity"
   )
   point_df <- data.frame(
-    panel = factor(character(0L), levels = panel_titles),
+    panel = factor(character(0L), levels = panels$titles),
     x = numeric(0L),
     y = numeric(0L)
   )
-  xlab <- if (!is.null(object$spde$xy_cols) && length(object$spde$xy_cols) >= 2L) object$spde$xy_cols[1] else "x"
-  ylab <- if (!is.null(object$spde$xy_cols) && length(object$spde$xy_cols) >= 2L) object$spde$xy_cols[2] else "y"
   plot_obj <- .dl_plot_ggplot(
     triangle_df = panel$triangle_df,
     point_df = point_df,
     fill_limits = panel$fill_limits,
     fill_name = panel$fill_name,
-    xlim = range(loc[, 1]),
-    ylim = range(loc[, 2]),
-    xlab = xlab,
-    ylab = ylab
+    xlim = range(ctx$mesh_info$loc[, 1]),
+    ylim = range(ctx$mesh_info$loc[, 2]),
+    xlab = ctx$xlab,
+    ylab = ctx$ylab
   )
 
   if (isTRUE(plot)) {
@@ -1201,8 +1097,8 @@ plot_diffused_covariate <- function(object,
   }
 
   invisible(list(
-    covariate = covariate,
-    component = component,
+    covariate = ctx$covariate,
+    component = ctx$component,
     time_index = time_i,
     time_value = time_values[time_i],
     transformed_time_index = time_idx,
@@ -1213,8 +1109,8 @@ plot_diffused_covariate <- function(object,
     triangle_values = panel$triangle_values,
     triangle_df = panel$triangle_df,
     plot = plot_obj,
-    mesh_loc = loc,
-    mesh_triangles = tv
+    mesh_loc = ctx$mesh_info$loc,
+    mesh_triangles = ctx$mesh_info$tv
   ))
 }
 
@@ -1227,136 +1123,62 @@ plot_diffusion_kernel <- function(object,
                                            n_steps = 3L,
                                            common_scale = FALSE,
                                            plot = TRUE) {
-  stopifnot(inherits(object, "sdmTMB"))
-  if (!requireNamespace("ggplot2", quietly = TRUE)) {
-    cli_abort("`ggplot2` must be installed to use `plot_diffusion_kernel()`.")
-  }
-  if (missing(component)) {
-    cli_abort("`component` is required and must be one of `space`, `time`, `spacetime`, or `combined`.")
-  }
-  if (!component %in% c("space", "time", "spacetime", "combined")) {
-    cli_abort("`component` must be exactly one of `space`, `time`, `spacetime`, or `combined`.")
-  }
-  if (is.null(object$covariate_diffusion_data)) {
-    cli_abort("`object` does not contain `covariate_diffusion_data`.")
-  }
-  if (!is.numeric(n_steps) || length(n_steps) != 1L || !is.finite(n_steps) || n_steps < 1L) {
-    cli_abort("`n_steps` must be a single positive integer.")
-  }
-  n_steps <- as.integer(round(n_steps))
-  if (is.null(object$covariate_diffusion_parsed) ||
-      is.null(object$covariate_diffusion_parsed$terms) ||
-      nrow(object$covariate_diffusion_parsed$terms) == 0L) {
-    cli_abort("`object` does not contain covariate-diffusion terms.")
-  }
-  terms_df <- object$covariate_diffusion_parsed$terms
-  covariates <- unique(terms_df$variable)
-  if (is.null(covariate)) {
-    if (length(covariates) != 1L) {
-      cli_abort(c(
-        "Multiple covariate-diffusion covariates are present.",
-        "x" = "Set `covariate` to one of: {.code {paste(covariates, collapse = ', ')}}."
-      ))
-    }
-    covariate <- covariates[[1]]
-  }
-  covariate <- as.character(covariate[[1]])
-  if (!covariate %in% covariates) {
-    cli_abort(c(
-      "Unknown covariate-diffusion covariate.",
-      "x" = "Could not find `{covariate}` in the fitted covariate-diffusion terms."
-    ))
-  }
-  components_for_covariate <- unique(terms_df$component[terms_df$variable == covariate])
-  if (component != "combined" && !component %in% components_for_covariate) {
-    cli_abort(c(
-      "Requested component/covariate term was not fitted.",
-      "x" = "No term `{component}({covariate})` in `object$covariate_diffusion`."
-    ))
-  }
-  component_for_time <- if (component == "combined" && !any(components_for_covariate %in% c("time", "spacetime"))) "space" else component
+  ctx <- .dl_plot_context(
+    object = object,
+    covariate = covariate,
+    component = if (missing(component)) NULL else component,
+    component_missing = missing(component),
+    time_value = time_value,
+    n_steps = n_steps,
+    function_name = "plot_diffusion_kernel",
+    allow_spatial_steps = FALSE
+  )
 
-  mesh_info <- .dl_plot_extract_mesh(object$spde$mesh)
-  loc <- mesh_info$loc
-  tv <- mesh_info$tv
-  vertex_i <- mesh_info$vertex_i
-
-  time_info <- .dl_plot_resolve_time(object, component_for_time, time_value, n_steps)
-  n_t <- time_info$n_t
-  time_values <- time_info$time_values
-  time_i <- time_info$time_i
-  time_idx <- time_info$time_idx
-
-  covariates <- object$covariate_diffusion_data$covariates
-  cov_i <- match(covariate, covariates)
-  if (is.na(cov_i)) {
-    cli_abort("Internal mismatch: selected covariate not found in `covariate_diffusion_data$covariates`.")
-  }
-
-  kappas <- .dl_plot_extract_kappas(object, cov_i)
-
-  has_space <- as.logical(object$covariate_diffusion_data$covariate_has_spatial[cov_i])
-  has_time <- as.logical(object$covariate_diffusion_data$covariate_has_temporal[cov_i])
-  has_spacetime <- as.logical(object$covariate_diffusion_data$covariate_has_spacetime[cov_i])
-  if (component == "space" && !has_space) {
-    cli_abort("Selected covariate was not fitted with a spatial covariate-diffusion component.")
-  }
-  if (component == "time" && !has_time) {
-    cli_abort("Selected covariate was not fitted with a temporal covariate-diffusion component.")
-  }
-  if (component == "spacetime" && !has_spacetime) {
-    cli_abort("Selected covariate was not fitted with a spatiotemporal covariate-diffusion component.")
-  }
-
-  n_vertices <- nrow(loc)
+  time_values <- ctx$time_info$time_values
+  n_t <- ctx$time_info$n_t
+  time_i <- ctx$time_info$time_i
+  time_idx <- ctx$time_info$time_idx
+  vertex_i <- ctx$mesh_info$vertex_i
+  n_vertices <- nrow(ctx$mesh_info$loc)
   impulse_vertex_time <- matrix(0, nrow = n_vertices, ncol = n_t)
   impulse_vertex_time[vertex_i, time_i] <- 1
 
   transformed_vertex_time <- .solve_covariate_diffusion_vertex_time(
-    component = component,
+    component = ctx$component,
     vertex_time_input = impulse_vertex_time,
     M0 = object$tmb_data$spde$M0,
     M1 = object$tmb_data$spde$M1,
-    kappaS = kappas$kappaS,
-    kappaT = kappas$kappaT,
-    kappaST = kappas$kappaST,
-    has_space = has_space,
-    has_time = has_time,
-    has_spacetime = has_spacetime
+    kappaS = ctx$kappas$kappaS,
+    kappaT = ctx$kappas$kappaT,
+    kappaST = ctx$kappas$kappaST,
+    has_space = ctx$has_space,
+    has_time = ctx$has_time,
+    has_spacetime = ctx$has_spacetime
   )
 
-  panel_fields <- vector("list", length(time_idx) + 1L)
-  panel_titles <- character(length(panel_fields))
-  panel_fields[[1L]] <- impulse_vertex_time[, time_i]
-  panel_titles[[1L]] <- paste0("original (t=", time_values[time_i], ")")
-  for (j in seq_along(time_idx)) {
-    tt <- time_idx[j]
-    lag <- tt - time_i
-    panel_fields[[j + 1L]] <- transformed_vertex_time[, tt]
-    panel_titles[[j + 1L]] <- if (lag == 0L) {
-      paste0("diffused (t=", time_values[tt], ")")
-    } else {
-      paste0("lag+", lag, " (t=", time_values[tt], ")")
-    }
-  }
-
+  panels <- .dl_plot_time_panels(
+    first_field = impulse_vertex_time[, time_i],
+    first_title = paste0("original (t=", time_values[time_i], ")"),
+    transformed_vertex_time = transformed_vertex_time,
+    time_i = time_i,
+    time_idx = time_idx,
+    time_values = time_values
+  )
   panel <- .dl_plot_panel_dfs(
-    loc, tv, panel_fields, panel_titles, vertex_i,
+    ctx$mesh_info$loc, ctx$mesh_info$tv, panels$fields, panels$titles, vertex_i,
     common_scale = common_scale,
     value_transform = "identity"
   )
 
-  xlab <- if (!is.null(object$spde$xy_cols) && length(object$spde$xy_cols) >= 2L) object$spde$xy_cols[1] else "x"
-  ylab <- if (!is.null(object$spde$xy_cols) && length(object$spde$xy_cols) >= 2L) object$spde$xy_cols[2] else "y"
   plot_obj <- .dl_plot_ggplot(
     triangle_df = panel$triangle_df,
     point_df = panel$point_df,
     fill_limits = panel$fill_limits,
     fill_name = panel$fill_name,
-    xlim = range(loc[, 1]),
-    ylim = range(loc[, 2]),
-    xlab = xlab,
-    ylab = ylab
+    xlim = range(ctx$mesh_info$loc[, 1]),
+    ylim = range(ctx$mesh_info$loc[, 2]),
+    xlab = ctx$xlab,
+    ylab = ctx$ylab
   )
 
   if (isTRUE(plot)) {
@@ -1364,10 +1186,10 @@ plot_diffusion_kernel <- function(object,
   }
 
   invisible(list(
-    covariate = covariate,
-    component = component,
+    covariate = ctx$covariate,
+    component = ctx$component,
     vertex = vertex_i,
-    vertex_xy = loc[vertex_i, , drop = TRUE],
+    vertex_xy = ctx$mesh_info$loc[vertex_i, , drop = TRUE],
     impulse_time_index = time_i,
     impulse_time_value = time_values[time_i],
     transformed_time_index = time_idx,
@@ -1377,7 +1199,7 @@ plot_diffusion_kernel <- function(object,
     triangle_values = panel$triangle_values,
     triangle_df = panel$triangle_df,
     plot = plot_obj,
-    mesh_loc = loc,
-    mesh_triangles = tv
+    mesh_loc = ctx$mesh_info$loc,
+    mesh_triangles = ctx$mesh_info$tv
   ))
 }
