@@ -47,12 +47,18 @@ A list with \code{data}, \code{grid}, and \code{domain} elements. \code{domain} 
 supplied to \code{\link[=sdmTMB]{sdmTMB()}} via the \code{mesh} argument.
 }
 \description{
+\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}}
+
 Build or use an \code{sf} polygon grid, overlay point observations onto grid
 cells, construct grid-cell adjacency, and return labelled data plus an
 \code{sdmTMBareal} domain for SAR/CAR models.
 }
 \examples{
-\dontshow{if (require("sf", quietly = TRUE)) withAutoprint(\{ # examplesIf}
+\dontshow{if (require("sf", quietly = TRUE) && ggplot2_installed()) withAutoprint(\{ # examplesIf}
+library(ggplot2)
+
+# Basic example of using make_areal_grid()
+
 dat <- data.frame(
   x = c(0.25, 1.25, 0.25, 1.25),
   y = c(0.25, 0.25, 1.25, 1.25),
@@ -72,5 +78,44 @@ areal_grid <- make_areal_grid(
 
 head(areal_grid$data)
 areal_grid$domain$n_s
+
+# Dogfish example going from a data frame to overlaying a grid
+
+# Convert to an sf object:
+dogfish_points <- st_as_sf(dogfish, coords = c("X", "Y"), crs = NA)
+
+# make a boundary polygon around observations:
+dogfish_boundary <- st_union(dogfish_points) |>
+  st_convex_hull() |>
+  st_as_sf()
+
+# overlay a grid and create objects for fitting:
+dogfish_grid_obj <- make_areal_grid(
+  dogfish,
+  xy_cols = c("X", "Y"),
+  spatial_domain = dogfish_boundary,
+  n = c(25L, 20L),
+  space_column = "cell_id"
+)
+
+names(dogfish_grid_obj)
+
+ggplot() + 
+  geom_sf(data = dogfish_grid_obj$grid) + 
+  geom_point(data = dogfish_grid_obj$data, aes(X, Y), alpha = 0.2)
+
+fit_car <- sdmTMB(
+  catch_weight ~ poly(log(depth), 2),
+  data = dogfish_grid_obj$data,
+  mesh = dogfish_grid_obj$domain,
+  spatial_model = "car",
+  family = tweedie(link = "log"),
+  spatial = "on",
+  offset = log(dogfish_grid_obj$data$area_swept)
+)
+fit_car
 \dontshow{\}) # examplesIf}
+}
+\seealso{
+\code{\link[=make_areal_domain]{make_areal_domain()}}
 }

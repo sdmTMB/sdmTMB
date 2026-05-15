@@ -40,12 +40,12 @@ plots the joint response of all covariate-diffusion components fitted for
 either a modeled time value or a 1-based time index. Defaults to 1.}
 
 \item{n_steps}{Number of transformed slices to plot starting at
-\code{time_value}. Defaults to 1 for \code{plot_diffused_covariate()} and 3 for
-\code{plot_diffusion_kernel()}.}
+\code{time_value}.}
 
 \item{common_scale}{Should plotted panels share a common color scale?
 Defaults to \code{TRUE} for \code{plot_diffused_covariate()} and \code{FALSE} for
-\code{plot_diffusion_kernel()}.}
+\code{plot_diffusion_kernel()}. \code{component = "time"} alone likely needs
+\code{common_scale = TRUE} to make sense.}
 
 \item{plot}{Should the plot be printed? Defaults to \code{TRUE}.}
 }
@@ -69,6 +69,8 @@ one covariate-diffusion component.
 }
 \examples{
 \dontshow{if (ggplot2_installed()) withAutoprint(\{ # examplesIf}
+
+# Simulate some data for fitting:
 set.seed(1)
 n_t <- 6
 n_sites <- 80
@@ -84,7 +86,6 @@ dat$x1 <- as.numeric(scale(
     0.4 * sin(4 * pi * dat$X) * cos(dat$year / 2) +
     rnorm(nrow(dat), sd = 0.15)
 ))
-
 mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.12)
 sim <- simulate_new(
   formula = ~ 1,
@@ -106,15 +107,16 @@ sim <- simulate_new(
 )
 dat$observed <- sim$observed
 
+Fit the model:
 fit <- sdmTMB(
   observed ~ 1,
   data = dat,
   mesh = mesh,
   time = "year",
-  spatial = "off",
-  spatiotemporal = "off",
+  spatial = "off", # keeping example simple
+  spatiotemporal = "off", # keeping example simple
   family = gaussian(),
-  covariate_diffusion = ~ space(x1) + time(x1)
+  covariate_diffusion = ~ space(x1) + time(x1) #<
 )
 
 plot_diffused_covariate(

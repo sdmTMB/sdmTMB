@@ -2,12 +2,7 @@ test_that("Ohio areal SAR/CAR estimates and logLik stay stable", {
   skip_on_cran()
 
   dat <- ohio_df
-  domain <- make_areal_domain(
-    data = dat,
-    spatial_domain = ohio_sf,
-    space_column = "county",
-    id_column = "county"
-  )
+  domain <- make_areal_domain(ohio_sf, id_column = "county")
 
   fit_sar <- sdmTMB(
     cases ~ 0 + as.factor(year) + pct_male,

@@ -52,9 +52,7 @@ For SAR and CAR models, we pass an areal domain (adjacency + IDs) to `mesh` via 
 
 ```{r domain}
 domain <- make_areal_domain(
-  data = dat,
-  spatial_domain = ohio_sf,
-  space_column = "county",
+  ohio_sf,
   id_column = "county"
 )
 ```
@@ -241,4 +239,3 @@ ggplot(combined, aes(rate_fit_sar, rate_fit_car)) +
 ```
 
 For areal outcomes, SAR/CAR are usually the most straightforward models to fit because they encode adjacency among polygons explicitly. The SPDE method, on the other hand, assumes an underlying continuous spatial process. In this case, we find similar support for all 3 models with a slightly higher log likelihood for the geostatistical SPDE model.
-

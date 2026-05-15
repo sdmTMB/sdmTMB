@@ -61,8 +61,8 @@ test_that("covariate diffusion predict works for default and newdata pathways", 
     control = sdmTMBcontrol(newton_loops = 0)
   )
 
-  p_fit <- predict(fit)
-  p_new <- predict(fit, newdata = dat)
+  expect_silent(p_fit <- predict(fit))
+  expect_silent(p_new <- predict(fit, newdata = dat))
   expect_equal(nrow(p_fit), nrow(dat))
   expect_equal(p_fit$est, p_new$est, tolerance = 1e-6)
   expect_equal(p_fit$est_non_rf, p_new$est_non_rf, tolerance = 1e-6)

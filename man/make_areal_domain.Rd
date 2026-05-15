@@ -5,21 +5,19 @@
 \title{Create an areal spatial domain for SAR/CAR models}
 \usage{
 make_areal_domain(
-  data,
   spatial_domain,
-  space_column,
+  space_column = NULL,
   id_column = NULL,
   adjacency = c("rook", "queen")
 )
 }
 \arguments{
-\item{data}{A data frame.}
-
 \item{spatial_domain}{A named \code{igraph} object or an \code{sf}/\code{sfc}
-polygon object when \code{id_column} identifies areal units.}
+polygon object.}
 
-\item{space_column}{Column name in \code{data} that identifies areal
-unit membership.}
+\item{space_column}{Column name in model data that identifies areal
+unit membership. For \code{sf} polygon input, defaults to \code{id_column} when
+\code{id_column} is supplied; otherwise defaults to \code{"area"}.}
 
 \item{id_column}{Optional column name in an \code{sf} polygon \code{spatial_domain}
 containing areal unit IDs. If omitted for \code{sf} polygons, stable IDs are
@@ -32,25 +30,33 @@ shared edges or \code{"queen"} for any touching boundary.}
 A list with class \code{c("sdmTMBareal", "sdmTMBdomain")}.
 }
 \description{
-Build a reusable areal domain object with adjacency weights and unit labels.
+\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}}
+
+Build an areal domain object with adjacency weights and unit labels.
 The returned object can be supplied to \code{mesh} in \code{\link[=sdmTMB]{sdmTMB()}} in areal
 SAR/CAR workflows.
 }
 \examples{
-W <- Matrix::Matrix(
-  c(
-    0, 1, 0,
-    1, 0, 1,
-    0, 1, 0
-  ),
-  nrow = 3,
-  byrow = TRUE,
-  sparse = TRUE
-)
-rownames(W) <- colnames(W) <- c("north", "central", "south")
+\dontshow{if (require("sf", quietly = TRUE)) withAutoprint(\{ # examplesIf}
+data(ohio_df)
+data(ohio_sf)
 
-dat <- data.frame(region = c("north", "central", "south", "central"))
-domain <- make_areal_domain(dat, W, space_column = "region")
+domain <- make_areal_domain(ohio_sf, id_column = "county")
 domain$n_s
 domain$unit_names
+
+\donttest{
+fit <- sdmTMB(
+  cases ~ pct_male,
+  data = ohio_df,
+  mesh = domain,
+  spatial_model = "car",
+  family = poisson(link = "log"),
+  offset = log(ohio_df$pop)
+)
+}
+\dontshow{\}) # examplesIf}
+}
+\seealso{
+\code{\link[=make_areal_grid]{make_areal_grid()}}
 }

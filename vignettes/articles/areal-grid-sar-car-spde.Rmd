@@ -60,7 +60,8 @@ dogfish_grid_obj <- make_areal_grid(
   space_column = "cell_id"
 )
 
-plot(dogfish_grid_obj$grid[[1]])
+ggplot(dogfish_grid_obj$grid) + geom_sf() + 
+  geom_point(data = dogfish_grid_obj$data, aes(X, Y), alpha = 0.2)
 ```
 
 For very large datasets, one could aggregate observations to one row per `cell_id` and `year`, for example by summing catch and effort and averaging covariates. That can reduce computation, but it changes the observation support and loses within-cell tow-level variation in covariates, catches, zeros, and effort.

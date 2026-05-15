@@ -1,14 +1,17 @@
 #' Create an areal spatial domain for SAR/CAR models
 #'
-#' Build a reusable areal domain object with adjacency weights and unit labels.
+#' @description
+#' `r lifecycle::badge("experimental")`
+#'
+#' Build an areal domain object with adjacency weights and unit labels.
 #' The returned object can be supplied to `mesh` in [sdmTMB()] in areal
 #' SAR/CAR workflows.
 #'
-#' @param data A data frame.
 #' @param spatial_domain A named `igraph` object or an `sf`/`sfc`
-#'   polygon object when `id_column` identifies areal units.
-#' @param space_column Column name in `data` that identifies areal
-#'   unit membership.
+#'   polygon object.
+#' @param space_column Column name in model data that identifies areal
+#'   unit membership. For `sf` polygon input, defaults to `id_column` when
+#'   `id_column` is supplied; otherwise defaults to `"area"`.
 #' @param id_column Optional column name in an `sf` polygon `spatial_domain`
 #'   containing areal unit IDs. If omitted for `sf` polygons, stable IDs are
 #'   generated.
@@ -18,36 +21,34 @@
 #' @return A list with class `c("sdmTMBareal", "sdmTMBdomain")`.
 #' @export
 #'
-#' @examples
-#' W <- Matrix::Matrix(
-#'   c(
-#'     0, 1, 0,
-#'     1, 0, 1,
-#'     0, 1, 0
-#'   ),
-#'   nrow = 3,
-#'   byrow = TRUE,
-#'   sparse = TRUE
-#' )
-#' rownames(W) <- colnames(W) <- c("north", "central", "south")
+#' @seealso [make_areal_grid()]
 #'
-#' dat <- data.frame(region = c("north", "central", "south", "central"))
-#' domain <- make_areal_domain(dat, W, space_column = "region")
+#' @examplesIf require("sf", quietly = TRUE)
+#' data(ohio_df)
+#' data(ohio_sf)
+#'
+#' domain <- make_areal_domain(ohio_sf, id_column = "county")
 #' domain$n_s
 #' domain$unit_names
-make_areal_domain <- function(data, spatial_domain, space_column,
+#'
+#' \donttest{
+#' fit <- sdmTMB(
+#'   cases ~ pct_male,
+#'   data = ohio_df,
+#'   mesh = domain,
+#'   spatial_model = "car",
+#'   family = poisson(link = "log"),
+#'   offset = log(ohio_df$pop)
+#' )
+#' }
+make_areal_domain <- function(spatial_domain, space_column = NULL,
                               id_column = NULL,
                               adjacency = c("rook", "queen")) {
-  if (!inherits(data, "data.frame")) {
-    cli::cli_abort("`data` must be a data frame.")
-  }
-  if (!is.character(space_column) || length(space_column) != 1L || is.na(space_column) || !nzchar(space_column)) {
-    cli::cli_abort("`space_column` must be a single non-empty column name.")
-  }
   adjacency <- match.arg(adjacency)
 
   from_igraph <- FALSE
   if (inherits(spatial_domain, "igraph")) {
+    space_column <- .resolve_areal_space_column(space_column)
     from_igraph <- TRUE
     unit_names <- igraph::V(spatial_domain)$name
     if (is.null(unit_names) || anyNA(unit_names) || any(!nzchar(unit_names))) {
@@ -59,26 +60,22 @@ make_areal_domain <- function(data, spatial_domain, space_column,
     if (anyDuplicated(unit_names)) {
       cli::cli_abort("igraph vertex names must be unique.")
     }
-    W <- .as_general_dgC(igraph::as_adjacency_matrix(spatial_domain, sparse = TRUE))
+    if (any(igraph::which_loop(spatial_domain))) {
+      cli::cli_abort("igraph `spatial_domain` cannot contain self-neighbor loops.")
+    }
+    weight_attr <- if ("weight" %in% igraph::edge_attr_names(spatial_domain)) "weight" else NULL
+    W <- .as_general_dgC(igraph::as_adjacency_matrix(
+      spatial_domain,
+      sparse = TRUE,
+      attr = weight_attr
+    ))
     Matrix::diag(W) <- 0
     dimnames(W) <- list(as.character(unit_names), as.character(unit_names))
   } else if (inherits(spatial_domain, "sf") || inherits(spatial_domain, "sfc")) {
+    space_column <- .resolve_areal_space_column(space_column, id_column = id_column)
     W <- .sf_areal_adjacency_matrix(spatial_domain, id_column = id_column, adjacency = adjacency)
   } else {
-    if (!(inherits(spatial_domain, "Matrix") || is.matrix(spatial_domain))) {
-      cli::cli_abort("`spatial_domain` must be a named igraph, an sf/sfc polygon object, or a numeric matrix / sparse matrix.")
-    }
-    W <- if (inherits(spatial_domain, "Matrix")) {
-      .as_general_dgC(spatial_domain)
-    } else {
-      if (!is.numeric(spatial_domain)) {
-        cli::cli_abort("Matrix `spatial_domain` input must be numeric.")
-      }
-      .as_general_dgC(Matrix::Matrix(spatial_domain, sparse = TRUE))
-    }
-    if (!is.numeric(W@x)) {
-      cli::cli_abort("Matrix `spatial_domain` input must be numeric.")
-    }
+    cli::cli_abort("`spatial_domain` must be a named igraph object or an sf/sfc polygon object.")
   }
 
   .validate_areal_matrix_structure(W, from_igraph = from_igraph)
@@ -89,11 +86,6 @@ make_areal_domain <- function(data, spatial_domain, space_column,
   W <- .normalize_areal_W(W_raw)
   .validate_areal_matrix_values(W, stage = "after normalization")
   .validate_areal_row_sums(W)
-  .validate_areal_data_membership(
-    data = data,
-    unit_names = unit_names,
-    space_column = space_column
-  )
 
   structure(
     list(
@@ -108,6 +100,10 @@ make_areal_domain <- function(data, spatial_domain, space_column,
 }
 
 #' Create an areal grid domain by overlaying point data
+#'
+#' @description
+#' `r lifecycle::badge("experimental")`
+#'
 #'
 #' Build or use an `sf` polygon grid, overlay point observations onto grid
 #' cells, construct grid-cell adjacency, and return labelled data plus an
@@ -130,11 +126,17 @@ make_areal_domain <- function(data, spatial_domain, space_column,
 #' @param crs Optional coordinate reference system for `data` coordinates,
 #'   passed to [sf::st_as_sf()].
 #'
+#' @seealso [make_areal_domain()]
+#'
 #' @return A list with `data`, `grid`, and `domain` elements. `domain` can be
 #'   supplied to [sdmTMB()] via the `mesh` argument.
 #' @export
 #'
-#' @examplesIf require("sf", quietly = TRUE)
+#' @examplesIf require("sf", quietly = TRUE) && ggplot2_installed()
+#' library(ggplot2)
+#'
+#' # Basic example of using make_areal_grid()
+#'
 #' dat <- data.frame(
 #'   x = c(0.25, 1.25, 0.25, 1.25),
 #'   y = c(0.25, 0.25, 1.25, 1.25),
@@ -154,6 +156,43 @@ make_areal_domain <- function(data, spatial_domain, space_column,
 #'
 #' head(areal_grid$data)
 #' areal_grid$domain$n_s
+#'
+#' # Dogfish example going from a data frame to overlaying a grid
+#'
+#' # Convert to an sf object:
+#' dogfish_points <- st_as_sf(dogfish, coords = c("X", "Y"), crs = NA)
+#' 
+#' # make a boundary polygon around observations:
+#' dogfish_boundary <- st_union(dogfish_points) |>
+#'   st_convex_hull() |>
+#'   st_as_sf()
+#' 
+#' # overlay a grid and create objects for fitting:
+#' dogfish_grid_obj <- make_areal_grid(
+#'   dogfish,
+#'   xy_cols = c("X", "Y"),
+#'   spatial_domain = dogfish_boundary,
+#'   n = c(25L, 20L),
+#'   space_column = "cell_id"
+#' )
+#' 
+#' names(dogfish_grid_obj)
+#' 
+#' ggplot() + 
+#'   geom_sf(data = dogfish_grid_obj$grid) + 
+#'   geom_point(data = dogfish_grid_obj$data, aes(X, Y), alpha = 0.2)
+#' 
+#' fit_car <- sdmTMB(
+#'   catch_weight ~ poly(log(depth), 2),
+#'   data = dogfish_grid_obj$data,
+#'   mesh = dogfish_grid_obj$domain,
+#'   spatial_model = "car",
+#'   family = tweedie(link = "log"),
+#'   spatial = "on",
+#'   offset = log(dogfish_grid_obj$data$area_swept)
+#' )
+#' fit_car
+
 make_areal_grid <- function(data, xy_cols, spatial_domain = NULL,
                             cellsize = NULL, n = NULL, square = TRUE,
                             space_column = "grid_cell",
@@ -220,9 +259,7 @@ make_areal_grid <- function(data, xy_cols, spatial_domain = NULL,
   out_data <- data
   out_data[[space_column]] <- grid[[space_column]][vapply(hits, `[[`, integer(1), 1L)]
   domain <- make_areal_domain(
-    data = out_data,
-    spatial_domain = grid,
-    space_column = space_column,
+    grid,
     id_column = space_column,
     adjacency = adjacency
   )
@@ -307,23 +344,17 @@ make_areal_grid <- function(data, xy_cols, spatial_domain = NULL,
   invisible(NULL)
 }
 
-.validate_areal_data_membership <- function(data, unit_names, space_column) {
-  if (!space_column %in% names(data)) {
-    cli::cli_abort("Column {.field {space_column}} was not found in `data`.")
+.resolve_areal_space_column <- function(space_column, id_column = NULL) {
+  if (is.null(space_column) && !is.null(id_column)) {
+    space_column <- id_column
   }
-  values <- data[[space_column]]
-  if (anyNA(values)) {
-    cli::cli_abort("`data[[{space_column}]]` contains missing areal memberships.")
+  if (is.null(space_column)) {
+    space_column <- "area"
   }
-  values <- as.character(values)
-  missing_units <- setdiff(unique(values), unit_names)
-  if (length(missing_units)) {
-    cli::cli_abort(c(
-      "Some `data[[{space_column}]]` values are not present in the domain.",
-      "i" = paste(missing_units, collapse = ", ")
-    ))
+  if (!is.character(space_column) || length(space_column) != 1L || is.na(space_column) || !nzchar(space_column)) {
+    cli::cli_abort("`space_column` must be a single non-empty column name.")
   }
-  invisible(NULL)
+  space_column
 }
 
 .as_general_dgC <- function(x) {

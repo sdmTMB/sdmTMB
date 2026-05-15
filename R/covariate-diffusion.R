@@ -530,7 +530,13 @@
 .append_covariate_diffusion_term_values <- function(nd, object, tmb_obj, lp,
                                                 covariate_vertex_time, A_st,
                                                 A_spatial_index, year_i, n_t) {
-  par_list <- tmb_obj$env$parList(lp)
+  x <- lp
+  # `lp` can include random effects (e.g., profile models). `parList()`
+  # expects only fixed effects in that case.
+  if (length(tmb_obj$env$random) > 0L && length(x) == length(tmb_obj$env$par)) {
+    x <- x[-tmb_obj$env$random]
+  }
+  par_list <- tmb_obj$env$parList(x = x)
   dl_term_values <- .compute_covariate_diffusion_term_values(
     covariate_diffusion_data = object$covariate_diffusion_data,
     covariate_vertex_time = covariate_vertex_time,
@@ -908,11 +914,11 @@
 #' @param time_value Optional time slice to plot or use for the impulse. Supply
 #'   either a modeled time value or a 1-based time index. Defaults to 1.
 #' @param n_steps Number of transformed slices to plot starting at
-#'   `time_value`. Defaults to 1 for `plot_diffused_covariate()` and 3 for
-#'   `plot_diffusion_kernel()`.
+#'   `time_value`.
 #' @param common_scale Should plotted panels share a common color scale?
 #'   Defaults to `TRUE` for `plot_diffused_covariate()` and `FALSE` for
-#'   `plot_diffusion_kernel()`.
+#'   `plot_diffusion_kernel()`. `component = "time"` alone likely needs
+#'   `common_scale = TRUE` to make sense.
 #' @param plot Should the plot be printed? Defaults to `TRUE`.
 #'
 #' @details
@@ -927,6 +933,8 @@
 #'   used for plotting, selected indices, and a `ggplot` object.
 #'
 #' @examplesIf ggplot2_installed()
+#'
+#' # Simulate some data for fitting:
 #' set.seed(1)
 #' n_t <- 6
 #' n_sites <- 80
@@ -942,7 +950,6 @@
 #'     0.4 * sin(4 * pi * dat$X) * cos(dat$year / 2) +
 #'     rnorm(nrow(dat), sd = 0.15)
 #' ))
-#'
 #' mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.12)
 #' sim <- simulate_new(
 #'   formula = ~ 1,
@@ -964,15 +971,16 @@
 #' )
 #' dat$observed <- sim$observed
 #'
+#' Fit the model:
 #' fit <- sdmTMB(
 #'   observed ~ 1,
 #'   data = dat,
 #'   mesh = mesh,
 #'   time = "year",
-#'   spatial = "off",
-#'   spatiotemporal = "off",
+#'   spatial = "off", # keeping example simple
+#'   spatiotemporal = "off", # keeping example simple
 #'   family = gaussian(),
-#'   covariate_diffusion = ~ space(x1) + time(x1)
+#'   covariate_diffusion = ~ space(x1) + time(x1) #<
 #' )
 #'
 #' plot_diffused_covariate(

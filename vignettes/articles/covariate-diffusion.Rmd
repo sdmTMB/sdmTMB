@@ -33,11 +33,15 @@ theme_set(theme_light())
 ```
 
 This vignette demonstrates covariate-diffusion models with simulated data.
+These models could alternatively be referred to as "distributed lag" models.
+
 We start with a simple spatial diffusion example and then fit a an example that combines `space()` and `time()` terms.
+
+Users are encouraged to read and cite @lindmark2025 and @thorson2026 when using these models.
 
 ## Simple spatial diffusion example
 
-Simulate data with a fine-scale predictor (`x1`) and a spatially diffused effect:
+We will start by simulating data with a fine-scale predictor (`x1`) and a spatially diffused effect:
 
 ```{r simulate-space}
 set.seed(1)
@@ -78,7 +82,7 @@ Fit the matching covariate-diffusion model:
 fit <- sdmTMB(
   observed ~ 1,
   mesh = mesh,
-  covariate_diffusion = ~ space(x1),
+  covariate_diffusion = ~ space(x1), #<
   spatial = "off",
   data = dat
 )
@@ -120,25 +124,23 @@ g3 <- ggplot(pred, aes(X, Y, colour = diffusion_cov_space_x1)) +
   geom_point(size = 0.7) +
   scale_colour_gradient2() +
   coord_equal() +
-  ggtitle("Estimated lagged covariate")
+  ggtitle("Estimated diffused covariate")
 
 print(g1)
 print(g2)
 print(g3)
 ```
 
-We can visualize the diffusion operator:
+We can visualize the diffusion operator and the original and smoothed covariate on the mesh:
 
 ```{r}
 plot_diffusion_kernel(fit, component = "space")
 plot_diffused_covariate(fit, component = "space")
 ```
 
-Users applying spatial diffusion should read and cite @lindmark2025.
-
 ## Space-time example with additive terms
 
-Now simulate and fit a model containing additive spatial and temporal components: `~ space(x1) + time(x1)`.
+Next we will simulate and fit a model containing spatial and temporal components: `~ space(x1) + time(x1)`.
 
 ```{r fit-space-time-all}
 set.seed(1)
@@ -184,26 +186,30 @@ fit_st <- sdmTMB(
   observed ~ 1,
   mesh = mesh_st,
   time = "year",
-  covariate_diffusion = ~ space(x1) + time(x1),
+  covariate_diffusion = ~ space(x1) + time(x1), #<
   spatial = "on",
   spatiotemporal = "off",
   data = dat_st
 )
 
+sanity(fit_st)
+fit_st
+
 tidy(fit_st, effects = "ran_pars")
 ```
 
-In the random-effect parameters, `kappaS_cov_diff[x1]` controls spatial smoothing and `kappaT_cov_diff[x1]` controls temporal carryover.
+In the random-effect parameters, `kappaS_cov_diff[x1]` controls spatial smoothing and `kappaT_cov_diff[x1]` controls temporal diffusion.
 Users applying the time diffusion extension should read and cite @thorson2026.
 
 ## Plot diffusion kernels
 
-We can separately visualize the spatial diffusion, time diffusion, or their combined effects:
+We can separately visualize the spatial diffusion, time diffusion, or their combined effects as either the diffusion kernel or the smoothed covariate field represented on the mesh:
 
 ```{r plot-diffusion}
 plot_diffusion_kernel(fit_st, component = "space")
-plot_diffusion_kernel(fit_st, component = "time")
+plot_diffusion_kernel(fit_st, component = "time", common_scale = TRUE)
 plot_diffusion_kernel(fit_st, component = "combined")
+plot_diffusion_kernel(fit_st, component = "combined", common_scale = TRUE)
 ```
 
 ```{r}
@@ -212,5 +218,16 @@ plot_diffused_covariate(fit_st, component = "time")
 plot_diffused_covariate(fit_st, component = "combined")
 ```
 
+We could also have plotted the spatially diffused covariate at the original locations from the predictions.
+
+```{r}
+pred <- predict(fit_st)
+
+ggplot(pred, aes(X, Y, colour = x1)) + geom_point() +
+  scale_colour_gradient2()
+
+ggplot(pred, aes(X, Y, colour = diffusion_cov_space_x1)) + geom_point() +
+  scale_colour_gradient2()
+```
 
 # References

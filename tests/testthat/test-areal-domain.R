@@ -1,4 +1,13 @@
-test_that("make_areal_domain normalizes sparse matrix input", {
+make_areal_test_graph <- function(W) {
+  igraph::graph_from_adjacency_matrix(
+    as.matrix(W),
+    mode = "directed",
+    weighted = TRUE,
+    diag = TRUE
+  )
+}
+
+test_that("make_areal_domain normalizes igraph input", {
   W <- Matrix::Matrix(
     c(
       0, 2, 0,
@@ -11,8 +20,7 @@ test_that("make_areal_domain normalizes sparse matrix input", {
   )
   rownames(W) <- colnames(W) <- c("a", "b", "c")
 
-  dat <- data.frame(region = c("a", "b", "c", "a"))
-  d <- make_areal_domain(dat, W, space_column = "region")
+  d <- make_areal_domain(make_areal_test_graph(W), space_column = "region")
 
   expect_s3_class(d, "sdmTMBareal")
   expect_identical(d$n_s, 3L)
@@ -36,7 +44,7 @@ test_that("make_areal_domain handles islands", {
   rownames(W) <- colnames(W) <- c("a", "b", "c")
 
   expect_warning(
-    d <- make_areal_domain(data.frame(region = c("a", "b", "c")), W, space_column = "region"),
+    d <- make_areal_domain(make_areal_test_graph(W), space_column = "region"),
     "islands"
   )
   expect_equal(as.numeric(Matrix::rowSums(d$W)), c(1, 1, 0))
@@ -47,8 +55,7 @@ test_that("make_areal_domain works with named igraph input", {
   igraph::V(g)$name <- c("a", "b", "c")
   g <- igraph::add_edges(g, c("a", "b", "b", "c"))
 
-  dat <- data.frame(region = c("a", "b", "c", "a"))
-  d <- make_areal_domain(dat, g, space_column = "region")
+  d <- make_areal_domain(g, space_column = "region")
 
   expect_s3_class(d, "sdmTMBareal")
   expect_identical(d$unit_names, c("a", "b", "c"))
@@ -64,12 +71,11 @@ test_that("make_areal_domain works with labelled sf polygon input", {
     square = TRUE
   )
   poly <- sf::st_sf(area = c("left", "right"), geometry = grid)
-  dat <- data.frame(area = c("left", "right", "left"))
-
-  d <- make_areal_domain(dat, poly, space_column = "area", id_column = "area")
+  d <- make_areal_domain(poly, id_column = "area")
 
   expect_s3_class(d, "sdmTMBareal")
   expect_identical(d$unit_names, c("left", "right"))
+  expect_identical(d$space_column, "area")
   expect_equal(dim(d$W), c(2L, 2L))
   expect_equal(as.numeric(Matrix::rowSums(d$W)), c(1, 1))
 })
@@ -126,7 +132,7 @@ test_that("make_areal_grid can create and clip a grid from an sf boundary", {
   expect_true("grid_cell" %in% names(out$data))
 })
 
-test_that("make_areal_domain validates data memberships", {
+test_that("prepare_spatial_domain validates data memberships", {
   W <- Matrix::Matrix(
     c(
       0, 1,
@@ -137,17 +143,24 @@ test_that("make_areal_domain validates data memberships", {
     sparse = TRUE
   )
   rownames(W) <- colnames(W) <- c("a", "b")
+  d <- make_areal_domain(make_areal_test_graph(W), space_column = "region")
 
   expect_error(
-    make_areal_domain(data.frame(region = c("a", "x")), W, space_column = "region"),
-    "not present in the domain"
+    prepare_spatial_domain(
+      mesh = d,
+      data = data.frame(region = c("a", "x")),
+      mesh_missing = FALSE,
+      anisotropy = FALSE,
+      covariate_diffusion = NULL,
+      spatial_model = "sar"
+    ),
+    "no match in the areal domain"
   )
 
-  d <- make_areal_domain(data.frame(region = c("a", "b", "a")), W, space_column = "region")
   expect_identical(d$unit_names, c("a", "b"))
 })
 
-test_that("make_areal_domain validates required membership column and missing values", {
+test_that("prepare_spatial_domain validates required membership column and missing values", {
   W <- Matrix::Matrix(
     c(
       0, 1,
@@ -158,46 +171,57 @@ test_that("make_areal_domain validates required membership column and missing va
     sparse = TRUE
   )
   rownames(W) <- colnames(W) <- c("a", "b")
+  d <- make_areal_domain(make_areal_test_graph(W), space_column = "region")
 
   expect_error(
-    make_areal_domain(data.frame(x = 1:2), W, space_column = "region"),
-    "was not found in `data`"
+    prepare_spatial_domain(
+      mesh = d,
+      data = data.frame(x = 1:2),
+      mesh_missing = FALSE,
+      anisotropy = FALSE,
+      covariate_diffusion = NULL,
+      spatial_model = "sar"
+    ),
+    "areal domain was not found in `data`"
   )
   expect_error(
-    make_areal_domain(data.frame(region = c("a", NA)), W, space_column = "region"),
-    "contains missing areal memberships"
+    prepare_spatial_domain(
+      mesh = d,
+      data = data.frame(region = c("a", NA)),
+      mesh_missing = FALSE,
+      anisotropy = FALSE,
+      covariate_diffusion = NULL,
+      spatial_model = "sar"
+    ),
+    "contains missing values"
   )
 })
 
-test_that("make_areal_domain validates malformed graph/matrix inputs", {
+test_that("make_areal_domain validates malformed graph inputs", {
 
   g_unnamed <- igraph::make_ring(3, directed = FALSE)
   expect_error(
-    make_areal_domain(data.frame(region = c("1", "2", "3")), g_unnamed, space_column = "region"),
+    make_areal_domain(g_unnamed, space_column = "region"),
     "vertex names"
   )
 
-  W_nonsquare <- Matrix::Matrix(c(0, 1, 1, 0, 0, 1), nrow = 2, sparse = TRUE)
-  rownames(W_nonsquare) <- c("a", "b")
-  colnames(W_nonsquare) <- c("a", "b", "c")
   expect_error(
-    make_areal_domain(data.frame(region = c("a", "b")), W_nonsquare, space_column = "region"),
-    "must be square"
+    make_areal_domain(matrix(c(0, 1, 1, 0), nrow = 2), space_column = "region"),
+    "named igraph object or an sf/sfc polygon object"
   )
 
-  W_bad_names <- matrix(c(0, 1, 2, 0), nrow = 2, byrow = TRUE)
-  rownames(W_bad_names) <- c("a", "b")
-  colnames(W_bad_names) <- c("a", "c")
+  g_duplicate <- igraph::make_empty_graph(n = 2, directed = FALSE)
+  igraph::V(g_duplicate)$name <- c("a", "a")
   expect_error(
-    make_areal_domain(data.frame(region = c("a", "b")), W_bad_names, space_column = "region"),
-    "row and column names must be identical"
+    make_areal_domain(g_duplicate, space_column = "region"),
+    "must be unique"
   )
 
   W_diag <- Matrix::Matrix(c(1, 1, 1, 0), nrow = 2, byrow = TRUE, sparse = TRUE)
   rownames(W_diag) <- colnames(W_diag) <- c("a", "b")
   expect_error(
-    make_areal_domain(data.frame(region = c("a", "b")), W_diag, space_column = "region"),
-    "zero diagonal"
+    make_areal_domain(make_areal_test_graph(W_diag), space_column = "region"),
+    "self-neighbor loops"
   )
 })
 
@@ -212,7 +236,7 @@ test_that("areal projection helpers map memberships", {
     sparse = TRUE
   )
   rownames(W) <- colnames(W) <- c("a", "b")
-  d <- make_areal_domain(data.frame(region = c("a", "b")), W, space_column = "region")
+  d <- make_areal_domain(make_areal_test_graph(W), space_column = "region")
 
   idx <- domain_obs_index(d, data.frame(region = c("b", "a", "b")))
   expect_identical(idx, c(2L, 1L, 2L))
@@ -238,7 +262,7 @@ test_that("prepare_spatial_domain returns areal domain pieces", {
   )
   rownames(W) <- colnames(W) <- c("a", "b")
   dat <- data.frame(region = c("a", "b", "a"))
-  d <- make_areal_domain(dat, W, space_column = "region")
+  d <- make_areal_domain(make_areal_test_graph(W), space_column = "region")
 
   out <- prepare_spatial_domain(
     mesh = d,
@@ -274,7 +298,7 @@ test_that("prepare_spatial_domain returns raw adjacency for CAR", {
   )
   rownames(W) <- colnames(W) <- c("a", "b", "c")
   dat <- data.frame(region = c("a", "b", "c", "a"))
-  d <- make_areal_domain(dat, W, space_column = "region")
+  d <- make_areal_domain(make_areal_test_graph(W), space_column = "region")
 
   out <- prepare_spatial_domain(
     mesh = d,
@@ -303,7 +327,7 @@ test_that("prepare_spatial_domain can return raw adjacency for SAR", {
   )
   rownames(W) <- colnames(W) <- c("a", "b", "c")
   dat <- data.frame(region = c("a", "b", "c", "a"))
-  d <- make_areal_domain(dat, W, space_column = "region")
+  d <- make_areal_domain(make_areal_test_graph(W), space_column = "region")
 
   out <- prepare_spatial_domain(
     mesh = d,
@@ -331,7 +355,7 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
   )
   rownames(W) <- colnames(W) <- c("a", "b")
   dat <- data.frame(region = c("a", "b", "a"), x = c(1, 2, 3))
-  d <- make_areal_domain(dat, W, space_column = "region")
+  d <- make_areal_domain(make_areal_test_graph(W), space_column = "region")
 
   expect_error(
     prepare_spatial_domain(
@@ -485,7 +509,7 @@ build_predict_stub_with_areal_domain <- function(getsd = FALSE) {
     sparse = TRUE
   )
   rownames(W) <- colnames(W) <- c("a", "b", "c")
-  domain <- make_areal_domain(areal_data, W, space_column = "region")
+  domain <- make_areal_domain(make_areal_test_graph(W), space_column = "region")
 
   fit$data$region <- areal_data$region
   fit$spde <- domain
@@ -604,7 +628,7 @@ build_areal_smoke_domain <- function() {
   rownames(W) <- colnames(W) <- c("a", "b", "c")
   list(
     data = dat,
-    domain = make_areal_domain(dat, W, space_column = "region")
+    domain = make_areal_domain(make_areal_test_graph(W), space_column = "region")
   )
 }
 
