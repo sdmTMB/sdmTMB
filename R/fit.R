@@ -51,6 +51,8 @@ NULL
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html) for
 #'   details. For binomial family options, see 'Binomial families' in the Details
 #'   section below.
+#' @param distribution_column For multi-family models, the name of the column
+#'   in `data` mapping each row to a family in the named `family` list.
 #' @param spatial Estimate spatial random fields? Options are `'on'` / `'off'`
 #'   or `TRUE` / `FALSE`. Optionally, a list for delta models, e.g. `list('on',
 #'   'off')`.
@@ -595,6 +597,7 @@ sdmTMB <- function(
     mesh,
     time = NULL,
     family = gaussian(link = "identity"),
+    distribution_column = NULL,
     spatial = c("on", "off"),
     spatiotemporal = c("iid", "ar1", "rw", "off"),
     spatial_model = c("spde", "sar", "car"),
@@ -627,8 +630,19 @@ sdmTMB <- function(
   is_areal <- spatial_model %in% c("sar", "car")
   data <- droplevels(data) # if data was subset, strips absent factors
 
-  delta <- isTRUE(family$delta)
-  n_m <- if (delta) 2L else 1L
+  family_spec <- .build_family_spec(
+    family = family,
+    data = data,
+    distribution_column = distribution_column
+  )
+  if (family_spec$n_f > 1L) {
+    cli_abort(
+      "Multi-family fits with more than one family are not wired into `main` yet."
+    )
+  }
+  family <- family_spec$family
+  delta <- family_spec$n_m == 2L
+  n_m <- family_spec$n_m
 
   if (!missing(spatial)) {
     if (length(spatial) > 1 && !is.list(spatial)) {
@@ -1225,8 +1239,7 @@ sdmTMB <- function(
 
   A_st <- domain$A_st
   A_spatial_index <- domain$A_spatial_index
-  if (delta) y_i <- cbind(ifelse(y_i > 0, 1, 0), ifelse(y_i > 0, y_i, NA_real_))
-  if (!delta) y_i <- matrix(y_i, ncol = 1L)
+  y_i <- .family_spec_build_response(y_i, family_spec)
 
   time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
   n_t <- nrow(time_df)
@@ -1751,6 +1764,8 @@ sdmTMB <- function(
       time = time,
       time_lu = time_df,
       family = family,
+      family_spec = family_spec,
+      distribution_column = family_spec$distribution_column,
       smoothers = sm,
       response = y_i,
       tmb_data = tmb_data,
