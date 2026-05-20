@@ -483,7 +483,7 @@ print_other_parameters <- function(x, m = 1L) {
       paste0("Spatiotemporal ", xtra, toupper(x$spatiotemporal[m]), " SD"))
   }
   rho <- get_term_text("rho", "Spatiotemporal AR1 correlation (rho)")
-  rho_sar <- get_term_text("rho_sar", "SAR spatial correlation")
+  rho_sar <- get_term_text("rho_sar", "SAR spatial dependence")
   alpha_car <- get_term_text("alpha_car", "CAR spatial dependence")
   rhoT <- covariate_diffusion_term_text("rhoT", "Covariate diffusion temporal persistence")
   RMSD <- covariate_diffusion_term_text("RMSD", "Covariate diffusion RMSD")

@@ -47,8 +47,7 @@ The original `dogfish` data are survey tow-level points. To fit a CAR or SAR mod
 # draw a boundary around our points
 dogfish_boundary <- st_as_sf(dogfish, coords = c("X", "Y"), crs = NA) |> 
   st_union() |>
-  st_convex_hull() |>
-  st_as_sf()
+  st_convex_hull()
 
 # pass our data and our spatial boundary to make an areal grid:
 dogfish_grid_obj <- make_areal_grid(
