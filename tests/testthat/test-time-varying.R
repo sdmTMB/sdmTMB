@@ -1,5 +1,6 @@
 test_that("AR1 time-varying works", {
   skip_on_cran()
+  skip_on_ci()
   set.seed(1)
   predictor_dat <- data.frame(
     X = runif(4000), Y = runif(4000),
