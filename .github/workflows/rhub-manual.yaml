@@ -21,7 +21,7 @@ jobs:
       image: ghcr.io/r-hub/containers/${{ github.event.inputs.inpcont }}:latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v5
     - name: Install dependencies
       run: |
         R -q -e 'pak::pkg_install(c("deps::.", "any::rcmdcheck"), dependencies = TRUE)'
