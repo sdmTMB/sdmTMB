@@ -971,7 +971,7 @@
 #' )
 #' dat$observed <- sim$observed
 #'
-#' Fit the model:
+#' # Fit the model:
 #' fit <- sdmTMB(
 #'   observed ~ 1,
 #'   data = dat,
