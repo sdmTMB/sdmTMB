@@ -1,14 +1,17 @@
 # sdmTMB (development version)
 
+* Add `allow_new_levels` in `predict.sdmTMB()` for predicting with new levels
+  in random intercepts or slopes. New levels get the population value. #196 #480
+
 * Add `plot_diffusion_kernel()` for plotting covariate-diffusion impulse
   responses and `plot_diffused_covariate()` for plotting original and estimated
-  diffused covariate fields on the fitted mesh.
+  diffused covariate fields on the fitted mesh. #507
 
 * Add experimental support for CAR/SAR areal/lattice models.
 
-* Add covariate-diffusion article/vignette.
+* Add covariate-diffusion article/vignette. #507
 
-* Add experimental support for covariate diffusion models.
+* Add experimental support for covariate diffusion models. #507
 
 * Update `get_index()` so index totals are reported on a log-total scale after
   integrating response-scale predictions. This preserves existing behaviour for
