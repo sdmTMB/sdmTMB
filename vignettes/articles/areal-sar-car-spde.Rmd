@@ -41,14 +41,16 @@ This vignette demonstrates three ways to model spatial structure in areal data u
 
 The areal response is counts (`cases`) with population offset (`log(pop)`), so fitted values are interpreted as expected counts or rates.
 
-```{r data}
-dat <- ohio_df
-glimpse(dat)
-```
+Areal (or lattice) data are observations measured or aggregated over spatial regions or polygons, such as countries, census tracts, or administrative boundaries.
 
 ## Build an areal domain from polygons
 
-For SAR and CAR models, we pass an areal domain (adjacency + IDs) to `mesh` via `make_areal_domain()`:
+For SAR and CAR models, we pass an areal domain (adjacency + IDs) to `mesh` via `make_areal_domain()`. We need to supply an `igraph` or `sf/sfc` object. In this example, we have an `sf` object with a column `county` that identifies polygons:
+
+```{r sf-plot}
+ggplot(ohio_sf) + geom_sf()
+```
+
 
 ```{r domain}
 domain <- make_areal_domain(
@@ -56,6 +58,15 @@ domain <- make_areal_domain(
   id_column = "county"
 )
 ```
+
+We also have a data frame with the observations:
+
+```{r data}
+dat <- ohio_df
+glimpse(dat)
+```
+
+The `county` column is what links the spatial domain to the observation data in this case because it matches the column name in the `sf` object.
 
 ## Fit SAR and CAR areal models
 

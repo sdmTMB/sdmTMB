@@ -33,38 +33,38 @@ library(sdmTMB)
 library(sf)
 ```
 
-This vignette converts point-based dogfish observations into an areal grid and compares:
+This vignette illustrates converting point-based observations into an areal grid that can be fit with CAR or SAR models. It compares:
 
 - CAR model on the areal grid
 - SAR model on the areal grid
 - SPDE model on point data, summarized back to the same grid for comparison
 
-The practical goal is to show how model choice changes spatial borrowing across neighbouring cells and whether conclusions are robust to treating space as areal (CAR/SAR) versus continuous (SPDE).
-
 ## Build an areal grid and assign observations
 
-The original `dogfish` data are tow-level points. To fit CAR/SAR, we first define polygon areal units (grid cells) and assign each tow to a cell. We keep the tow-level observations for model fitting so that the model sees the original catch, effort, and tow-specific covariates.
+The original `dogfish` data are survey tow-level points. To fit a CAR or SAR model, we first define polygon areal units (grid cells) and assign each tow to a cell. We keep the tow-level observations for model fitting so that the model sees the original catch, effort, and tow-specific covariates.
 
 ```{r grid-build}
-dogfish_points <- st_as_sf(dogfish, coords = c("X", "Y"), crs = NA)
-
-dogfish_boundary <- st_union(dogfish_points) |>
+# draw a boundary around our points
+dogfish_boundary <- st_as_sf(dogfish, coords = c("X", "Y"), crs = NA) |> 
+  st_union() |>
   st_convex_hull() |>
   st_as_sf()
 
+# pass our data and our spatial boundary to make an areal grid:
 dogfish_grid_obj <- make_areal_grid(
   dogfish,
   xy_cols = c("X", "Y"),
   spatial_domain = dogfish_boundary,
-  n = c(25L, 20L),
-  space_column = "cell_id"
+  n = c(25L, 20L), # make a grid with 25 cells by 20 cells
+  space_column = "cell_id" # optionally rename the output column
 )
 
 ggplot(dogfish_grid_obj$grid) + geom_sf() + 
   geom_point(data = dogfish_grid_obj$data, aes(X, Y), alpha = 0.2)
 ```
 
-For very large datasets, one could aggregate observations to one row per `cell_id` and `year`, for example by summing catch and effort and averaging covariates. That can reduce computation, but it changes the observation support and loses within-cell tow-level variation in covariates, catches, zeros, and effort.
+For very large datasets, one could aggregate observations to one row per `cell_id` and `year`, for example by summing catch and effort and averaging or summing covariates. That can reduce computation substantial, but it changes the observation support and loses within-cell tow-level variation in covariates, catches, zeros, and effort.
+Instead, here we will fit the raw observation data:
 
 ```{r areal-data}
 areal_data <- dogfish_grid_obj$data |>
@@ -80,6 +80,7 @@ areal_data_xy <- left_join(areal_data, cell_centres, by = "cell_id")
 ## Fit CAR and SAR areal models
 
 We fit the same linear predictor and distribution in both models so the only intended difference is the spatial structure.
+We'll wrap our model fits in `system.time()` just so we can see if these CAR/SAR models are faster than the SPDE (they are).
 
 ```{r fit-areal}
 system.time(
@@ -120,7 +121,7 @@ At this stage, check that both models converge and that fixed-effect magnitudes 
 
 ## Predict CAR/SAR on observed tows
 
-Here we predict on the observed tow rows (`areal_data`) rather than expanding to all cell-year combinations. This keeps predictions aligned to where data support exists. We then summarize fitted values to `cell_id`-`year` rows for plotting only.
+Here we predict on cells that have observed tow rows (`areal_data`) rather than expanding to all cell-year combinations, which we might choose to do in other contexts. Alternatively, we could have created a data frame of one cell per year first and predicted to that.
 
 ```{r pred-areal}
 pred_car <- predict(
@@ -147,6 +148,7 @@ pred_areal <- areal_data |>
     epsilon_st_sar = pred_sar$epsilon_st
   )
 
+# condense to one prediction per cell for plotting
 pred_cell_year <- pred_areal |>
   group_by(cell_id, year) |>
   summarise(
@@ -226,9 +228,11 @@ fit_spde
 AIC(fit_spde, fit_sar)
 ```
 
+That took approximately twice as long as the CAR/SAR models.
+
 ## Project SPDE predictions onto observed grid-cell locations
 
-To align supports directly, we predict the SPDE model at grid-cell center locations for the same observed tow rows used by the CAR/SAR fits. We then summarize fitted values to `cell_id`-`year` rows for maps and model-comparison plots.
+To align our predictions, we predict the SPDE model at grid-cell center locations for the same observed tow rows used by the CAR/SAR fits. We then summarize fitted values to `cell_id`-`year` rows for maps and model-comparison plots.
 
 ```{r spde-to-grid}
 spde_newdata <- areal_data_xy |>
@@ -268,7 +272,7 @@ ggplot(pred_grid_compare) +
 
 ## Compare fitted values
 
-These scatter plots are a quick agreement diagnostic:
+These scatter plots are a quick check of how well the predictions agree:
 
 ```{r compare-models}
 ggplot(st_drop_geometry(pred_grid_compare), aes(est_car, est_sar)) +
@@ -286,4 +290,4 @@ ggplot(st_drop_geometry(pred_grid_compare), aes(est_car, est_spde)) +
   labs(title = "CAR vs SPDE fitted values")
 ```
 
-For continuous data, a geostatistical SPDE model is a more natural approach and it better fits the data here. However, sometimes with very large datasets, there may be a computational advantage to aggregating to a grid and using a CAR or SAR model. That aggregation trades speed for loss of tow-level information. Even without aggregation, the CAR model followed by the SAR model were faster than the SPDE model (approximately twice as fast in this case).
+For continuous data, a geostatistical SPDE model is a more natural approach and it better fits the data here. However, sometimes with very large datasets, there may be a computational advantage to using the CAR/SAR models and an even bigger computational advantage to aggregating to a grid and using a CAR or SAR model. That aggregation trades speed for loss of tow-level information. Even without aggregation, the CAR model followed by the SAR model were faster than the SPDE model (approximately twice as fast in this case).
