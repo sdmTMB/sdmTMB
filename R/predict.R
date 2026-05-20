@@ -30,15 +30,15 @@
 #'   predictions. `~0` or `NA` for population-level predictions. No other
 #'   options (e.g., some but not all random intercepts) are implemented yet.
 #'   Only affects predictions with `newdata`. This *does* affects [get_index()].
-#' @param allow_new_levels Logical or `NULL`. Similar to glmmTMB's
-#'   `allow.new.levels`, but follows sdmTMB's underscore naming convention.
+#' @param allow_new_levels Logical or `NULL`. Similar to \pkg{glmmTMB}'s
+#'   `allow.new.levels`.
 #'   Allows predictions for previously unobserved levels in random effect
 #'   grouping variables. If `NULL` (default), new levels are allowed when
 #'   `re_form_iid = NA` or `re_form_iid = ~0` and a warning is issued
 #'   otherwise. If `TRUE`, new levels are explicitly allowed. If `FALSE`, a
 #'   warning is issued if new levels are found. New levels are always treated
 #'   as population-level predictions for the IID random effects
-#'   (random effects = 0).
+#'   (i.e., random effect value = 0).
 #' @param nsim If `> 0`, simulate from the joint precision matrix with `nsim`
 #'   draws. Returns a matrix of `nrow(newdata)` by `nsim` with each column
 #'   representing one draw of the linear predictor (in link space). Simulating
