@@ -51,6 +51,7 @@ reference:
   - yelloweye
   - hbll_s_grid
   - wcvi_grid
+  - ohio_df
   - get_pars
   - delta_poisson_link_gamma
   - delta_poisson_link_lognormal
@@ -135,7 +136,7 @@ reference:
     Functions for plotting.
   contents:
   - plot_anisotropy
-  - plot_covariate_diffusion
+  - plot_diffused_covariate
   - plot_smooth
   - plot_pc_matern
   - visreg_delta

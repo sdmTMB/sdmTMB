@@ -6,7 +6,7 @@
 > Spatial and spatiotemporal GLMMs with TMB
 
 <!-- badges: start -->
-[![](https://www.r-pkg.org/badges/version/sdmTMB)](https://cran.r-project.org/package=sdmTMB)
+[![CRAN version](https://www.r-pkg.org/badges/version/sdmTMB)](https://cran.r-project.org/package=sdmTMB)
 [![Documentation](https://img.shields.io/badge/documentation-sdmTMB-orange.svg?colorB=E91E63)](https://sdmTMB.github.io/sdmTMB/)
 [![R-CMD-check](https://github.com/sdmTMB/sdmTMB/workflows/R-CMD-check/badge.svg)](https://github.com/sdmTMB/sdmTMB/actions)
 [![Codecov test coverage](https://codecov.io/gh/sdmTMB/sdmTMB/branch/main/graph/badge.svg)](https://app.codecov.io/gh/sdmTMB/sdmTMB?branch=main)
