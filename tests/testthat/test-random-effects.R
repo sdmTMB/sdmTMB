@@ -290,10 +290,16 @@ test_that("Model with random intercepts fits appropriately.", {
     tolerance = 1e-5
   )
 #
-  # predicting with new levels throws error for now:
+  # predicting with new levels uses population-level predictions:
   m <- sdmTMB(data = s, formula = observed ~ 1 + (1 | g), spatial = "off")
-  nd <- data.frame(g = factor(c(1, 2, 3, 800)), observed=1)
-  expect_error(predict(m, newdata = nd), regexp = "Extra")
+  nd <- data.frame(g = factor(c(800)), observed = 1)
+  expect_warning(
+    p_warn <- predict(m, newdata = nd),
+    regexp = "Found new levels"
+  )
+  p_silent <- predict(m, newdata = nd, allow_new_levels = TRUE)
+  expect_equal(p_warn$est, p_silent$est)
+  expect_equal(p_silent$est, as.numeric(coef(m)))
 
   # predicting with missing factors works with the right re_form_iid
   m <- sdmTMB(data = s, formula = observed ~ 1 + (1 | g), spatial = "off")
