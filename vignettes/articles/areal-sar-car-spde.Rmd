@@ -33,6 +33,8 @@ library(sdmTMB)
 library(sf)
 ```
 
+Areal (or lattice) data are observations measured or aggregated over spatial regions or polygons, such as countries, census tracts, or administrative boundaries.
+
 This vignette demonstrates three ways to model spatial structure in areal data using the built-in Ohio lung cancer dataset:
 
 - SAR (`spatial_model = "sar"`) on polygons
@@ -41,13 +43,12 @@ This vignette demonstrates three ways to model spatial structure in areal data u
 
 The areal response is counts (`cases`) with population offset (`log(pop)`), so fitted values are interpreted as expected counts or rates.
 
-Areal (or lattice) data are observations measured or aggregated over spatial regions or polygons, such as countries, census tracts, or administrative boundaries.
-
 ## Build an areal domain from polygons
 
 For SAR and CAR models, we pass an areal domain (adjacency + IDs) to `mesh` via `make_areal_domain()`. We need to supply an `igraph` or `sf/sfc` object. In this example, we have an `sf` object with a column `county` that identifies polygons:
 
 ```{r sf-plot}
+head(ohio_sf, n = 3)
 ggplot(ohio_sf) + geom_sf()
 ```
 
@@ -63,14 +64,14 @@ We also have a data frame with the observations:
 
 ```{r data}
 dat <- ohio_df
-glimpse(dat)
+head(dat, n = 3)
 ```
 
 The `county` column is what links the spatial domain to the observation data in this case because it matches the column name in the `sf` object.
 
 ## Fit SAR and CAR areal models
 
-Both models use the same fixed effects and random-effects structure. The difference is the spatial process (`sar` vs `car`).
+Both models use the same fixed effects and random-effects structure. The difference is the spatial process (`sar` vs `car`). We will be fitting a spatiotemporal version here to demonstrate that it can be done. Of course, you could simply be fitting a spatial model by dropping the `time` argument. Likewise, we include an [`offset`](https://stats.stackexchange.com/a/13192) because it makes sense with these data (so we are effectively modelling cases per individual), but it doesn't necessarily make sense for your data.
 
 ```{r fits-areal}
 fit_sar <- sdmTMB(

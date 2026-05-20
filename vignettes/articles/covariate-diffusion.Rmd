@@ -32,12 +32,17 @@ library(sdmTMB)
 theme_set(theme_light())
 ```
 
-This vignette demonstrates covariate-diffusion models with simulated data.
-These models could alternatively be referred to as "distributed lag" models.
+This vignette demonstrates covariate-diffusion models using simulated data. These models could alternatively be described as "distributed lag" models.
 
-We start with a simple spatial diffusion example and then fit a an example that combines `space()` and `time()` terms.
+When might you want to fit these models? Sometimes, the spatial or temporal scale at which covariates influence the response is unclear.
 
-Users are encouraged to read and cite @lindmark2025 and @thorson2026 when using these models.
+For example, fish move. Therefore, if we measure temperature at the location where a fish was sampled, it may be unclear whether the model should use the temperature at the sampling site or a smoothed version of the temperature surface that accounts for fish movement and integration over a broader spatial range.
+
+One option is to fit models using covariates with different levels of smoothing and compare them. Alternatively, we can estimate the appropriate degree of smoothing simultaneously with the parameters of the main model. This is what the covariate-diffusion functionality does.
+
+Users are encouraged to read and cite @lindmark2025 for spatial models and @thorson2026 for extensions to temporal and spatiotemporal settings, including the introduction of the MSD and RMSD terms.
+
+We begin with a simple spatial-diffusion example and then fit an example that combines `space()` and `time()` terms.
 
 ## Simple spatial diffusion example
 
