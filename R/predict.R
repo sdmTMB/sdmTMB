@@ -727,7 +727,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
             family_spec = family_spec,
             row_family_id = pred_row_family_id,
             type = type,
-            model = model
+            model = model,
+            family_list = family_spec$family_list
           )$est
         })
         out <- do.call("cbind", out)
@@ -814,7 +815,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
           family_spec = family_spec,
           row_family_id = pred_row_family_id,
           type = component_scale,
-          model = model
+          model = model,
+          family_list = family_spec$family_list
         )
         pred_fe <- .family_spec_prediction_output(
           x = r$proj_fe,
@@ -866,7 +868,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
           family_spec = family_spec,
           row_family_id = pred_row_family_id,
           type = component_scale,
-          model = model
+          model = model,
+          family_list = family_spec$family_list
         )$est
         nd$est_non_rf <- r$proj_fe[,1]
         nd$est_rf <- r$proj_rf[,1]
@@ -928,7 +931,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
           family_spec = family_spec,
           row_family_id = pred_row_family_id,
           type = component_scale,
-          model = model
+          model = model,
+          family_list = family_spec$family_list
         )
         nd$est <- pred_fe$est
         nd$est1 <- pred_fe$est1
@@ -943,7 +947,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
           family_spec = family_spec,
           row_family_id = pred_row_family_id,
           type = component_scale,
-          model = model
+          model = model,
+          family_list = family_spec$family_list
         )$est
       }
     }

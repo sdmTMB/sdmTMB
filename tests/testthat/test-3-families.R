@@ -294,7 +294,7 @@ test_that("Censored Poisson fits", {
     control = sdmTMBcontrol(censored_upper = sim_dat$observed)
   )
   expect_equal(m_nocens_pois$tmb_data$y_i[,1], m_nocens_pois$tmb_data$upr)
-  expect_equal(names(m_nocens_pois$tmb_data$family), "censored_poisson")
+  expect_equal(m_nocens_pois$tmb_data$family_code[1, 1], unname(.valid_family["censored_poisson"]))
   expect_equal(m_pois$model, m_nocens_pois$model)
 
   # # left-censored version

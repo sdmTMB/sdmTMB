@@ -462,7 +462,8 @@
 }
 
 .family_spec_prediction_output <- function(x, family_spec, row_family_id,
-  type = c("link", "response"), model = NA_integer_, simulated = FALSE) {
+  type = c("link", "response"), model = NA_integer_, simulated = FALSE,
+  family_list = NULL) {
 
   type <- match.arg(type)
   x <- as.matrix(x)
@@ -488,10 +489,31 @@
       combined[two_component_rows] <- est1[two_component_rows] * est2[two_component_rows]
     }
   } else if (type == "response") {
-    est1_raw <- .family_spec_apply_link(raw1, link1, inverse = TRUE)
-    est2_raw <- rep(NA_real_, n)
-    if (n_m > 1L && any(active[, 2L])) {
-      est2_raw[active[, 2L]] <- .family_spec_apply_link(raw2[active[, 2L]], link2[active[, 2L]], inverse = TRUE)
+    if (!is.null(family_list)) {
+      # Use each family's own linkinv (handles families like truncated_nbinom1/2
+      # whose linkinv includes a truncation correction with phi in the closure)
+      est1_raw <- rep(NA_real_, n)
+      est2_raw <- rep(NA_real_, n)
+      for (fid in seq_len(family_spec$n_f)) {
+        rows <- row_family_id == fid
+        if (!any(rows)) next
+        fam <- family_list[[fid]]
+        fam_has_two_components <- isTRUE(fam$delta) || length(fam$family) == 2L
+        linkinv1 <- if (fam_has_two_components) fam[[1]]$linkinv else fam$linkinv
+        est1_raw[rows] <- linkinv1(raw1[rows])
+        if (fam_has_two_components) {
+          active_rows <- rows & active[, 2L]
+          if (any(active_rows)) {
+            est2_raw[active_rows] <- fam[[2]]$linkinv(raw2[active_rows])
+          }
+        }
+      }
+    } else {
+      est1_raw <- .family_spec_apply_link(raw1, link1, inverse = TRUE)
+      est2_raw <- rep(NA_real_, n)
+      if (n_m > 1L && any(active[, 2L])) {
+        est2_raw[active[, 2L]] <- .family_spec_apply_link(raw2[active[, 2L]], link2[active[, 2L]], inverse = TRUE)
+      }
     }
     est1 <- est1_raw
     est2 <- est2_raw
