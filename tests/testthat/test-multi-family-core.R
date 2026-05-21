@@ -96,6 +96,25 @@ test_that("family_spec processes rowwise binomial-like responses", {
   expect_equal(res$weights[4], 1)
 })
 
+test_that("object_family_spec can rebuild from stored multi-family fields", {
+  dat <- data.frame(
+    y = c(1.2, 0, 2.4, 3.1),
+    dist = c("gauss", "delta", "delta", "gauss")
+  )
+  obj <- list(
+    family = list(gauss = gaussian(), delta = delta_gamma()),
+    data = dat,
+    distribution_column = "dist"
+  )
+
+  spec <- sdmTMB:::.object_family_spec(obj)
+
+  expect_identical(spec$n_f, 2L)
+  expect_identical(spec$n_m, 2L)
+  expect_identical(spec$distribution_column, "dist")
+  expect_equal(spec$family_id_i, c(1L, 2L, 2L, 1L))
+})
+
 test_that("multi-family fits build family-based TMB payloads", {
   dat <- data.frame(
     y = c(1.2, 0, 2.4, 3.1),
@@ -288,6 +307,49 @@ test_that("mixed-family tidy and print report component and family summaries", {
   expect_match(printed, "Linear predictor 1", fixed = TRUE)
   expect_match(printed, "Families:", fixed = TRUE)
   expect_match(printed, "distribution column = 'dist'", fixed = TRUE)
+})
+
+test_that("mixed-family methods use family-spec routing and guard unsupported summaries", {
+  fixture <- .mixed_family_step4_fixture()
+  fit <- fixture$fit
+
+  pred_resp <- predict(fit, newdata = fit$data, type = "response")
+  expect_equal(fitted(fit), pred_resp$est, tolerance = 1e-6)
+
+  fam <- family(fit)
+  expect_true(is.list(fam))
+  expect_identical(names(fam), c("gauss", "delta"))
+
+  vc_lp2 <- vcov(fit, model = 2)
+  expect_identical(colnames(vc_lp2), rownames(vc_lp2))
+  expect_equal(colnames(vc_lp2), tidy(fit, model = 2)$term)
+
+  expect_error(sigma(fit), regexp = "not yet supported")
+  expect_error(deviance(fit), regexp = "not yet supported")
+})
+
+test_that("multi-family do_index guard fails before fit setup continues", {
+  dat <- data.frame(
+    y = c(1.2, 0, 2.4, 3.1),
+    x = c(-1, -0.3, 0.4, 1),
+    dist = c("gauss", "delta", "delta", "gauss")
+  )
+
+  expect_error(
+    sdmTMB(
+      y ~ x,
+      data = dat,
+      spatial = "off",
+      spatiotemporal = "off",
+      family = list(gauss = gaussian(), delta = delta_gamma()),
+      distribution_column = "dist",
+      do_index = TRUE,
+      do_fit = FALSE,
+      predict_args = list(newdata = dat),
+      index_args = list(area = 1)
+    ),
+    regexp = "not yet supported"
+  )
 })
 
 test_that("named single-family list gaussian matches ordinary gaussian fit", {

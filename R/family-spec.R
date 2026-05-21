@@ -26,10 +26,7 @@
   codes <- unname(valid[values])
   if (anyNA(codes)) {
     bad <- unique(values[is.na(codes)])
-    cli_abort(paste0(
-      "Unsupported ", what, " supplied in `family`: ",
-      paste(bad, collapse = ", ")
-    ))
+    cli_abort("Unsupported {what} supplied in `family`: {paste(bad, collapse = ', ')}")
   }
   as.integer(codes)
 }
@@ -146,10 +143,7 @@
   }
   unknown <- setdiff(unique(dist_values), family_labels)
   if (length(unknown) > 0L) {
-    cli_abort(paste0(
-      "Unknown family names in `distribution_column`: ",
-      paste(unknown, collapse = ", ")
-    ))
+    cli_abort("Unknown family names in `distribution_column`: {paste(unknown, collapse = ', ')}")
   }
   match(dist_values, family_labels)
 }
@@ -192,10 +186,9 @@
       logical(1)
     )
     if (any(has_mix)) {
-      cli_abort(paste0(
-        "Families ending in `_mix` are not supported in multi-family mode: ",
-        paste(family_labels[has_mix], collapse = ", ")
-      ))
+      cli_abort(
+        "Families ending in `_mix` are not supported in multi-family mode: {paste(family_labels[has_mix], collapse = ', ')}"
+      )
     }
   }
 
@@ -290,10 +283,10 @@
     y_vals <- y_i[rows]
     y_vals <- y_vals[!is.na(y_vals)]
     if (!is.numeric(y_vals)) {
-      cli_abort(paste0(family_label, " rows must have numeric response values in multi-family models."))
+      cli_abort("{family_label} rows must have numeric response values in multi-family models.")
     }
     if (any(y_vals < 0)) {
-      cli_abort(paste0(family_label, " rows must have non-negative response values in multi-family models."))
+      cli_abort("{family_label} rows must have non-negative response values in multi-family models.")
     }
     if (!allow_counts && any(y_vals > 1)) {
       cli_abort("Binomial rows must have values between 0 and 1 in multi-family models.")
@@ -304,29 +297,20 @@
     if (any(counts_rows) || any(prop_rows)) {
       if (is.null(weights)) {
         suffix <- if (allow_counts) "proportions or counts" else "proportions"
-        cli_abort(paste0(
-          family_label, " rows with ", suffix,
-          " require `weights` to supply the binomial size in multi-family models."
-        ))
+        cli_abort(
+          "{family_label} rows with {suffix} require `weights` to supply the binomial size in multi-family models."
+        )
       }
       weights_vec <- weights
       if (anyNA(weights_vec[counts_rows | prop_rows])) {
-        cli_abort(paste0(
-          "`weights` must not contain missing values for ",
-          tolower(family_label), " rows in multi-family models."
-        ))
+        cli_abort("`weights` must not contain missing values for {tolower(family_label)} rows in multi-family models.")
       }
       if (any(weights_vec[counts_rows | prop_rows] <= 0)) {
-        cli_abort(paste0(
-          "`weights` must be > 0 for ",
-          tolower(family_label), " rows in multi-family models."
-        ))
+        cli_abort("`weights` must be > 0 for {tolower(family_label)} rows in multi-family models.")
       }
       if (any(counts_rows)) {
         if (any(weights_vec[counts_rows] < y_i[counts_rows], na.rm = TRUE)) {
-          cli_abort(paste0(
-            family_label, " counts must be <= `weights` (binomial size) in multi-family models."
-          ))
+          cli_abort("{family_label} counts must be <= `weights` (binomial size) in multi-family models.")
         }
         size[counts_rows] <- weights_vec[counts_rows]
         weights_vec[counts_rows] <- 1
@@ -380,17 +364,36 @@
   if (!is.null(object$family_spec)) {
     return(object$family_spec)
   }
-  if (.is_named_family_list(object$family) && length(object$family) > 1L) {
-    cli_abort(paste0(
-      caller,
-      " requires refitting multi-family models saved from older development branches because they do not contain canonical `family_spec` metadata."
-    ))
+  distribution_column <- if (.is_named_family_list(object$family) && length(object$family) > 1L) {
+    object$distribution_column
+  } else {
+    NULL
   }
-  .build_family_spec(object$family, data = object$data)
+  .build_family_spec(
+    object$family,
+    data = object$data,
+    distribution_column = distribution_column
+  )
+}
+
+.family_spec_is_multi_family <- function(family_spec) {
+  family_spec$n_f > 1L
+}
+
+.family_spec_has_two_components <- function(family_spec) {
+  family_spec$n_m == 2L
+}
+
+.object_is_multi_family <- function(object, caller = "This method") {
+  .family_spec_is_multi_family(.object_family_spec(object, caller = caller))
+}
+
+.object_has_two_components <- function(object, caller = "This method") {
+  .family_spec_has_two_components(.object_family_spec(object, caller = caller))
 }
 
 .family_spec_row_family_id <- function(family_spec, data) {
-  if (family_spec$n_f > 1L) {
+  if (.family_spec_is_multi_family(family_spec)) {
     if (is.null(data)) {
       cli_abort("`newdata` is required to resolve row-wise families for this multi-family model.")
     }
@@ -410,7 +413,7 @@
     logit = stats::plogis(eta),
     inverse = 1 / eta,
     cloglog = 1 - exp(-exp(eta)),
-    cli_abort(paste0("Unsupported link in family spec: ", link))
+    cli_abort("Unsupported link in family spec: {.val {link}}")
   )
 }
 
@@ -421,7 +424,7 @@
     logit = stats::qlogis(mu),
     inverse = 1 / mu,
     cloglog = log(-log1p(-mu)),
-    cli_abort(paste0("Unsupported link in family spec: ", link))
+    cli_abort("Unsupported link in family spec: {.val {link}}")
   )
 }
 

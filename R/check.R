@@ -188,7 +188,7 @@ sanity <- function(object, big_sd_log10 = 2, gradient_thresh = 0.001, silent = F
   b[, names(br)[!names(br) %in% names(b)]] <- NA
   b <- rbind(b, br)
 
-  if (isTRUE(object$family$delta)) {
+  if (.object_has_two_components(object, caller = "`sanity()`")) {
     b2 <- tidy(object, conf.int = TRUE, model = 2, silent = TRUE)
     br2 <- tidy(object, "ran_pars", conf.int = TRUE, model = 2, silent = TRUE)
     b2[, names(br2)[!names(br2) %in% names(b2)]] <- NA

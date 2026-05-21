@@ -155,7 +155,7 @@ project <- function(
   reinitialize(object)
   family_spec <- .object_family_spec(object, caller = "`project()`")
   if (family_spec$n_f > 1L) {
-    cli_abort("`project()` is not yet supported for multi-family models on this branch.")
+    cli_abort("`project()` is not yet supported for multi-family models.")
   }
 
   if (object$time == "_sdmTMB_time")
@@ -232,7 +232,7 @@ project <- function(
 
   ## parameters: add zeros as needed to all time-based parameters
   pars <- get_pars(object)
-  n_m <- if (is_delta(object)) 2L else 1L
+  n_m <- family_spec$n_m
   n_s <- dim(pars$epsilon_st)[1]
 
   new_eps <- array(0, c(n_s, nproj, n_m))
@@ -249,7 +249,7 @@ project <- function(
     map$b_rw_t <- factor(rep(NA, length(as.numeric(pars$b_rw_t))))
   }
 
-  delta <- is_delta(object)
+  delta <- family_spec$n_m == 2L
   ## epsilon_st is always in map??
   # if (delta && "off") {
   # if (delta && "off" %in% object$spatiotemporal) {

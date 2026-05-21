@@ -301,7 +301,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
   model <- model[[1]]
   type <- match.arg(type)
   if (multi_family && isTRUE(se_fit) && type == "response") {
-    cli_abort("`predict(..., type = 'response', se_fit = TRUE)` is not yet supported for multi-family models on this branch.")
+    cli_abort("`predict(..., type = 'response', se_fit = TRUE)` is not yet supported for multi-family models.")
   }
   # FIXME parallel setup here?
 

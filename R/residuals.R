@@ -459,7 +459,7 @@ residuals.sdmTMB <- function(object,
   family_spec <- .object_family_spec(object, caller = "`residuals()`")
   if (family_spec$n_f > 1L) {
     cli_abort(c(
-      "`residuals()` is not yet supported for multi-family models on this branch.",
+      "`residuals()` is not yet supported for multi-family models.",
       "i" = "Use `simulate.sdmTMB()` with DHARMa or another simulation-based residual workflow for now."
     ))
   }

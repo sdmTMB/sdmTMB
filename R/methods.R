@@ -28,17 +28,7 @@ fitted.sdmTMB <- function(object, ...) {
 
   if (!"offset" %in% names(object))
     cli_abort("It looks like this was fit with an older version of sdmTMB. Try sdmTMB:::update_version(fit).")
-  if (isTRUE(object$family$delta)) {
-    inv1 <- object$family[[1]]$linkinv
-    p <- predict(object, type = "link", offset = object$offset)
-    p1 <- inv1(p$est1)
-    inv2 <- object$family[[2]]$linkinv
-    p2 <- inv2(p$est2)
-    p1 * p2
-  } else {
-    inv <- object$family$linkinv
-    inv(predict(object, type = "link", offset = object$offset)$est)
-  }
+  predict(object, newdata = object$data, type = "response", offset = object$offset)$est
 }
 
 #' Get fixed-effect coefficients
@@ -51,7 +41,7 @@ fitted.sdmTMB <- function(object, ...) {
 #' @importFrom stats coef
 #' @export
 coef.sdmTMB <- function(object, complete = FALSE, model = 1, ...) {
-  if (is_delta(object)) {
+  if (.object_has_two_components(object, caller = "`coef()`")) {
     assert_that(length(model) == 1L)
     model <- as.integer(model)
     assert_that(model %in% c(1L, 2L))
@@ -75,7 +65,7 @@ coef.sdmTMB <- function(object, complete = FALSE, model = 1, ...) {
 #' @export
 #' @noRd
 vcov.sdmTMB <- function(object, complete = FALSE, model = 1, ...) {
-  if (is_delta(object)) {
+  if (.object_has_two_components(object, caller = "`vcov()`")) {
     assert_that(length(model) == 1L)
     model <- as.integer(model)
     assert_that(model %in% c(1L, 2L))
@@ -87,7 +77,7 @@ vcov.sdmTMB <- function(object, complete = FALSE, model = 1, ...) {
   nm <- colnames(v)
 
   # For delta models, identify which b_j to use
-  if (is_delta(object)) {
+  if (.object_has_two_components(object, caller = "`vcov()`")) {
     if (model == 1L) {
       i <- grepl("^b_j$", nm)
     } else {
@@ -174,6 +164,10 @@ family.sdmTMB <- function (object, ...) {
     if (is.na(which_model)) which_model <- 2L # combined; for link
     return(object$family[[which_model]])
   }
+  family_spec <- .object_family_spec(object, caller = "`family()`")
+  if (.family_spec_is_multi_family(family_spec)) {
+    return(family_spec$family_input)
+  }
   if ("visreg_model" %in% names(object)) {
     return(object$family[[object$visreg_model]])
   } else {
@@ -233,9 +227,12 @@ ranef.sdmTMB <- function(object, ...) {
 #' @importFrom stats residuals
 #' @export
 deviance.sdmTMB <- function(object, ...) {
+  if (.object_is_multi_family(object, caller = "`deviance()`")) {
+    cli_abort("`deviance()` is not yet supported for multi-family models.")
+  }
   implemented <- c("poisson", "Gamma", "binomial",
     "gaussian", "lognormal", "tweedie", "nbinom1", "nbinom2")
-  if (!is_delta(object)) {
+  if (!.object_has_two_components(object, caller = "`deviance()`")) {
     if (!object$family$family %in% implemented) {
       cli_abort("Deviance not implemented for the fitted family")
     }
@@ -244,7 +241,7 @@ deviance.sdmTMB <- function(object, ...) {
       cli_abort("Deviance not implemented for the fitted family")
     }
   }
-  if (is_delta(object)) {
+  if (.object_has_two_components(object, caller = "`deviance()`")) {
     r1 <- residuals(object, type = "deviance", model = 1)
     r2 <- residuals(object, type = "deviance", model = 2)
     r <- sum(r1^2 + r2^2)
@@ -349,6 +346,9 @@ terms.sdmTMB <- function(x, ...) {
 Effect.sdmTMB <- function(focal.predictors, mod, ...) {
   if (!requireNamespace("effects", quietly = TRUE)) {
     cli_abort("Please install the effects package")
+  }
+  if (.object_is_multi_family(mod, caller = "`effects::Effect()`")) {
+    cli_abort("`effects::Effect()` is not yet supported for multi-family models.")
   }
 
   if (is_delta(mod)) {
@@ -480,9 +480,12 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
 #' @method sigma sdmTMB
 #' @export
 sigma.sdmTMB <- function(object, ...) {
+  if (.object_is_multi_family(object, caller = "`sigma()`")) {
+    cli_abort("`sigma()` is not yet supported for multi-family models.")
+  }
 
   # Get family
-  fam <- if (is_delta(object)) {
+  fam <- if (.object_has_two_components(object, caller = "`sigma()`")) {
     # For delta models, use the positive model
     object$family[[2]]
   } else {

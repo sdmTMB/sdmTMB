@@ -140,7 +140,7 @@ cAIC.sdmTMB <- function(object, what = c("cAIC", "EDF"), ...) {
     }
     s_groups <- convert_bsmooth2names(object)
     # smoothers always shared in delta models
-    if (is_delta(object)) s_groups <- c(paste0("1LP-", s_groups), paste0("2LP-", s_groups))
+    if (.object_has_two_components(object, caller = "`cAIC()`")) s_groups <- c(paste0("1LP-", s_groups), paste0("2LP-", s_groups))
     group[group == "b_smooth"] <- s_groups
     group <- factor(group)
 

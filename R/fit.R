@@ -640,6 +640,16 @@ sdmTMB <- function(
   delta <- family_spec$n_m == 2L
   n_m <- family_spec$n_m
 
+  if ((!is.null(predict_args) || !is.null(index_args)) && isFALSE(do_index)) {
+    cli_abort(c(
+      "`predict_args` and/or `index_args` were set but `do_index` was FALSE.",
+      "`do_index` must be TRUE for these arguments to take effect."
+    ))
+  }
+  if (do_index && .family_spec_is_multi_family(family_spec)) {
+    cli_abort("`do_index = TRUE` is not yet supported for multi-family models.")
+  }
+
   if (!missing(spatial)) {
     if (length(spatial) > 1 && !is.list(spatial)) {
       cli_abort("`spatial` should be a single value or a list")
@@ -1794,16 +1804,7 @@ sdmTMB <- function(
     class = "sdmTMB"
   )
 
-  if ((!is.null(predict_args) || !is.null(index_args)) && isFALSE(do_index)) {
-    cli_abort(c(
-      "`predict_args` and/or `index_args` were set but `do_index` was FALSE.",
-      "`do_index` must be TRUE for these arguments to take effect."
-    )) # 276
-  }
   if (do_index) {
-    if (multi_family) {
-      cli_abort("`do_index = TRUE` is not yet supported for multi-family models.")
-    }
     args <- list(object = out_structure, return_tmb_data = TRUE)
     args <- c(args, predict_args)
     if (!"newdata" %in% names(predict_args)) {

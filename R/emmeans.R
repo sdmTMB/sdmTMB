@@ -77,6 +77,9 @@ recover_data.sdmTMB <- function(object, ...) {
 
 # with help from emm_basis.glmmTMB
 emm_basis.sdmTMB <- function(object, trms, xlev, grid, ...) {
+  if (.object_is_multi_family(object, caller = "`emmeans()`")) {
+    cli_abort("`emmeans()` is not yet supported for multi-family models.")
+  }
   # Extract model argument if present (defaults to 1)
   dots <- list(...)
   model <- if ("model" %in% names(dots)) dots$model else 1L
