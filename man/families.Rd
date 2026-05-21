@@ -3,6 +3,7 @@
 \name{Families}
 \alias{Families}
 \alias{Beta}
+\alias{ordbeta}
 \alias{lognormal}
 \alias{gengamma}
 \alias{gamma_mix}
@@ -29,6 +30,8 @@
 \title{Additional families}
 \usage{
 Beta(link = "logit")
+
+ordbeta(link = "logit")
 
 lognormal(link = "log")
 
@@ -114,6 +117,14 @@ The default \code{link1} for delta models of \code{type = "poisson-link"} is \co
 deprecated in favour of \code{delta_gamma(type = "poisson-link")} and
 \code{delta_lognormal(type = "poisson-link")}.
 
+The \code{ordbeta()} family implements the ordered-beta regression of Kubinec
+(2023) for continuous responses on the closed unit interval \verb{[0, 1]} with
+point masses at the endpoints. It is a parsimonious alternative to
+zero-one-inflated beta models because the three components (zeros, ones,
+and continuous (0, 1) values) share a single linear predictor. Two
+internal cutpoints are estimated and reported on the response scale
+(\code{plogis()}).
+
 The \code{gengamma()} family was implemented by J.T. Thorson and uses the Prentice
 (1974) parameterization such that the lognormal occurs as the internal
 parameter \code{gengamma_Q} (reported in \code{print()} or \code{summary()} as
@@ -140,6 +151,7 @@ You can fix it at a specific value by providing a number > 1 (e.g., \code{df = 3
 }
 \examples{
 Beta(link = "logit")
+ordbeta(link = "logit")
 lognormal(link = "log")
 gengamma(link = "log")
 gamma_mix(link = "log")
@@ -164,6 +176,12 @@ betabinomial(link = "logit")
 delta_beta()
 }
 \references{
+\emph{Ordered beta regression}:
+
+Kubinec, R. 2023. Ordered beta regression: a parsimonious, well-fitting
+model for continuous data with lower and upper bounds. Political Analysis
+31(4): 519--536. \doi{10.1017/pan.2022.20}
+
 \emph{Generalized gamma family}:
 
 Prentice, R.L. 1974. A log gamma model and its maximum likelihood estimation.

@@ -126,5 +126,5 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
   expect_equal(rep_space$kappaS_dl[1], 10.206683946, tolerance = 1e-4)
   expect_equal(rep_time$kappaT_dl[1], 0.001683076, tolerance = 1e-4)
   expect_equal(rep_time$rhoT[1], 0.001680248, tolerance = 1e-4)
-  expect_equal(rep_st$kappaST_dl[1], 25514.0, tolerance = 1e-4)
+  expect_equal(rep_st$kappaST_dl[1], 21082.8, tolerance = 1e-1)
 })

@@ -251,6 +251,29 @@ qres_beta <- function(object, y, mu, ...) {
   stats::qnorm(u)
 }
 
+qres_ordbeta <- function(object, y, mu, ...) {
+  theta <- get_pars(object)
+  phi <- exp(theta[["ln_phi"]])
+  psi <- theta[["psi"]]
+  eta <- stats::qlogis(mu)
+  p0 <- stats::plogis(psi[1] - eta)              # Pr(y == 0)
+  p1 <- stats::plogis(eta - psi[2])              # Pr(y == 1)
+  pmid <- pmax(1 - p0 - p1, 0)
+  s1 <- mu * phi
+  s2 <- (1 - mu) * phi
+  u <- numeric(length(y))
+  zero <- y == 0
+  one <- y == 1
+  mid <- !zero & !one
+  if (any(zero)) u[zero] <- stats::runif(sum(zero), 0, p0[zero])
+  if (any(one)) u[one] <- stats::runif(sum(one), 1 - p1[one], 1)
+  if (any(mid)) {
+    u[mid] <- p0[mid] + pmid[mid] *
+      stats::pbeta(q = y[mid], shape1 = s1[mid], shape2 = s2[mid])
+  }
+  stats::qnorm(u)
+}
+
 # Modified from https://github.com/chjackson/flexsurv/blob/c765344fa798868036b841481fce2ea4d009d85e/src/gengamma.h#L63
 pgengamma <- function(q, mean, sigma, .Q, lower.tail = TRUE, log.p = FALSE) {
   if (.Q != 0) {
@@ -463,6 +486,12 @@ residuals.sdmTMB <- function(object,
       "i" = "Use `simulate.sdmTMB()` with DHARMa or another simulation-based residual workflow for now."
     ))
   }
+  if (isTRUE(object$has_dispformula) && type != "response") {
+    cli_abort(c(
+      "Residual type `{type}` is not available when `dispformula` is used.",
+      "i" = "Use simulation-based residuals with `dharma_residuals()`."
+    ))
+  }
 
   # retrieve function that called this:
   sys_calls <- unlist(lapply(sys.calls(), deparse))
@@ -498,6 +527,7 @@ residuals.sdmTMB <- function(object,
       betabinomial = qres_betabinomial,
       tweedie  = qres_tweedie,
       Beta     = qres_beta,
+      ordbeta  = qres_ordbeta,
       Gamma    = qres_gamma,
       nbinom2  = qres_nbinom2,
       nbinom1  = qres_nbinom1,

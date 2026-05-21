@@ -120,6 +120,13 @@
     cli_abort("Gamma and lognormal must have response values > 0.")
   }
 
+  ordbeta_rows <- single_rows & family_name == "ordbeta"
+  if (any(ordbeta_rows)) {
+    if (any(y_i[ordbeta_rows] < 0 | y_i[ordbeta_rows] > 1, na.rm = TRUE)) {
+      cli_abort("Ordered beta requires response values in [0, 1].")
+    }
+  }
+
   log_link_rows <- single_rows & link_name == "log"
   if (any(y_i[log_link_rows] < 0, na.rm = TRUE)) {
     cli_abort("`link = 'log'` but the response data include values < 0.")
@@ -199,6 +206,16 @@
     if (any(has_mix)) {
       cli_abort(
         "Families ending in `_mix` are not supported in multi-family mode: {paste(family_labels[has_mix], collapse = ', ')}"
+      )
+    }
+    has_ordbeta <- vapply(
+      family_list,
+      function(x) any(x$family == "ordbeta"),
+      logical(1)
+    )
+    if (any(has_ordbeta)) {
+      cli_abort(
+        "The `ordbeta` family is not supported in multi-family mode: {paste(family_labels[has_ordbeta], collapse = ', ')}"
       )
     }
   }

@@ -1,5 +1,11 @@
 # sdmTMB (development version)
 
+* Add the `ordbeta()` family for ordered beta regression (Kubinec 2023),
+  a parsimonious alternative to ZOIB for continuous data on the closed unit
+  interval `[0, 1]` with point masses at 0 and 1. Two internal cutpoints are
+  estimated and reported (on the response scale) by `tidy()` and `print()`.
+  Multi-family fits including ordered beta are not supported. Closes #515.
+
 * The interaction between `spatial`, `spatial_varying`, and the intercept of
   the `spatial_varying` design matrix has been clarified. See the vignette/article
   "svc-factor-models."

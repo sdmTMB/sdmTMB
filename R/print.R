@@ -446,6 +446,17 @@ print_anisotropy <- function(x, m = 1L, digits = 1L, return_dat = FALSE) {
 print_other_parameters <- function(x, m = 1L) {
   multi_family <- .object_family_spec(x, caller = "`print()`")$n_f > 1L
   b <- tidy(x, "ran_pars", model = m, silent = TRUE)
+  mm_disp <- NULL
+  if (isTRUE(x$has_dispformula) && !multi_family) {
+    d <- tidy(x, effects = "dispersion", model = m, conf.int = FALSE, silent = TRUE)
+    if (nrow(d) > 0L) {
+      mm_disp <- cbind(
+        coef.est = round(d$estimate, 2L),
+        coef.se = round(d$std.error, 2L)
+      )
+      rownames(mm_disp) <- d$term
+    }
+  }
   is_areal <- is_areal_fit(x)
   is_car <- is_car_fit(x)
   areal_label <- if (is_car) "CAR" else "SAR"
@@ -478,6 +489,12 @@ print_other_parameters <- function(x, m = 1L) {
   gengamma_par <- if (!multi_family && 'gengamma' %in% family(x)[[m]]) {
     get_term_text("gengamma_Q", "Generalized gamma Q")
     } else ""
+  ordbeta_cuts <- if (!multi_family && 'ordbeta' %in% family(x)[[m]]) {
+    paste0(
+      get_term_text("ordbeta_cutpoint_lower", "Ordered beta lower cutpoint"),
+      get_term_text("ordbeta_cutpoint_upper", "Ordered beta upper cutpoint")
+    )
+  } else ""
   sigma_O <- if (is_areal) {
     get_term_text("sigma_O", paste("Spatial", areal_label, "field scale"))
   } else {
@@ -519,7 +536,7 @@ print_other_parameters <- function(x, m = 1L) {
     sigma_Z <- ""
   }
 
-  named_list(phi, tweedie_p, student_df, sigma_O, sigma_E, sigma_Z, rho, rho_sar, alpha_car, rhoT, RMSD, gengamma_par)
+  named_list(phi, tweedie_p, student_df, sigma_O, sigma_E, sigma_Z, rho, rho_sar, alpha_car, rhoT, RMSD, gengamma_par, ordbeta_cuts, mm_disp)
 }
 
 print_multi_family_summary <- function(x) {
@@ -542,7 +559,7 @@ print_multi_family_summary <- function(x) {
   }
   b <- tidy(x, effects = "ran_pars", model = 1L, silent = TRUE)
   keep <- !is.na(b$group_name) & b$group_name %in% family_spec$family_labels &
-    b$term %in% c("phi", "tweedie_p", "student_df", "gengamma_Q")
+    b$term %in% c("phi", "tweedie_p", "student_df", "gengamma_Q", "ordbeta_cutpoint_lower", "ordbeta_cutpoint_upper")
   if (any(keep)) {
     params <- b[keep, c("group_name", "term", "estimate"), drop = FALSE]
     for (term_name in unique(params$term)) {
@@ -621,10 +638,17 @@ print_one_model <- function(x, m = 1, edf = FALSE, silent = FALSE) {
     cat("\n")
   }
 
+  if (!is.null(other$mm_disp)) {
+    cat("Dispersion model:\n")
+    print(other$mm_disp)
+    cat("\n")
+  }
+
   cat(other$phi)
   cat(other$tweedie_p)
   cat(other$student_df)
   cat(other$gengamma_par)
+  cat(other$ordbeta_cuts)
   cat(other$rho)
   cat(other$rho_sar)
   cat(other$alpha_car)

@@ -18,7 +18,8 @@
   lognormal_mix = 14,
   nbinom2_mix = 15,
   gengamma = 16,
-  betabinomial = 17
+  betabinomial = 17,
+  ordbeta = 18
 )
 .valid_link <- c(
   identity = 0,

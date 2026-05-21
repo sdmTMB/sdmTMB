@@ -102,6 +102,12 @@ NULL
 #'   factor predictors, if `spatial_varying` excludes the intercept (`~ 0` or `~
 #'   -1`), set `spatial = 'off'` to match. Structure must be shared in delta
 #'   models.
+#' @param dispformula A one-sided formula describing predictors for the
+#'   observation model dispersion parameter. Defaults to `~ 1`, which estimates
+#'   a single dispersion parameter. For families without an estimable
+#'   dispersion parameter (e.g., binomial or Poisson), this is ignored.
+#'   Currently not supported for multi-family models or truncated
+#'   negative-binomial families.
 #' @param covariate_diffusion An optional one-sided formula describing distributed
 #'   lag terms with `space()` or `time()` wrappers.
 #'   Example: `~ space(x) + time(x)`. Lag scale parameters
@@ -605,6 +611,7 @@ sdmTMB <- function(
     time_varying = NULL,
     time_varying_type = c("rw", "rw0", "ar1"),
     spatial_varying = NULL,
+    dispformula = ~ 1,
     weights = NULL,
     offset = NULL,
     extra_time = NULL,
@@ -629,6 +636,15 @@ sdmTMB <- function(
   }
   is_areal <- spatial_model %in% c("sar", "car")
   data <- droplevels(data) # if data was subset, strips absent factors
+  if (!inherits(dispformula, "formula") || length(dispformula) != 2L) {
+    cli_abort("`dispformula` must be a one-sided formula such as `~ 1`.")
+  }
+  is_intercept_only_dispformula <- function(f) {
+    tt <- stats::terms(f)
+    length(attr(tt, "term.labels")) == 0L && isTRUE(attr(tt, "intercept") == 1L)
+  }
+  dispformula_is_intercept_only <- is_intercept_only_dispformula(dispformula)
+  has_dispformula <- !dispformula_is_intercept_only
 
   family_spec <- .build_family_spec(
     family = family,
@@ -639,6 +655,22 @@ sdmTMB <- function(
   family <- family_spec$family
   delta <- family_spec$n_m == 2L
   n_m <- family_spec$n_m
+  if (multi_family && has_dispformula) {
+    cli_abort("`dispformula` is not supported for multi-family models yet. Use `dispformula = ~ 1`.")
+  }
+  if (!multi_family) {
+    family_no_phi <- c("binomial", "poisson", "censored_poisson")
+    disp_family <- if (delta) family$family[[2]] else family$family[[1]]
+    if (has_dispformula && disp_family %in% family_no_phi) {
+      cli_warn("`dispformula` ignored because this family has no dispersion parameter.")
+      dispformula <- ~ 1
+      dispformula_is_intercept_only <- TRUE
+      has_dispformula <- FALSE
+    }
+    if (has_dispformula && disp_family %in% c("truncated_nbinom1", "truncated_nbinom2")) {
+      cli_abort("`dispformula` is not supported for truncated negative-binomial families yet.")
+    }
+  }
 
   if ((!is.null(predict_args) || !is.null(index_args)) && isFALSE(do_index)) {
     cli_abort(c(
@@ -972,6 +1004,12 @@ sdmTMB <- function(
   }
   contains_offset <- check_offset(formula[[1]]) # deprecated check
 
+  mf_disp <- model.frame(dispformula, data = data, na.action = stats::na.pass)
+  if (any(!stats::complete.cases(mf_disp))) {
+    cli_abort("NAs are not allowed in variables used by `dispformula`.")
+  }
+  Xdisp_ij <- model.matrix(dispformula, data = mf_disp)
+
   split_formula <- list() # passed to out structure, not TMB
   X_ij <- list() # main effects, passed into TMB
   mf <- list()
@@ -1081,6 +1119,7 @@ sdmTMB <- function(
     if (length(upr) > 1L) {
       upr <- upr[-na_action]
     }
+    Xdisp_ij <- Xdisp_ij[-na_action, , drop = FALSE]
     response_family_spec <- .family_spec_subset_rows(family_spec, -na_action)
   }
 
@@ -1175,6 +1214,9 @@ sdmTMB <- function(
 
   if (is.null(offset)) offset <- rep(0, length(y_i))
   assert_that(length(offset) == length(y_i), msg = "Offset doesn't match length of data")
+  if (nrow(Xdisp_ij) != length(y_i)) {
+    cli_abort("Internal error: `dispformula` model matrix rows do not match response length.")
+  }
 
   if (!is.null(time_varying)) {
     X_rw_ik <- model.matrix(time_varying, data)
@@ -1355,6 +1397,7 @@ sdmTMB <- function(
     simulate_t = rep(1L, n_t),
     rw_fields = rw_fields,
     X_ij = X_ij_list,
+    Xdisp_ij = Xdisp_ij,
     X_rw_ik = X_rw_ik,
     Zs = sm$Zs, # optional smoother basis function matrices
     Xs = sm$Xs, # optional smoother linear effect matrix
@@ -1424,6 +1467,7 @@ sdmTMB <- function(
     est_epsilon_slope = as.integer(est_epsilon_slope),
     est_epsilon_re = as.integer(est_epsilon_re),
     has_smooths = as.integer(sm$has_smooths),
+    has_dispersion_model = as.integer(has_dispformula),
     upr = upr,
     lwr = 0L, # in case we want to reintroduce this
     stan_flag = as.integer(bayesian),
@@ -1445,11 +1489,14 @@ sdmTMB <- function(
   n_ln_student_df <- .family_spec_slot_length(family_spec$param_slot$ln_student_df)
   n_gengamma_Q <- .family_spec_slot_length(family_spec$param_slot$gengamma_Q)
   n_ln_phi <- .family_spec_slot_length(family_spec$param_slot$ln_phi)
+  has_ordbeta_family <- any(family_spec$family_name[family_spec$active] == "ordbeta")
+  n_psi <- if (has_ordbeta_family) 2L else 0L
 
   tmb_params <- list(
     ln_H_input = matrix(0, nrow = 2L, ncol = n_m),
     b_j = rep(0, ncol(X_ij[[1]])), # TODO: verify ok
     b_j2 = if (delta) rep(0, ncol(X_ij[[2]])) else numeric(0), # TODO: verify ok
+    b_disp_k = rep(0, ncol(Xdisp_ij)),
     bs = if (sm$has_smooths) matrix(0, nrow = ncol(sm$Xs), ncol = n_m) else array(0),
     ln_tau_O = rep(0, n_m),
     ln_tau_Z = matrix(0, n_z, n_m),
@@ -1466,6 +1513,7 @@ sdmTMB <- function(
       numeric(0)
     },
     gengamma_Q = rep(0.5, n_gengamma_Q), # Not defined at exactly 0
+    psi = if (n_psi > 0L) c(-1, 1) else numeric(0),
     logit_p_extreme = 0,
     log_ratio_mix = -1, # ratio is 1 + exp(log_ratio_mix) so 0 would start fairly high
     ln_phi = rep(0, n_ln_phi),
@@ -1496,6 +1544,11 @@ sdmTMB <- function(
   # Map off parameters not needed
   tmb_map <- map_all_params(tmb_params)
   tmb_map$b_j <- NULL
+  if (!multi_family && has_dispformula) {
+    tmb_map <- unmap(tmb_map, "b_disp_k")
+  } else {
+    tmb_map$b_disp_k <- factor(rep(NA, length(tmb_params$b_disp_k)))
+  }
   .make_covariate_diffusion_kappa_map <- function(has_component) {
     if (!length(has_component)) {
       return(factor(integer(0)))
@@ -1513,7 +1566,14 @@ sdmTMB <- function(
     tmb_map$ln_student_df <- NULL
   }
   if (length(tmb_params$gengamma_Q) > 0L) tmb_map$gengamma_Q <- NULL
-  if (length(tmb_params$ln_phi) > 0L) tmb_map$ln_phi <- NULL
+  if (length(tmb_params$psi) > 0L) tmb_map$psi <- NULL
+  if (length(tmb_params$ln_phi) > 0L) {
+    if (has_dispformula) {
+      tmb_map$ln_phi <- factor(rep(NA, length(tmb_params$ln_phi)))
+    } else {
+      tmb_map$ln_phi <- NULL
+    }
+  }
   if (!is.null(thresh[[1]]$threshold_parameter)) tmb_map$b_threshold <- NULL
 
   if (est_epsilon_re == 1L) {
@@ -1787,6 +1847,8 @@ sdmTMB <- function(
       offset = offset,
       spde = spde,
       formula = original_formula,
+      dispformula = dispformula,
+      has_dispformula = has_dispformula,
       split_formula = split_formula,
       time_varying = time_varying,
       threshold_parameter = thresh[[1]]$threshold_parameter,

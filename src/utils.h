@@ -42,6 +42,42 @@ Type dgengamma( Type x,
   if(give_log) return logres; else return exp(logres);
 }
 
+// Ordered beta regression (Kubinec 2023) log density.
+// eta is the linear predictor, mu = invlogit(eta), psi0 < psi1 are cutpoints
+// on the logit scale, phi is the beta precision. Mirrors glmmTMB ordbeta_family.
+template<class Type>
+Type dordbeta(Type y, Type eta, Type mu, Type phi, Type psi0, Type psi1,
+              int give_log = 1) {
+  Type logres;
+  if (y == Type(0)) {
+    // log(1 - invlogit(eta - psi0))
+    logres = -logspace_add(Type(0), eta - psi0);
+  } else if (y == Type(1)) {
+    // log(invlogit(eta - psi1))
+    logres = -logspace_add(Type(0), -(eta - psi1));
+  } else {
+    Type log_F0 = -logspace_add(Type(0), -(eta - psi0)); // log invlogit(eta - psi0)
+    Type log_F1 = -logspace_add(Type(0), -(eta - psi1)); // log invlogit(eta - psi1)
+    Type log_pmid = logspace_sub(log_F0, log_F1);
+    Type s1 = mu * phi;
+    Type s2 = (Type(1) - mu) * phi;
+    logres = log_pmid + dbeta(y, s1, s2, true);
+  }
+  if (give_log) return logres; else return exp(logres);
+}
+
+// Simulate one ordered beta draw given linear predictor and parameters.
+template<class Type>
+Type rordbeta(Type eta, Type mu, Type phi, Type psi0, Type psi1) {
+  Type p0 = invlogit(psi0 - eta);
+  if (runif(Type(0), Type(1)) < p0) return Type(0);
+  Type p1 = invlogit(eta - psi1);
+  if (runif(Type(0), Type(1)) < p1) return Type(1);
+  Type s1 = mu * phi;
+  Type s2 = (Type(1) - mu) * phi;
+  return rbeta(s1, s2);
+}
+
 // rgengamma
 // Written by J. Thorson based on scripts listed below
 template<class Type>

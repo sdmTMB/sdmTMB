@@ -4,8 +4,9 @@
 #' @param effects A character value. One of `"fixed"` ('fixed' or main-effect
 #'   parameters), `"ran_pars"` (standard deviations, spatial range, and other
 #'   random effect and dispersion-related terms), `"ran_vals"` (individual
-#'   random intercepts or slopes, if included; behaves like `ranef()`), or `"ran_vcov"` (list
-#'   of variance covariance matrices for the random effects, by model and group).
+#'   random intercepts or slopes, if included; behaves like `ranef()`), `"ran_vcov"` (list
+#'   of variance covariance matrices for the random effects, by model and group),
+#'   or `"dispersion"` for dispersion-model coefficients when `dispformula` is used.
 #' @param conf.int Include a confidence interval?
 #' @param conf.level Confidence level for CI.
 #' @param exponentiate Whether to exponentiate the fixed-effect coefficient
@@ -21,7 +22,8 @@
 #' Follows the conventions of the \pkg{broom} and \pkg{broom.mixed} packages.
 #'
 #' Currently, `effects = "ran_pars"` also includes dispersion-related terms
-#' (e.g., `phi`), which are not actually associated with random effects.
+#' (e.g., `phi`) only when dispersion is scalar. With `dispformula`,
+#' use `effects = "dispersion"` to extract dispersion-model coefficients.
 #'
 #' Standard errors for spatial variance terms fit in log space (e.g., variance
 #' terms, range, or parameters associated with the observation error) are
@@ -47,7 +49,7 @@
 #' )
 #' tidy(fit, "ran_vals")
 
-tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov"), model = 1,
+tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov", "dispersion"), model = 1,
                  conf.int = TRUE, conf.level = 0.95, exponentiate = FALSE,
                  silent = FALSE, ...) {
   effects <- match.arg(effects)
@@ -230,7 +232,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     log_name <- c(log_name, "log_range")
     name <- c(name, "range")
   }
-  if (!multi_family && !isTRUE(is.na(x$tmb_map$ln_phi))) {
+  if (!multi_family && !isTRUE(x$has_dispformula) && !isTRUE(is.na(x$tmb_map$ln_phi))) {
     log_name <- c(log_name, "ln_phi")
     name <- c(name, "phi")
   }
@@ -328,6 +330,19 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     out_re$tweedie_p$conf.low <- plogis(est$thetaf - crit * se$thetaf) + 1
     out_re$tweedie_p$conf.high <- plogis(est$thetaf + crit * se$thetaf) + 1
     ii <- ii + 1
+  }
+
+  if (!multi_family && "ordbeta" %in% x$family$family) {
+    cuts <- plogis(est$psi)
+    out_re$ordbeta_cutpoint_lower <- data.frame(
+      term = "ordbeta_cutpoint_lower", estimate = cuts[1],
+      std.error = NA_real_, conf.low = NA_real_, conf.high = NA_real_,
+      stringsAsFactors = FALSE)
+    out_re$ordbeta_cutpoint_upper <- data.frame(
+      term = "ordbeta_cutpoint_upper", estimate = cuts[2],
+      std.error = NA_real_, conf.low = NA_real_, conf.high = NA_real_,
+      stringsAsFactors = FALSE)
+    ii <- ii + 2
   }
 
   if (!multi_family && "student" %in% x$family$family) {
@@ -562,6 +577,44 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   out <- unique(out) # range can be duplicated
   out_re <- unique(out_re)
 
+  out_disp <- NULL
+  if (effects == "dispersion" && isTRUE(x$has_dispformula)) {
+    if (multi_family) {
+      cli_abort("`effects = 'dispersion'` is not available for multi-family models yet.")
+    }
+    if (delta && model == 1L) {
+      if (!silent) {
+        cli_inform("Dispersion coefficients are for the positive component only; use `model = 2`.")
+      }
+      out_disp <- data.frame(
+        model = integer(0),
+        term = character(0),
+        estimate = numeric(0),
+        std.error = numeric(0)
+      )
+    } else {
+      disp_est <- as.numeric(est$b_disp_k)
+      disp_se <- as.numeric(se$b_disp_k)
+      disp_terms <- colnames(x$tmb_data$Xdisp_ij)
+      if (is.null(disp_terms) || length(disp_terms) != length(disp_est)) {
+        disp_terms <- paste0("b_disp_k[", seq_along(disp_est), "]")
+      }
+      out_disp <- data.frame(
+        term = disp_terms,
+        estimate = disp_est,
+        std.error = disp_se
+      )
+      if (delta) {
+        out_disp$model <- model
+        out_disp <- out_disp[, c("model", "term", "estimate", "std.error")]
+      }
+    }
+    if (conf.int) {
+      out_disp$conf.low <- out_disp$estimate - crit * out_disp$std.error
+      out_disp$conf.high <- out_disp$estimate + crit * out_disp$std.error
+    }
+  }
+
   if (requireNamespace("tibble", quietly = TRUE)) {
     frm <- tibble::as_tibble
   } else {
@@ -576,6 +629,11 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     return(frm(out_re))
   } else if (effects == "ran_vcov") {
     return(cov_mat_list)
+  } else if (effects == "dispersion") {
+    if (!isTRUE(x$has_dispformula)) {
+      cli_abort("`effects = 'dispersion'` is only available when `dispformula` is used.")
+    }
+    return(frm(out_disp))
   } else {
     cli_abort("The specified 'effects' type is not available.")
   }

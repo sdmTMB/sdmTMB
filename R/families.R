@@ -62,6 +62,48 @@ Beta <- function(link = "logit") {
 
 #' @export
 #' @rdname families
+#' @details
+#' The `ordbeta()` family implements the ordered-beta regression of Kubinec
+#' (2023) for continuous responses on the closed unit interval `[0, 1]` with
+#' point masses at the endpoints. It is a parsimonious alternative to
+#' zero-one-inflated beta models because the three components (zeros, ones,
+#' and continuous (0, 1) values) share a single linear predictor. Two
+#' internal cutpoints are estimated and reported on the response scale
+#' (`plogis()`).
+#'
+#' @references
+#'
+#' *Ordered beta regression*:
+#'
+#' Kubinec, R. 2023. Ordered beta regression: a parsimonious, well-fitting
+#' model for continuous data with lower and upper bounds. Political Analysis
+#' 31(4): 519--536. \doi{10.1017/pan.2022.20}
+#'
+#' @examples
+#' ordbeta(link = "logit")
+ordbeta <- function(link = "logit") {
+  linktemp <- substitute(link)
+  if (!is.character(linktemp))
+    linktemp <- deparse(linktemp)
+  okLinks <- c("logit")
+  if (linktemp %in% okLinks)
+    stats <- stats::make.link(linktemp)
+  else if (is.character(link)) {
+    stats <- stats::make.link(link)
+    linktemp <- link
+  }
+  initialize <- expression({
+    if (any(y < 0 | y > 1))
+      stop("y values must be in [0, 1] for the ordered beta family")
+    mustart <- pmin(pmax(y, 0.01), 0.99)
+  })
+  x <- c(list(family = "ordbeta", link = linktemp, initialize = initialize),
+    stats)
+  add_to_family(x)
+}
+
+#' @export
+#' @rdname families
 #' @examples
 #' lognormal(link = "log")
 lognormal <- function(link = "log") {

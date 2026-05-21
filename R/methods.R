@@ -483,6 +483,12 @@ sigma.sdmTMB <- function(object, ...) {
   if (.object_is_multi_family(object, caller = "`sigma()`")) {
     cli_abort("`sigma()` is not yet supported for multi-family models.")
   }
+  if (isTRUE(object$has_dispformula)) {
+    cli_abort(c(
+      "`sigma()` is not available when `dispformula` is used because dispersion varies by observation.",
+      "i" = "Use `tidy(object, effects = 'dispersion')` to inspect dispersion coefficients, or `dharma_residuals()` for residual diagnostics."
+    ))
+  }
 
   # Get family
   fam <- if (.object_has_two_components(object, caller = "`sigma()`")) {

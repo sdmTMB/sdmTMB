@@ -23,7 +23,8 @@ enum valid_family {
   lognormal_mix_family = 14,
   nbinom2_mix_family = 15,
   gengamma_family = 16,
-  betabinomial_family = 17
+  betabinomial_family = 17,
+  ordbeta_family = 18
 };
 
 enum valid_link {
@@ -291,6 +292,7 @@ Type objective_function<Type>::operator()()
   // Vectors of real data
   DATA_ARRAY(y_i);      // response
   DATA_STRUCT(X_ij, sdmTMB::LOM_t); // list of model matrices
+  DATA_MATRIX(Xdisp_ij); // dispersion model matrix
   DATA_MATRIX(z_i);      // model matrix for spatial covariate effect
   DATA_MATRIX(X_rw_ik);  // model matrix for random walk covariate(s)
 
@@ -407,6 +409,7 @@ Type objective_function<Type>::operator()()
 
   // optional stuff for penalized regression splines
   DATA_INTEGER(has_smooths);  // whether or not smooths are included
+  DATA_INTEGER(has_dispersion_model);
   DATA_IVECTOR(b_smooth_start);
 
   DATA_IVECTOR(sim_re); // sim random effects? 0,1; order: omega, epsilon, zeta, IID, RW, smoothers
@@ -423,6 +426,7 @@ Type objective_function<Type>::operator()()
   // Fixed effects
   PARAMETER_VECTOR(b_j);  // fixed effect parameters
   PARAMETER_VECTOR(b_j2);  // fixed effect parameters delta2 part
+  PARAMETER_VECTOR(b_disp_k);  // fixed effect parameters on dispersion
   PARAMETER_ARRAY(bs); // smoother linear effects
   PARAMETER_VECTOR(ln_tau_O);    // spatial process
   PARAMETER_ARRAY(ln_tau_Z);    // optional spatially varying covariate process
@@ -435,6 +439,7 @@ Type objective_function<Type>::operator()()
   PARAMETER_VECTOR(thetaf);           // tweedie only
   PARAMETER_VECTOR(ln_student_df);    // student-t df (log(df - 1))
   PARAMETER_VECTOR(gengamma_Q);           // gengamma only
+  PARAMETER_VECTOR(psi);                // ordered beta cutpoints (length 2)
   PARAMETER(logit_p_extreme);           // ECE / positive mixture only
   PARAMETER(log_ratio_mix);           // ECE / positive mixture only
 
@@ -467,6 +472,7 @@ Type objective_function<Type>::operator()()
   int n_i = y_i.rows();   // number of observations
   int n_m = y_i.cols();   // number of linear-predictor components
   int n_f = component_active.rows(); // number of observation families
+  bool multi_family = n_f > 1;
 
   // DELTA TODO
   // ------------------ Derived variables -------------------------------------------------
@@ -491,6 +497,23 @@ Type objective_function<Type>::operator()()
     alpha_car(m) = invlogit(logit_rho_sar(m));
   }
   vector<Type> phi = exp(ln_phi);
+  vector<Type> ln_phi_i(1);
+  vector<Type> phi_i(1);
+  if (has_dispersion_model) {
+    if (multi_family) {
+      error("dispersion formulas are not supported in multi-family models.");
+    }
+    if (Xdisp_ij.rows() != n_i) {
+      error("`Xdisp_ij` must have `n_i` rows.");
+    }
+    ln_phi_i = Xdisp_ij * b_disp_k;
+    phi_i = exp(ln_phi_i);
+    REPORT(ln_phi_i);
+    if (b_disp_k.size() == 1) {
+      ADREPORT(ln_phi_i(0));
+      ADREPORT(phi_i(0));
+    }
+  }
   vector<Type> phi_by_family(n_f);
   vector<Type> ln_phi_by_family(n_f);
   vector<Type> tweedie_p(thetaf.size());
@@ -1248,6 +1271,10 @@ Type objective_function<Type>::operator()()
     for (int i = 0; i < n_i; i++) {
       resolved_family_component_t<Type> resolved = family_resolver.resolve_row_component(i, m);
       if (!resolved.active) continue;
+      if (!multi_family && has_dispersion_model && (n_m == 1 || m == (n_m - 1))) {
+        resolved.ln_phi = ln_phi_i(i);
+        resolved.phi = phi_i(i);
+      }
       bool notNA = !sdmTMB::isNA(y_i(i,m));
         switch (resolved.family_code) {
           case gaussian_family: {
@@ -1384,6 +1411,15 @@ Type objective_function<Type>::operator()()
             s2 = (Type(1) - mu_i(i,m)) * resolved.phi;
             if (notNA) tmp_ll = dbeta(y_i(i,m), s1, s2, true);
             if (sim_obs) SIMULATE{y_i(i,m) = rbeta(s1, s2);}
+            break;
+          }
+          case ordbeta_family: { // Kubinec 2023; psi(0) < psi(1) on logit scale
+            if (notNA) tmp_ll = sdmTMB::dordbeta(y_i(i,m), eta_i(i,m), mu_i(i,m),
+                                                 resolved.phi, psi(0), psi(1), true);
+            if (sim_obs) SIMULATE {
+              y_i(i,m) = sdmTMB::rordbeta(eta_i(i,m), mu_i(i,m), resolved.phi,
+                                          psi(0), psi(1));
+            }
             break;
           }
           case gamma_mix_family: {
@@ -1528,6 +1564,9 @@ Type objective_function<Type>::operator()()
   }
 
   if (!sdmTMB::isNA(priors(8))) { // phi
+    if (has_dispersion_model) {
+      error("Priors on phi are not supported with `dispformula` yet.");
+    }
     for (int s = 0; s < phi.size(); s++) {
       jnll -= dnorm(phi(s), priors(8), priors(9), true);
       if (stan_flag) jnll -= ln_phi(s); // Jacobian adjustment
@@ -1990,8 +2029,12 @@ Type objective_function<Type>::operator()()
   }
 
   if (phi.size() > 0) {
-    ADREPORT(phi);
-    REPORT(phi);
+    if (has_dispersion_model) {
+      REPORT(phi_i);
+    } else {
+      ADREPORT(phi);
+      REPORT(phi);
+    }
   }
   if (tweedie_p.size() > 0) {
     ADREPORT(tweedie_p); // #302
