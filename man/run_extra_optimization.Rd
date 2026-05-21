@@ -14,7 +14,7 @@ optimization. Sometimes restarting the optimizer at the previous best
 values aids convergence.}
 
 \item{newton_loops}{How many extra Newton optimization loops to try with
-\code{\link[stats:optim]{stats::optimHess()}}. Sometimes aids convergence.}
+\code{\link[stats:optimHess]{stats::optimHess()}}. Sometimes aids convergence.}
 }
 \value{
 An updated model fit of class \code{sdmTMB}.

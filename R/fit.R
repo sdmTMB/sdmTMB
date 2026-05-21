@@ -184,8 +184,7 @@ NULL
 #' @importFrom methods as is
 #' @importFrom cli cli_abort cli_warn cli_inform
 #' @importFrom mgcv s t2
-#' @importFrom stats gaussian model.frame model.matrix as.formula
-#'   model.response terms model.offset
+#' @importFrom stats gaussian model.frame model.matrix as.formula model.response terms model.offset
 #' @importFrom lifecycle deprecated is_present deprecate_warn deprecate_stop
 #'
 #' @return

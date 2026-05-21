@@ -18,6 +18,7 @@ sdmTMB(
   time_varying = NULL,
   time_varying_type = c("rw", "rw0", "ar1"),
   spatial_varying = NULL,
+  dispformula = ~1,
   weights = NULL,
   offset = NULL,
   extra_time = NULL,
@@ -136,6 +137,13 @@ approximately 1. \strong{The spatial intercept is controlled by the \code{spatia
 argument}; set \code{spatial = 'on'} or \code{'off'} to include or exclude it. For
 factor predictors, if \code{spatial_varying} excludes the intercept (\code{~ 0} or \code{~ -1}), set \code{spatial = 'off'} to match. Structure must be shared in delta
 models.}
+
+\item{dispformula}{A one-sided formula describing predictors for the
+observation model dispersion parameter. Defaults to \code{~ 1}, which estimates
+a single dispersion parameter. For families without an estimable
+dispersion parameter (e.g., binomial or Poisson), this is ignored.
+Currently not supported for multi-family models or truncated
+negative-binomial families.}
 
 \item{weights}{A numeric vector representing optional likelihood weights for
 the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have

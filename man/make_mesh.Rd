@@ -43,7 +43,7 @@ locations if \code{type = "kmeans"}.}
 convenience options.}
 
 \item{fmesher_func}{Which \pkg{fmesher} function to use. Options include
-\code{\link[fmesher:fm_rcdt_2d]{fmesher::fm_rcdt_2d_inla()}} and \code{\link[fmesher:fm_mesh_2d]{fmesher::fm_mesh_2d_inla()}} along with
+\code{\link[fmesher:fm_rcdt_2d_inla]{fmesher::fm_rcdt_2d_inla()}} and \code{\link[fmesher:fm_mesh_2d_inla]{fmesher::fm_mesh_2d_inla()}} along with
 version without the \verb{_inla} on the end.}
 
 \item{convex}{If specified, passed to \code{\link[fmesher:fm_nonconvex_hull]{fmesher::fm_nonconvex_hull()}}.
@@ -52,13 +52,13 @@ Distance to extend non-convex hull from data.}
 \item{concave}{If specified, passed to \code{\link[fmesher:fm_nonconvex_hull]{fmesher::fm_nonconvex_hull()}}.
 "Minimum allowed reentrant curvature". Defaults to \code{convex}.}
 
-\item{...}{Passed to \code{\link[graphics:plot.default]{graphics::plot()}}.}
+\item{...}{Passed to \code{\link[graphics:plot]{graphics::plot()}}.}
 
 \item{x}{Output from \code{\link[=make_mesh]{make_mesh()}}.}
 }
 \value{
 \code{make_mesh()}: A list of class \code{sdmTMBmesh}. The element \code{mesh} is the output
-from \code{fmesher_func} (default is \code{\link[fmesher:fm_mesh_2d]{fmesher::fm_mesh_2d_inla()}}). See
+from \code{fmesher_func} (default is \code{\link[fmesher:fm_mesh_2d_inla]{fmesher::fm_mesh_2d_inla()}}). See
 \code{mesh$mesh$n} for the number of vertices.
 
 \code{plot.sdmTMBmesh()}: A plot of the mesh and data points. To make your
