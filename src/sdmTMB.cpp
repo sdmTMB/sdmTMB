@@ -541,21 +541,13 @@ Type objective_function<Type>::operator()()
     gengamma_Q_by_family
   };
   vector<int> fit_family(n_m);
-  vector<int> fit_link(n_m);
   for (int m = 0; m < n_m; m++) {
     resolved_family_component_t<Type> resolved = family_resolver.resolve_family_component(0, m);
     if (resolved.active) {
       fit_family(m) = resolved.family_code;
-      fit_link(m) = resolved.link_code;
     } else {
       fit_family(m) = gaussian_family;
-      fit_link(m) = identity_link;
     }
-  }
-  resolved_family_component_t<Type> fit_component_1 = family_resolver.resolve_family_component(0, 0);
-  resolved_family_component_t<Type> fit_component_2;
-  if (n_m > 1) {
-    fit_component_2 = family_resolver.resolve_family_component(0, 1);
   }
   bool fit_has_two_components = n_m > 1;
 
@@ -1809,11 +1801,17 @@ Type objective_function<Type>::operator()()
       PARAMETER_VECTOR(eps_index);
 
       for (int i = 0; i < n_p; i++) {
+        resolved_family_component_t<Type> component1 =
+          family_resolver.resolve_family_component(proj_family_id(i), 0);
+        resolved_family_component_t<Type> component2;
+        if (n_m > 1) {
+          component2 = family_resolver.resolve_family_component(proj_family_id(i), 1);
+        }
         mu_combined(i) = combined_response_value(
           proj_eta(i,0),
           n_m > 1 ? proj_eta(i,1) : Type(0.0),
-          fit_component_1,
-          fit_component_2
+          component1,
+          component2
         );
 
         total(proj_year(i)) += mu_combined(i) * area_i(i);

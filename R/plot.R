@@ -43,7 +43,17 @@
 plot_anisotropy <- function(object, return_data = FALSE) {
   stopifnot(inherits(object, "sdmTMB"))
   if (!check_for_H(object)) return(NULL)
-  delta <- isTRUE(object$family$delta)
+  family_spec <- .object_family_spec(object, caller = "`plot_anisotropy()`")
+  two_lp <- .family_spec_has_two_components(family_spec)
+  model_labels <- if (two_lp) {
+    if (.family_spec_is_multi_family(family_spec)) {
+      c("linear predictor 1", "linear predictor 2")
+    } else {
+      object$family$family
+    }
+  } else {
+    family_spec$family$family
+  }
 
   # Calculate anisotropy components for model 1
   comp1 <- calculate_anisotropy_components(object, m = 1)
@@ -54,7 +64,7 @@ plot_anisotropy <- function(object, return_data = FALSE) {
   min1_st <- comp1$min_st
 
   # Calculate anisotropy components for model 2 if delta
-  if (delta) {
+  if (two_lp) {
     comp2 <- calculate_anisotropy_components(object, m = 2)
     eig2 <- comp2$eig
     maj2_s <- comp2$maj_s
@@ -72,7 +82,7 @@ plot_anisotropy <- function(object, return_data = FALSE) {
   angle1_s <- get_angle(maj1_s)
   angle1_st <- get_angle(maj1_st)
 
-  if (delta) {
+  if (two_lp) {
     angle2_s <- get_angle(maj2_s)
     angle2_st <- get_angle(maj2_st)
     dat <- data.frame(
@@ -81,12 +91,12 @@ plot_anisotropy <- function(object, return_data = FALSE) {
       b = c(rss(min1_s), rss(min1_st), rss(min2_s), rss(min2_st)),
       maj1 = c(maj1_s, maj1_st, maj2_s, maj2_st),
       min1 = c(min1_s, min1_st, min2_s, min2_st),
-      model = rep(object$family$family, each = 2L),
+      model = rep(model_labels, each = 2L),
       model_num  = rep(seq(1L, 2L), each = 2L),
       random_field = rep(c("spatial", "spatiotemporal"), 2L),
       stringsAsFactors = FALSE
     )
-    dat$model <- factor(dat$model, levels = object$family$family)
+    dat$model <- factor(dat$model, levels = model_labels)
     for (i in seq(1L, 2L)) {
       if (object$spatiotemporal[i] == "off") {
         x <- dat$random_field == "spatiotemporal" & dat$model_num == i
@@ -106,7 +116,7 @@ plot_anisotropy <- function(object, return_data = FALSE) {
       b = c(rss(min1_s), rss(min1_st)),
       maj1 = c(maj1_s, maj1_st),
       min1 = c(min1_s, min1_st),
-      model = object$family$family,
+      model = model_labels,
       random_field = rep(c("spatial", "spatiotemporal"), 1L),
       stringsAsFactors = FALSE
     )
@@ -132,7 +142,7 @@ plot_anisotropy <- function(object, return_data = FALSE) {
       x0 = 0, y0 = 0,
       a = .data$a, b = .data$b,
       angle = .data$angle,
-      colour = `if`(delta, .data$model, NULL),
+      colour = `if`(two_lp, .data$model, NULL),
       linetype = .data$random_field
     )
   ) +

@@ -1,3 +1,29 @@
+multi_family_anisotropy_fixture <- function() {
+  set.seed(21)
+  dat <- pcod_2011
+  dat$dist <- rep(c("gauss", "delta", "delta"), length.out = nrow(dat))
+  gauss_rows <- dat$dist == "gauss"
+  delta_rows <- !gauss_rows
+
+  dat$y <- numeric(nrow(dat))
+  dat$y[gauss_rows] <- 2 + stats::rnorm(sum(gauss_rows), sd = 0.25)
+  present <- stats::rbinom(sum(delta_rows), size = 1, prob = 0.7)
+  y_pos <- stats::rgamma(sum(delta_rows), shape = 6, scale = 0.3)
+  dat$y[delta_rows] <- ifelse(present == 1, y_pos, 0)
+
+  suppressWarnings(sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = pcod_mesh_2011,
+    family = list(gauss = gaussian(), delta = delta_gamma()),
+    distribution_column = "dist",
+    spatial = "on",
+    spatiotemporal = "off",
+    anisotropy = TRUE,
+    control = sdmTMBcontrol(newton_loops = 0L, getsd = TRUE)
+  ))
+}
+
 test_that("Print anisotropy prints correctly", {
   skip_on_cran()
   skip_on_ci() # slow
@@ -93,4 +119,17 @@ test_that("Print anisotropy prints correctly", {
   expect_output(cat(print_anisotropy(fit_dg_not_shared, m = 1)), regexp = "\\(spatiotemporal\\): 12")
   expect_output(cat(print_anisotropy(fit_dg_not_shared, m = 2)), regexp = "\\(spatial\\): 0")
   expect_output(cat(print_anisotropy(fit_dg_not_shared, m = 2)), regexp = "\\(spatiotemporal\\): 9")
+})
+
+test_that("multi-family anisotropy reports both linear predictors", {
+  skip_on_cran()
+  skip_on_ci() # slow
+
+  fit_multi <- multi_family_anisotropy_fixture()
+  aniso_df <- plot_anisotropy(fit_multi, return_data = TRUE)
+
+  expect_equal(sort(unique(aniso_df$model_num)), c(1L, 2L))
+  expect_true(all(aniso_df$random_field == "spatial"))
+  expect_output(cat(print_anisotropy(fit_multi, m = 1)), regexp = "\\(spatial\\): ")
+  expect_output(cat(print_anisotropy(fit_multi, m = 2)), regexp = "\\(spatial\\): ")
 })

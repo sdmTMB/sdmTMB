@@ -101,6 +101,14 @@
   family_spec$family_id_i
 }
 
+.family_spec_subset_rows <- function(family_spec, rows) {
+  if (!length(family_spec$family_id_i)) {
+    return(family_spec)
+  }
+  family_spec$family_id_i <- family_spec$family_id_i[rows]
+  family_spec
+}
+
 .family_spec_validate_response <- function(y_i, family_spec, upr = NULL) {
   row_family <- .family_spec_response_family_id(family_spec, y_i)
   single_rows <- family_spec$combine_kind[row_family] == "single"

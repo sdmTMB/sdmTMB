@@ -1049,6 +1049,7 @@ sdmTMB <- function(
   sm <- sm[[1]]
 
   y_i <- model.response(mf[[1]], "numeric")
+  response_family_spec <- family_spec
 
   # Filter weights and offset to match NA-filtered response
   # model.frame() removes NAs by default; external vectors need same filtering
@@ -1061,6 +1062,10 @@ sdmTMB <- function(
     if (!is.null(offset)) {
       offset <- offset[-na_action]
     }
+    if (length(upr) > 1L) {
+      upr <- upr[-na_action]
+    }
+    response_family_spec <- .family_spec_subset_rows(family_spec, -na_action)
   }
 
   if (delta) {
@@ -1144,13 +1149,13 @@ sdmTMB <- function(
       y_i = y_i,
       size = size,
       weights = weights,
-      family_spec = family_spec
+      family_spec = response_family_spec
     )
     y_i <- result$y_i
     size <- result$size
     weights <- result$weights
   }
-  .family_spec_validate_response(y_i, family_spec = family_spec, upr = upr)
+  .family_spec_validate_response(y_i, family_spec = response_family_spec, upr = upr)
 
   if (is.null(offset)) offset <- rep(0, length(y_i))
   assert_that(length(offset) == length(y_i), msg = "Offset doesn't match length of data")
@@ -1249,8 +1254,8 @@ sdmTMB <- function(
 
   A_st <- domain$A_st
   A_spatial_index <- domain$A_spatial_index
-  y_i <- .family_spec_build_response(y_i, family_spec)
-  family_tmb <- .family_spec_tmb_data(family_spec)
+  y_i <- .family_spec_build_response(y_i, response_family_spec)
+  family_tmb <- .family_spec_tmb_data(response_family_spec)
   fit_poisson_link_delta <- identical(family_spec$combine_kind[[1]], "poisson_link_delta") &&
     family_spec$n_f == 1L
 

@@ -157,6 +157,53 @@ test_that("multi-family fits build family-based TMB payloads", {
   expect_length(fit$tmb_params$ln_phi, 2L)
 })
 
+test_that("NA-dropped fits keep row-aligned family and offset data", {
+  dat_single <- data.frame(
+    y = c(1.2, 2.4, 3.6, 4.8, 6.0),
+    x = c(-1, NA, 0, 0.5, 1)
+  )
+
+  fit_single <- sdmTMB(
+    y ~ x,
+    data = dat_single,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    offset = c(10, 20, 30, 40, 50),
+    do_fit = FALSE
+  )
+
+  expect_equal(fit_single$tmb_data$offset_i, c(10, 30, 40, 50))
+  expect_equal(fit_single$tmb_data$obs_family_id, rep(0L, 4L))
+  expect_equal(fit_single$family_spec$family_id_i, rep(1L, 5L))
+  expect_equal(fit_single$tmb_data$y_i[, 1], c(1.2, 3.6, 4.8, 6.0))
+
+  dat_multi <- data.frame(
+    y = c(1.2, 0.0, 2.1, 0.0, 3.5),
+    x = c(-1, NA, -0.1, 0.4, 1),
+    dist = c("gauss", "delta", "delta", "gauss", "delta")
+  )
+
+  fit_multi <- sdmTMB(
+    y ~ x,
+    data = dat_multi,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = list(gauss = gaussian(), delta = delta_gamma()),
+    distribution_column = "dist",
+    offset = c(5, 6, 7, 8, 9),
+    do_fit = FALSE
+  )
+
+  expect_equal(fit_multi$tmb_data$offset_i, c(5, 7, 8, 9))
+  expect_equal(fit_multi$tmb_data$obs_family_id, c(0L, 1L, 0L, 1L))
+  expect_equal(fit_multi$family_spec$family_id_i, c(1L, 2L, 2L, 1L, 2L))
+  expect_equal(fit_multi$tmb_data$y_i[1, ], c(1.2, NA_real_))
+  expect_equal(fit_multi$tmb_data$y_i[2, ], c(1.0, 2.1))
+  expect_equal(fit_multi$tmb_data$y_i[3, ], c(0.0, NA_real_))
+  expect_equal(fit_multi$tmb_data$y_i[4, ], c(1.0, 3.5))
+})
+
 test_that("mixed gaussian plus delta fits reach the unified TMB path", {
   set.seed(13)
   x <- seq(-1, 1, length.out = 90)
@@ -204,10 +251,11 @@ test_that("mixed gaussian plus delta fits reach the unified TMB path", {
   y_pos <- stats::rgamma(sum(delta_rows), shape = 6, scale = exp(0.2 + 0.3 * x[delta_rows]) / 6)
   y[delta_rows] <- ifelse(present == 1, y_pos, 0)
 
-  dat <- data.frame(y = y, x = x, dist = dist)
+  dat <- data.frame(y = y, x = x, dist = dist, year = 1L)
   fit <- sdmTMB(
     y ~ x,
     data = dat,
+    time = "year",
     spatial = "off",
     spatiotemporal = "off",
     family = list(gauss = gaussian(), delta = delta_gamma()),
@@ -217,7 +265,8 @@ test_that("mixed gaussian plus delta fits reach the unified TMB path", {
 
   nd <- data.frame(
     x = c(-0.8, -0.3, 0.2, 0.6, 0.9),
-    dist = c("gauss", "delta", "gauss", "delta", "delta")
+    dist = c("gauss", "delta", "gauss", "delta", "delta"),
+    year = 1L
   )
 
   list(fit = fit, newdata = nd)
@@ -304,6 +353,33 @@ test_that("mixed-family simulate combines rows the same way as predict", {
   )
 
   expect_error(project(fixture$fit, newdata = fixture$newdata, nsim = 1), regexp = "not yet supported")
+})
+
+test_that("mixed-family weighted-average and EAO helpers use rowwise families", {
+  fixture <- .mixed_family_step4_fixture()
+  area <- c(1, 2, 1, 3, 2)
+
+  pred_resp <- predict(fixture$fit, newdata = fixture$newdata, type = "response")
+  pred_obj <- predict(fixture$fit, newdata = fixture$newdata, return_tmb_object = TRUE)
+
+  wa <- get_weighted_average(
+    pred_obj,
+    vector = fixture$newdata$x,
+    area = area,
+    bias_correct = FALSE
+  )
+  manual_total <- sum(pred_resp$est * area)
+  manual_wa <- sum(pred_resp$est * fixture$newdata$x * area) / manual_total
+  expect_equal(wa$est, manual_wa, tolerance = 1e-6)
+
+  eao <- get_eao(
+    pred_obj,
+    area = area,
+    bias_correct = FALSE
+  )
+  manual_mean_dens <- sum(pred_resp$est * pred_resp$est) / sum(pred_resp$est)
+  manual_eao <- manual_total / manual_mean_dens
+  expect_equal(eao$est, manual_eao, tolerance = 1e-6)
 })
 
 test_that("mixed-family tidy and print report component and family summaries", {

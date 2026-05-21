@@ -261,7 +261,7 @@ print_smooth_effects <- function(x, m = 1, edf = NULL, silent = FALSE) {
     colnames(ln_re_sm_mat) <- c("estimate", "std.error")
 
     if (!is.null(edf)) {
-      if (is_delta(x)) {
+      if (.object_has_two_components(x, caller = "`print()`")) {
         lp_regex <- paste0("^", m, "LP-s\\(")
         edf <- edf[grepl(lp_regex, names(edf))]
       } else {
@@ -392,7 +392,7 @@ print_anisotropy <- function(x, m = 1L, digits = 1L, return_dat = FALSE) {
   aniso_df$degree <- aniso_df$angle * 180 / pi
   aniso_df_st <- aniso_df_sp <- NULL
 
-  if (isTRUE(x$family$delta)) {
+  if (.object_has_two_components(x, caller = "`print_anisotropy()`")) {
     aniso_df_sp <- aniso_df[aniso_df$random_field == "spatial" &
         aniso_df$model_num == m, ][1, c("a", "b", "degree")]
     aniso_df_st <- aniso_df[aniso_df$random_field == "spatiotemporal" &
