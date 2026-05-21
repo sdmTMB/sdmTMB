@@ -694,7 +694,9 @@ sdmTMB <- function(
   spatial_user <- spatial  # preserve user's specification before internal modification
 
   if (!include_spatial && !is.null(spatial_varying)) {
-    # spatial = "off" with SVC: use SPDE infrastructure for SVC range without omega_s
+    # spatial = "off" + SVC: keep SPDE infrastructure alive so SVC fields can
+    # estimate range and marginal SD, but omega_s is omitted from the linear
+    # predictor downstream (see the TMB template).
     omit_spatial_intercept <- TRUE
     include_spatial <- TRUE
     spatial <- rep("on", length(spatial)) # internal only; spatial_user retains "off"
@@ -934,20 +936,29 @@ sdmTMB <- function(
       }
     }
     z_i <- model.matrix(spatial_varying, data)
-    .int <- sum(grep("(Intercept)", colnames(z_i)) > 0)
-    if (length(attr(z_i, "contrasts")) && !.int && omit_spatial_intercept) {
-      # spatial = "off" + ~ 0 + factor: behavior changed in this release
-      # Previously x$spatial reported "on"; now correctly reports "off".
-      cli_warn(c(
-        "The behavior of `spatial = \"off\"` with a no-intercept factor in `spatial_varying` has changed.",
-        "Previously the fitted object incorrectly reported `spatial = \"on\"` for this specification.",
-        "It now correctly reports `spatial = \"off\"` (one SVC field per factor level, no `omega_s`).",
-        "To fit a model with an ordinary spatial field plus factor-level SVC deviations, use:",
-        "`spatial = \"on\", spatial_varying = ~ 0 + factor_var`"
+    .int <- grep("(Intercept)", colnames(z_i))
+    has_intercept <- length(.int) > 0L
+    svc_omega_is_intercept <- has_intercept && !omit_spatial_intercept
+    if (svc_omega_is_intercept) {
+      # spatial = "on" + intercept in `spatial_varying`: alias the ordinary
+      # spatial field (omega_s) as the SVC intercept/reference-level field and
+      # drop the duplicate intercept column from the SVC design matrix.
+      if (!silent) {
+        cli_inform(c(
+          "i" = "Using the ordinary spatial field (`omega_s`) as the SVC intercept/reference-level field.",
+          " " = "The `(Intercept)` column was removed from the `spatial_varying` design matrix to avoid a duplicate intercept field."
+        ))
+      }
+      z_i <- z_i[, -.int, drop = FALSE]
+    }
+    if (has_intercept && omit_spatial_intercept &&
+        length(attr(z_i, "contrasts"))) {
+      cli_inform(c(
+        "The behaviour of `spatial = \"off\"` with `~ 1 + factor` in `spatial_varying` has changed.",
+        "It now fits a genuine SVC intercept field plus `K - 1` deviation fields (previously the intercept was dropped, leaving only the deviations with no reference field).",
+        "To use the ordinary spatial field as the reference-level field instead (same resulting model), set `spatial = \"on\"`."
       ))
     }
-    .int <- grep("(Intercept)", colnames(z_i))
-    if (sum(.int) > 0) z_i <- z_i[, -.int, drop = FALSE]
     spatial_varying <- colnames(z_i)
     svc_contrasts <- attr(z_i, which = "contrasts")
   } else {
@@ -1799,6 +1810,7 @@ sdmTMB <- function(
       spatial = spatial_user,
       spatiotemporal = spatiotemporal,
       spatial_varying_formula = spatial_varying_formula,
+      svc_omega_is_intercept = if (!is.null(spatial_varying_formula)) svc_omega_is_intercept else FALSE,
       reml = reml,
       priors = priors,
       nlminb_control = .control,
