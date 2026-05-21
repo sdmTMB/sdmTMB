@@ -156,8 +156,138 @@ test_that("mixed gaussian plus delta fits reach the unified TMB path", {
   expect_identical(fit$family_spec$n_m, 2L)
   expect_equal(fit$model$convergence, 0L)
   expect_true(is.finite(as.numeric(logLik(fit))))
-  expect_error(predict(fit), regexp = "not yet supported")
-  expect_error(residuals(fit), regexp = "not yet supported")
+  expect_error(residuals(fit), regexp = "simulation-based residual workflow")
+})
+
+.mixed_family_step4_fixture <- function() {
+  set.seed(16)
+  x <- seq(-1, 1, length.out = 90)
+  dist <- rep(c("gauss", "delta", "delta"), length.out = length(x))
+  gauss_rows <- dist == "gauss"
+  delta_rows <- !gauss_rows
+
+  y <- numeric(length(x))
+  y[gauss_rows] <- 1 + 0.4 * x[gauss_rows] + stats::rnorm(sum(gauss_rows), sd = 0.15)
+  present <- stats::rbinom(sum(delta_rows), size = 1, prob = stats::plogis(-0.3 + 0.7 * x[delta_rows]))
+  y_pos <- stats::rgamma(sum(delta_rows), shape = 6, scale = exp(0.2 + 0.3 * x[delta_rows]) / 6)
+  y[delta_rows] <- ifelse(present == 1, y_pos, 0)
+
+  dat <- data.frame(y = y, x = x, dist = dist)
+  fit <- sdmTMB(
+    y ~ x,
+    data = dat,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = list(gauss = gaussian(), delta = delta_gamma()),
+    distribution_column = "dist",
+    control = sdmTMBcontrol(newton_loops = 0, getsd = TRUE)
+  )
+
+  nd <- data.frame(
+    x = c(-0.8, -0.3, 0.2, 0.6, 0.9),
+    dist = c("gauss", "delta", "gauss", "delta", "delta")
+  )
+
+  list(fit = fit, newdata = nd)
+}
+
+test_that("mixed-family predict returns rowwise combined and masked component outputs", {
+  fixture <- .mixed_family_step4_fixture()
+  gauss_rows <- fixture$newdata$dist == "gauss"
+  delta_rows <- !gauss_rows
+
+  pred_link <- predict(fixture$fit, newdata = fixture$newdata, type = "link")
+  expect_equal(pred_link$est[gauss_rows], pred_link$est1[gauss_rows], tolerance = 1e-6)
+  expect_true(all(is.na(pred_link$est2[gauss_rows])))
+  expect_true(all(is.finite(pred_link$est2[delta_rows])))
+  expect_equal(
+    pred_link$est[delta_rows],
+    log(stats::plogis(pred_link$est1[delta_rows]) * exp(pred_link$est2[delta_rows])),
+    tolerance = 1e-6
+  )
+
+  pred_lp1 <- predict(fixture$fit, newdata = fixture$newdata, type = "link", model = 1)
+  pred_lp2 <- predict(fixture$fit, newdata = fixture$newdata, type = "link", model = 2)
+  expect_equal(pred_lp1$est, pred_lp1$est1, tolerance = 1e-6)
+  expect_equal(pred_lp2$est, pred_lp2$est2, tolerance = 1e-6)
+  expect_true(all(is.na(pred_lp2$est[gauss_rows])))
+
+  pred_resp <- predict(fixture$fit, newdata = fixture$newdata, type = "response")
+  expect_equal(pred_resp$est[gauss_rows], pred_resp$est1[gauss_rows], tolerance = 1e-6)
+  expect_equal(
+    pred_resp$est[delta_rows],
+    pred_resp$est1[delta_rows] * pred_resp$est2[delta_rows],
+    tolerance = 1e-6
+  )
+
+  pred_se <- predict(fixture$fit, newdata = fixture$newdata, type = "link", se_fit = TRUE)
+  expect_true(all(c("est", "est1", "est2", "est_se") %in% names(pred_se)))
+  expect_equal(pred_se$est[gauss_rows], pred_se$est1[gauss_rows], tolerance = 1e-6)
+
+  expect_error(
+    predict(fixture$fit, newdata = fixture$newdata, type = "response", se_fit = TRUE),
+    regexp = "not yet supported"
+  )
+})
+
+test_that("mixed-family simulate combines rows the same way as predict", {
+  fixture <- .mixed_family_step4_fixture()
+  gauss_rows <- fixture$newdata$dist == "gauss"
+  delta_rows <- !gauss_rows
+
+  sim_combined <- simulate(
+    fixture$fit,
+    nsim = 2,
+    seed = 101,
+    newdata = fixture$newdata,
+    model = NA,
+    type = "mle-eb",
+    silent = TRUE
+  )
+  sim_lp1 <- simulate(
+    fixture$fit,
+    nsim = 2,
+    seed = 101,
+    newdata = fixture$newdata,
+    model = 1,
+    type = "mle-eb",
+    silent = TRUE
+  )
+  sim_lp2 <- simulate(
+    fixture$fit,
+    nsim = 2,
+    seed = 101,
+    newdata = fixture$newdata,
+    model = 2,
+    type = "mle-eb",
+    silent = TRUE
+  )
+
+  expect_equal(sim_combined[gauss_rows, , drop = FALSE], sim_lp1[gauss_rows, , drop = FALSE], tolerance = 1e-10)
+  expect_true(all(is.na(sim_lp2[gauss_rows, , drop = FALSE])))
+  expect_equal(
+    sim_combined[delta_rows, , drop = FALSE],
+    sim_lp1[delta_rows, , drop = FALSE] * sim_lp2[delta_rows, , drop = FALSE],
+    tolerance = 1e-10
+  )
+
+  expect_error(project(fixture$fit, newdata = fixture$newdata, nsim = 1), regexp = "not yet supported")
+})
+
+test_that("mixed-family tidy and print report component and family summaries", {
+  fixture <- .mixed_family_step4_fixture()
+
+  tidy_lp2 <- tidy(fixture$fit, model = 2)
+  expect_true(all(c("term", "estimate", "std.error") %in% names(tidy_lp2)))
+
+  tidy_ran <- tidy(fixture$fit, effects = "ran_pars", model = 1)
+  expect_true(any(tidy_ran$group_name == "gauss" & tidy_ran$term == "phi"))
+  expect_true(any(tidy_ran$group_name == "delta" & tidy_ran$term == "phi"))
+
+  printed <- paste(capture.output(print(fixture$fit)), collapse = "\n")
+  expect_match(printed, "Linear predictor 1", fixed = TRUE)
+  expect_match(printed, "Families:", fixed = TRUE)
+  expect_match(printed, "distribution column = 'dist'", fixed = TRUE)
 })
 
 test_that("named single-family list gaussian matches ordinary gaussian fit", {
@@ -239,11 +369,7 @@ test_that("named single-family list delta matches ordinary delta predictions", {
   for (type in c("link", "response")) {
     pred_regular <- predict(fit_regular, newdata = nd, type = type, model = NA)
     pred_list <- predict(fit_list, newdata = nd, type = type, model = NA)
-    if (is.null(pred_regular$est)) {
-      expect_null(pred_list$est)
-    } else {
-      expect_equal(pred_list$est, pred_regular$est, tolerance = 1e-5)
-    }
+    expect_equal(pred_list$est, pred_regular$est, tolerance = 1e-5)
     expect_equal(pred_list$est1, pred_regular$est1, tolerance = 1e-5)
     expect_equal(pred_list$est2, pred_regular$est2, tolerance = 1e-5)
   }

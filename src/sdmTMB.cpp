@@ -343,6 +343,7 @@ Type objective_function<Type>::operator()()
   // DATA_INTEGER(calc_quadratic_range); // DELTA TODO
   DATA_VECTOR(area_i); // area per prediction grid cell for index standardization
   DATA_IVECTOR(proj_time_include); // which time steps are present in predictions
+  DATA_IVECTOR(proj_family_id); // row-wise family id for predictions
 
   DATA_VECTOR(priors_b_mean);
   DATA_MATRIX(priors_b_Sigma); // beta priors matrix
@@ -556,7 +557,7 @@ Type objective_function<Type>::operator()()
   if (n_m > 1) {
     fit_component_2 = family_resolver.resolve_family_component(0, 1);
   }
-  bool fit_has_two_components = fit_component_1.combine_kind != single_combine;
+  bool fit_has_two_components = n_m > 1;
 
   // Covariate diffusion
   // Transform distributed-lag parameters onto the scales used by the solvers
@@ -1579,8 +1580,10 @@ Type objective_function<Type>::operator()()
     add_dl_proj_for_model(b_j, 0);
     if (n_m > 1) add_dl_proj_for_model(b_j2, 1);
     for (int m = 0; m < n_m; m++) {
-      if (n_m == 1) proj_fe.col(m) += proj_offset_i;
-      if (m == 1) proj_fe.col(m) += proj_offset_i;
+      for (int i = 0; i < n_p; i++) {
+        resolved_family_component_t<Type> resolved = family_resolver.resolve_family_component(proj_family_id(i), m);
+        if (resolved.offset_applies) proj_fe(i, m) += proj_offset_i(i);
+      }
     }
 
     // add threshold effect if specified
@@ -1750,21 +1753,25 @@ Type objective_function<Type>::operator()()
         break;
     }
 
-    if (fit_has_two_components && pop_pred) {
+    if (n_m > 1 && pop_pred) {
       vector<Type> proj_fe_combined(n_p);
       for (int i = 0; i < n_p; i++) {
+        resolved_family_component_t<Type> component1 = family_resolver.resolve_family_component(proj_family_id(i), 0);
+        resolved_family_component_t<Type> component2 = family_resolver.resolve_family_component(proj_family_id(i), 1);
         proj_fe_combined(i) = combined_link_value(
-          proj_fe(i,0), proj_fe(i,1), fit_component_1, fit_component_2
+          proj_fe(i,0), proj_fe(i,1), component1, component2
         );
       }
       if (calc_se) ADREPORT(proj_fe_combined);
     }
 
-    if (fit_has_two_components && !pop_pred) {
+    if (n_m > 1 && !pop_pred) {
       vector<Type> proj_eta_combined(n_p);
       for (int i = 0; i < n_p; i++) {
+        resolved_family_component_t<Type> component1 = family_resolver.resolve_family_component(proj_family_id(i), 0);
+        resolved_family_component_t<Type> component2 = family_resolver.resolve_family_component(proj_family_id(i), 1);
         proj_eta_combined(i) = combined_link_value(
-          proj_eta(i,0), proj_eta(i,1), fit_component_1, fit_component_2
+          proj_eta(i,0), proj_eta(i,1), component1, component2
         );
       }
       if (calc_se) ADREPORT(proj_eta_combined);

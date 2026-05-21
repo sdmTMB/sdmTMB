@@ -12,7 +12,9 @@ named_list <- function(...) {
 }
 
 print_model_info <- function(x) {
-  delta <- isTRUE(x$family$delta)
+  family_spec <- .object_family_spec(x, caller = "`print()`")
+  multi_family <- family_spec$n_f > 1L
+  delta <- family_spec$n_m == 2L
   spatial_only <- as.logical(x$tmb_data$spatial_only)
   fit_by <- if (isTRUE(x$reml)) "REML" else "ML"
   if (all(spatial_only)) {
@@ -57,14 +59,20 @@ print_model_info <- function(x) {
     }
   }
 
-  if ("clean_name" %in% names(x$family)) {
+  if (multi_family) {
+    overall_family <- paste0(
+      "Multi-family (distribution column = '",
+      family_spec$distribution_column,
+      "')"
+    )
+  } else if ("clean_name" %in% names(x$family)) {
     overall_family <- x$family$clean_name
   } else {
     overall_family <- paste0(x$family$family[1], "(link = '", x$family$link[1], "')")
   }
   overall_family <- paste0("Family: ", overall_family, "\n")
 
-  if (delta) {
+  if (delta && !multi_family) {
     family1 <- paste0("Family: ", x$family$family[1], "(link = '", x$family$link[1], "')")
     family2 <- paste0("Family: ", x$family$family[2], "(link = '", x$family$link[2], "')")
   } else {
@@ -436,6 +444,7 @@ print_anisotropy <- function(x, m = 1L, digits = 1L, return_dat = FALSE) {
 }
 
 print_other_parameters <- function(x, m = 1L) {
+  multi_family <- .object_family_spec(x, caller = "`print()`")$n_f > 1L
   b <- tidy(x, "ran_pars", model = m, silent = TRUE)
   is_areal <- is_areal_fit(x)
   is_car <- is_car_fit(x)
@@ -463,10 +472,10 @@ print_other_parameters <- function(x, m = 1L) {
     paste0(pretext, ": ", paste(a, collapse = ", "), "\n")
   }
 
-  phi <- get_term_text("phi", "Dispersion parameter")
-  tweedie_p <- get_term_text("tweedie_p", "Tweedie p")
-  student_df <- get_term_text("student_df", "Student-t df")
-  gengamma_par <- if ('gengamma' %in% family(x)[[m]]) {
+  phi <- if (multi_family) "" else get_term_text("phi", "Dispersion parameter")
+  tweedie_p <- if (multi_family) "" else get_term_text("tweedie_p", "Tweedie p")
+  student_df <- if (multi_family) "" else get_term_text("student_df", "Student-t df")
+  gengamma_par <- if (!multi_family && 'gengamma' %in% family(x)[[m]]) {
     get_term_text("gengamma_Q", "Generalized gamma Q")
     } else ""
   sigma_O <- if (is_areal) {
@@ -504,6 +513,41 @@ print_other_parameters <- function(x, m = 1L) {
   }
 
   named_list(phi, tweedie_p, student_df, sigma_O, sigma_E, sigma_Z, rho, rho_sar, alpha_car, rhoT, RMSD, gengamma_par)
+}
+
+print_multi_family_summary <- function(x) {
+  family_spec <- .object_family_spec(x, caller = "`print()`")
+  if (family_spec$n_f <= 1L) {
+    return(invisible(NULL))
+  }
+  out <- data.frame(
+    family = family_spec$family_labels,
+    kind = family_spec$combine_kind,
+    component1 = paste0(family_spec$family_name[, 1L], " (", family_spec$link_name[, 1L], ")"),
+    stringsAsFactors = FALSE
+  )
+  if (family_spec$n_m > 1L) {
+    out$component2 <- ifelse(
+      family_spec$active[, 2L],
+      paste0(family_spec$family_name[, 2L], " (", family_spec$link_name[, 2L], ")"),
+      NA_character_
+    )
+  }
+  b <- tidy(x, effects = "ran_pars", model = 1L, silent = TRUE)
+  keep <- !is.na(b$group_name) & b$group_name %in% family_spec$family_labels &
+    b$term %in% c("phi", "tweedie_p", "student_df", "gengamma_Q")
+  if (any(keep)) {
+    params <- b[keep, c("group_name", "term", "estimate"), drop = FALSE]
+    for (term_name in unique(params$term)) {
+      out[[term_name]] <- NA_real_
+      ii <- params$term == term_name
+      out[[term_name]][match(params$group_name[ii], out$family)] <- round(params$estimate[ii], 2L)
+    }
+  }
+  cat("Families:\n")
+  print(out, row.names = FALSE)
+  cat("\n")
+  invisible(out)
 }
 
 print_header <- function(x) {
@@ -596,14 +640,24 @@ print.sdmTMB <- function(x, ...) {
   lp <- x$tmb_obj$env$last.par.best
   r <- x$tmb_obj$report(lp)
 
-  delta <- isTRUE(x$family$delta)
+  family_spec <- .object_family_spec(x, caller = "`print()`")
+  delta <- family_spec$n_m == 2L
+  multi_family <- family_spec$n_f > 1L
   print_header(x)
-  if (delta) cat("\nDelta/hurdle model 1: -----------------------------------\n")
+  if (delta) {
+    section1 <- if (multi_family) "Linear predictor 1" else "Delta/hurdle model 1"
+    cat("\n", section1, ": -----------------------------------\n", sep = "")
+  }
   print_one_model(x, 1, ...)
   if (delta) {
-    cat("\nDelta/hurdle model 2: -----------------------------------\n")
+    section2 <- if (multi_family) "Linear predictor 2" else "Delta/hurdle model 2"
+    cat("\n", section2, ": -----------------------------------\n", sep = "")
     print_one_model(x, 2, ...)
   }
-  if (delta) cat("\n")
+  if (multi_family) {
+    print_multi_family_summary(x)
+  } else if (delta) {
+    cat("\n")
+  }
   print_footer(x)
 }

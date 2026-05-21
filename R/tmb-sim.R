@@ -597,6 +597,8 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
 
   # need to re-attach environment if in fresh session
   reinitialize(object)
+  family_spec <- .object_family_spec(object, caller = "`simulate()`")
+  has_two_components <- family_spec$n_m == 2L
 
   if (is.null(object$tmb_random) && type == "mle-mvn") {
     type <- "mle-eb" # no random effects to sample from
@@ -620,6 +622,7 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
     p$sim_re <- tmb_dat$sim_re
     tmb_dat <- p
   }
+  row_family_id <- if (!is.null(newdata)) tmb_dat$obs_family_id + 1L else family_spec$family_id_i
 
   tmb_dat$sim_obs <- as.integer(observation_error)
 
@@ -668,16 +671,18 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
   if (!silent) cli::cli_progress_done()
 
   if (!return_tmb_report) {
-    if (is_delta(object)) {
-      if (is.na(model[[1]])) {
-        ret <- lapply(ret, function(.x) .x[,1] * .x[,2])
-      } else if (model[[1]] == 1) {
-        ret <- lapply(ret, function(.x) .x[,1])
-      } else if (model[[1]] == 2) {
-        ret <- lapply(ret, function(.x) .x[,2])
-      } else {
-        cli_abort("`model` argument isn't valid; should be NA, 1, or 2.")
-      }
+    if (has_two_components) {
+      ret <- lapply(ret, function(.x) {
+        .family_spec_prediction_output(
+          x = .x,
+          family_spec = family_spec,
+          row_family_id = row_family_id,
+          model = as.integer(model[[1]]),
+          simulated = TRUE
+        )$est
+      })
+    } else {
+      ret <- lapply(ret, function(.x) .x[, 1L])
     }
 
     ret <- do.call(cbind, ret)
@@ -685,11 +690,11 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
     if (!is.null(newdata)) {
       rownames(ret) <- newdata[[object$time]] # for use in index calcs
       attr(ret, "time") <- object$time
-      if (is_delta(object)) {
-        attr(ret, "link") <- object$family[[2]]$link
-      } else {
-        attr(ret, "link") <- object$family$link
-      }
+      attr(ret, "link") <- .family_spec_prediction_link_name(
+        family_spec = family_spec,
+        row_family_id = row_family_id,
+        model = as.integer(model[[1]])
+      )
     }
 
     attr(ret, "type") <- type

@@ -1361,6 +1361,7 @@ sdmTMB <- function(
     proj_X_rw_ik = matrix(0, ncol = 1, nrow = 1), # dummy
     proj_year = 0, # dummy
     proj_time_include = rep(1L, n_t),
+    proj_family_id = 0L, # dummy
     proj_spatial_index = 0L, # dummy
     proj_z_i = matrix(0, nrow = 1, ncol = n_m), # dummy
     indexes_total = numeric(0), # dummy

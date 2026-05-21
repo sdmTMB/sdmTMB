@@ -266,9 +266,9 @@ predict.sdmTMB <- function(object, newdata = NULL,
     cli_abort(c("This looks like a very old version of a model fit.",
         "Re-fit the model before predicting with it."))
   }
-  if (!is.null(object$family_spec) && object$family_spec$n_f > 1L) {
-    cli_abort("`predict()` is not yet supported for multi-family models on this branch.")
-  }
+  family_spec <- .object_family_spec(object, caller = "`predict()`")
+  multi_family <- family_spec$n_f > 1L
+  has_two_components <- family_spec$n_m == 2L
   is_areal <- object$tmb_data$spatial_model %in% c(1L, 2L)
   if (!is_areal && is_areal_domain(object$spde)) {
     is_areal <- TRUE
@@ -300,6 +300,9 @@ predict.sdmTMB <- function(object, newdata = NULL,
   }
   model <- model[[1]]
   type <- match.arg(type)
+  if (multi_family && isTRUE(se_fit) && type == "response") {
+    cli_abort("`predict(..., type = 'response', se_fit = TRUE)` is not yet supported for multi-family models on this branch.")
+  }
   # FIXME parallel setup here?
 
   if (is.null(re_form) && isTRUE(se_fit)) {
@@ -312,8 +315,12 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
   # places where we force newdata:
   nd_arg_was_null <- FALSE
+  if (is.null(newdata) && multi_family) {
+    newdata <- object$data
+    nd_arg_was_null <- TRUE
+  }
   if (is.null(newdata)) {
-    if (is_delta(object) || nsim > 0 || type == "response" || !is.null(mcmc_samples) || se_fit || !is.null(re_form) || !is.null(re_form_iid) || !is.null(offset) || isTRUE(object$family$delta)) {
+    if (has_two_components || nsim > 0 || type == "response" || !is.null(mcmc_samples) || se_fit || !is.null(re_form) || !is.null(re_form_iid) || !is.null(offset)) {
       newdata <- object$data
       nd_arg_was_null <- TRUE # will be used to carry over the offset
     }
@@ -580,8 +587,13 @@ predict.sdmTMB <- function(object, newdata = NULL,
       if (nrow(proj_X_ij[[1]]) != length(offset))
         cli_abort("Prediction offset vector does not equal number of rows in prediction dataset.")
     }
-    tmb_data$proj_offset_i <- if (!is.null(offset)) offset else rep(0, nrow(proj_X_ij[[1]]))
-    # if (nd_arg_was_null) tmb_data$proj_offset_i <- tmb_data$offset_i
+    tmb_data$proj_offset_i <- if (!is.null(offset)) {
+      offset
+    } else if (nd_arg_was_null) {
+      tmb_data$offset_i
+    } else {
+      rep(0, nrow(proj_X_ij[[1]]))
+    }
     tmb_data$proj_X_threshold <- thresh[[1]]$X_threshold # TODO DELTA HARDCODED TO 1
     tmb_data$area_i <- if (length(area) == 1L) rep(area, nrow(proj_X_ij[[1]])) else area
     tmb_data$proj_mesh <- proj_mesh
@@ -593,6 +605,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     time_lu <- object$time_lu
     tmb_data$proj_year <- time_lu$year_i[match(nd[[object$time]], time_lu$time_from_data)] # was make_year_i(nd[[object$time]])
     tmb_data$proj_time_include <- as.integer(time_lu$time_from_data %in% nd[[object$time]])
+    tmb_data$proj_family_id <- .family_spec_row_family_id(family_spec, newdata) - 1L
     if (is_areal) {
       tmb_data$proj_lon <- rep(0, nrow(newdata))
       tmb_data$proj_lat <- rep(0, nrow(newdata))
@@ -697,6 +710,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     }
     if (!is.null(mcmc_samples) || sims > 0) {
       if (return_tmb_report) return(r)
+      pred_row_family_id <- tmb_data$proj_family_id + 1L
       .var <-  switch(sims_var,
         "est" = "proj_eta",
         "est_rf" = "proj_rf",
@@ -706,47 +720,43 @@ predict.sdmTMB <- function(object, newdata = NULL,
         sims_var)
       out <- lapply(r, `[[`, .var)
 
-      predtype <- as.integer(model[[1]])
-      if (isTRUE(object$family$delta) && sims_var == "est") {
-        if (predtype %in% c(1L, NA)) {
-          out1 <- lapply(out, function(x) x[, 1L, drop = TRUE])
-          out1 <- do.call("cbind", out1)
-        }
-        if (predtype %in% c(2L, NA)) {
-          out2 <- lapply(out, function(x) x[, 2L, drop = TRUE])
-          out2 <- do.call("cbind", out2)
-        }
-        if (is.na(predtype)) {
-          out <- object$family[[1]]$linkinv(out1) *
-            object$family[[2]]$linkinv(out2)
-          if (type != "response") out <- object$family[[2]]$linkfun(out) # transform combined back into link space
-        } else if (predtype == 1L) {
-          out <- out1
-          if (type == "response") out <- object$family[[1]]$linkinv(out)
-        } else if (predtype == 2L) {
-          out <- out2
-          if (type == "response") out <- object$family[[2]]$linkinv(out)
-        } else {
-          cli_abort("`model` type not valid.")
-        }
-      } else { # not a delta model OR not sims_var = "est":
+      if (sims_var == "est") {
+        out <- lapply(out, function(.x) {
+          .family_spec_prediction_output(
+            x = .x,
+            family_spec = family_spec,
+            row_family_id = pred_row_family_id,
+            type = type,
+            model = model
+          )$est
+        })
+        out <- do.call("cbind", out)
+      } else { # not sims_var = "est"
 
-        if (isTRUE(object$family$delta) && sims_var != "est" && is.na(model[[1]])) {
+        if (has_two_components && is.na(model)) {
           cli_warn("`model` argument was left as NA; defaulting to 1st model component.")
-          model <- 1L
+          model_temp <- 1L
+        } else if (has_two_components) {
+          model_temp <- as.integer(model)
         } else {
-          model <- as.integer(model)
-        }
-        if (!isTRUE(object$family$delta)) {
-          model <- 1L
+          model_temp <- 1L
         }
         if (length(dim(out[[1]])) == 2L) {
-          out <- lapply(out, function(.x) .x[,model])
+          active2 <- if (has_two_components && isTRUE(model_temp == 2L)) {
+            family_spec$active[pred_row_family_id, 2L]
+          } else {
+            NULL
+          }
+          out <- lapply(out, function(.x) {
+            vals <- .x[, model_temp]
+            if (!is.null(active2)) vals[!active2] <- NA_real_
+            vals
+          })
           out <- do.call("cbind", out)
         } else if (length(dim(out[[1]])) == 3L) {
           xx <- list()
           for (i in seq_len(dim(out[[1]])[2])) {
-            xx[[i]] <- lapply(out, function(.x) .x[,i,model])
+            xx[[i]] <- lapply(out, function(.x) .x[, i, model_temp])
             xx[[i]] <- do.call("cbind", xx[[i]])
           }
           out <- xx
@@ -756,28 +766,25 @@ predict.sdmTMB <- function(object, newdata = NULL,
           cli_abort("Too many dimensions returned from model. Try `return_tmb_report = TRUE` and parse the output yourself.")
         }
 
-        if (type == "response") out <- object$family$linkinv(out)
+        if (type == "response") {
+          if (multi_family) {
+            cli_abort("`type = 'response'` with `sims_var != 'est'` is not yet supported for multi-family predictions.")
+          }
+          out <- object$family$linkinv(out)
+        }
       }
 
       if (sims_var == "est") {
         rownames(out) <- nd[[object$time]] # for use in index calcs
         attr(out, "time") <- object$time
-        if (type == "response"){
+        if (type == "response") {
           attr(out, "link") <- "response"
         } else {
-          if(isTRUE(object$family$delta)){
-            if (is.na(predtype)) {
-              attr(out, "link") <- object$family[[2]]$link
-            } else if (predtype == 1L) {
-              attr(out, "link") <- object$family[[1]]$link
-            } else if (predtype == 2L) {
-              attr(out, "link") <- object$family[[2]]$link
-            } else {
-              cli_abort("`model` type not valid.")
-            }
-          } else {
-            attr(out, "link") <- object$family$link
-          }
+          attr(out, "link") <- .family_spec_prediction_link_name(
+            family_spec = family_spec,
+            row_family_id = pred_row_family_id,
+            model = model
+          )
         }
       }
 
@@ -787,6 +794,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     lp <- new_tmb_obj$env$last.par.best
     r <- new_tmb_obj$report(lp)
     if (return_tmb_report) return(r)
+    pred_row_family_id <- tmb_data$proj_family_id + 1L
     if (has_covariate_diffusion) {
       nd <- .append_covariate_diffusion_term_values(
         nd, object, new_tmb_obj, lp,
@@ -797,40 +805,69 @@ predict.sdmTMB <- function(object, newdata = NULL,
         n_t = tmb_data$n_t
       )
     }
+    component_scale <- if (type == "response" && !se_fit) "response" else "link"
 
     if (isFALSE(pop_pred)) {
-      if (isTRUE(object$family$delta)) {
-        nd$est1 <- r$proj_eta[,1]
-        nd$est2 <- r$proj_eta[,2]
-        nd$est_non_rf1 <- r$proj_fe[,1]
-        nd$est_non_rf2 <- r$proj_fe[,2]
-        nd$est_rf1 <- r$proj_rf[,1]
-        nd$est_rf2 <- r$proj_rf[,2]
-        nd$omega_s1 <- r$proj_omega_s_A[,1]
-        nd$omega_s2 <- r$proj_omega_s_A[,2]
+      if (has_two_components) {
+        pred_eta <- .family_spec_prediction_output(
+          x = r$proj_eta,
+          family_spec = family_spec,
+          row_family_id = pred_row_family_id,
+          type = component_scale,
+          model = model
+        )
+        pred_fe <- .family_spec_prediction_output(
+          x = r$proj_fe,
+          family_spec = family_spec,
+          row_family_id = pred_row_family_id,
+          type = "link",
+          model = model
+        )
+        pred_rf <- .family_spec_prediction_output(
+          x = r$proj_rf,
+          family_spec = family_spec,
+          row_family_id = pred_row_family_id,
+          type = "link",
+          model = model
+        )
+        pred_omega <- .family_spec_prediction_output(
+          x = r$proj_omega_s_A,
+          family_spec = family_spec,
+          row_family_id = pred_row_family_id,
+          type = "link",
+          model = model
+        )
+        pred_epsilon <- .family_spec_prediction_output(
+          x = r$proj_epsilon_st_A_vec,
+          family_spec = family_spec,
+          row_family_id = pred_row_family_id,
+          type = "link",
+          model = model
+        )
+        nd$est <- pred_eta$est
+        nd$est1 <- pred_eta$est1
+        nd$est2 <- pred_eta$est2
+        nd$est_non_rf1 <- pred_fe$est1
+        nd$est_non_rf2 <- pred_fe$est2
+        nd$est_rf1 <- pred_rf$est1
+        nd$est_rf2 <- pred_rf$est2
+        nd$omega_s1 <- pred_omega$est1
+        nd$omega_s2 <- pred_omega$est2
         for (z in seq_len(dim(r$proj_zeta_s_A)[2])) { # SVC:
           nd[[paste0("zeta_s_", object$spatial_varying[z], "1")]] <- r$proj_zeta_s_A[,z,1]
           nd[[paste0("zeta_s_", object$spatial_varying[z], "2")]] <- r$proj_zeta_s_A[,z,2]
+          nd[[paste0("zeta_s_", object$spatial_varying[z], "2")]][!family_spec$active[pred_row_family_id, 2L]] <- NA_real_
         }
-        nd$epsilon_st1 <- r$proj_epsilon_st_A_vec[,1]
-        nd$epsilon_st2 <- r$proj_epsilon_st_A_vec[,2]
-        if (type == "response" && !se_fit) {
-          nd$est1 <- object$family[[1]]$linkinv(nd$est1)
-          nd$est2 <- object$family[[2]]$linkinv(nd$est2)
-          if (object$tmb_data$poisson_link_delta) {
-            .n <- nd$est1 # expected group density (already exp())
-            .p <- 1 - exp(-.n) # expected encounter rate
-            .w <- nd$est2 # expected biomass per group (already exp())
-            .r <- (.n * .w) / .p # (n * w)/p # positive expectation
-            nd$est1 <- .p # expected encounter rate
-            nd$est2 <- .r # positive expectation
-            nd$est <- .n * .w # expected combined value
-          } else {
-            nd$est <- nd$est1 * nd$est2
-          }
-        }
+        nd$epsilon_st1 <- pred_epsilon$est1
+        nd$epsilon_st2 <- pred_epsilon$est2
       } else {
-        nd$est <- r$proj_eta[,1]
+        nd$est <- .family_spec_prediction_output(
+          x = r$proj_eta,
+          family_spec = family_spec,
+          row_family_id = pred_row_family_id,
+          type = component_scale,
+          model = model
+        )$est
         nd$est_non_rf <- r$proj_fe[,1]
         nd$est_rf <- r$proj_rf[,1]
         nd$omega_s <- r$proj_omega_s_A[,1]
@@ -838,9 +875,6 @@ predict.sdmTMB <- function(object, newdata = NULL,
           nd[[paste0("zeta_s_", object$spatial_varying[z])]] <- r$proj_zeta_s_A[,z,1]
         }
         nd$epsilon_st <- r$proj_epsilon_st_A_vec[,1]
-        if (type == "response") {
-          nd$est <- object$family$linkinv(nd$est)
-        }
       }
     }
 
@@ -860,29 +894,26 @@ predict.sdmTMB <- function(object, newdata = NULL,
       sr <- TMB::sdreport(new_tmb_obj, bias.correct = FALSE)
       sr_est_rep <- as.list(sr, "Estimate", report = TRUE)
       sr_se_rep <- as.list(sr, "Std. Error", report = TRUE)
-      if (pop_pred) {
-        proj_eta <- sr_est_rep[["proj_fe"]]
-        se <- sr_se_rep[["proj_fe"]]
-      } else {
-        proj_eta <- sr_est_rep[["proj_eta"]]
-        se <- sr_se_rep[["proj_eta"]]
-      }
-
-      # For delta models with model = NA, use combined predictions
-      if (isTRUE(object$family$delta) && is.na(model) && !pop_pred &&
-          "proj_eta_combined" %in% names(sr_est_rep)) {
-        nd$est <- sr_est_rep[["proj_eta_combined"]]
-        nd$est_se <- sr_se_rep[["proj_eta_combined"]]
+      proj_name <- if (pop_pred) "proj_fe" else "proj_eta"
+      combined_name <- if (pop_pred) "proj_fe_combined" else "proj_eta_combined"
+      if (has_two_components && is.na(model) && combined_name %in% names(sr_est_rep)) {
+        nd$est <- as.numeric(sr_est_rep[[combined_name]])
+        nd$est_se <- as.numeric(sr_se_rep[[combined_name]])
       } else {
         if (is.na(model)) model_temp <- 1L else model_temp <- model
-        proj_eta <- proj_eta[,model_temp,drop=TRUE]
-        se <- se[,model_temp,drop=TRUE]
+        proj_eta <- sr_est_rep[[proj_name]][, model_temp, drop = TRUE]
+        se <- sr_se_rep[[proj_name]][, model_temp, drop = TRUE]
+        if (has_two_components && isTRUE(model_temp == 2L)) {
+          inactive_lp2 <- !family_spec$active[pred_row_family_id, 2L]
+          proj_eta[inactive_lp2] <- NA_real_
+          se[inactive_lp2] <- NA_real_
+        }
         nd$est <- proj_eta
         nd$est_se <- se
       }
     }
     if (type == "response" && se_fit) {
-      est_name <- if (isTRUE(object$family$delta)) "'est1' and 'est2'" else "'est'"
+      est_name <- if (has_two_components) "'est1' and 'est2'" else "'est'"
       msg <- paste0("predict(..., type = 'response', se_fit = TRUE) detected; ",
         "returning the prediction ", est_name, " in link space because the standard errors ",
         "are calculated in link space.")
@@ -891,49 +922,40 @@ predict.sdmTMB <- function(object, newdata = NULL,
     }
 
     if (pop_pred) {
-      if (isTRUE(object$family$delta)) {
-        if (type == "response") {
-          nd$est1 <- object$family[[1]]$linkinv(r$proj_fe[,1])
-          nd$est2 <- object$family[[2]]$linkinv(r$proj_fe[,2])
-          if (object$tmb_data$poisson_link_delta) {
-            .n <- nd$est1 # expected group density (already exp())
-            .p <- 1 - exp(-.n) # expected encounter rate
-            .w <- nd$est2 # expected biomass per group (already exp())
-            .r <- (.n * .w) / .p # (n * w)/p # positive expectation
-            nd$est1 <- .p # expected encounter rate
-            nd$est2 <- .r # positive expectation
-            nd$est <- .n * .w # expected combined value
-          } else {
-            nd$est <- nd$est1 * nd$est2
-          }
-        } else {
-          nd$est1 <- r$proj_fe[,1]
-          nd$est2 <- r$proj_fe[,2]
-          if (is.na(model)) {
-            p1 <- object$family[[1]]$linkinv(r$proj_fe[,1])
-            p2 <- object$family[[2]]$linkinv(r$proj_fe[,2])
-            if (object$tmb_data$poisson_link_delta) {
-              nd$est <- nd$est1 + nd$est2
-            } else {
-              nd$est <- object$family[[2]]$linkfun(p1 * p2)
-            }
-            if (se_fit && "proj_fe_combined" %in% names(sr_est_rep)) {
-              nd$est <- sr_est_rep[["proj_fe_combined"]]
-              nd$est_se <- sr_se_rep[["proj_fe_combined"]]
-            }
-          }
+      if (has_two_components) {
+        pred_fe <- .family_spec_prediction_output(
+          x = r$proj_fe,
+          family_spec = family_spec,
+          row_family_id = pred_row_family_id,
+          type = component_scale,
+          model = model
+        )
+        nd$est <- pred_fe$est
+        nd$est1 <- pred_fe$est1
+        nd$est2 <- pred_fe$est2
+        if (se_fit && is.na(model) && "proj_fe_combined" %in% names(sr_est_rep)) {
+          nd$est <- as.numeric(sr_est_rep[["proj_fe_combined"]])
+          nd$est_se <- as.numeric(sr_se_rep[["proj_fe_combined"]])
         }
       } else {
-        if (type == "response") {
-          nd$est <- object$family$linkinv(r$proj_fe[,1])
-        } else {
-          nd$est <- r$proj_fe[,1]
-        }
+        nd$est <- .family_spec_prediction_output(
+          x = r$proj_fe,
+          family_spec = family_spec,
+          row_family_id = pred_row_family_id,
+          type = component_scale,
+          model = model
+        )$est
       }
     }
 
     if (pop_pred && visreg_df) {
-      nd$est <- r$proj_fe[,model,drop=TRUE] # FIXME re_form_iid??
+      nd$est <- .family_spec_prediction_output(
+        x = r$proj_fe,
+        family_spec = family_spec,
+        row_family_id = pred_row_family_id,
+        type = "link",
+        model = model
+      )$est # FIXME re_form_iid??
     }
 
     orig_dat <- object$tmb_data$y_i
@@ -991,7 +1013,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     nd$omega_s1 <- NULL
     nd$omega_s <- NULL
   }
-  if (isTRUE(object$family$delta)) {
+  if (has_two_components) {
     if (!object$tmb_data$include_spatial[2]) {
       nd$omega_s2 <- NULL
     }
@@ -1000,7 +1022,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     nd$epsilon_st1 <- NULL
     nd$epsilon_st <- NULL
   }
-  if (isTRUE(object$family$delta)) {
+  if (has_two_components) {
     if (as.logical(object$tmb_data$spatial_only)[2]) {
       nd$epsilon_st2 <- NULL
     }

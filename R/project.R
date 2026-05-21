@@ -153,6 +153,10 @@ project <- function(
   assert_that(all(as.integer(sim_re) %in% c(0L, 1L)))
 
   reinitialize(object)
+  family_spec <- .object_family_spec(object, caller = "`project()`")
+  if (family_spec$n_f > 1L) {
+    cli_abort("`project()` is not yet supported for multi-family models on this branch.")
+  }
 
   if (object$time == "_sdmTMB_time")
     cli_abort("Please refit the sdmTMB model with the 'time' argument specified.")
@@ -349,9 +353,14 @@ move_proj_to_tmbdat <- function(x, object, newdata, called_by_simulate = FALSE, 
   ## x$A_st <- x$proj_mesh
   ## .cpp uses unique locations in projection but not in fitting:
   xy_cols <- object$spde$xy_cols
-  proj_mesh <- fmesher::fm_basis(object$spde$mesh, loc = as.matrix(newdata[, xy_cols, drop = FALSE]))
-  x$A_st <- proj_mesh
-  x$A_spatial_index <- seq_len(dim(proj_mesh)[1]) - 1L
+  if (!is.null(xy_cols) && all(xy_cols %in% names(newdata))) {
+    proj_mesh <- fmesher::fm_basis(object$spde$mesh, loc = as.matrix(newdata[, xy_cols, drop = FALSE]))
+    x$A_st <- proj_mesh
+    x$A_spatial_index <- seq_len(dim(proj_mesh)[1]) - 1L
+  } else {
+    x$A_st <- x$proj_mesh
+    x$A_spatial_index <- x$proj_spatial_index
+  }
   x$X_threshold <- x$proj_X_threshold
   x$X_ij <- x$proj_X_ij
   x$X_rw_ik <- x$proj_X_rw_ik
@@ -360,6 +369,7 @@ move_proj_to_tmbdat <- function(x, object, newdata, called_by_simulate = FALSE, 
   x$Xs <- x$proj_Xs
   x$Zt_list <- x$Zt_list_proj
   x$offset_i <- x$proj_offset_i
+  x$obs_family_id <- x$proj_family_id
   n_m <- length(x$X_ij) ## n linear predictor [m]odels
   x$y_i <- matrix(NA, ncol = n_m, nrow = nrow(x$proj_X_ij[[1]])) # fake
   x$weights_i <- rep(1, nrow(x$y_i)) # fake: FIXME: bring in?

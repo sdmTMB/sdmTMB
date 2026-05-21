@@ -375,3 +375,187 @@
 
   y_out
 }
+
+.object_family_spec <- function(object, caller = "This method") {
+  if (!is.null(object$family_spec)) {
+    return(object$family_spec)
+  }
+  if (.is_named_family_list(object$family) && length(object$family) > 1L) {
+    cli_abort(paste0(
+      caller,
+      " requires refitting multi-family models saved from older development branches because they do not contain canonical `family_spec` metadata."
+    ))
+  }
+  .build_family_spec(object$family, data = object$data)
+}
+
+.family_spec_row_family_id <- function(family_spec, data) {
+  if (family_spec$n_f > 1L) {
+    if (is.null(data)) {
+      cli_abort("`newdata` is required to resolve row-wise families for this multi-family model.")
+    }
+    return(.validate_distribution_column(
+      data = data,
+      distribution_column = family_spec$distribution_column,
+      family_labels = family_spec$family_labels
+    ))
+  }
+  rep.int(1L, nrow(data))
+}
+
+.family_spec_inverse_link <- function(eta, link) {
+  switch(link,
+    identity = eta,
+    log = exp(eta),
+    logit = stats::plogis(eta),
+    inverse = 1 / eta,
+    cloglog = 1 - exp(-exp(eta)),
+    cli_abort(paste0("Unsupported link in family spec: ", link))
+  )
+}
+
+.family_spec_link <- function(mu, link) {
+  switch(link,
+    identity = mu,
+    log = log(mu),
+    logit = stats::qlogis(mu),
+    inverse = 1 / mu,
+    cloglog = log(-log1p(-mu)),
+    cli_abort(paste0("Unsupported link in family spec: ", link))
+  )
+}
+
+.family_spec_apply_link <- function(x, link, inverse = TRUE) {
+  if (!length(x)) {
+    return(x)
+  }
+  out <- x
+  link_vals <- unique(link[!is.na(link)])
+  for (this_link in link_vals) {
+    ii <- link == this_link
+    out[ii] <- if (inverse) {
+      .family_spec_inverse_link(x[ii], this_link)
+    } else {
+      .family_spec_link(x[ii], this_link)
+    }
+  }
+  out
+}
+
+.family_spec_prediction_output <- function(x, family_spec, row_family_id,
+  type = c("link", "response"), model = NA_integer_, simulated = FALSE) {
+
+  type <- match.arg(type)
+  x <- as.matrix(x)
+  n <- nrow(x)
+  n_m <- family_spec$n_m
+  if (ncol(x) < n_m) {
+    cli_abort("Internal family spec error: prediction matrix has fewer components than expected.")
+  }
+  active <- family_spec$active[row_family_id, , drop = FALSE]
+  combine_kind <- family_spec$combine_kind[row_family_id]
+  link1 <- family_spec$link_name[cbind(row_family_id, 1L)]
+  link2 <- if (n_m > 1L) family_spec$link_name[cbind(row_family_id, 2L)] else rep(NA_character_, n)
+  raw1 <- x[, 1L]
+  raw2 <- if (n_m > 1L) x[, 2L] else rep(NA_real_, n)
+
+  if (simulated) {
+    est1 <- raw1
+    est2 <- if (n_m > 1L) raw2 else rep(NA_real_, n)
+    if (n_m > 1L) est2[!active[, 2L]] <- NA_real_
+    combined <- est1
+    if (n_m > 1L) {
+      two_component_rows <- combine_kind %in% c("delta", "poisson_link_delta")
+      combined[two_component_rows] <- est1[two_component_rows] * est2[two_component_rows]
+    }
+  } else if (type == "response") {
+    est1_raw <- .family_spec_apply_link(raw1, link1, inverse = TRUE)
+    est2_raw <- rep(NA_real_, n)
+    if (n_m > 1L && any(active[, 2L])) {
+      est2_raw[active[, 2L]] <- .family_spec_apply_link(raw2[active[, 2L]], link2[active[, 2L]], inverse = TRUE)
+    }
+    est1 <- est1_raw
+    est2 <- est2_raw
+    poisson_link_rows <- if (n_m > 1L) combine_kind == "poisson_link_delta" else rep(FALSE, n)
+    if (any(poisson_link_rows)) {
+      n_groups <- est1_raw[poisson_link_rows]
+      p_encounter <- 1 - exp(-n_groups)
+      pos_mean <- est2_raw[poisson_link_rows]
+      est1[poisson_link_rows] <- p_encounter
+      est2[poisson_link_rows] <- (n_groups * pos_mean) / p_encounter
+    }
+    combined <- est1
+    if (n_m > 1L) {
+      delta_rows <- combine_kind == "delta"
+      if (any(delta_rows)) {
+        combined[delta_rows] <- est1[delta_rows] * est2[delta_rows]
+      }
+      if (any(poisson_link_rows)) {
+        combined[poisson_link_rows] <- exp(raw1[poisson_link_rows] + raw2[poisson_link_rows])
+      }
+    }
+  } else {
+    est1 <- raw1
+    est2 <- rep(NA_real_, n)
+    if (n_m > 1L && any(active[, 2L])) {
+      est2[active[, 2L]] <- raw2[active[, 2L]]
+    }
+    combined <- est1
+    if (n_m > 1L) {
+      delta_rows <- combine_kind == "delta"
+      if (any(delta_rows)) {
+        mu_prod <- .family_spec_apply_link(raw1[delta_rows], link1[delta_rows], inverse = TRUE) *
+          .family_spec_apply_link(raw2[delta_rows], link2[delta_rows], inverse = TRUE)
+        combined[delta_rows] <- .family_spec_apply_link(mu_prod, link2[delta_rows], inverse = FALSE)
+      }
+      poisson_link_rows <- combine_kind == "poisson_link_delta"
+      if (any(poisson_link_rows)) {
+        combined[poisson_link_rows] <- raw1[poisson_link_rows] + raw2[poisson_link_rows]
+      }
+    }
+  }
+
+  est <- if (is.na(model)) {
+    combined
+  } else if (isTRUE(model == 1L)) {
+    est1
+  } else if (isTRUE(model == 2L)) {
+    est2
+  } else {
+    cli_abort("`model` argument isn't valid; should be `NA`, `1`, or `2`.")
+  }
+
+  list(est = est, est1 = est1, est2 = est2)
+}
+
+.family_spec_prediction_link_name <- function(family_spec, row_family_id, model = NA_integer_, simulated = FALSE) {
+  if (simulated) {
+    return("response")
+  }
+  link1 <- family_spec$link_name[cbind(row_family_id, 1L)]
+  if (family_spec$n_m == 1L) {
+    links <- link1
+  } else if (is.na(model)) {
+    link2 <- family_spec$link_name[cbind(row_family_id, 2L)]
+    combine_kind <- family_spec$combine_kind[row_family_id]
+    links <- ifelse(
+      combine_kind == "single",
+      link1,
+      ifelse(combine_kind == "poisson_link_delta", "log", link2)
+    )
+  } else if (isTRUE(model == 1L)) {
+    links <- link1
+  } else if (isTRUE(model == 2L)) {
+    active2 <- family_spec$active[row_family_id, 2L]
+    link2 <- family_spec$link_name[cbind(row_family_id, 2L)]
+    links <- link2[active2]
+  } else {
+    cli_abort("`model` argument isn't valid; should be `NA`, `1`, or `2`.")
+  }
+  links <- unique(stats::na.omit(links))
+  if (length(links) == 1L) {
+    links
+  } else {
+    "mixed"
+  }
+}
