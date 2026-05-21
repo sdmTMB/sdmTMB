@@ -302,6 +302,19 @@
 
     counts_rows <- if (allow_counts) rows & !is.na(y_i) & y_i > 1 else rep(FALSE, length(rows))
     prop_rows <- rows & !is.na(y_i) & y_i > 0 & y_i < 1
+    bernoulli_rows <- rows & !is.na(y_i) & y_i %in% c(0, 1)
+
+    # Bernoulli rows do not require explicit trial sizes. If a shared
+    # `weights` vector is present, default missing Bernoulli entries to 1.
+    if (any(bernoulli_rows) && !is.null(weights)) {
+      weights_vec <- weights
+      missing_bernoulli_weights <- bernoulli_rows & is.na(weights_vec)
+      if (any(missing_bernoulli_weights)) {
+        weights_vec[missing_bernoulli_weights] <- 1
+      }
+      weights <- weights_vec
+    }
+
     if (any(counts_rows) || any(prop_rows)) {
       if (is.null(weights)) {
         suffix <- if (allow_counts) "proportions or counts" else "proportions"

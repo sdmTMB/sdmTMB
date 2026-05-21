@@ -75,7 +75,7 @@ test_that("family_spec processes rowwise binomial-like responses", {
   res <- .family_spec_process_response(
     y_i = dat$y,
     size = rep(1, nrow(dat)),
-    weights = c(10, 4, 12, 7, 1),
+    weights = c(10, NA, 12, 7, 1),
     family_spec = spec
   )
 
@@ -85,7 +85,7 @@ test_that("family_spec processes rowwise binomial-like responses", {
 
   expect_equal(res$y_i[2], 1)
   expect_equal(res$size[2], 1)
-  expect_equal(res$weights[2], 4)
+  expect_equal(res$weights[2], 1)
 
   expect_equal(res$y_i[3], 4.8)
   expect_equal(res$size[3], 12)
@@ -128,7 +128,7 @@ test_that("object_family_spec requires canonical metadata for old multi-family o
   )
 })
 
-test_that("multi-family fits build family-based TMB payloads", {
+test_that("multi-family fits build family-based TMB data", {
   dat <- data.frame(
     y = c(1.2, 0, 2.4, 3.1),
     x = c(-1, -0.3, 0.4, 1),

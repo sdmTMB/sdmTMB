@@ -1,0 +1,214 @@
+---
+title: "Multiple data types with sdmTMB (tinyVAST replication)"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Multiple data types with sdmTMB (tinyVAST replication)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+**If the code in this vignette has not been evaluated, a rendered version is available on the [documentation site](https://sdmTMB.github.io/sdmTMB/index.html) under 'Articles'.**
+
+```{r setup, include = FALSE}
+EVAL <- identical(Sys.getenv("NOT_CRAN"), "true") &&
+  requireNamespace("tinyVAST", quietly = TRUE) &&
+  requireNamespace("sf", quietly = TRUE) &&
+  requireNamespace("fmesher", quietly = TRUE)
+
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  warning = FALSE,
+  message = FALSE,
+  eval = EVAL,
+  purl = EVAL
+)
+```
+
+```{r packages}
+library(sdmTMB)
+library(tinyVAST)
+library(sf)
+library(fmesher)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+```
+
+This reproduces the `tinyVAST` vignette
+`tinyVAST/vignettes/multiple_data.Rmd` using `sdmTMB`'s multi-family interface
+on the same red snapper dataset.
+
+```{r data}
+data(red_snapper)
+data(red_snapper_shapefile)
+
+plot(
+  x = red_snapper$Lon,
+  y = red_snapper$Lat,
+  col = rainbow(3)[red_snapper$Data_type]
+)
+plot(red_snapper_shapefile, col = rgb(0, 0, 0, 0.2), add = TRUE)
+legend(
+  "bottomleft", bty = "n",
+  legend = levels(red_snapper$Data_type),
+  fill = rainbow(3)
+)
+```
+
+As in the tinyVAST example, we use:
+
+1. `Encounter`: binomial with cloglog link
+2. `Count`: Poisson with log link
+3. `Biomass_KG`: Tweedie with log link
+
+```{r family}
+family_list <- list(
+  Encounter = binomial(link = "cloglog"),
+  Count = poisson(link = "log"),
+  Biomass_KG = tweedie(link = "log")
+)
+
+red_snapper$Data_type <- relevel(red_snapper$Data_type, ref = "Biomass_KG")
+```
+
+Fit the `sdmTMB` model:
+
+```{r fit-sdmtmb}
+
+mesh_tv <- fm_mesh_2d(red_snapper[, c("Lon", "Lat")], cutoff = 0.5)
+mesh_sd <- make_mesh(red_snapper, c("Lon", "Lat"), mesh = mesh_tv)
+
+# NOTE: for mixed families that include binomial rows, explicit Bernoulli
+# trial sizes (weights = 1) are supplied.
+fit_sd <- sdmTMB(
+  Response_variable ~ Data_type + factor(Year),
+  data = red_snapper,
+  mesh = mesh_sd,
+  time = "Year",
+  spatial = "on",
+  spatiotemporal = "iid",
+  family = family_list,
+  distribution_column = "Data_type",
+  offset = log(red_snapper$AreaSwept_km2),
+  weights = rep(1, nrow(red_snapper)),
+  control = sdmTMBcontrol(multiphase = FALSE)
+)
+
+fit_sd
+```
+
+For a direct replication check, fit tinyVAST with the original settings:
+
+```{r fit-tinyvast}
+formula_tv <- Response_variable ~
+  Data_type + factor(Year) + offset(log(AreaSwept_km2))
+
+red_snapper$var <- "logdens"
+
+fit_tv <- tinyVAST(
+  data = red_snapper,
+  formula = formula_tv,
+  space_term = "logdens <-> logdens, sd_space",
+  spacetime_term = "logdens <-> logdens, 0, sd_spacetime",
+  space_columns = c("Lon", "Lat"),
+  spatial_domain = mesh_tv,
+  time_column = "Year",
+  distribution_column = "Data_type",
+  family = family_list,
+  variable_column = "var"
+  # delta_options = list(formula = ~ Data_type + factor(Year) + offset(log(AreaSwept_km2)))
+)
+```
+
+Construct the prediction grid and calculate annual indices from both models:
+
+```{r index-compare}
+sf_grid <- st_make_grid(red_snapper_shapefile, cellsize = c(0.2, 0.2))
+sf_grid <- suppressWarnings(st_intersection(sf_grid, red_snapper_shapefile))
+sf_grid <- st_make_valid(sf_grid)
+
+grid_coords <- st_coordinates(st_centroid(sf_grid))
+areas_km2 <- as.numeric(st_area(sf_grid)) / 1e6
+years <- sort(unique(red_snapper$Year))
+mean_area_swept <- mean(red_snapper$AreaSwept_km2)
+
+comparison <- lapply(years, function(yr) {
+  nd <- data.frame(
+    Lat = grid_coords[, "Y"],
+    Lon = grid_coords[, "X"],
+    Year = yr,
+    Data_type = "Biomass_KG",
+    AreaSwept_km2 = mean_area_swept,
+    var = "logdens"
+  )
+
+  # tinyVAST link-scale "p_g" (log density) and integrated index:
+  tv_link <- predict(fit_tv, newdata = nd, what = "p_g")
+  tv_link <- ifelse(tv_link < max(tv_link - log(100)), NA, tv_link)
+  tv_idx <- integrate_output(fit_tv, newdata = nd, area = areas_km2)
+
+  # sdmTMB link-scale estimate and integrated index:
+  sd_link <- predict(
+    fit_sd,
+    newdata = nd,
+    type = "link",
+    offset = rep(log(mean_area_swept), nrow(nd))
+  )
+  sd_obj <- predict(
+    fit_sd,
+    newdata = nd,
+    return_tmb_object = TRUE,
+    offset = rep(log(mean_area_swept), nrow(nd))
+  )
+  sd_idx <- get_index(sd_obj, area = areas_km2, bias_correct = TRUE)
+
+  keep <- is.finite(tv_link) & is.finite(sd_link$est)
+
+  data.frame(
+    Year = yr,
+    tinyVAST_est = unname(tv_idx["Est. (bias.correct)"]),
+    tinyVAST_se = unname(tv_idx["Std. Error"]),
+    sdmTMB_est = sd_idx$est,
+    sdmTMB_se = sd_idx$se_natural,
+    map_cor = cor(tv_link[keep], sd_link$est[keep]),
+    map_rmse = sqrt(mean((tv_link[keep] - sd_link$est[keep])^2))
+  )
+})
+
+comparison <- bind_rows(comparison) |>
+  mutate(
+    index_ratio = sdmTMB_est / tinyVAST_est,
+    index_reldiff = (sdmTMB_est - tinyVAST_est) / tinyVAST_est
+  )
+
+comparison
+```
+
+Summary agreement metrics:
+
+```{r summary-metrics}
+comparison |>
+  summarise(
+    mean_abs_index_reldiff = mean(abs(index_reldiff)),
+    mean_map_cor = mean(map_cor)
+  )
+```
+
+Plot the annual index from both models:
+
+```{r plot-index}
+plot_dat <- comparison |>
+  transmute(
+    Year = factor(Year),
+    tinyVAST = tinyVAST_est,
+    sdmTMB = sdmTMB_est
+  ) |>
+  pivot_longer(cols = c(tinyVAST, sdmTMB), names_to = "Model", values_to = "Estimate")
+
+ggplot(plot_dat, aes(Year, Estimate, group = Model, color = Model)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal(base_size = 11)
+```

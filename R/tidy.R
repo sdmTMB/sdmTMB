@@ -47,112 +47,6 @@
 #' )
 #' tidy(fit, "ran_vals")
 
-.tidy_multi_family_param_rows <- function(est, se, family_spec, crit, conf.int = TRUE) {
-  rows <- list()
-
-  add_rows <- function(slot_name, term_name, estimate_fun, std_error_fun = NULL, conf_fun = NULL) {
-    slot <- family_spec$param_slot[[slot_name]]
-    used <- which(!is.na(slot))
-    if (!length(used)) {
-      return(NULL)
-    }
-    out <- lapply(used, function(f) {
-      idx <- slot[[f]]
-      estimate <- estimate_fun(idx)
-      std.error <- if (is.null(std_error_fun)) NA_real_ else std_error_fun(idx)
-      row <- data.frame(
-        group_name = family_spec$family_labels[[f]],
-        term = term_name,
-        estimate = estimate,
-        std.error = std.error,
-        stringsAsFactors = FALSE
-      )
-      if (conf.int) {
-        bounds <- if (is.null(conf_fun)) c(NA_real_, NA_real_) else conf_fun(idx)
-        row$conf.low <- bounds[[1]]
-        row$conf.high <- bounds[[2]]
-      }
-      row
-    })
-    do.call(rbind, out)
-  }
-
-  rows$phi <- add_rows(
-    slot_name = "ln_phi",
-    term_name = "phi",
-    estimate_fun = function(idx) as.numeric(est$phi[[idx]]),
-    std_error_fun = function(idx) {
-      if (is.null(se$phi) || length(se$phi) < idx) NA_real_ else as.numeric(se$phi[[idx]])
-    },
-    conf_fun = function(idx) {
-      if (is.null(est$ln_phi) || is.null(se$ln_phi) || length(se$ln_phi) < idx) {
-        return(c(NA_real_, NA_real_))
-      }
-      c(
-        exp(est$ln_phi[[idx]] - crit * se$ln_phi[[idx]]),
-        exp(est$ln_phi[[idx]] + crit * se$ln_phi[[idx]])
-      )
-    }
-  )
-  rows$tweedie_p <- add_rows(
-    slot_name = "thetaf",
-    term_name = "tweedie_p",
-    estimate_fun = function(idx) plogis(est$thetaf[[idx]]) + 1,
-    std_error_fun = function(idx) {
-      if (is.null(se$tweedie_p) || length(se$tweedie_p) < idx) NA_real_ else as.numeric(se$tweedie_p[[idx]])
-    },
-    conf_fun = function(idx) {
-      if (is.null(est$thetaf) || is.null(se$thetaf) || length(se$thetaf) < idx) {
-        return(c(NA_real_, NA_real_))
-      }
-      c(
-        plogis(est$thetaf[[idx]] - crit * se$thetaf[[idx]]) + 1,
-        plogis(est$thetaf[[idx]] + crit * se$thetaf[[idx]]) + 1
-      )
-    }
-  )
-  rows$student_df <- add_rows(
-    slot_name = "ln_student_df",
-    term_name = "student_df",
-    estimate_fun = function(idx) exp(est$ln_student_df[[idx]]) + 1,
-    std_error_fun = function(idx) {
-      if (is.null(se$student_df) || length(se$student_df) < idx) NA_real_ else as.numeric(se$student_df[[idx]])
-    },
-    conf_fun = function(idx) {
-      if (is.null(est$ln_student_df) || is.null(se$ln_student_df) || length(se$ln_student_df) < idx) {
-        return(c(NA_real_, NA_real_))
-      }
-      c(
-        exp(est$ln_student_df[[idx]] - crit * se$ln_student_df[[idx]]) + 1,
-        exp(est$ln_student_df[[idx]] + crit * se$ln_student_df[[idx]]) + 1
-      )
-    }
-  )
-  rows$gengamma_Q <- add_rows(
-    slot_name = "gengamma_Q",
-    term_name = "gengamma_Q",
-    estimate_fun = function(idx) as.numeric(est$gengamma_Q[[idx]]),
-    std_error_fun = function(idx) {
-      if (is.null(se$gengamma_Q) || length(se$gengamma_Q) < idx) NA_real_ else as.numeric(se$gengamma_Q[[idx]])
-    },
-    conf_fun = function(idx) {
-      if (is.null(est$gengamma_Q) || is.null(se$gengamma_Q) || length(se$gengamma_Q) < idx) {
-        return(c(NA_real_, NA_real_))
-      }
-      c(
-        est$gengamma_Q[[idx]] - crit * se$gengamma_Q[[idx]],
-        est$gengamma_Q[[idx]] + crit * se$gengamma_Q[[idx]]
-      )
-    }
-  )
-
-  rows <- Filter(Negate(is.null), rows)
-  if (!length(rows)) {
-    return(NULL)
-  }
-  do.call(rbind, rows)
-}
-
 tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov"), model = 1,
                  conf.int = TRUE, conf.level = 0.95, exponentiate = FALSE,
                  silent = FALSE, ...) {
@@ -982,4 +876,111 @@ flatten_cov_output <- function(v, cnms) {
   df <- do.call(rbind, results)
   rownames(df) <- NULL
   df
+}
+
+
+.tidy_multi_family_param_rows <- function(est, se, family_spec, crit, conf.int = TRUE) {
+  rows <- list()
+
+  add_rows <- function(slot_name, term_name, estimate_fun, std_error_fun = NULL, conf_fun = NULL) {
+    slot <- family_spec$param_slot[[slot_name]]
+    used <- which(!is.na(slot))
+    if (!length(used)) {
+      return(NULL)
+    }
+    out <- lapply(used, function(f) {
+      idx <- slot[[f]]
+      estimate <- estimate_fun(idx)
+      std.error <- if (is.null(std_error_fun)) NA_real_ else std_error_fun(idx)
+      row <- data.frame(
+        group_name = family_spec$family_labels[[f]],
+        term = term_name,
+        estimate = estimate,
+        std.error = std.error,
+        stringsAsFactors = FALSE
+      )
+      if (conf.int) {
+        bounds <- if (is.null(conf_fun)) c(NA_real_, NA_real_) else conf_fun(idx)
+        row$conf.low <- bounds[[1]]
+        row$conf.high <- bounds[[2]]
+      }
+      row
+    })
+    do.call(rbind, out)
+  }
+
+  rows$phi <- add_rows(
+    slot_name = "ln_phi",
+    term_name = "phi",
+    estimate_fun = function(idx) as.numeric(est$phi[[idx]]),
+    std_error_fun = function(idx) {
+      if (is.null(se$phi) || length(se$phi) < idx) NA_real_ else as.numeric(se$phi[[idx]])
+    },
+    conf_fun = function(idx) {
+      if (is.null(est$ln_phi) || is.null(se$ln_phi) || length(se$ln_phi) < idx) {
+        return(c(NA_real_, NA_real_))
+      }
+      c(
+        exp(est$ln_phi[[idx]] - crit * se$ln_phi[[idx]]),
+        exp(est$ln_phi[[idx]] + crit * se$ln_phi[[idx]])
+      )
+    }
+  )
+  rows$tweedie_p <- add_rows(
+    slot_name = "thetaf",
+    term_name = "tweedie_p",
+    estimate_fun = function(idx) plogis(est$thetaf[[idx]]) + 1,
+    std_error_fun = function(idx) {
+      if (is.null(se$tweedie_p) || length(se$tweedie_p) < idx) NA_real_ else as.numeric(se$tweedie_p[[idx]])
+    },
+    conf_fun = function(idx) {
+      if (is.null(est$thetaf) || is.null(se$thetaf) || length(se$thetaf) < idx) {
+        return(c(NA_real_, NA_real_))
+      }
+      c(
+        plogis(est$thetaf[[idx]] - crit * se$thetaf[[idx]]) + 1,
+        plogis(est$thetaf[[idx]] + crit * se$thetaf[[idx]]) + 1
+      )
+    }
+  )
+  rows$student_df <- add_rows(
+    slot_name = "ln_student_df",
+    term_name = "student_df",
+    estimate_fun = function(idx) exp(est$ln_student_df[[idx]]) + 1,
+    std_error_fun = function(idx) {
+      if (is.null(se$student_df) || length(se$student_df) < idx) NA_real_ else as.numeric(se$student_df[[idx]])
+    },
+    conf_fun = function(idx) {
+      if (is.null(est$ln_student_df) || is.null(se$ln_student_df) || length(se$ln_student_df) < idx) {
+        return(c(NA_real_, NA_real_))
+      }
+      c(
+        exp(est$ln_student_df[[idx]] - crit * se$ln_student_df[[idx]]) + 1,
+        exp(est$ln_student_df[[idx]] + crit * se$ln_student_df[[idx]]) + 1
+      )
+    }
+  )
+  rows$gengamma_Q <- add_rows(
+    slot_name = "gengamma_Q",
+    term_name = "gengamma_Q",
+    estimate_fun = function(idx) as.numeric(est$gengamma_Q[[idx]]),
+    std_error_fun = function(idx) {
+      if (is.null(se$gengamma_Q) || length(se$gengamma_Q) < idx) NA_real_ else as.numeric(se$gengamma_Q[[idx]])
+    },
+    conf_fun = function(idx) {
+      if (is.null(est$gengamma_Q) || is.null(se$gengamma_Q) || length(se$gengamma_Q) < idx) {
+        return(c(NA_real_, NA_real_))
+      }
+      c(
+        est$gengamma_Q[[idx]] - crit * se$gengamma_Q[[idx]],
+        est$gengamma_Q[[idx]] + crit * se$gengamma_Q[[idx]]
+      )
+    }
+  )
+
+  rows <- Filter(Negate(is.null), rows)
+  if (!length(rows)) {
+    return(NULL)
+  }
+  do.call(rbind, rows)
 }
