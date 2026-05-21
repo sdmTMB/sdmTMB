@@ -272,6 +272,107 @@ test_that("mixed gaussian plus delta fits reach the unified TMB path", {
   list(fit = fit, newdata = nd)
 }
 
+.mixed_family_standard_delta_fixture <- function() {
+  set.seed(103)
+  n_each <- 120L
+  n <- n_each * 3L
+  x <- runif(n, -1, 1)
+  area <- rep(1, n)
+  dist <- factor(
+    rep(c("binomial", "poisson", "delta"), each = n_each),
+    levels = c("binomial", "poisson", "delta")
+  )
+
+  y <- numeric(length(dist))
+  i_bin <- dist == "binomial"
+  i_poi <- dist == "poisson"
+  i_del <- dist == "delta"
+
+  y[i_bin] <- stats::rbinom(sum(i_bin), 1, stats::plogis(-0.4 + 0.6 * x[i_bin]))
+  y[i_poi] <- stats::rpois(sum(i_poi), exp(0.3 + 0.5 * x[i_poi]))
+
+  present <- stats::rbinom(sum(i_del), 1, stats::plogis(-0.2 + 0.3 * x[i_del]))
+  y_pos <- stats::rgamma(sum(i_del), shape = 4, scale = exp(0.4 + 0.5 * x[i_del]) / 4)
+  y[i_del] <- ifelse(present == 1, y_pos, 0)
+
+  dat <- data.frame(
+    y = y,
+    x = x,
+    y_coord = 0,
+    year = 1L,
+    dist = dist,
+    area_swept = area
+  )
+
+  ctrl <- sdmTMBcontrol(multiphase = FALSE, newton_loops = 0, getsd = FALSE)
+
+  fit_mix <- sdmTMB(
+    y ~ 0 + dist + dist:x,
+    data = dat,
+    family = list(
+      binomial = binomial(link = "logit"),
+      poisson = poisson(link = "log"),
+      delta = delta_gamma()
+    ),
+    distribution_column = "dist",
+    spatial = "off",
+    spatiotemporal = "off",
+    weights = rep(1, nrow(dat)),
+    offset = log(dat$area_swept),
+    control = ctrl
+  )
+
+  fit_bin <- sdmTMB(
+    y ~ x,
+    data = subset(dat, dist == "binomial"),
+    family = binomial(link = "logit"),
+    spatial = "off",
+    spatiotemporal = "off",
+    weights = rep(1, sum(dat$dist == "binomial")),
+    control = ctrl
+  )
+
+  fit_poi <- sdmTMB(
+    y ~ x,
+    data = subset(dat, dist == "poisson"),
+    family = poisson(link = "log"),
+    spatial = "off",
+    spatiotemporal = "off",
+    offset = log(subset(dat, dist == "poisson")$area_swept),
+    control = ctrl
+  )
+
+  fit_del <- sdmTMB(
+    y ~ x,
+    data = subset(dat, dist == "delta"),
+    family = delta_gamma(),
+    spatial = "off",
+    spatiotemporal = "off",
+    offset = log(subset(dat, dist == "delta")$area_swept),
+    control = ctrl
+  )
+
+  make_newdata <- function(dist_label, area_swept = rep(1, 9L)) {
+    data.frame(
+      x = seq(-0.9, 0.9, length.out = 9),
+      y_coord = 0,
+      year = 1L,
+      dist = factor(dist_label, levels = levels(dat$dist)),
+      area_swept = area_swept
+    )
+  }
+
+  list(
+    fit_mix = fit_mix,
+    fit_bin = fit_bin,
+    fit_poi = fit_poi,
+    fit_del = fit_del,
+    nd_bin = make_newdata("binomial"),
+    nd_poi = make_newdata("poisson"),
+    nd_del = make_newdata("delta")
+  )
+}
+
 test_that("mixed-family predict returns rowwise combined and masked component outputs", {
   fixture <- .mixed_family_step4_fixture()
   gauss_rows <- fixture$newdata$dist == "gauss"
@@ -309,6 +410,142 @@ test_that("mixed-family predict returns rowwise combined and masked component ou
     predict(fixture$fit, newdata = fixture$newdata, type = "response", se_fit = TRUE),
     regexp = "not yet supported"
   )
+})
+
+test_that("mixed-family standard delta rows match standalone sdmTMB references", {
+  fixture <- .mixed_family_standard_delta_fixture()
+  nd_single <- subset(fixture$nd_del, select = c(x, y_coord, year, area_swept))
+
+  pred_mix_bin <- predict(
+    fixture$fit_mix,
+    newdata = fixture$nd_bin,
+    type = "response",
+    offset = rep(0, nrow(fixture$nd_bin))
+  )
+  pred_bin <- predict(fixture$fit_bin, newdata = nd_single, type = "response")
+
+  pred_mix_poi <- predict(
+    fixture$fit_mix,
+    newdata = fixture$nd_poi,
+    type = "response",
+    offset = rep(0, nrow(fixture$nd_poi))
+  )
+  pred_poi <- predict(
+    fixture$fit_poi,
+    newdata = nd_single,
+    type = "response",
+    offset = rep(0, nrow(nd_single))
+  )
+
+  pred_mix_del <- predict(
+    fixture$fit_mix,
+    newdata = fixture$nd_del,
+    type = "response",
+    offset = rep(0, nrow(fixture$nd_del))
+  )
+  pred_del <- predict(
+    fixture$fit_del,
+    newdata = nd_single,
+    type = "response",
+    offset = rep(0, nrow(nd_single))
+  )
+  pred_mix_del1 <- predict(
+    fixture$fit_mix,
+    newdata = fixture$nd_del,
+    type = "response",
+    model = 1,
+    offset = rep(0, nrow(fixture$nd_del))
+  )
+  pred_del1 <- predict(
+    fixture$fit_del,
+    newdata = nd_single,
+    type = "response",
+    model = 1,
+    offset = rep(0, nrow(nd_single))
+  )
+  pred_mix_del2 <- predict(
+    fixture$fit_mix,
+    newdata = fixture$nd_del,
+    type = "response",
+    model = 2,
+    offset = rep(0, nrow(fixture$nd_del))
+  )
+  pred_del2 <- predict(
+    fixture$fit_del,
+    newdata = nd_single,
+    type = "response",
+    model = 2,
+    offset = rep(0, nrow(nd_single))
+  )
+
+  expect_equal(pred_mix_bin$est, pred_bin$est, tolerance = 1e-5)
+  expect_equal(pred_mix_poi$est, pred_poi$est, tolerance = 1e-5)
+  expect_equal(pred_mix_del$est, pred_del$est, tolerance = 1e-5)
+  expect_equal(pred_mix_del1$est, pred_del1$est, tolerance = 1e-5)
+  expect_equal(pred_mix_del2$est, pred_del2$est, tolerance = 1e-5)
+})
+
+test_that("mixed-family standard delta offsets only affect the positive component", {
+  fixture <- .mixed_family_standard_delta_fixture()
+
+  nd_off <- fixture$nd_del
+  nd_off$area_swept <- exp(seq(log(0.7), log(1.3), length.out = nrow(nd_off)))
+  off <- log(nd_off$area_swept)
+  nd_single_off <- subset(nd_off, select = c(x, y_coord, year, area_swept))
+
+  pred_mix_del1 <- predict(
+    fixture$fit_mix,
+    newdata = fixture$nd_del,
+    type = "response",
+    model = 1,
+    offset = rep(0, nrow(fixture$nd_del))
+  )
+  pred_mix_del1_off <- predict(
+    fixture$fit_mix,
+    newdata = nd_off,
+    type = "response",
+    model = 1,
+    offset = off
+  )
+  pred_mix_del2_off <- predict(
+    fixture$fit_mix,
+    newdata = nd_off,
+    type = "response",
+    model = 2,
+    offset = off
+  )
+  pred_mix_del_off <- predict(
+    fixture$fit_mix,
+    newdata = nd_off,
+    type = "response",
+    offset = off
+  )
+
+  pred_del1_off <- predict(
+    fixture$fit_del,
+    newdata = nd_single_off,
+    type = "response",
+    model = 1,
+    offset = off
+  )
+  pred_del2_off <- predict(
+    fixture$fit_del,
+    newdata = nd_single_off,
+    type = "response",
+    model = 2,
+    offset = off
+  )
+  pred_del_off <- predict(
+    fixture$fit_del,
+    newdata = nd_single_off,
+    type = "response",
+    offset = off
+  )
+
+  expect_equal(pred_mix_del1_off$est, pred_mix_del1$est, tolerance = 1e-8)
+  expect_equal(pred_mix_del1_off$est, pred_del1_off$est, tolerance = 1e-5)
+  expect_equal(pred_mix_del2_off$est, pred_del2_off$est, tolerance = 1e-5)
+  expect_equal(pred_mix_del_off$est, pred_del_off$est, tolerance = 1e-5)
 })
 
 test_that("mixed-family simulate combines rows the same way as predict", {
