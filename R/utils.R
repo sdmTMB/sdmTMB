@@ -81,6 +81,11 @@
 #' @param sar_weight_style Weight matrix to use for areal SAR models. `"row"`
 #'   uses row-normalized weights and is the default. `"raw"` uses the raw
 #'   adjacency/weight matrix for direct comparisons to packages that do so.
+#' @param get_rsr Experimental option, whether to calculate the restricted
+#'   spatial regression (RSR) adjusted estimator for covariate responses. If
+#'   `get_rsr = TRUE`, these will be available via
+#'   `tidy(fit, effects = "rsr")`. See Hanks et al. (2015) and
+#'   Diaz and Thorson (2025).
 #' @param ... Anything else. See the 'Control parameters' section of
 #'   [stats::nlminb()].
 #'
@@ -92,6 +97,18 @@
 #' ```
 #' sdmTMB(..., control = sdmTMBcontrol(newton_loops = 2))
 #' ```
+#'
+#' @references
+#' Restricted Spatial Regression (`get_rsr`):
+#'
+#' Diaz, R.R., and Thorson, J.T. 2025. When and How to Use Restricted Spatial
+#' Regression to Separate Environmental Effects from Spatial Confounding.
+#' EcoEvoRxiv. \doi{10.32942/X28351}.
+#'
+#' Hanks, E.M., Schliep, E.M., Hooten, M.B., and Hoeting, J.A. 2015. Restricted
+#' spatial regression in practice: geostatistical models, confounding, and
+#' robustness under model misspecification. Environmetrics 26(4): 243--254.
+#' \doi{10.1002/env.2331}.
 #' @examples
 #' sdmTMBcontrol()
 sdmTMBcontrol <- function(
@@ -115,6 +132,7 @@ sdmTMBcontrol <- function(
   collapse_spatial_variance = FALSE,
   collapse_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
+  get_rsr = FALSE,
   ...) {
 
   assert_that(is.numeric(nlminb_loops), is.numeric(newton_loops))
@@ -130,6 +148,7 @@ sdmTMBcontrol <- function(
   }
 
   assert_that(is.logical(profile) || is.character(profile))
+  assert_that(is.logical(get_rsr))
   assert_that(is.logical(collapse_spatial_variance))
   assert_that(is.numeric(collapse_threshold), collapse_threshold > 0)
   sar_weight_style <- match.arg(sar_weight_style)
@@ -153,7 +172,8 @@ sdmTMBcontrol <- function(
     get_joint_precision,
     collapse_spatial_variance,
     collapse_threshold,
-    sar_weight_style
+    sar_weight_style,
+    get_rsr
   )
   c(out, list(...))
 }

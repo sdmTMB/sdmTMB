@@ -1,5 +1,11 @@
 # sdmTMB (development version)
 
+* Add experimental Restricted Spatial Regression (RSR) fixed-effect
+  coefficients adjusted for spatial confounding with the random fields
+  (Hanks et al. 2015, Diaz and Thorson 2025). Opt in
+  via `control = sdmTMBcontrol(get_rsr = TRUE)` and access via
+  `tidy(fit, effects = "rsr")`.
+
 * The interaction between `spatial`, `spatial_varying`, and the intercept of
   the `spatial_varying` design matrix has been clarified. See the vignette/article
   "svc-factor-models."
@@ -14,8 +20,8 @@
   releases is for `spatial = "off", spatial_varying = ~ 1 + factor`: this
   previously stripped the intercept *and* zeroed `omega_s`, leaving only
   `K - 1` deviation fields with no reference field. It now fits a genuine
-  SVC intercept field plus `K - 1` deviation fields. A one-cycle warning is
-  emitted for this specification.
+  SVC intercept field plus `K - 1` deviation fields. A warning is
+  emitted for this specification for now.
   
   The previous message suggesting `spatial = "off"` when using
   `spatial = "on", spatial_varying = ~ 0 + factor_var` has been removed; this

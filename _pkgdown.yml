@@ -17,6 +17,8 @@ articles:
   - articles/multispecies
   - articles/age-composition
   - articles/presence-only
+  - articles/areal-sar-car-spde
+  - articles/areal-grid-sar-car-spde
 
 - title: Model Estimation and Inference
   contents:
@@ -31,8 +33,7 @@ articles:
   - articles/forecasting
   - articles/spatial-trend-models
   - articles/range-edges
-  - articles/areal-sar-car-spde
-  - articles/areal-grid-sar-car-spde
+  - articles/svc-factor-models
 
 - title: Visualization
   contents:

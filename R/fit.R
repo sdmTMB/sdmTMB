@@ -744,13 +744,14 @@ sdmTMB <- function(
   collapse_spatial_variance <- control$collapse_spatial_variance
   collapse_threshold <- control$collapse_threshold
   sar_weight_style <- control$sar_weight_style
+  do_rsr <- as.integer(isTRUE(control$get_rsr))
 
   dot_checks <- c(
     "lower", "upper", "profile", "parallel", "censored_upper", "getsd",
     "nlminb_loops", "newton_steps", "mgcv", "quadratic_roots", "multiphase",
     "newton_loops", "start", "map", "get_joint_precision", "normalize",
     "suppress_nlminb_warnings", "collapse_spatial_variance", "collapse_threshold",
-    "sar_weight_style"
+    "sar_weight_style", "get_rsr"
   )
   .control <- control
   # FIXME; automate this from sdmTMcontrol args?
@@ -1335,6 +1336,7 @@ sdmTMB <- function(
     proj_lat = 0,
     proj_vector = 0,
     do_predict = 0L,
+    do_rsr = do_rsr,
     calc_se = 0L,
     pop_pred = 0L,
     short_newdata = 0L,
@@ -1793,7 +1795,8 @@ sdmTMB <- function(
       fitted_time = sort(unique(data[[time]])),
       xlevels = lapply(seq_along(mf), function(i) stats::.getXlevels(mt[[i]], mf[[i]])),
       call = match.call(expand.dots = TRUE),
-      version = utils::packageVersion("sdmTMB")
+      version = utils::packageVersion("sdmTMB"),
+      experimental = experimental
     ),
     class = "sdmTMB"
   )

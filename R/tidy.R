@@ -4,8 +4,13 @@
 #' @param effects A character value. One of `"fixed"` ('fixed' or main-effect
 #'   parameters), `"ran_pars"` (standard deviations, spatial range, and other
 #'   random effect and dispersion-related terms), `"ran_vals"` (individual
-#'   random intercepts or slopes, if included; behaves like `ranef()`), or `"ran_vcov"` (list
-#'   of variance covariance matrices for the random effects, by model and group).
+#'   random intercepts or slopes, if included; behaves like `ranef()`),
+#'   `"ran_vcov"` (list of variance covariance matrices for the random effects,
+#'   by model and group), or `"rsr"` (Restricted Spatial Regression fixed-effect
+#'   coefficients adjusted for spatial confounding with the random fields;
+#'   Hanks et al. 2015; Diaz and Thorson 2025). To access RSR coefficients the
+#'   model must be fitted with
+#'   `control = sdmTMBcontrol(get_rsr = TRUE)`.
 #' @param conf.int Include a confidence interval?
 #' @param conf.level Confidence level for CI.
 #' @param exponentiate Whether to exponentiate the fixed-effect coefficient
@@ -27,6 +32,18 @@
 #' terms, range, or parameters associated with the observation error) are
 #' omitted to avoid confusion. Confidence intervals are still available.
 #'
+#' @references
+#' Restricted Spatial Regression (`effects = "rsr"`):
+#'
+#' Diaz, R.R., and Thorson, J.T. 2025. When and How to Use Restricted Spatial
+#' Regression to Separate Environmental Effects from Spatial Confounding.
+#' EcoEvoRxiv. \doi{10.32942/X28351}.
+#'
+#' Hanks, E.M., Schliep, E.M., Hooten, M.B., and Hoeting, J.A. 2015. Restricted
+#' spatial regression in practice: geostatistical models, confounding, and
+#' robustness under model misspecification. Environmetrics 26(4): 243--254.
+#' \doi{10.1002/env.2331}.
+#'
 #' @export
 #'
 #' @importFrom assertthat assert_that
@@ -47,7 +64,7 @@
 #' )
 #' tidy(fit, "ran_vals")
 
-tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov"), model = 1,
+tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov", "rsr"), model = 1,
                  conf.int = TRUE, conf.level = 0.95, exponentiate = FALSE,
                  silent = FALSE, ...) {
   effects <- match.arg(effects)
@@ -552,9 +569,61 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     return(frm(out_re))
   } else if (effects == "ran_vcov") {
     return(cov_mat_list)
+  } else if (effects == "rsr") {
+    return(.tidy_rsr_effects(x, model, conf.int, conf.level, exponentiate, crit, trans, frm))
   } else {
     cli_abort("The specified 'effects' type is not available.")
   }
+}
+
+# Extract Restricted Spatial Regression (RSR) fixed-effect estimates.
+# Computed unconditionally in the TMB template; this helper formats them
+# to match the "fixed" effects output of tidy.sdmTMB().
+.tidy_rsr_effects <- function(x, model, conf.int, conf.level, exponentiate, crit, trans, frm) {
+  se_rep <- as.list(x$sd_report, "Std. Error", report = TRUE)
+  est_rep <- as.list(x$sd_report, "Estimate", report = TRUE)
+
+  if (!"b_j_prime" %in% names(est_rep)) {
+    cli_abort(c(
+      "RSR coefficients were not computed for this fit.",
+      i = "Refit with {.code control = sdmTMBcontrol(get_rsr = TRUE)}."
+    ))
+  }
+
+  if (model == 1) {
+    rsr_coef <- est_rep$b_j_prime
+    rsr_se <- se_rep$b_j_prime
+  } else if (model == 2) {
+    if (!"b_j2_prime" %in% names(est_rep)) {
+      cli_abort("RSR coefficients for model 2 not available. Is this a delta model?")
+    }
+    rsr_coef <- est_rep$b_j2_prime
+    rsr_se <- se_rep$b_j2_prime
+  } else {
+    cli_abort("`model` must be 1 or 2.")
+  }
+
+  .formula <- x$split_formula[[model]]$form_no_bars
+  .formula <- remove_s_and_t2(.formula)
+  if (!"mgcv" %in% names(x)) x[["mgcv"]] <- FALSE
+  fe_names <- colnames(model.matrix(.formula, x$data))
+  fe_names <- fe_names[!fe_names == "offset"]
+
+  out_rsr <- data.frame(
+    term = fe_names,
+    estimate = rsr_coef,
+    std.error = rsr_se,
+    stringsAsFactors = FALSE
+  )
+
+  if (conf.int) {
+    out_rsr$conf.low <- as.numeric(trans(out_rsr$estimate - crit * out_rsr$std.error))
+    out_rsr$conf.high <- as.numeric(trans(out_rsr$estimate + crit * out_rsr$std.error))
+  }
+  out_rsr$estimate <- as.numeric(trans(out_rsr$estimate))
+  if (exponentiate) out_rsr$std.error <- NULL
+
+  frm(out_rsr)
 }
 
 # Convert anisotropic ranges list to a data frame

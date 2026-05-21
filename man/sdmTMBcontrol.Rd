@@ -25,6 +25,7 @@ sdmTMBcontrol(
   collapse_spatial_variance = FALSE,
   collapse_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
+  get_rsr = FALSE,
   ...
 )
 }
@@ -47,7 +48,7 @@ try increasing this to \code{2}.}
 \item{newton_loops}{How many Newton optimization steps to try after running
 \code{\link[stats:nlminb]{stats::nlminb()}}. This sometimes aids convergence by further reducing the
 log-likelihood gradient with respect to the fixed effects. This calculates
-the Hessian at the current MLE with \code{\link[stats:optim]{stats::optimHess()}} using a
+the Hessian at the current MLE with \code{\link[stats:optimHess]{stats::optimHess()}} using a
 finite-difference approach and uses this to update the fixed effect
 estimates.}
 
@@ -74,7 +75,7 @@ fixed value.}
 \item{lower}{An optional named list of lower bounds within the optimization.
 Parameter vectors with the same name (e.g., \code{b_j} or \code{ln_kappa} in some
 cases) can be specified as a numeric vector. E.g.
-\code{lower = list(b_j = c(-5, -5))}. Note that \code{\link[stats:optim]{stats::optimHess()}} does not
+\code{lower = list(b_j = c(-5, -5))}. Note that \code{\link[stats:optimHess]{stats::optimHess()}} does not
 implement lower and upper bounds, so you must set \code{newton_loops = 0} if
 setting limits.}
 
@@ -128,6 +129,12 @@ scale (i.e., square root of variance). Default is 0.01.}
 uses row-normalized weights and is the default. \code{"raw"} uses the raw
 adjacency/weight matrix for direct comparisons to packages that do so.}
 
+\item{get_rsr}{Experimental option, whether to calculate the restricted
+spatial regression (RSR) adjusted estimator for covariate responses. If
+\code{get_rsr = TRUE}, these will be available via
+\code{tidy(fit, effects = "rsr")}. See Hanks et al. (2015) and
+Diaz and Thorson (2025).}
+
 \item{...}{Anything else. See the 'Control parameters' section of
 \code{\link[stats:nlminb]{stats::nlminb()}}.}
 }
@@ -145,4 +152,16 @@ Usually used within \code{\link[=sdmTMB]{sdmTMB()}}. For example:
 }
 \examples{
 sdmTMBcontrol()
+}
+\references{
+Restricted Spatial Regression (\code{get_rsr}):
+
+Diaz, R.R., and Thorson, J.T. 2025. When and How to Use Restricted Spatial
+Regression to Separate Environmental Effects from Spatial Confounding.
+EcoEvoRxiv. \doi{10.32942/X28351}.
+
+Hanks, E.M., Schliep, E.M., Hooten, M.B., and Hoeting, J.A. 2015. Restricted
+spatial regression in practice: geostatistical models, confounding, and
+robustness under model misspecification. Environmetrics 26(4): 243--254.
+\doi{10.1002/env.2331}.
 }

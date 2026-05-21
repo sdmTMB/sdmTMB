@@ -192,6 +192,8 @@ Type objective_function<Type>::operator()()
 
   // Prediction?
   DATA_INTEGER(do_predict);
+  // Restricted Spatial Regression report?
+  DATA_INTEGER(do_rsr);
   // With standard errors on the full projections?
   DATA_INTEGER(calc_se);
   // Should predictions be population (vs. individual-level) predictions?
@@ -1324,6 +1326,48 @@ Type objective_function<Type>::operator()()
           if (stan_flag) jnll -= log(sigma_V(v,m)); // Jacobian adjustment
         }
       }
+    }
+  }
+
+  // ------------------ Restricted Spatial Regression --------------------------
+  // Hanks et al. (2015) doi:10.1002/env.2331 -- post-hoc adjustment of the
+  // fixed-effect coefficients for spatial confounding with the random fields.
+  // Implemented as done in tinyVAST by J.T. Thorson.
+
+  if (do_rsr) {
+    vector<Type> b_j_prime(b_j.size());
+    vector<Type> b_j2_prime(b_j2.size());
+    b_j_prime.setZero();
+    b_j2_prime.setZero();
+    for (int m = 0; m < n_m; m++) {
+      matrix<Type> X_ij_transpose = X_ij(m).transpose();
+      matrix<Type> covX_jj = X_ij_transpose * X_ij(m);
+      matrix<Type> precisionX_jj = atomic::matinv(covX_jj);
+      // Sum all spatial effects at observation locations to match how they
+      // enter the linear predictor:
+      vector<Type> total_rf = vector<Type>(omega_s_A.col(m)) +
+                              vector<Type>(epsilon_st_A_vec.col(m));
+      for (int z = 0; z < n_z; z++) {
+        for (int i = 0; i < n_i; i++) {
+          total_rf(i) += zeta_s_A(i,z,m) * z_i(i,z);
+        }
+      }
+      vector<Type> b_prime_tmp;
+      if (m == 0) {
+        b_prime_tmp = b_j +
+          (precisionX_jj * X_ij_transpose * total_rf.matrix()).array();
+        b_j_prime = b_prime_tmp;
+      } else {
+        b_prime_tmp = b_j2 +
+          (precisionX_jj * X_ij_transpose * total_rf.matrix()).array();
+        b_j2_prime = b_prime_tmp;
+      }
+    }
+    REPORT(b_j_prime);
+    ADREPORT(b_j_prime);
+    if (n_m > 1) {
+      REPORT(b_j2_prime);
+      ADREPORT(b_j2_prime);
     }
   }
 

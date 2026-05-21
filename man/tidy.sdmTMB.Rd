@@ -7,7 +7,7 @@
 \usage{
 \method{tidy}{sdmTMB}(
   x,
-  effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov"),
+  effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov", "rsr"),
   model = 1,
   conf.int = TRUE,
   conf.level = 0.95,
@@ -24,8 +24,13 @@
 \item{effects}{A character value. One of \code{"fixed"} ('fixed' or main-effect
 parameters), \code{"ran_pars"} (standard deviations, spatial range, and other
 random effect and dispersion-related terms), \code{"ran_vals"} (individual
-random intercepts or slopes, if included; behaves like \code{ranef()}), or \code{"ran_vcov"} (list
-of variance covariance matrices for the random effects, by model and group).}
+random intercepts or slopes, if included; behaves like \code{ranef()}),
+\code{"ran_vcov"} (list of variance covariance matrices for the random effects,
+by model and group), or \code{"rsr"} (Restricted Spatial Regression fixed-effect
+coefficients adjusted for spatial confounding with the random fields;
+Hanks et al. 2015; Diaz and Thorson 2025). To access RSR coefficients the
+model must be fitted with
+\code{control = sdmTMBcontrol(get_rsr = TRUE)}.}
 
 \item{model}{Which model to tidy if a delta model (1 or 2). The \code{model} will be
 ignored when effects is \code{"ran_vals"} (all returned in a single dataframe)}
@@ -72,4 +77,16 @@ fit <- sdmTMB(density ~ poly(depth_scaled, 2, raw = TRUE) + (1 | fyear),
   family = tweedie()
 )
 tidy(fit, "ran_vals")
+}
+\references{
+Restricted Spatial Regression (\code{effects = "rsr"}):
+
+Diaz, R.R., and Thorson, J.T. 2025. When and How to Use Restricted Spatial
+Regression to Separate Environmental Effects from Spatial Confounding.
+EcoEvoRxiv. \doi{10.32942/X28351}.
+
+Hanks, E.M., Schliep, E.M., Hooten, M.B., and Hoeting, J.A. 2015. Restricted
+spatial regression in practice: geostatistical models, confounding, and
+robustness under model misspecification. Environmetrics 26(4): 243--254.
+\doi{10.1002/env.2331}.
 }
