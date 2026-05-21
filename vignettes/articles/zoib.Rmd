@@ -1,10 +1,12 @@
 ---
-title: "Zero-one-inflated beta (ZOIB) models with sdmTMB"
-author: "Sean Anderson"
+title: "Models for bounded proportional data in sdmTMB: ZOIB and ordered beta"
+author: "Sean C. Anderson"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
+bibliography: '../refs.bib'
+csl: '../mee.csl'
 vignette: >
-  %\VignetteIndexEntry{Zero-one-inflated beta (ZOIB) models with sdmTMB}
+  %\VignetteIndexEntry{Models for bounded proportional data in sdmTMB: ZOIB and ordered beta}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -33,28 +35,17 @@ theme_set(theme_light())
 
 # Introduction
 
-Zero-one-inflated beta (ZOIB) models are used for modeling proportional data (values bounded between 0 and 1) that include excess zeros and/or ones beyond what would be expected from a standard beta distribution. These models are useful for analyzing data such as:
+Proportional data bounded between 0 and 1—such as habitat suitability indices, cover fractions, or proportional abundances—often include more zeros and/or ones than a standard beta distribution would predict. Two complementary approaches are available in sdmTMB for such data:
 
-- Species abundance as a proportion of maximum capacity
-- Habitat suitability indices
-- Proportional cover data in ecology
-- Any other response variable that is a true proportion with potential inflation at the boundaries
+1. **Three-model ZOIB**: fit three separate models (a zero component, a one component, and a continuous beta component) and combine their predictions. This approach allows different predictors and even different spatial structures for each component, at the cost of more parameters and manual combination of predictions.
 
-A ZOIB model consists of three components:
+2. **Ordered-beta** (`ordbeta()` family): a single model with one linear predictor shared across all three outcomes, plus two estimated cutpoints that govern boundary inflation. This is more parsimonious when the same covariates drive the probability of zeros, ones, and the continuous proportion.
 
-1. A **zero component**: models the probability of a zero value (typically using a binomial/logit model)
-2. A **one component**: models the probability of a one value (typically using a binomial/logit model)
-3. A **proportion component**: models the continuous proportion between 0 and 1 (typically using a beta distribution)
+This vignette demonstrates both approaches on simulated data.
 
-The final prediction combines all three components:
+# The three-model ZOIB approach
 
-$$\mathbb{E}[Y] = (1 - p_0) \times (p_1 + (1 - p_1) \times \mu)$$
-
-where $p_0$ is the probability of zero, $p_1$ is the probability of one (given not zero), and $\mu$ is the expected proportion from the beta component.
-
-Currently, sdmTMB does not have a built-in ZOIB family. However, ZOIB models can be implemented by fitting three separate models and combining their predictions. This vignette demonstrates this approach.
-
-# Simulating ZOIB data
+## Simulating ZOIB data
 
 Let's simulate data from a ZOIB process to illustrate how to fit these models in sdmTMB.
 
@@ -112,7 +103,7 @@ ggplot(dat, aes(x, y)) +
 
 The plot shows the characteristic ZOIB pattern: data concentrated at 0 and 1, with continuous values between.
 
-# Fitting the ZOIB model components
+## Fitting the ZOIB model components
 
 To fit a ZOIB model with sdmTMB, we fit three separate models and combine their predictions.
 
@@ -179,7 +170,7 @@ phi
 
 The estimated coefficients should be close to the true values used in the simulation.
 
-# Making predictions
+## Making predictions
 
 To make predictions from a ZOIB model, we need to:
 
@@ -192,7 +183,7 @@ First, create a new data frame for prediction:
 nd <- data.frame(x = seq(min(x), max(x), length.out = 100))
 ```
 
-## Point predictions
+### Point predictions
 
 Generate point predictions from each component and combine:
 
@@ -218,7 +209,7 @@ ggplot(dat, aes(x, y)) +
   )
 ```
 
-## Predictions with uncertainty
+### Predictions with uncertainty
 
 To incorporate parameter uncertainty, we use can use simulation-based inference. The `predict()` function with `nsim` will draw from the joint precision matrix of the fixed effects and random effects:
 
@@ -258,7 +249,7 @@ ggplot() +
 
 The red line shows the median prediction and the shaded region shows the 95% credible interval accounting for parameter uncertainty.
 
-# Comparison with the zoib package
+## Comparison with the zoib package
 
 For reference, we can compare our approach to the dedicated ZOIB implementation in the `zoib` package, which uses Bayesian methods:
 
@@ -302,13 +293,106 @@ ggplot(dat, aes(x, y)) +
   )
 ```
 
-# Summary
+# The ordered-beta approach
 
-While sdmTMB does not currently have a built-in ZOIB family, this three-model approach provides flexibility to:
+The ordered-beta regression model [@kubinecOrderedBeta2023] is a single-model alternative that is built directly into sdmTMB as the `ordbeta()` family. It uses one linear predictor shared across all three outcome types (zero, continuous, one), plus two estimated cutpoint parameters (ψ₀ and ψ₁) that govern how much probability mass falls at the boundaries. A precision parameter φ controls the spread of the continuous beta component, just as in a standard beta regression.
 
-- Include different predictors in each component
-- Add spatial/spatiotemporal random fields to any component
-- Use different spatial structures across components
-- Leverage all of sdmTMB's modeling features for each piece
+Because covariate effects are shared across the three outcomes, the model is more parsimonious than the three-model ZOIB approach. It is a natural first choice when you have no strong reason to believe the processes driving zeros vs. ones vs. the continuous proportion differ in their relationship to the predictors.
 
-The main limitation is that there is no built-in function to calculate derived quantities like population indices with integrated uncertainty across all three model components. However, the simulation approach shown here can be extended to calculate any derived quantities of interest.
+## Simulating ordered-beta data
+
+We reuse the same predictor `x` from the ZOIB simulation above so the data sets are directly comparable. The true parameters are a single intercept and slope for the mean (logit scale), plus φ and two cutpoints:
+
+```{r simulate-ordbeta}
+set.seed(42)
+eta_ord <- 0.3 + 0.8 * x
+mu_ord <- plogis(eta_ord)
+phi_ord <- 6
+psi <- c(-1.2, 1.0)
+
+p0_ord <- plogis(psi[1] - eta_ord) # Pr(y == 0)
+p1_ord <- plogis(eta_ord - psi[2]) # Pr(y == 1)
+u_ord <- runif(N)
+y_ord <- numeric(N)
+zero_ <- u_ord < p0_ord
+one_ <- u_ord > 1 - p1_ord
+mid_ <- !zero_ & !one_
+y_ord[zero_] <- 0
+y_ord[one_] <- 1
+y_ord[mid_] <- rbeta(
+  sum(mid_), mu_ord[mid_] * phi_ord,
+  (1 - mu_ord[mid_]) * phi_ord
+)
+
+dat_ord <- data.frame(x = x, y = y_ord)
+ggplot(dat_ord, aes(x, y)) +
+  geom_point(alpha = 0.5) +
+  labs(x = "Predictor", y = "Response (proportion)")
+```
+
+## Fitting the ordered-beta model
+
+A single `sdmTMB()` call with `family = ordbeta()` replaces the three separate models:
+
+```{r fit-ordbeta}
+fit_ord <- sdmTMB(y ~ x, data = dat_ord, family = ordbeta(), spatial = "off")
+```
+
+## Checking parameter recovery
+
+```{r check-ordbeta-parameters}
+# Fixed effects: intercept ≈ 0.3, x slope ≈ 0.8
+tidy(fit_ord)
+
+# Precision and boundary cutpoints (on [0, 1] scale)
+tidy(fit_ord, "ran_pars")
+```
+
+## Predictions with uncertainty
+
+For a fixed-effects model, `se_fit = TRUE` provides delta-method standard errors on the linear predictor. Transforming through `plogis()` gives approximate confidence intervals on the beta-distribution mean µ:
+
+```{r ordbeta-predictions}
+nd_ord <- data.frame(x = seq(min(x), max(x), length.out = 100))
+p_ord <- predict(fit_ord, newdata = nd_ord, se_fit = TRUE, re_form = NA)
+
+nd_ord$est <- plogis(p_ord$est)
+nd_ord$lwr <- plogis(p_ord$est - 1.96 * p_ord$est_se)
+nd_ord$upr <- plogis(p_ord$est + 1.96 * p_ord$est_se)
+```
+
+```{r plot-ordbeta-predictions}
+ggplot() +
+  geom_point(data = dat_ord, aes(x = x, y = y), alpha = 0.3) +
+  geom_ribbon(
+    data = nd_ord, aes(x = x, ymin = lwr, ymax = upr),
+    fill = "blue", alpha = 0.3
+  ) +
+  geom_line(
+    data = nd_ord, aes(x = x, y = est),
+    colour = "blue", linewidth = 1
+  ) +
+  labs(
+    x = "Predictor", y = "Response (proportion)",
+    title = "Ordered-beta predictions with 95% confidence intervals"
+  )
+```
+
+The curve shows µ (the mean of the continuous beta component) with delta-method confidence intervals. The full expected value E[Y] also accounts for boundary probability mass, but µ is the main quantity of interest for a marginal effects plot.
+
+# Choosing between approaches
+
+| Feature | Three-model ZOIB | Ordered beta (`ordbeta()`) |
+|---|---|---|
+| Models to fit | 3 | 1 |
+| Parameters for *k* covariates | ~3*k* + 3 intercepts | *k* + intercept + φ + 2 cutpoints |
+| Zero/one inflation effects | Can differ from proportion | Shared with proportion mean |
+| Spatial fields | Separate per component | Single shared field |
+| Built-in sdmTMB family | No | Yes |
+| Predictions | Manual combination | Automatic |
+
+**Use ordered beta** when you have no strong reason to believe the covariates affect the zero/one inflation differently from the continuous proportion—it is simpler and requires fitting only one model.
+
+**Use the three-model ZOIB** when the processes driving zeros, ones, and the continuous proportion are plausibly governed by different predictors, or when you need separate spatial or spatiotemporal structures for each component.
+
+# References
