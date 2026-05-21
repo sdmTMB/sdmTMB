@@ -372,7 +372,7 @@ print_range <- function(x, m = 1L, digits = 2L) {
     range_text <- print_anisotropy(x = x, m = m)
   }
 
-  if (x$spatial[m] == "off" && x$spatiotemporal[m] == "off") {
+  if (x$spatial[m] == "off" && x$spatiotemporal[m] == "off" && is.null(x$spatial_varying)) {
     range_text <- NULL
   }
 

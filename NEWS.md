@@ -1,5 +1,20 @@
 # sdmTMB (development version)
 
+* The interaction between `spatial`, `spatial_varying`, and factor variables
+  has been clarified.
+
+  In particular, `spatial = "off", spatial_varying = ~ 0 + factor_var` now
+  correctly reports `spatial = "off"` in the fitted object (one SVC field per
+  factor level, no ordinary spatial field `omega_s`). A one-time compatibility
+  warning is issued for this specification. To fit a model with an ordinary
+  spatial field plus factor-level SVC deviations, use
+  `spatial = "on", spatial_varying = ~ 0 + factor_var`.
+
+  The previous message suggesting `spatial = "off"` when using
+  `spatial = "on", spatial_varying = ~ 0 + factor_var` has been removed; this
+  is a valid model specification (global spatial field plus per-level SVC
+  deviations) although it can be more challenging to estimate.
+
 * Add `derived_link` in `get_index()` to allow override of inverse link.
   Useful for fitting Bernoulli data with a cloglog link but then predicting
   as an expectation from a count from a thinned count process. #339

@@ -672,12 +672,13 @@ sdmTMB <- function(
     spatial <- rep(parse_spatial_arg(spatial), n_m)
   }
   include_spatial <- "on" %in% spatial
+  spatial_user <- spatial  # preserve user's specification before internal modification
 
   if (!include_spatial && !is.null(spatial_varying)) {
-    # move intercept into spatial_varying
+    # spatial = "off" with SVC: use SPDE infrastructure for SVC range without omega_s
     omit_spatial_intercept <- TRUE
     include_spatial <- TRUE
-    spatial <- rep("on", length(spatial)) # checked and turned off later if needed
+    spatial <- rep("on", length(spatial)) # internal only; spatial_user retains "off"
   } else {
     omit_spatial_intercept <- FALSE
   }
@@ -914,12 +915,16 @@ sdmTMB <- function(
     }
     z_i <- model.matrix(spatial_varying, data)
     .int <- sum(grep("(Intercept)", colnames(z_i)) > 0)
-    if (length(attr(z_i, "contrasts")) && !.int && !omit_spatial_intercept) { # factors with ~ 0 or ~ -1
-      msg <- c(
-        "Detected predictors with factor levels in `spatial_varying` with the intercept omitted from the `spatial_varying` formula.",
-        "You likely want to set `spatial = 'off'` since the constant spatial field (`omega_s`) also represents a spatial intercept.`"
-      )
-      cli_inform(paste(msg, collapse = " "))
+    if (length(attr(z_i, "contrasts")) && !.int && omit_spatial_intercept) {
+      # spatial = "off" + ~ 0 + factor: behavior changed in this release
+      # Previously x$spatial reported "on"; now correctly reports "off".
+      cli_warn(c(
+        "The behavior of `spatial = \"off\"` with a no-intercept factor in `spatial_varying` has changed.",
+        "Previously the fitted object incorrectly reported `spatial = \"on\"` for this specification.",
+        "It now correctly reports `spatial = \"off\"` (one SVC field per factor level, no `omega_s`).",
+        "To fit a model with an ordinary spatial field plus factor-level SVC deviations, use:",
+        "`spatial = \"on\", spatial_varying = ~ 0 + factor_var`"
+      ))
     }
     .int <- grep("(Intercept)", colnames(z_i))
     if (sum(.int) > 0) z_i <- z_i[, -.int, drop = FALSE]
@@ -1763,7 +1768,7 @@ sdmTMB <- function(
       covariate_diffusion = covariate_diffusion,
       covariate_diffusion_parsed = covariate_diffusion_parsed,
       covariate_diffusion_data = covariate_diffusion_data,
-      spatial = spatial,
+      spatial = spatial_user,
       spatiotemporal = spatiotemporal,
       spatial_varying_formula = spatial_varying_formula,
       reml = reml,
