@@ -523,13 +523,13 @@ print_multi_family_summary <- function(x) {
   out <- data.frame(
     family = family_spec$family_labels,
     kind = family_spec$combine_kind,
-    component1 = paste0(family_spec$family_name[, 1L], " (", family_spec$link_name[, 1L], ")"),
+    component1 = paste0(family_spec$family_name[, 1L], "(", family_spec$link_name[, 1L], ")"),
     stringsAsFactors = FALSE
   )
   if (family_spec$n_m > 1L) {
     out$component2 <- ifelse(
       family_spec$active[, 2L],
-      paste0(family_spec$family_name[, 2L], " (", family_spec$link_name[, 2L], ")"),
+      paste0(family_spec$family_name[, 2L], "(", family_spec$link_name[, 2L], ")"),
       NA_character_
     )
   }
@@ -544,8 +544,20 @@ print_multi_family_summary <- function(x) {
       out[[term_name]][match(params$group_name[ii], out$family)] <- round(params$estimate[ii], 2L)
     }
   }
+  display <- out
+  display[] <- lapply(display, function(col) {
+    col[is.na(col)] <- ""
+    col
+  })
+  # names(display)[names(display) == "family"] <- "Family"
+  display[["family"]] <- NULL
+  # names(display)[names(display) == "kind"] <- "Type"
+  display[["kind"]] <- NULL
+  names(display)[names(display) == "component1"] <- "Linear predictor 1"
+  names(display)[names(display) == "component2"] <- "Linear predictor 2"
+  names(display)[names(display) == "phi"] <- "Dispersion param"
   cat("Families:\n")
-  print(out, row.names = FALSE)
+  print(display, row.names = FALSE)
   cat("\n")
   invisible(out)
 }
