@@ -94,12 +94,15 @@
   )
 }
 
-.family_spec_validate_response <- function(y_i, family_spec, upr = NULL) {
+.family_spec_response_family_id <- function(family_spec, y_i) {
   if (length(family_spec$family_id_i) != length(y_i)) {
     cli_abort("Internal family spec error: `family_id_i` must match the response length.")
   }
+  family_spec$family_id_i
+}
 
-  row_family <- family_spec$family_id_i
+.family_spec_validate_response <- function(y_i, family_spec, upr = NULL) {
+  row_family <- .family_spec_response_family_id(family_spec, y_i)
   single_rows <- family_spec$combine_kind[row_family] == "single"
   family_name <- family_spec$family_name[cbind(row_family, 1L)]
   link_name <- family_spec$link_name[cbind(row_family, 1L)]
@@ -111,7 +114,7 @@
 
   log_link_rows <- single_rows & link_name == "log"
   if (any(y_i[log_link_rows] < 0, na.rm = TRUE)) {
-    cli_abort("`link = 'log'` but the reponse data include values < 0.")
+    cli_abort("`link = 'log'` but the response data include values < 0.")
   }
 
   if (!is.null(upr)) {
@@ -267,10 +270,7 @@
 }
 
 .family_spec_process_response <- function(y_i, size, weights, family_spec) {
-  if (length(family_spec$family_id_i) != length(y_i)) {
-    cli_abort("Internal family spec error: `family_id_i` must match the response length.")
-  }
-  row_family <- family_spec$family_id_i
+  row_family <- .family_spec_response_family_id(family_spec, y_i)
   family_name <- family_spec$family_name[cbind(row_family, 1L)]
   non_delta_rows <- family_spec$combine_kind[row_family] == "single"
   binom_rows <- non_delta_rows & family_name == "binomial"
@@ -340,11 +340,8 @@
 }
 
 .family_spec_build_response <- function(y_i, family_spec) {
-  if (length(family_spec$family_id_i) != length(y_i)) {
-    cli_abort("Internal family spec error: `family_id_i` must match the response length.")
-  }
+  row_family <- .family_spec_response_family_id(family_spec, y_i)
   y_out <- matrix(NA_real_, nrow = length(y_i), ncol = family_spec$n_m)
-  row_family <- family_spec$family_id_i
 
   single_rows <- family_spec$combine_kind[row_family] == "single"
   if (any(single_rows)) {
@@ -364,16 +361,14 @@
   if (!is.null(object$family_spec)) {
     return(object$family_spec)
   }
-  distribution_column <- if (.is_named_family_list(object$family) && length(object$family) > 1L) {
-    object$distribution_column
-  } else {
-    NULL
+
+  if (.is_named_family_list(object$family) && length(object$family) > 1L) {
+    cli_abort(
+      "{caller} requires canonical `family_spec` metadata for multi-family objects. Refit this model with the current version of sdmTMB."
+    )
   }
-  .build_family_spec(
-    object$family,
-    data = object$data,
-    distribution_column = distribution_column
-  )
+
+  .build_family_spec(object$family, data = object$data)
 }
 
 .family_spec_is_multi_family <- function(family_spec) {

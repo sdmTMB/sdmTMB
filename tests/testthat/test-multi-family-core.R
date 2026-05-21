@@ -1,20 +1,20 @@
 test_that("family_spec normalizes ordinary single-family fits", {
   dat <- data.frame(y = c(1.2, 2.4, 3.6))
 
-  spec <- sdmTMB:::.build_family_spec(gaussian(), data = dat)
+  spec <- .build_family_spec(gaussian(), data = dat)
 
   expect_identical(spec$n_f, 1L)
   expect_identical(spec$n_m, 1L)
   expect_identical(spec$distribution_column, NULL)
   expect_equal(spec$family_id_i, rep(1L, nrow(dat)))
   expect_true(spec$active[1, 1])
-  expect_equal(spec$family_code[1, 1], unname(sdmTMB:::.valid_family["gaussian"]))
-  expect_equal(spec$link_code[1, 1], unname(sdmTMB:::.valid_link["identity"]))
+  expect_equal(spec$family_code[1, 1], unname(.valid_family["gaussian"]))
+  expect_equal(spec$link_code[1, 1], unname(.valid_link["identity"]))
   expect_identical(unname(spec$combine_kind), "single")
   expect_equal(spec$param_slot$ln_phi, 1L)
   expect_true(is.na(spec$param_slot$thetaf))
 
-  y_out <- sdmTMB:::.family_spec_build_response(dat$y, spec)
+  y_out <- .family_spec_build_response(dat$y, spec)
   expect_identical(ncol(y_out), 1L)
   expect_equal(y_out[, 1], dat$y)
 })
@@ -30,7 +30,7 @@ test_that("family_spec normalizes mixed family metadata", {
     dist = c("gauss", "delta", "delta", "stud", "gauss")
   )
 
-  spec <- sdmTMB:::.build_family_spec(
+  spec <- .build_family_spec(
     family = fam,
     data = dat,
     distribution_column = "dist"
@@ -40,16 +40,16 @@ test_that("family_spec normalizes mixed family metadata", {
   expect_identical(spec$n_m, 2L)
   expect_equal(spec$family_id_i, c(1L, 2L, 2L, 3L, 1L))
   expect_equal(unname(spec$combine_kind), c("single", "poisson_link_delta", "single"))
-  expect_equal(spec$family_code[1, 1], unname(sdmTMB:::.valid_family["gaussian"]))
-  expect_equal(spec$family_code[2, 1], unname(sdmTMB:::.valid_family["binomial"]))
-  expect_equal(spec$family_code[2, 2], unname(sdmTMB:::.valid_family["Gamma"]))
-  expect_equal(spec$link_code[2, 1], unname(sdmTMB:::.valid_link["log"]))
-  expect_equal(spec$link_code[2, 2], unname(sdmTMB:::.valid_link["log"]))
+  expect_equal(spec$family_code[1, 1], unname(.valid_family["gaussian"]))
+  expect_equal(spec$family_code[2, 1], unname(.valid_family["binomial"]))
+  expect_equal(spec$family_code[2, 2], unname(.valid_family["Gamma"]))
+  expect_equal(spec$link_code[2, 1], unname(.valid_link["log"]))
+  expect_equal(spec$link_code[2, 2], unname(.valid_link["log"]))
   expect_true(is.na(spec$family_code[1, 2]))
   expect_equal(spec$param_slot$ln_phi, c(1L, 2L, 3L))
   expect_equal(spec$param_slot$ln_student_df, c(NA_integer_, NA_integer_, 1L))
 
-  y_out <- sdmTMB:::.family_spec_build_response(dat$y, spec)
+  y_out <- .family_spec_build_response(dat$y, spec)
   expect_equal(y_out[1, ], c(1.2, NA_real_))
   expect_equal(y_out[2, ], c(0, NA_real_))
   expect_equal(y_out[3, ], c(1, 2.4))
@@ -66,13 +66,13 @@ test_that("family_spec processes rowwise binomial-like responses", {
     y = c(0.2, 1, 0.4, 2, 3.5),
     dist = c("binom", "binom", "betabinom", "betabinom", "gauss")
   )
-  spec <- sdmTMB:::.build_family_spec(
+  spec <- .build_family_spec(
     family = fam,
     data = dat,
     distribution_column = "dist"
   )
 
-  res <- sdmTMB:::.family_spec_process_response(
+  res <- .family_spec_process_response(
     y_i = dat$y,
     size = rep(1, nrow(dat)),
     weights = c(10, 4, 12, 7, 1),
@@ -96,7 +96,22 @@ test_that("family_spec processes rowwise binomial-like responses", {
   expect_equal(res$weights[4], 1)
 })
 
-test_that("object_family_spec can rebuild from stored multi-family fields", {
+test_that("object_family_spec can rebuild stored single-family fields", {
+  dat <- data.frame(y = c(1.2, 0, 2.4, 3.1))
+  obj <- list(
+    family = list(gauss = gaussian()),
+    data = dat
+  )
+
+  spec <- .object_family_spec(obj)
+
+  expect_identical(spec$n_f, 1L)
+  expect_identical(spec$n_m, 1L)
+  expect_identical(spec$distribution_column, NULL)
+  expect_equal(spec$family_id_i, rep(1L, nrow(dat)))
+})
+
+test_that("object_family_spec requires canonical metadata for old multi-family objects", {
   dat <- data.frame(
     y = c(1.2, 0, 2.4, 3.1),
     dist = c("gauss", "delta", "delta", "gauss")
@@ -107,12 +122,10 @@ test_that("object_family_spec can rebuild from stored multi-family fields", {
     distribution_column = "dist"
   )
 
-  spec <- sdmTMB:::.object_family_spec(obj)
-
-  expect_identical(spec$n_f, 2L)
-  expect_identical(spec$n_m, 2L)
-  expect_identical(spec$distribution_column, "dist")
-  expect_equal(spec$family_id_i, c(1L, 2L, 2L, 1L))
+  expect_error(
+    .object_family_spec(obj, caller = "`predict()`"),
+    regexp = "Refit this model with the current version of sdmTMB"
+  )
 })
 
 test_that("multi-family fits build family-based TMB payloads", {
