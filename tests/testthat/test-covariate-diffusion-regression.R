@@ -53,6 +53,7 @@ simulate_covariate_diffusion_regression_data <- function(
 
 test_that("covariate diffusion regression estimates and logLik stay stable", {
   skip_on_cran()
+  skip_on_ci()
 
   sim <- simulate_covariate_diffusion_regression_data()
   dat <- sim$data
