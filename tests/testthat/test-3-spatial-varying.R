@@ -83,7 +83,7 @@ test_that("SVC are estimated correctly for binomial and delta models", {
 
   # spatial = "off" + ~ 1 + factor: new in this release — a genuine SVC
   # intercept field plus K - 1 deviations; no omega_s.
-  expect_warning({
+  expect_message({
     m1.6 <- sdmTMB(
       data = d,
       formula = present ~ 1 + year_scaled,
@@ -200,7 +200,7 @@ test_that("x$spatial correctly reflects user's specification for all SVC cases",
   expect_true(isTRUE(fC$svc_omega_is_intercept))
 
   # D: spatial = "off", ~ 1 + factor (real SVC intercept + deviations, no omega_s)
-  expect_warning({
+  expect_message({
     fD <- sdmTMB(present ~ 1, spatial = "off", spatial_varying = ~ 1 + vessel,
       mesh = pcod_mesh_2011, data = d, do_fit = FALSE)
   }, regexp = "behaviour.*changed|changed.*behaviour")
