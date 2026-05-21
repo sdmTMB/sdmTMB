@@ -498,7 +498,14 @@ print_other_parameters <- function(x, m = 1L) {
     sigma_Z <- paste0(sigma_label, " (", x$spatial_varying,  "): ", a, "\n")
     sigma_Z <- gsub("\\(\\(", "\\(", sigma_Z) # ((Intercept))
     sigma_Z <- gsub("\\)\\)", "\\)", sigma_Z) # ((Intercept))
-    sigma_Z <- paste(sigma_Z, collapse = "")
+    if (isTRUE(x$svc_omega_is_intercept)) {
+      sigma_Z <- paste0(
+        "Spatial field also serves as the SVC intercept/reference-level field\n",
+        paste(sigma_Z, collapse = "")
+      )
+    } else {
+      sigma_Z <- paste(sigma_Z, collapse = "")
+    }
   } else {
     sigma_Z <- ""
   }

@@ -1,15 +1,22 @@
 # sdmTMB (development version)
 
-* The interaction between `spatial`, `spatial_varying`, and factor variables
-  has been clarified.
+* The interaction between `spatial`, `spatial_varying`, and the intercept of
+  the `spatial_varying` design matrix has been clarified. See the vignette/article
+  "svc-factor-models."
 
-  In particular, `spatial = "off", spatial_varying = ~ 0 + factor_var` now
-  correctly reports `spatial = "off"` in the fitted object (one SVC field per
-  factor level, no ordinary spatial field `omega_s`). A one-time compatibility
-  warning is issued for this specification. To fit a model with an ordinary
-  spatial field plus factor-level SVC deviations, use
-  `spatial = "on", spatial_varying = ~ 0 + factor_var`.
+  `spatial_varying` now respects its own model matrix. The `(Intercept)`
+  column is only dropped when `spatial = "on"`, in which case the ordinary
+  spatial field `omega_s` is used as the SVC intercept/reference-level field
+  (a single informational message is issued at fit time, suppressible via
+  `silent = TRUE`).
 
+  The only material change in fitted-model structure versus published
+  releases is for `spatial = "off", spatial_varying = ~ 1 + factor`: this
+  previously stripped the intercept *and* zeroed `omega_s`, leaving only
+  `K - 1` deviation fields with no reference field. It now fits a genuine
+  SVC intercept field plus `K - 1` deviation fields. A one-cycle warning is
+  emitted for this specification.
+  
   The previous message suggesting `spatial = "off"` when using
   `spatial = "on", spatial_varying = ~ 0 + factor_var` has been removed; this
   is a valid model specification (global spatial field plus per-level SVC
