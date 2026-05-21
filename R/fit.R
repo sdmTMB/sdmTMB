@@ -635,11 +635,7 @@ sdmTMB <- function(
     data = data,
     distribution_column = distribution_column
   )
-  if (family_spec$n_f > 1L) {
-    cli_abort(
-      "Multi-family fits with more than one family are not wired into `main` yet."
-    )
-  }
+  multi_family <- family_spec$n_f > 1L
   family <- family_spec$family
   delta <- family_spec$n_m == 2L
   n_m <- family_spec$n_m
@@ -818,7 +814,7 @@ sdmTMB <- function(
     covariate_diffusion_parsed,
     data = data,
     time = time,
-    multi_family = FALSE
+    multi_family = multi_family
   )
   if (!is.null(covariate_diffusion_parsed) && mesh_missing) {
     cli_abort("`mesh` must be supplied when using `covariate_diffusion`.")
@@ -871,7 +867,8 @@ sdmTMB <- function(
   }
   # FIXME parallel setup here?
 
-  if (family$family[1] == "censored_poisson") {
+  uses_censored_poisson <- any(family_spec$family_name[family_spec$active] == "censored_poisson")
+  if (uses_censored_poisson) {
     if ("lwr" %in% names(experimental) || "upr" %in% names(experimental)) {
       cli_abort("Detected `lwr` or `upr` in `experimental`. `lwr` is no longer needed and `upr` is now specified as `control = sdmTMBcontrol(censored_upper = ...)`.")
     }
@@ -1063,13 +1060,6 @@ sdmTMB <- function(
     }
   }
 
-  if (family$family[1] %in% c("Gamma", "lognormal") && min(y_i) <= 0 && !delta) {
-    cli_abort("Gamma and lognormal must have response values > 0.")
-  }
-  if (family$family[1] == "censored_poisson") {
-    assert_that(mean(upr - y_i, na.rm = TRUE) >= 0)
-  }
-
   # This is taken from approach in glmmTMB to match how they handle binomial
   # yobs could be a factor -> treat as binary following glm
   # yobs could be cbind(success, failure)
@@ -1139,9 +1129,18 @@ sdmTMB <- function(
     weights <- result$weights
   }
 
-  if (identical(family$link[1], "log") && min(y_i, na.rm = TRUE) < 0 && !delta) {
-    cli_abort("`link = 'log'` but the reponse data include values < 0.")
+  if (multi_family) {
+    result <- .family_spec_process_response(
+      y_i = y_i,
+      size = size,
+      weights = weights,
+      family_spec = family_spec
+    )
+    y_i <- result$y_i
+    size <- result$size
+    weights <- result$weights
   }
+  .family_spec_validate_response(y_i, family_spec = family_spec, upr = upr)
 
   if (is.null(offset)) offset <- rep(0, length(y_i))
   assert_that(length(offset) == length(y_i), msg = "Offset doesn't match length of data")
@@ -1155,12 +1154,13 @@ sdmTMB <- function(
   n_s <- domain$n_s
 
   # Student-t df: can be NULL (estimate, default) or numeric (fix)
-  student_df_fixed <- if (family$family[1] == "student" && "df" %in% names(family)) {
+  has_student_family <- any(!is.na(family_spec$param_slot$ln_student_df))
+  student_df_fixed <- if (family_spec$n_f == 1L && family$family[1] == "student" && "df" %in% names(family)) {
     family$df
   } else {
     NULL
   }
-  estimate_student_df <- family$family[1] == "student" && is.null(student_df_fixed)
+  estimate_student_df <- has_student_family && is.null(student_df_fixed)
 
   est_epsilon_model <- 0L
   epsilon_covariate <- rep(0, length(unique(data[[time]])))
@@ -1240,6 +1240,9 @@ sdmTMB <- function(
   A_st <- domain$A_st
   A_spatial_index <- domain$A_spatial_index
   y_i <- .family_spec_build_response(y_i, family_spec)
+  family_tmb <- .family_spec_tmb_data(family_spec)
+  fit_poisson_link_delta <- identical(family_spec$combine_kind[[1]], "poisson_link_delta") &&
+    family_spec$n_f == 1L
 
   time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
   n_t <- nrow(time_df)
@@ -1368,9 +1371,16 @@ sdmTMB <- function(
     spde_barrier = domain$spde_barrier_struct,
     barrier_scaling = domain$barrier_scaling,
     anisotropy = domain$anisotropy,
-    family = .valid_family[family$family],
+    obs_family_id = family_tmb$obs_family_id,
+    component_active = family_tmb$component_active,
+    family_code = family_tmb$family_code,
+    link_code = family_tmb$link_code,
+    combine_kind = family_tmb$combine_kind,
+    ln_phi_slot = family_tmb$ln_phi_slot,
+    thetaf_slot = family_tmb$thetaf_slot,
+    ln_student_df_slot = family_tmb$ln_student_df_slot,
+    gengamma_Q_slot = family_tmb$gengamma_Q_slot,
     size = c(size),
-    link = .valid_link[family$link],
     spatial_only = as.integer(spatial_only),
     spatial_covariate = as.integer(!is.null(spatial_varying)),
     calc_quadratic_range = as.integer(quadratic_roots),
@@ -1384,7 +1394,6 @@ sdmTMB <- function(
     has_smooths = as.integer(sm$has_smooths),
     upr = upr,
     lwr = 0L, # in case we want to reintroduce this
-    poisson_link_delta = as.integer(isTRUE(family$type == "poisson_link_delta")),
     stan_flag = as.integer(bayesian),
     no_spatial = no_spatial,
     re_cov_df_map = as.matrix(re_cov_df_map), # dataframe used to map parameters to cov matrices,
@@ -1397,8 +1406,13 @@ sdmTMB <- function(
     Zt_list_proj = list(),
     exclude_RE = 0L
   )
+  tmb_data$poisson_link_delta <- as.integer(fit_poisson_link_delta)
   b_thresh <- matrix(0, 2L, n_m)
   if (thresh[[1]]$threshold_func == 2L) b_thresh <- matrix(0, 3L, n_m) # logistic #TODO: change hard coding on index of thresh[[1]]
+  n_thetaf <- .family_spec_slot_length(family_spec$param_slot$thetaf)
+  n_ln_student_df <- .family_spec_slot_length(family_spec$param_slot$ln_student_df)
+  n_gengamma_Q <- .family_spec_slot_length(family_spec$param_slot$gengamma_Q)
+  n_ln_phi <- .family_spec_slot_length(family_spec$param_slot$ln_phi)
 
   tmb_params <- list(
     ln_H_input = matrix(0, nrow = 2L, ncol = n_m),
@@ -1413,16 +1427,16 @@ sdmTMB <- function(
     kappaT_dl_raw = numeric(covariate_diffusion_n_covariates),
     kappaST_dl_raw = numeric(covariate_diffusion_n_covariates),
     # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
-    thetaf = 0,
-    ln_student_df = if (family$family[1] == "student") {
-      if (estimate_student_df) log(2) else log(student_df_fixed - 1)
+    thetaf = rep(0, n_thetaf),
+    ln_student_df = if (n_ln_student_df > 0L) {
+      rep(if (estimate_student_df) log(2) else log(student_df_fixed - 1), n_ln_student_df)
     } else {
-      0  # default for non-student families
+      numeric(0)
     },
-    gengamma_Q = 0.5, # Not defined at exactly 0
+    gengamma_Q = rep(0.5, n_gengamma_Q), # Not defined at exactly 0
     logit_p_extreme = 0,
     log_ratio_mix = -1, # ratio is 1 + exp(log_ratio_mix) so 0 would start fairly high
-    ln_phi = rep(0, n_m),
+    ln_phi = rep(0, n_ln_phi),
     ln_tau_V = matrix(0, ncol(X_rw_ik), n_m),
     rho_time_unscaled = matrix(0, ncol(X_rw_ik), n_m),
     ar1_phi = rep(0, n_m),
@@ -1440,7 +1454,7 @@ sdmTMB <- function(
     b_smooth = if (sm$has_smooths) matrix(0, sum(sm$sm_dims), n_m) else array(0),
     ln_smooth_sigma = if (sm$has_smooths) matrix(0, length(sm$sm_dims), n_m) else array(0)
   )
-  if (identical(family$link, "inverse") && family$family[1] %in% c("Gamma", "gaussian", "student") && !delta) {
+  if (family_spec$n_f == 1L && identical(family$link, "inverse") && family$family[1] %in% c("Gamma", "gaussian", "student") && !delta) {
     fam <- family
     if (family$family == "student") fam$family <- "gaussian"
     temp <- mgcv::gam(formula = formula[[1]], data = data, family = fam)
@@ -1462,29 +1476,12 @@ sdmTMB <- function(
   tmb_map$kappaT_dl_raw <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_temporal)
   tmb_map$kappaST_dl_raw <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_spacetime)
   if (delta) tmb_map$b_j2 <- NULL
-  if (family$family[[1]] == "tweedie") tmb_map$thetaf <- NULL
-  if (family$family[[1]] == "student") {
-    if (estimate_student_df) {
-      tmb_map$ln_student_df <- NULL  # estimate
-    } else {
-      tmb_map$ln_student_df <- factor(NA)  # fix at initial value
-    }
-  } else {
-    tmb_map$ln_student_df <- factor(NA)  # not student family, fix at 0
+  if (length(tmb_params$thetaf) > 0L) tmb_map$thetaf <- NULL
+  if (length(tmb_params$ln_student_df) > 0L && estimate_student_df) {
+    tmb_map$ln_student_df <- NULL
   }
-  if ("gengamma" %in% family$family) tmb_map$gengamma_Q <- factor(NA)
-  tmb_map$ln_phi <- rep(1, n_m)
-  if (family$family[[1]] %in% c("binomial", "poisson", "censored_poisson")) {
-    tmb_map$ln_phi[1] <- factor(NA)
-  }
-  if (delta) {
-    if (family$family[[2]] %in% c("binomial", "poisson", "censored_poisson")) {
-      tmb_map$ln_phi[2] <- factor(NA)
-    } else {
-      tmb_map$ln_phi[2] <- 2
-    }
-  }
-  tmb_map$ln_phi <- as.factor(tmb_map$ln_phi)
+  if (length(tmb_params$gengamma_Q) > 0L) tmb_map$gengamma_Q <- NULL
+  if (length(tmb_params$ln_phi) > 0L) tmb_map$ln_phi <- NULL
   if (!is.null(thresh[[1]]$threshold_parameter)) tmb_map$b_threshold <- NULL
 
   if (est_epsilon_re == 1L) {
@@ -1503,7 +1500,10 @@ sdmTMB <- function(
     # tmb_data$spatial_only <- rep(1L, length(tmb_data$spatial_only))
 
     # Poisson on first phase increases stability:
-    if (family$family[[1]] == "censored_poisson") tmb_data$family <- .valid_family["poisson"]
+    censored_code <- unname(.valid_family["censored_poisson"])
+    if (any(tmb_data$component_active == 1L & tmb_data$family_code == censored_code)) {
+      tmb_data$family_code[tmb_data$component_active == 1L & tmb_data$family_code == censored_code] <- unname(.valid_family["poisson"])
+    }
 
     tmb_obj1 <- TMB::MakeADFun(
       data = tmb_data, parameters = tmb_params,
@@ -1696,7 +1696,7 @@ sdmTMB <- function(
   }
 
   # Handle mixture models
-  if (family$family[[1]] %in% c("gamma_mix", "lognormal_mix", "nbinom2_mix")) {
+  if (family_spec$n_f == 1L && family$family[[1]] %in% c("gamma_mix", "lognormal_mix", "nbinom2_mix")) {
     fixed_p_extreme <- family$p_extreme
 
     if (!is.null(fixed_p_extreme)) {
@@ -1710,7 +1710,7 @@ sdmTMB <- function(
     }
   }
   # delta mixture models
-  if (delta) {
+  if (family_spec$n_f == 1L && delta) {
     if (family$family[[2]] %in% c("gamma_mix", "lognormal_mix", "nbinom2_mix")) {
       fixed_p_extreme <- family[[2]]$p_extreme
       if (is.null(fixed_p_extreme)) fixed_p_extreme <- family$p_extreme
@@ -1728,7 +1728,6 @@ sdmTMB <- function(
   }
 
   if (tmb_data$threshold_func > 0) tmb_map$b_threshold <- NULL
-  if ("gengamma" %in% family$family) tmb_map$gengamma_Q <- NULL
 
   for (i in seq_along(map)) { # user supplied
     cli_inform(c(i = paste0("Fixing or mirroring `", names(map)[i], "`")))
@@ -1801,6 +1800,9 @@ sdmTMB <- function(
     )) # 276
   }
   if (do_index) {
+    if (multi_family) {
+      cli_abort("`do_index = TRUE` is not yet supported for multi-family models.")
+    }
     args <- list(object = out_structure, return_tmb_data = TRUE)
     args <- c(args, predict_args)
     if (!"newdata" %in% names(predict_args)) {
@@ -1945,7 +1947,7 @@ sdmTMB <- function(
   }
 
   # save params that families need to grab from environments:
-  if (any(family$family %in% c("truncated_nbinom1", "truncated_nbinom2"))) {
+  if (family_spec$n_f == 1L && any(family$family %in% c("truncated_nbinom1", "truncated_nbinom2"))) {
     phi <- exp(tmb_obj$par[["ln_phi"]])
     if (delta) {
       assign(".phi", phi, environment(out_structure[["family"]][[2]][["linkinv"]]))

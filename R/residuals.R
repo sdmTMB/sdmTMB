@@ -456,6 +456,9 @@ residuals.sdmTMB <- function(object,
                              ...) {
   type_was_missing <- missing(type)
   type <- match.arg(type[[1]], choices = c("mle-mvn", "mle-laplace", "mle-eb", "mle-mcmc", "response", "pearson", "deviance"))
+  if (!is.null(object$family_spec) && object$family_spec$n_f > 1L) {
+    cli_abort("`residuals()` is not yet supported for multi-family models on this branch.")
+  }
 
   # retrieve function that called this:
   sys_calls <- unlist(lapply(sys.calls(), deparse))

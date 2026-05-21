@@ -266,6 +266,9 @@ predict.sdmTMB <- function(object, newdata = NULL,
     cli_abort(c("This looks like a very old version of a model fit.",
         "Re-fit the model before predicting with it."))
   }
+  if (!is.null(object$family_spec) && object$family_spec$n_f > 1L) {
+    cli_abort("`predict()` is not yet supported for multi-family models on this branch.")
+  }
   is_areal <- object$tmb_data$spatial_model %in% c(1L, 2L)
   if (!is_areal && is_areal_domain(object$spde)) {
     is_areal <- TRUE
@@ -867,9 +870,9 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
       # For delta models with model = NA, use combined predictions
       if (isTRUE(object$family$delta) && is.na(model) && !pop_pred &&
-          "proj_eta_delta" %in% names(sr_est_rep)) {
-        nd$est <- sr_est_rep[["proj_eta_delta"]]
-        nd$est_se <- sr_se_rep[["proj_eta_delta"]]
+          "proj_eta_combined" %in% names(sr_est_rep)) {
+        nd$est <- sr_est_rep[["proj_eta_combined"]]
+        nd$est_se <- sr_se_rep[["proj_eta_combined"]]
       } else {
         if (is.na(model)) model_temp <- 1L else model_temp <- model
         proj_eta <- proj_eta[,model_temp,drop=TRUE]
@@ -914,9 +917,9 @@ predict.sdmTMB <- function(object, newdata = NULL,
             } else {
               nd$est <- object$family[[2]]$linkfun(p1 * p2)
             }
-            if (se_fit) {
-              nd$est <- sr_est_rep$proj_rf_delta
-              nd$est_se <- sr_se_rep$proj_rf_delta
+            if (se_fit && "proj_fe_combined" %in% names(sr_est_rep)) {
+              nd$est <- sr_est_rep[["proj_fe_combined"]]
+              nd$est_se <- sr_se_rep[["proj_fe_combined"]]
             }
           }
         }

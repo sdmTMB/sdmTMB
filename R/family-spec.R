@@ -53,6 +53,80 @@
   )
 }
 
+.family_spec_slot_length <- function(slot) {
+  used <- slot[!is.na(slot)]
+  if (!length(used)) {
+    return(0L)
+  }
+  as.integer(max(used))
+}
+
+.family_spec_tmb_data <- function(family_spec) {
+  zero_based_slot <- function(slot) {
+    out <- rep(-1L, length(slot))
+    used <- !is.na(slot)
+    out[used] <- slot[used] - 1L
+    out
+  }
+
+  family_code <- matrix(0L, nrow = family_spec$n_f, ncol = family_spec$n_m)
+  link_code <- matrix(0L, nrow = family_spec$n_f, ncol = family_spec$n_m)
+  family_code[family_spec$active] <- family_spec$family_code[family_spec$active]
+  link_code[family_spec$active] <- family_spec$link_code[family_spec$active]
+
+  combine_kind_codes <- c(
+    single = 0L,
+    delta = 1L,
+    poisson_link_delta = 2L
+  )
+
+  list(
+    obs_family_id = family_spec$family_id_i - 1L,
+    component_active = matrix(
+      as.integer(family_spec$active),
+      nrow = family_spec$n_f,
+      ncol = family_spec$n_m
+    ),
+    family_code = family_code,
+    link_code = link_code,
+    combine_kind = unname(as.integer(combine_kind_codes[family_spec$combine_kind])),
+    ln_phi_slot = zero_based_slot(family_spec$param_slot$ln_phi),
+    thetaf_slot = zero_based_slot(family_spec$param_slot$thetaf),
+    ln_student_df_slot = zero_based_slot(family_spec$param_slot$ln_student_df),
+    gengamma_Q_slot = zero_based_slot(family_spec$param_slot$gengamma_Q)
+  )
+}
+
+.family_spec_validate_response <- function(y_i, family_spec, upr = NULL) {
+  if (length(family_spec$family_id_i) != length(y_i)) {
+    cli_abort("Internal family spec error: `family_id_i` must match the response length.")
+  }
+
+  row_family <- family_spec$family_id_i
+  single_rows <- family_spec$combine_kind[row_family] == "single"
+  family_name <- family_spec$family_name[cbind(row_family, 1L)]
+  link_name <- family_spec$link_name[cbind(row_family, 1L)]
+
+  positive_rows <- single_rows & family_name %in% c("Gamma", "lognormal")
+  if (any(y_i[positive_rows] <= 0, na.rm = TRUE)) {
+    cli_abort("Gamma and lognormal must have response values > 0.")
+  }
+
+  log_link_rows <- single_rows & link_name == "log"
+  if (any(y_i[log_link_rows] < 0, na.rm = TRUE)) {
+    cli_abort("`link = 'log'` but the reponse data include values < 0.")
+  }
+
+  if (!is.null(upr)) {
+    censored_rows <- single_rows & family_name == "censored_poisson"
+    if (any(y_i[censored_rows] > upr[censored_rows], na.rm = TRUE)) {
+      cli_abort("Observed values must be <= `control$censored_upper` for censored Poisson rows.")
+    }
+  }
+
+  invisible(NULL)
+}
+
 .validate_distribution_column <- function(data, distribution_column, family_labels) {
   if (is.null(data)) {
     cli_abort("`data` must be supplied when `distribution_column` is used.")
