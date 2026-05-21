@@ -196,8 +196,9 @@ to \code{\link[=get_index]{get_index()}}.}
 \code{do_index = TRUE}. Most users can ignore this option.}
 
 \item{index_args}{A list of arguments to pass to \code{\link[=get_index]{get_index()}} \strong{if}
-\code{do_index = TRUE}. Currently, only \code{area} is supported. Bias correction
-can be done when calling \code{\link[=get_index]{get_index()}} on the resulting fitted object.
+\code{do_index = TRUE}. Currently, \code{area} and \code{derived_link} are supported.
+Bias correction can be done when calling \code{\link[=get_index]{get_index()}} on the resulting
+fitted object.
 Most users can ignore this option.}
 
 \item{covariate_diffusion}{An optional one-sided formula describing distributed

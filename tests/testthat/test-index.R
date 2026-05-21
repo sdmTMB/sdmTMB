@@ -72,6 +72,76 @@ test_that("get_index works", {
   expect_equal(ind, indsp)
 })
 
+test_that("get_index() can override the derived response link for cloglog binomial models", {
+  skip_on_cran()
+
+  set.seed(1)
+  n_trials <- 10
+  d <- expand.grid(time = 1:2, station = seq_len(60))
+  eta <- c(-1.2, -0.5)[d$time]
+  p <- 1 - exp(-exp(eta))
+  d$successes <- stats::rbinom(nrow(d), size = n_trials, prob = p)
+  d$prop <- d$successes / n_trials
+  d$trials <- n_trials
+
+  m <- sdmTMB(
+    prop ~ 0 + as.factor(time),
+    data = d,
+    family = binomial(link = "cloglog"),
+    weights = d$trials,
+    spatial = "off",
+    spatiotemporal = "off",
+    time = "time"
+  )
+
+  nd <- data.frame(time = 1:2)
+  pred <- predict(m, newdata = nd, return_tmb_object = TRUE)
+
+  idx_default <- get_index(pred, area = n_trials, bias_correct = FALSE)
+  idx_log <- get_index(pred, area = n_trials, bias_correct = FALSE, derived_link = "log")
+  expect_equal(idx_default$est, binomial(link = "cloglog")$linkinv(pred$data$est) * n_trials)
+  expect_equal(idx_log$est, exp(pred$data$est) * n_trials)
+
+  idx_split <- get_index_split(
+    m, nd,
+    nsplit = 2,
+    area = rep(n_trials, nrow(nd)),
+    bias_correct = FALSE,
+    derived_link = "log"
+  )
+  expect_equal(idx_log, idx_split)
+
+  m_do_index <- sdmTMB(
+    prop ~ 0 + as.factor(time),
+    data = d,
+    family = binomial(link = "cloglog"),
+    weights = d$trials,
+    spatial = "off",
+    spatiotemporal = "off",
+    time = "time",
+    do_index = TRUE,
+    predict_args = list(newdata = nd),
+    index_args = list(area = n_trials, derived_link = "log")
+  )
+  idx_fit <- get_index(m_do_index, bias_correct = FALSE)
+  expect_equal(idx_fit$est, idx_log$est)
+
+  m_do_index_default <- sdmTMB(
+    prop ~ 0 + as.factor(time),
+    data = d,
+    family = binomial(link = "cloglog"),
+    weights = d$trials,
+    spatial = "off",
+    spatiotemporal = "off",
+    time = "time",
+    do_index = TRUE,
+    predict_args = list(newdata = nd),
+    index_args = list(area = n_trials)
+  )
+  idx_fit_override <- get_index(m_do_index_default, bias_correct = FALSE, derived_link = "log")
+  expect_equal(idx_fit_override$est, idx_log$est)
+})
+
 test_that("get_cog works with subsets of years", {
   skip_on_cran()
   skip_on_ci()

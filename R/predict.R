@@ -343,6 +343,9 @@ predict.sdmTMB <- function(object, newdata = NULL,
   exclude_RE <- if (pop_pred_iid) 1L else object$tmb_data$exclude_RE
 
   tmb_data <- object$tmb_data
+  if (is.null(tmb_data$link_pred) && !is.null(tmb_data$link)) {
+    tmb_data$link_pred <- tmb_data$link
+  }
   tmb_data$do_predict <- 1L
   no_spatial <- as.logical(object$tmb_data$no_spatial)
   has_covariate_diffusion <- !is.null(object$covariate_diffusion_data)

@@ -9,7 +9,15 @@
 \title{Extract a relative biomass/abundance index, center of gravity, effective
 area occupied, or weighted average}
 \usage{
-get_index(obj, bias_correct = TRUE, level = 0.95, area = 1, silent = TRUE, ...)
+get_index(
+  obj,
+  bias_correct = TRUE,
+  level = 0.95,
+  area = 1,
+  silent = TRUE,
+  derived_link = NULL,
+  ...
+)
 
 get_index_split(
   obj,
@@ -20,6 +28,7 @@ get_index_split(
   area = 1,
   silent = FALSE,
   predict_args = list(),
+  derived_link = NULL,
   ...
 )
 
@@ -30,6 +39,7 @@ get_cog(
   format = c("long", "wide"),
   area = 1,
   silent = TRUE,
+  derived_link = NULL,
   ...
 )
 
@@ -40,10 +50,19 @@ get_weighted_average(
   level = 0.95,
   area = 1,
   silent = TRUE,
+  derived_link = NULL,
   ...
 )
 
-get_eao(obj, bias_correct = FALSE, level = 0.95, area = 1, silent = TRUE, ...)
+get_eao(
+  obj,
+  bias_correct = FALSE,
+  level = 0.95,
+  area = 1,
+  silent = TRUE,
+  derived_link = NULL,
+  ...
+)
 }
 \arguments{
 \item{obj}{Output from \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} with \code{return_tmb_object = TRUE}
@@ -65,6 +84,11 @@ giving the column name in \code{newdata} containing areas. See Details for
 non-spatial uses of \code{area} as an integration multiplier.}
 
 \item{silent}{Silent?}
+
+\item{derived_link}{Optional override for the inverse link used when
+calculating derived quantities such as the index. By default, the fitted
+family link is used. Currently supported for non-delta \code{binomial()} and
+\code{betabinomial()} models fit with \code{link = "cloglog"}.}
 
 \item{...}{Passed to \code{\link[TMB:sdreport]{TMB::sdreport()}}.}
 

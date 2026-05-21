@@ -224,6 +224,7 @@ Type objective_function<Type>::operator()()
   // Distribution
   DATA_IVECTOR(family);
   DATA_IVECTOR(link);
+  DATA_IVECTOR(link_pred);
   DATA_VECTOR(size); // binomial, via glmmTMB
 
   // SPDE objects from R-INLA
@@ -1632,7 +1633,7 @@ Type objective_function<Type>::operator()()
             Type log_nzprob = calc_log_nzprob(exp(proj_eta(i,0)), phi(0), family(0));
             mu_combined(i) = exp(proj_eta(i,0)) / exp(log_nzprob);
           } else  {
-            mu_combined(i) = InverseLink(proj_eta(i,0), link(0));
+            mu_combined(i) = InverseLink(proj_eta(i,0), link_pred(0));
           }
         }
 

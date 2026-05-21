@@ -150,8 +150,9 @@ NULL
 #' @param predict_args A list of arguments to pass to [predict.sdmTMB()] **if**
 #'   `do_index = TRUE`. Most users can ignore this option.
 #' @param index_args A list of arguments to pass to [get_index()] **if**
-#'   `do_index = TRUE`. Currently, only `area` is supported. Bias correction
-#'   can be done when calling [get_index()] on the resulting fitted object.
+#'   `do_index = TRUE`. Currently, `area` and `derived_link` are supported.
+#'   Bias correction can be done when calling [get_index()] on the resulting
+#'   fitted object.
 #'   Most users can ignore this option.
 #' @param bayesian Logical indicating if the model will be passed to
 #'   \pkg{tmbstan}. If `TRUE`, Jacobian adjustments are applied to account for
@@ -1358,6 +1359,7 @@ sdmTMB <- function(
     family = .valid_family[family$family],
     size = c(size),
     link = .valid_link[family$link],
+    link_pred = .valid_link[family$link],
     spatial_only = as.integer(spatial_only),
     spatial_covariate = as.integer(!is.null(spatial_varying)),
     calc_quadratic_range = as.integer(quadratic_roots),
@@ -1795,6 +1797,10 @@ sdmTMB <- function(
     if ("bias_correct" %in% names(index_args)) {
       cli_warn("`bias_correct` must be done later with `get_index(..., bias_correct = TRUE)`.")
       index_args$bias_correct <- NULL
+    }
+    if ("derived_link" %in% names(index_args)) {
+      tmb_data$link_pred <- .resolve_link_pred(out_structure, tmb_data, index_args[["derived_link"]])
+      index_args$derived_link <- NULL
     }
     if (!"area" %in% names(index_args)) {
       cli_warn("`area` not supplied to `index_args` but `do_index = TRUE`. Using `area = 1`.")

@@ -1,5 +1,9 @@
 # sdmTMB (development version)
 
+* Add `derived_link` in `get_index()` to allow override of inverse link.
+  Useful for fitting Bernoulli data with a cloglog link but then predicting
+  as an expectation from a count from a thinned count process. #339
+
 * Add `allow_new_levels` in `predict.sdmTMB()` for predicting with new levels
   in random intercepts or slopes. New levels get the population value. #196 #480
 
