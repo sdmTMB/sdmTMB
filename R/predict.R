@@ -553,7 +553,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
         X = proj_X_ij[[1]],
         coef_names = object$covariate_diffusion_data$term_coef_name
       )
-      if (isTRUE(object$family$delta)) {
+      if (has_two_components) {
         proj_X_ij[[2]] <- .append_covariate_diffusion_coef_columns(
           X = proj_X_ij[[2]],
           coef_names = object$covariate_diffusion_data$term_coef_name
@@ -769,7 +769,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
         }
         if (length(dim(out[[1]])) == 2L) {
           active2 <- if (has_two_components && isTRUE(model_temp == 2L)) {
-            family_spec$active[pred_row_family_id, 2L]
+            .family_spec_component_active(family_spec, pred_row_family_id)[, 2L]
           } else {
             NULL
           }
@@ -883,7 +883,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
         for (z in seq_len(dim(r$proj_zeta_s_A)[2])) { # SVC:
           nd[[paste0("zeta_s_", object$spatial_varying[z], "1")]] <- r$proj_zeta_s_A[,z,1]
           nd[[paste0("zeta_s_", object$spatial_varying[z], "2")]] <- r$proj_zeta_s_A[,z,2]
-          nd[[paste0("zeta_s_", object$spatial_varying[z], "2")]][!family_spec$active[pred_row_family_id, 2L]] <- NA_real_
+          inactive_lp2 <- !.family_spec_component_active(family_spec, pred_row_family_id)[, 2L]
+          nd[[paste0("zeta_s_", object$spatial_varying[z], "2")]][inactive_lp2] <- NA_real_
         }
         nd$epsilon_st1 <- pred_epsilon$est1
         nd$epsilon_st2 <- pred_epsilon$est2
@@ -932,7 +933,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
         proj_eta <- sr_est_rep[[proj_name]][, model_temp, drop = TRUE]
         se <- sr_se_rep[[proj_name]][, model_temp, drop = TRUE]
         if (has_two_components && isTRUE(model_temp == 2L)) {
-          inactive_lp2 <- !family_spec$active[pred_row_family_id, 2L]
+          inactive_lp2 <- !.family_spec_component_active(family_spec, pred_row_family_id)[, 2L]
           proj_eta[inactive_lp2] <- NA_real_
           se[inactive_lp2] <- NA_real_
         }

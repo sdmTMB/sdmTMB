@@ -1124,7 +1124,9 @@ sdmTMB <- function(
 
   size <- rep(1, nrow(X_ij[[1]])) # for non-binomial case TODO: change hard coded index
 
-  if ((identical(family$family[1], "binomial") || identical(family$family[1], "betabinomial")) && !delta) {
+  if (!multi_family &&
+      (identical(family$family[1], "binomial") || identical(family$family[1], "betabinomial")) &&
+      !delta) {
     result <- .process_binomial_response(
       mf[[1]],
       weights = weights,

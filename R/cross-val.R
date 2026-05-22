@@ -49,7 +49,15 @@ ll_nbinom2 <- function(object, withheld_y, withheld_mu) {
 
 # no longer used within sdmTMB_cv(); uses TMB report() instead
 ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
-  family_func <- switch(object$family$family,
+  family_spec <- .object_family_spec(object, caller = "`ll_sdmTMB()`")
+  if (.family_spec_is_multi_family(family_spec)) {
+    cli_abort("`ll_sdmTMB()` is not yet supported for multi-family models.")
+  }
+  if (.family_spec_has_two_components(family_spec)) {
+    cli_abort("`ll_sdmTMB()` is not yet supported for models with two linear predictors.")
+  }
+  family_name <- family(object)$family
+  family_func <- switch(family_name,
     gaussian = ll_gaussian,
     tweedie = ll_tweedie,
     binomial = ll_binomial,
@@ -59,7 +67,7 @@ ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
     nbinom1 = ll_nbinom1,
     nbinom2 = ll_nbinom2,
     cli_abort(paste0(
-      object$family$family, " not yet implemented. ",
+      family_name, " not yet implemented. ",
       "Please file an issue on GitHub."
     ))
   )

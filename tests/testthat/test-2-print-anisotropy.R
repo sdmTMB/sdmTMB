@@ -127,9 +127,16 @@ test_that("multi-family anisotropy reports both linear predictors", {
 
   fit_multi <- multi_family_anisotropy_fixture()
   aniso_df <- plot_anisotropy(fit_multi, return_data = TRUE)
+  report <- fit_multi$tmb_obj$report(fit_multi$tmb_obj$env$last.par.best)
+  comp1 <- calculate_anisotropy_components(fit_multi, m = 1)
+  comp2 <- calculate_anisotropy_components(fit_multi, m = 2)
+  plot_lp2 <- suppressWarnings(plot_anisotropy2(fit_multi, model = 2))
 
   expect_equal(sort(unique(aniso_df$model_num)), c(1L, 2L))
   expect_true(all(aniso_df$random_field == "spatial"))
+  expect_equal(comp1$eig$values, eigen(report$H)$values)
+  expect_equal(comp2$eig$values, eigen(report$H2)$values)
+  expect_equal(plot_lp2$H, report$H2)
   expect_output(cat(print_anisotropy(fit_multi, m = 1)), regexp = "\\(spatial\\): ")
   expect_output(cat(print_anisotropy(fit_multi, m = 2)), regexp = "\\(spatial\\): ")
 })

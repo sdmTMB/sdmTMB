@@ -172,6 +172,36 @@ sdmTMBcontrol <- function(
   match(row.names(mf), row.names(data))
 }
 
+.is_whole_number <- function(x, tol = sqrt(.Machine$double.eps)) {
+  abs(x - round(x)) <= tol
+}
+
+.classify_binomial_like_numeric_rows <- function(y_i, weights = NULL,
+  allow_counts = FALSE, weighted_binary_counts = FALSE) {
+  non_missing <- !is.na(y_i)
+  whole_number <- non_missing & .is_whole_number(y_i)
+  binary_rows <- whole_number & y_i %in% c(0, 1)
+  weight_available <- if (is.null(weights)) {
+    rep(FALSE, length(y_i))
+  } else {
+    !is.na(weights)
+  }
+
+  count_rows <- if (allow_counts) {
+    whole_number & (y_i > 1 | (weighted_binary_counts & binary_rows & weight_available))
+  } else {
+    rep(FALSE, length(y_i))
+  }
+  bernoulli_rows <- binary_rows & !count_rows
+  proportion_rows <- non_missing & !bernoulli_rows & !count_rows
+
+  list(
+    count_rows = count_rows,
+    bernoulli_rows = bernoulli_rows,
+    proportion_rows = proportion_rows
+  )
+}
+
 .process_binomial_response <- function(mf, weights = NULL, weights_arg = "`weights`") {
   y_i <- model.response(mf, type = "any")
   size <- rep(1, length(y_i))
@@ -190,16 +220,24 @@ sdmTMBcontrol <- function(
   } else if (is.matrix(y_i)) {
     size <- y_i[, 1] + y_i[, 2]
     y_i <- y_i[, 1]
-  } else if (!all(y_i %in% c(0, 1))) {
-    if (is.null(weights)) {
-      cli_abort(c(
-        "Proportion data were supplied to the binomial or betabinomial family without trial sizes.",
-        "i" = paste0("Please supply ", weights_arg, " with the number of trials per event.")
-      ))
+  } else {
+    rows <- .classify_binomial_like_numeric_rows(
+      y_i = y_i,
+      weights = weights,
+      allow_counts = FALSE,
+      weighted_binary_counts = FALSE
+    )
+    if (any(rows$proportion_rows)) {
+      if (is.null(weights)) {
+        cli_abort(c(
+          "Proportion data were supplied to the binomial or betabinomial family without trial sizes.",
+          "i" = paste0("Please supply ", weights_arg, " with the number of trials per event.")
+        ))
+      }
+      y_i[rows$proportion_rows] <- weights[rows$proportion_rows] * y_i[rows$proportion_rows]
+      size[rows$proportion_rows] <- weights[rows$proportion_rows]
+      weights[rows$proportion_rows] <- 1
     }
-    y_i <- weights * y_i
-    size <- weights
-    weights <- rep(1, length(y_i))
   }
 
   if (is.logical(y_i)) {

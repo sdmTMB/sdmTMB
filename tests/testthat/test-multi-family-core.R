@@ -56,28 +56,39 @@ test_that("family_spec normalizes mixed family metadata", {
   expect_equal(y_out[4, ], c(3.1, NA_real_))
 })
 
-test_that("family_spec processes rowwise binomial-like responses", {
-  fam <- list(
+test_that("family_spec processes rowwise binomial-like responses regardless of family order", {
+  dat <- data.frame(
+    y = c(0.2, 1, 0, 1, 0.4, 2, 3.5),
+    dist = c("binom", "binom", "betabinom", "betabinom", "betabinom", "betabinom", "gauss")
+  )
+  weights <- c(10, NA, 5, 5, 12, 7, 1)
+
+  run_case <- function(fam) {
+    spec <- .build_family_spec(
+      family = fam,
+      data = dat,
+      distribution_column = "dist"
+    )
+    .family_spec_process_response(
+      y_i = dat$y,
+      size = rep(1, nrow(dat)),
+      weights = weights,
+      family_spec = spec
+    )
+  }
+
+  res <- run_case(list(
     binom = binomial(),
     betabinom = betabinomial(),
     gauss = gaussian()
-  )
-  dat <- data.frame(
-    y = c(0.2, 1, 0.4, 2, 3.5),
-    dist = c("binom", "binom", "betabinom", "betabinom", "gauss")
-  )
-  spec <- .build_family_spec(
-    family = fam,
-    data = dat,
-    distribution_column = "dist"
-  )
+  ))
+  res_reversed <- run_case(list(
+    gauss = gaussian(),
+    betabinom = betabinomial(),
+    binom = binomial()
+  ))
 
-  res <- .family_spec_process_response(
-    y_i = dat$y,
-    size = rep(1, nrow(dat)),
-    weights = c(10, NA, 12, 7, 1),
-    family_spec = spec
-  )
+  expect_equal(res, res_reversed)
 
   expect_equal(res$y_i[1], 2)
   expect_equal(res$size[1], 10)
@@ -87,13 +98,45 @@ test_that("family_spec processes rowwise binomial-like responses", {
   expect_equal(res$size[2], 1)
   expect_equal(res$weights[2], 1)
 
-  expect_equal(res$y_i[3], 4.8)
-  expect_equal(res$size[3], 12)
-  expect_equal(res$weights[3], 1)
+  expect_equal(res$y_i[3:6], c(0, 1, 4.8, 2))
+  expect_equal(res$size[3:6], c(5, 5, 12, 7))
+  expect_equal(res$weights[3:6], rep(1, 4))
+})
 
-  expect_equal(res$y_i[4], 2)
-  expect_equal(res$size[4], 7)
-  expect_equal(res$weights[4], 1)
+test_that("multi-family beta-binomial weighted integer responses reach TMB as counts", {
+  dat <- data.frame(
+    y = c(0, 1, 0.25, 2, 3.5),
+    x = seq(-1, 1, length.out = 5),
+    dist = c("betabinom", "betabinom", "betabinom", "betabinom", "gauss")
+  )
+  weights <- c(4, 5, 8, 7, 1)
+
+  fit_a <- sdmTMB(
+    y ~ x,
+    data = dat,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = list(gauss = gaussian(), betabinom = betabinomial()),
+    distribution_column = "dist",
+    weights = weights,
+    do_fit = FALSE
+  )
+  fit_b <- sdmTMB(
+    y ~ x,
+    data = dat,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = list(betabinom = betabinomial(), gauss = gaussian()),
+    distribution_column = "dist",
+    weights = weights,
+    do_fit = FALSE
+  )
+
+  bb_rows <- dat$dist == "betabinom"
+  expect_equal(fit_a$tmb_data$size[bb_rows], c(4, 5, 8, 7))
+  expect_equal(fit_b$tmb_data$size[bb_rows], c(4, 5, 8, 7))
+  expect_equal(as.numeric(fit_a$tmb_data$y_i[bb_rows, 1]), c(0, 1, 2, 2))
+  expect_equal(as.numeric(fit_b$tmb_data$y_i[bb_rows, 1]), c(0, 1, 2, 2))
 })
 
 test_that("object_family_spec can rebuild stored single-family fields", {
@@ -652,6 +695,8 @@ test_that("mixed-family methods use family-spec routing and guard unsupported su
 
   expect_error(sigma(fit), regexp = "not yet supported")
   expect_error(deviance(fit), regexp = "not yet supported")
+  expect_error(spread_sims(fit), regexp = "not yet supported")
+  expect_error(gather_sims(fit), regexp = "not yet supported")
 })
 
 test_that("multi-family do_index guard fails before fit setup continues", {

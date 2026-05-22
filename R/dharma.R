@@ -129,13 +129,8 @@ dharma_residuals <- function(simulated_response, object, plot = TRUE,
   if (attr(simulated_response, "type") != "mle-mvn" && !is.null(object$tmb_random)) {
     cli_warn("It is recommended to use `simulate.sdmTMB(fit, type = 'mle-mvn')` if simulating for DHARMa residuals. See the description in ?residuals.sdmTMB under the types of residuals section.")
   }
-  if (isTRUE(object$family$delta)) {
-    y <- ifelse(!is.na(object$response[,2]),
-      object$response[,2], object$response[,1])
-  } else {
-    y <- object$response[,1]
-  }
-  y <- as.numeric(y)
+  family_spec <- .object_family_spec(object, caller = "`dharma_residuals()`")
+  y <- .family_spec_observed_response(object$response, family_spec)
   if (!is.null(object)) {
     fitted <- fitted(object)
   } else {
@@ -190,4 +185,3 @@ dharma_residuals <- function(simulated_response, object, plot = TRUE,
     return(data.frame(observed = z$y, expected = z$x))
   }
 }
-

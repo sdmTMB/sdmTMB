@@ -109,6 +109,44 @@
   family_spec
 }
 
+.family_spec_component_active <- function(family_spec, row_family_id = family_spec$family_id_i) {
+  if (!length(row_family_id)) {
+    return(matrix(FALSE, nrow = 0L, ncol = family_spec$n_m))
+  }
+  if (anyNA(row_family_id) || any(row_family_id < 1L | row_family_id > family_spec$n_f)) {
+    cli_abort("Internal family spec error: row-wise family ids are out of bounds.")
+  }
+  family_spec$active[row_family_id, , drop = FALSE]
+}
+
+.family_spec_observed_response <- function(response, family_spec, model = NA_integer_) {
+  response <- as.matrix(response)
+  if (nrow(response) != length(family_spec$family_id_i)) {
+    cli_abort("Internal family spec error: response rows do not match family metadata.")
+  }
+  if (ncol(response) < family_spec$n_m) {
+    cli_abort("Internal family spec error: response columns do not match family metadata.")
+  }
+
+  active <- .family_spec_component_active(family_spec)
+  if (is.na(model)) {
+    out <- response[, 1L]
+    if (family_spec$n_m > 1L) {
+      use_model2 <- active[, 2L] & !is.na(response[, 2L])
+      out[use_model2] <- response[use_model2, 2L]
+    }
+    return(as.numeric(out))
+  }
+
+  model <- as.integer(model)
+  if (!model %in% seq_len(family_spec$n_m)) {
+    cli_abort("`model` argument isn't valid for the fitted family structure.")
+  }
+  out <- response[, model]
+  out[!active[, model]] <- NA_real_
+  as.numeric(out)
+}
+
 .family_spec_validate_response <- function(y_i, family_spec, upr = NULL) {
   row_family <- .family_spec_response_family_id(family_spec, y_i)
   single_rows <- family_spec$combine_kind[row_family] == "single"
@@ -301,7 +339,8 @@
   binom_rows <- non_delta_rows & family_name == "binomial"
   betabinom_rows <- non_delta_rows & family_name == "betabinomial"
 
-  process_binomial_like <- function(rows, family_label, allow_counts) {
+  process_binomial_like <- function(rows, family_label, allow_counts,
+    weighted_binary_counts = FALSE) {
     if (!any(rows)) {
       return(list(y_i = y_i, size = size, weights = weights))
     }
@@ -313,13 +352,22 @@
     if (any(y_vals < 0)) {
       cli_abort("{family_label} rows must have non-negative response values in multi-family models.")
     }
-    if (!allow_counts && any(y_vals > 1)) {
+    response_rows <- .classify_binomial_like_numeric_rows(
+      y_i = y_i,
+      weights = weights,
+      allow_counts = allow_counts,
+      weighted_binary_counts = weighted_binary_counts
+    )
+    counts_rows <- rows & response_rows$count_rows
+    bernoulli_rows <- rows & response_rows$bernoulli_rows
+    prop_rows <- rows & response_rows$proportion_rows
+
+    if (!allow_counts && any(rows & !is.na(y_i) & y_i > 1)) {
       cli_abort("Binomial rows must have values between 0 and 1 in multi-family models.")
     }
-
-    counts_rows <- if (allow_counts) rows & !is.na(y_i) & y_i > 1 else rep(FALSE, length(rows))
-    prop_rows <- rows & !is.na(y_i) & y_i > 0 & y_i < 1
-    bernoulli_rows <- rows & !is.na(y_i) & y_i %in% c(0, 1)
+    if (allow_counts && any(prop_rows & !(y_i > 0 & y_i < 1))) {
+      cli_abort("{family_label} rows must be integer counts or proportions in (0, 1) in multi-family models.")
+    }
 
     # Bernoulli rows do not require explicit trial sizes. If a shared
     # `weights` vector is present, default missing Bernoulli entries to 1.
@@ -369,7 +417,12 @@
   size <- res$size
   weights <- res$weights
 
-  res <- process_binomial_like(betabinom_rows, family_label = "Betabinomial", allow_counts = TRUE)
+  res <- process_binomial_like(
+    betabinom_rows,
+    family_label = "Betabinomial",
+    allow_counts = TRUE,
+    weighted_binary_counts = TRUE
+  )
   y_i <- res$y_i
   size <- res$size
   weights <- res$weights
@@ -489,7 +542,7 @@
   if (ncol(x) < n_m) {
     cli_abort("Internal family spec error: prediction matrix has fewer components than expected.")
   }
-  active <- family_spec$active[row_family_id, , drop = FALSE]
+  active <- .family_spec_component_active(family_spec, row_family_id)
   combine_kind <- family_spec$combine_kind[row_family_id]
   link1 <- family_spec$link_name[cbind(row_family_id, 1L)]
   link2 <- if (n_m > 1L) family_spec$link_name[cbind(row_family_id, 2L)] else rep(NA_character_, n)
@@ -604,7 +657,7 @@
   } else if (isTRUE(model == 1L)) {
     links <- link1
   } else if (isTRUE(model == 2L)) {
-    active2 <- family_spec$active[row_family_id, 2L]
+    active2 <- .family_spec_component_active(family_spec, row_family_id)[, 2L]
     link2 <- family_spec$link_name[cbind(row_family_id, 2L)]
     links <- link2[active2]
   } else {

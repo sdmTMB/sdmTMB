@@ -159,9 +159,14 @@ plot_anisotropy <- function(object, return_data = FALSE) {
 plot_anisotropy2 <- function(object, model = 1) {
   stopifnot(inherits(object, "sdmTMB"))
   if (!check_for_H(object)) return(NULL)
+  family_spec <- .object_family_spec(object, caller = "`plot_anisotropy2()`")
+  two_lp <- .family_spec_has_two_components(family_spec)
+  if (model == 2L && !two_lp) {
+    cli_abort("`model = 2` is only available for fits with two linear predictors.")
+  }
   report <- object$tmb_obj$report(object$tmb_obj$env$last.par.best)
-  if (model == 1) eig <- eigen(report$H)
-  if (model == 2) eig <- eigen(report$H2)
+  H <- if (isTRUE(model == 2L)) report$H2 else report$H
+  eig <- eigen(H)
   dat <- data.frame(
     x0 = c(0, 0),
     y0 = c(0, 0),
@@ -174,7 +179,7 @@ plot_anisotropy2 <- function(object, model = 1) {
     type = "n", asp = 1, xlab = "", ylab = ""
   )
   graphics::arrows(dat$x0, dat$y0, dat$x1, dat$y1)
-  invisible(list(eig = eig, dat = dat, H = report$H))
+  invisible(list(eig = eig, dat = dat, H = H))
 }
 
 #' Plot a smooth term from an sdmTMB model
@@ -217,8 +222,12 @@ plot_smooth <- function(object, select = 1, n = 100, level = 0.95,
   )
   cli_inform(msg)
   se <- TRUE
-  if (isTRUE(object$delta))
+  if (.object_is_multi_family(object, caller = "`plot_smooth()`")) {
+    cli_abort("`plot_smooth()` is not yet supported for multi-family models.")
+  }
+  if (.object_has_two_components(object, caller = "`plot_smooth()`")) {
     cli_abort("This function doesn't work with delta models yet")
+  }
 
   assert_that(inherits(object, "sdmTMB"))
   assert_that(is.logical(ggplot))
@@ -291,7 +300,7 @@ plot_smooth <- function(object, select = 1, n = 100, level = 0.95,
   if (return_data) {
     return(p)
   }
-  inv <- object$family$linkinv
+  inv <- family(object)$linkinv
   qv <- stats::qnorm(1 - (1 - level) / 2)
 
   if (!ggplot) {
@@ -334,7 +343,11 @@ plot_smooth <- function(object, select = 1, n = 100, level = 0.95,
 calculate_anisotropy_components <- function(x, m = 1L) {
   # Get report and extract H matrices
   report <- x$tmb_obj$report(x$tmb_obj$env$last.par.best)
-  delta <- isTRUE(x$family$delta)
+  family_spec <- .object_family_spec(x, caller = "`calculate_anisotropy_components()`")
+  two_lp <- .family_spec_has_two_components(family_spec)
+  if (m == 2L && !two_lp) {
+    cli_abort("`m = 2` is only available for fits with two linear predictors.")
+  }
 
   # Extract range values from sd_report
   est_rep <- as.list(x$sd_report, "Estimate", report = TRUE)
@@ -343,7 +356,7 @@ calculate_anisotropy_components <- function(x, m = 1L) {
   range_st <- if (length(range_values) > 1) range_values[2] else range_values[1]
 
   # Get eigenvalues/vectors from H matrix (or H2 for delta model 2)
-  H <- if (delta && m == 2) report$H2 else report$H
+  H <- if (two_lp && m == 2L) report$H2 else report$H
   eig <- eigen(H)
 
   # Calculate major and minor axis vectors for spatial field

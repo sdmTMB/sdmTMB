@@ -35,11 +35,14 @@
 #' }
 
 spread_sims <- function(object, nsim = 200) {
+  if (.object_is_multi_family(object, caller = "`spread_sims()`")) {
+    cli_abort("`spread_sims()` is not yet supported for multi-family models.")
+  }
   if (!"jointPrecision" %in% names(object$sd_report)) {
     cli_abort("TMB::sdreport() must be run with the joint precision returned.")
   }
 
-  if (isTRUE(object$delta)) {
+  if (.object_has_two_components(object, caller = "`spread_sims()`")) {
     cli_abort("This function isn't yet set up for delta models.")
   }
   n_sims <- nsim
@@ -54,9 +57,6 @@ spread_sims <- function(object, nsim = 200) {
   pars <- pars[pn %in% par_fixed]
   samps <- samps[pn %in% par_fixed, , drop = FALSE]
   pn <- pn[pn %in% par_fixed]
-  if (isTRUE(object$family$delta)) {
-    cli_warn("If your delta model has 2 formulas, this function is only using the first")
-  }
   .formula <- object$split_formula[[1]]$form_no_bars # TODO DELTA HARDCODED TO 1!
   if (isFALSE(object$mgcv)) {
     fe_names <- colnames(model.matrix(.formula, object$data))
