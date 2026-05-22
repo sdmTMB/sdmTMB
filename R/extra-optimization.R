@@ -71,7 +71,14 @@ run_newton_loops <- function(newton_loops, opt, obj, silent = TRUE) {
         break
       }
       h <- stats::optimHess(opt$par, fn = obj$fn, gr = obj$gr)
-      new_par <- opt$par - solve(h, g)
+      new_par <- tryCatch(
+        opt$par - solve(h, g),
+        error = function(e) {
+          if (!silent) cli_inform("Hessian is singular; skipping Newton update(s)")
+          NULL
+        }
+      )
+      if (is.null(new_par)) break
       new_objective <- obj$fn(new_par) # also updates obj$env$last.par and obj$env$last.par.best!
       if (new_objective < opt$objective) {
         if (!silent) cli_inform("accepting parameters from Newton update")

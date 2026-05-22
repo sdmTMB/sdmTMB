@@ -142,6 +142,7 @@ test_that("predict handles dropped factor levels in time_varying factors", {
       spatial = "off",
       spatiotemporal = "off",
       family = gaussian(),
+      control = sdmTMBcontrol(newton_loops = 0L, getsd = FALSE),
       priors = sdmTMBpriors(sigma_V = gamma_cv(0.2, 0.5))
     )
 
