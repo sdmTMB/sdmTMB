@@ -215,4 +215,29 @@ ggplot(pred_mixed, aes(log_depth, est)) +
   computed using TMB's delta method. This SE is generally different from either
   component's SE alone (`est1_se` or `est2_se`). The `est` is presented in log space.
 
+# Current limitations
+
+Multi-family models are intended to support the main fit, prediction, simulation,
+and index workflows. Some downstream helpers are still intentionally unsupported.
+
+For residual diagnostics, the supported approach is simulation-based residuals
+with [simulate.sdmTMB()] and [dharma_residuals()]. This works for multi-family
+models and is the recommended workaround for the unsupported
+`residuals.sdmTMB()` method.
+
+| Function or feature | Multi-family status | Workaround or note |
+|---|---|---|
+| `residuals()` | Not supported | Use `simulate(fit, nsim = ..., type = "mle-mvn") |> dharma_residuals(fit)` for simulation-based residual diagnostics. |
+| `predict(..., type = "response", se_fit = TRUE)` | Not supported | Use `type = "link", se_fit = TRUE`, or use `predict(..., nsim = ..., type = "response")` and summarize draws on the response scale. |
+| `sigma()` | Not supported | Inspect family-specific parameters with `tidy()` or model summaries instead. |
+| `deviance()` | Not supported | Use likelihood-based comparisons, simulation-based checks, or out-of-sample predictive checks instead. |
+| `project()` | Not supported | Predict on the target grid directly with `predict()` and include `distribution_column` in `newdata`. |
+| `emmeans()` | Not supported | Use `predict()` on custom `newdata` grids and summarize contrasts manually. |
+| `plot_smooth()` | Not supported | Use `visreg`, direct `predict()` calls on custom grids, or other custom plotting workflows. |
+| `spread_sims()` / `gather_sims()` | Not supported | Use `predict(..., nsim = ...)` or `simulate()` draws directly. |
+| `do_index = TRUE` inside `sdmTMB()` | Not supported | Fit first, then call `predict(..., return_tmb_object = TRUE)` and pass that to `get_index()`. |
+| `dispformula` | Not supported | Use `dispformula = ~ 1`. If your main goal is to allow different family-level auxiliary parameters across data sources (for example separate `phi` values), one workaround is to define separate named entries in `family = list(...)` even when they use the same likelihood family/link, and route rows with `distribution_column`. |
+| `covariate_diffusion` | Not supported | No direct workaround within multi-family models yet. |
+| Families ending in `_mix()`, `ordbeta()`, or fixed `student(df = ...)` in multi-family mode | Not supported | Use a supported family combination, or fit those models separately. |
+
 # References
