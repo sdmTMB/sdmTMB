@@ -842,8 +842,9 @@ make_category_svc <- function(data,
   # Expand data
   data_expanded <- cbind(data, combined_matrix)
 
-  # Create formula
-  svc_formula <- as.formula(paste0("~ `", paste(colnames_combined, collapse = "` + `"), "`"))
+  # Create formula (0 + suppresses the implicit intercept so model.matrix()
+  # returns exactly n_spatial + n_spatiotemporal columns, matching svc_map)
+  svc_formula <- as.formula(paste0("~ 0 + `", paste(colnames_combined, collapse = "` + `"), "`"))
 
   # Create info summary
   info <- list(
