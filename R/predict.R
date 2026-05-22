@@ -594,10 +594,36 @@ predict.sdmTMB <- function(object, newdata = NULL,
     sm <- parse_smoothers(object$smoothers$formula_no_bars, data = object$data,
       newdata = nd, basis_prev = object$smoothers$basis_out)
 
-    if (!is.null(object$time_varying))
-      proj_X_rw_ik <- model.matrix(object$time_varying, data = nd)
-    else
+    if (!is.null(object$time_varying)) {
+      tv_terms <- stats::terms(object$time_varying)
+      mf_tv_orig <- stats::model.frame(
+        tv_terms,
+        object$data,
+        na.action = stats::na.pass
+      )
+      tv_xlevels <- stats::.getXlevels(tv_terms, mf_tv_orig)
+      X_tv_orig <- stats::model.matrix(tv_terms, mf_tv_orig)
+      tv_contrasts <- attr(X_tv_orig, "contrasts")
+      mf_tv_new <- stats::model.frame(
+        tv_terms,
+        nd,
+        xlev = tv_xlevels,
+        na.action = stats::na.pass
+      )
+      proj_X_rw_ik <- stats::model.matrix(
+        tv_terms,
+        mf_tv_new,
+        contrasts.arg = tv_contrasts
+      )
+      if (!identical(colnames(proj_X_rw_ik), colnames(X_tv_orig))) {
+        cli::cli_abort(c(
+          "The time-varying prediction matrix has different columns than the fitted model.",
+          "This may be caused by changed factor levels, contrasts, or transformed covariates in `newdata`."
+        ))
+      }
+    } else {
       proj_X_rw_ik <- matrix(0, ncol = 1, nrow = 1) # dummy
+    }
 
     if (length(area) != nrow(proj_X_ij[[1]]) && length(area) != 1L) {
       cli_abort("`area` should be of the same length as `nrow(newdata)` or of length 1.")
