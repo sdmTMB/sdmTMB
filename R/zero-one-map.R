@@ -70,7 +70,9 @@
 #'   family = tweedie()
 #' )
 #' m$all_zero_levels
-#' m$map$b_j
+#' m$all_one_levels
+#' m$start
+#' m$map
 #'
 #' \donttest{
 #' mesh <- make_mesh(d, c("X", "Y"), cutoff = 15)
