@@ -1,5 +1,8 @@
 # sdmTMB (development version)
 
+* Allow for missing factor levels when predicting with time-varying factor
+  predictors. #533
+
 * Add more useful indicators in `sanity()` by identifying the fixed effects. #506
 
 * Add experimental Restricted Spatial Regression (RSR) fixed-effect
