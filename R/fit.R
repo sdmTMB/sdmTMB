@@ -1108,17 +1108,10 @@ sdmTMB <- function(
   # model.frame() removes NAs by default; external vectors need same filtering
   na_action <- attr(mf[[1]], "na.action")
   if (!is.null(na_action)) {
-    # na.omit creates "omit" class with row indices that were removed
-    if (!is.null(weights)) {
-      weights <- weights[-na_action]
-    }
-    if (!is.null(offset)) {
-      offset <- offset[-na_action]
-    }
-    if (length(upr) > 1L) {
-      upr <- upr[-na_action]
-    }
-    Xdisp_ij <- Xdisp_ij[-na_action, , drop = FALSE]
+    weights <- .subset_by_na_action(weights, na_action)
+    offset <- .subset_by_na_action(offset, na_action)
+    upr <- if (length(upr) > 1L) .subset_by_na_action(upr, na_action) else upr
+    Xdisp_ij <- .subset_by_na_action(Xdisp_ij, na_action, drop = FALSE)
     response_family_spec <- .family_spec_subset_rows(family_spec, -na_action)
   }
 
@@ -1129,70 +1122,14 @@ sdmTMB <- function(
     }
   }
 
-  # This is taken from approach in glmmTMB to match how they handle binomial
-  # yobs could be a factor -> treat as binary following glm
-  # yobs could be cbind(success, failure)
-  # yobs could be binary
-  # (yobs, weights) could be (proportions, size)
-  # On the C++ side 'yobs' must be the number of successes.
   size <- rep(1, nrow(X_ij[[1]])) # for non-binomial case TODO: change hard coded index
 
-  # Helper function for binomial-type response processing
-  process_binomial_response <- function(mf, weights) {
-    ## call this to catch the factor / matrix cases
-    y_i <- model.response(mf[[1]], type = "any")
-    size <- rep(1, length(y_i))
-
-    ## allow character
-    if (is.character(y_i)) {
-      y_i <- model.response(mf[[1]], type = "factor")
-      if (nlevels(y_i) > 2) {
-        cli_abort("More than 2 levels detected for response")
-      }
-    }
-    if (is.factor(y_i)) {
-      if (nlevels(y_i) > 2) {
-        cli_abort("More than 2 levels detected for response")
-      }
-      ## following glm, 'success' is interpreted as the factor not
-      ## having the first level (and hence usually of having the
-      ## second level).
-      y_i <- pmin(as.numeric(y_i) - 1, 1)
-      size <- rep(1, length(y_i))
-    } else {
-      if (is.matrix(y_i)) { # yobs=cbind(success, failure)
-        size <- y_i[, 1] + y_i[, 2]
-        yobs <- y_i[, 1] # successes
-        y_i <- yobs
-      } else {
-        if (all(y_i %in% c(0, 1))) { # binary
-          size <- rep(1, length(y_i))
-        } else { # proportions
-          if (is.null(weights)) {
-            cli_abort(c(
-              "`weights` argument was not specified but proportions were supplied to the binomial or betabinomial family.",
-              "Please supply the `weights` argument with the number of trials per event."))
-          }
-          y_i <- weights * y_i
-          size <- weights
-          weights <- rep(1, length(y_i))
-        }
-      }
-    } # https://github.com/sdmTMB/sdmTMB/issues/172
-    if (is.logical(y_i)) {
-      msg <- paste0(
-        "We recommend against using `TRUE`/`FALSE` ",
-        "response values if you are going to use the `visreg::visreg()` ",
-        "function after. Consider converting to integer with `as.integer()`."
-      )
-      cli_warn(msg)
-    }
-
-    list(y_i = y_i, size = size, weights = weights)
-  }
-
   if ((identical(family$family[1], "binomial") || identical(family$family[1], "betabinomial")) && !delta) {
-    result <- process_binomial_response(mf, weights)
+    result <- .process_binomial_response(
+      mf[[1]],
+      weights = weights,
+      weights_arg = "`weights` argument"
+    )
     y_i <- result$y_i
     size <- result$size
     weights <- result$weights

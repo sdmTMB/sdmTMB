@@ -1,5 +1,8 @@
 # sdmTMB (development version)
 
+* Add `make_zero_one_map()` to address #386. This is useful for categories
+  (e.g., year factors) where the response is all zeros or ones.
+
 * Add the `ordbeta()` family for ordered beta regression (Kubinec 2023),
   a parsimonious alternative to ZOIB for continuous data on the closed unit
   interval `[0, 1]` with point masses at 0 and 1. Two internal cutpoints are
