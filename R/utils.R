@@ -220,24 +220,16 @@ sdmTMBcontrol <- function(
   } else if (is.matrix(y_i)) {
     size <- y_i[, 1] + y_i[, 2]
     y_i <- y_i[, 1]
-  } else {
-    rows <- .classify_binomial_like_numeric_rows(
-      y_i = y_i,
-      weights = weights,
-      allow_counts = FALSE,
-      weighted_binary_counts = FALSE
-    )
-    if (any(rows$proportion_rows)) {
-      if (is.null(weights)) {
-        cli_abort(c(
-          "Proportion data were supplied to the binomial or betabinomial family without trial sizes.",
-          "i" = paste0("Please supply ", weights_arg, " with the number of trials per event.")
-        ))
-      }
-      y_i[rows$proportion_rows] <- weights[rows$proportion_rows] * y_i[rows$proportion_rows]
-      size[rows$proportion_rows] <- weights[rows$proportion_rows]
-      weights[rows$proportion_rows] <- 1
+  } else if (!all(y_i[!is.na(y_i)] %in% c(0, 1))) {
+    if (is.null(weights)) {
+      cli_abort(c(
+        "Proportion data were supplied to the binomial or betabinomial family without trial sizes.",
+        "i" = paste0("Please supply ", weights_arg, " with the number of trials per event.")
+      ))
     }
+    y_i <- weights * y_i
+    size <- weights
+    weights <- rep(1, length(y_i))
   }
 
   if (is.logical(y_i)) {
