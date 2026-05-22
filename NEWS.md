@@ -1,5 +1,7 @@
 # sdmTMB (development version)
 
+* Add more useful indicators in `sanity()` by identifying the fixed effects. #506
+
 * Add experimental Restricted Spatial Regression (RSR) fixed-effect
   coefficients adjusted for spatial confounding with the random fields
   (Hanks et al. 2015, Diaz and Thorson 2025). Opt in
