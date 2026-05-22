@@ -150,25 +150,43 @@ sanity <- function(object, big_sd_log10 = 2, gradient_thresh = 0.001, silent = F
   se <- se[fixed]
 
   too_big <- function(se) {
-    if (any(!is.na(se))) {
-      se_max <- max(se, na.rm = TRUE)
-      if (any(log10(abs(se_max)) > big_sd_log10)) {
-        return(TRUE)
-      } else {
-        return(NULL)
-      }
+    if (!any(!is.na(se))) return(NULL)
+    idx <- which(log10(abs(se)) > big_sd_log10)
+    if (length(idx)) idx else NULL
+  }
+
+  coef_label <- function(par, idx) {
+    nms <- switch(par,
+      b_j  = colnames(object$tmb_data$X_ij[[1]]),
+      b_j2 = colnames(object$tmb_data$X_ij[[2]]),
+      NULL
+    )
+    if (is.null(nms) || idx > length(nms) || is.na(nms[idx]) || !nzchar(nms[idx])) {
+      paste0(par, "[", idx, "]")
     } else {
-      return(NULL)
+      paste0(par, " (", nms[idx], ")")
     }
   }
 
   se_big <- lapply(se, too_big)
 
   for (i in seq_along(se_big)) {
-    if (isTRUE(se_big[[i]])) {
-      msg <- paste0("` standard error may be large")
-      if (!silent) cli::cli_alert_danger(c("`", names(se_big)[i], msg))
-      par_message(names(se_big)[i])
+    idx <- se_big[[i]]
+    if (is.null(idx)) next
+    par <- names(se_big)[i]
+    if (par %in% c("b_j", "b_j2")) {
+      for (k in idx) {
+        lbl <- coef_label(par, k)
+        if (!silent) cli::cli_alert_danger(c("`", lbl, "` standard error may be large"))
+        par_message(par)
+        if (!silent) {
+          cli::cli_alert_info(simplify_msg)
+          cat("\n")
+        }
+      }
+    } else {
+      if (!silent) cli::cli_alert_danger(c("`", par, "` standard error may be large"))
+      par_message(par)
       if (!silent) {
         cli::cli_alert_info(simplify_msg)
         cat("\n")
