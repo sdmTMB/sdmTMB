@@ -1,5 +1,8 @@
 # sdmTMB (development version)
 
+* Use `tryCatch()` on Newton loops in optimization to abort those steps
+  instead of producing an error.
+
 * Allow for missing factor levels when predicting with time-varying factor
   predictors. #533
 
