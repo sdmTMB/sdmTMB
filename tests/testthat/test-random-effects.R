@@ -118,7 +118,7 @@ test_that("Model with random intercepts fits appropriately.", {
   expect_equal(as.numeric(attr(summary(lmer_fit)$varcor[[1]], "stddev")),
                as.numeric(exp(REs[c(1,3)])), tolerance = 1.0e-4)
   expect_equal(as.numeric(attr(summary(lmer_fit)$varcor[[1]], "correlation")[1,2]),
-               as.numeric(REs[2]), tolerance = 1.0e-2)
+               as.numeric(REs[2])/sqrt(1+as.numeric(REs[2])^2), tolerance = 1.0e-4)
 
   # Check that ranef() returns the same thing
   expect_equal(mean(diag(cor(ranef(sdmTMB_fit)[[1]]$Subject, ranef(lmer_fit)$Subject))), 1)
