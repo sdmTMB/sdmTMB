@@ -1,5 +1,8 @@
 # sdmTMB (development version)
 
+* The correctly transformed correlation between a random slope and intercept is 
+  now displayed by `print()` and `tidy()`.
+
 * Use `tryCatch()` on Newton loops in optimization to abort those steps
   instead of producing an error.
 
