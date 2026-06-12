@@ -1,5 +1,8 @@
 # sdmTMB (development version)
 
+* Allow for fitting uncorrelated random slopes and intercepts with the form
+  `(1 + slope_var || group)`, making sure that results are displayed correctly.
+
 * The correctly transformed correlation between a random slope and intercept is 
   now displayed by `print()` and `tidy()`.
 
