@@ -438,6 +438,12 @@ test_that("Tidy reports correlations for multivariate random-effect blocks", {
       transform_cor <- function(x) x / sqrt(1 + x^2)
       expect_equal(vc$lo[[1]][2, 1], unname(transform_cor(theta - crit * theta_se)))
       expect_equal(vc$hi[[1]][2, 1], unname(transform_cor(theta + crit * theta_se)))
+
+      fit_zero <- fit
+      fit_zero$sd_report$value[re_indx[2]] <- 0
+      vc_zero <- tidy(fit_zero, "ran_vcov", conf.int = FALSE)
+      expect_equal(vc_zero$est[[1]][2, 1], 0)
+      expect_no_error(print_int_slope_re(fit_zero))
     } else {
       expect_true(all(is.na(vc$lo[[1]][lower.tri(vc$lo[[1]])])))
       expect_true(all(is.na(vc$hi[[1]][lower.tri(vc$hi[[1]])])))

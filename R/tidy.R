@@ -800,7 +800,7 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
   }
 
   re_indx <- grep("re_cov_pars", names(x$sd_report$value), fixed = TRUE)
-  non_nas <- which(x$sd_report$value[re_indx] != 0) # remove parameter that gets mapped off
+  non_nas <- !is.na(x$tmb_map$re_cov_pars) # remove parameters that get mapped off
   re_cov_df$estimate <- x$sd_report$value[re_indx][non_nas]
   re_cov_df$std.error <- x$sd_report$sd[re_indx][non_nas]
   re_cov_df$conf.low <- re_cov_df$estimate - crit * re_cov_df$std.error
