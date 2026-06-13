@@ -275,27 +275,25 @@ print_int_slope_re <- function(x, m = 1) {
   if (sum(x$tmb_data$n_re_groups)) {
     v <- tidy(x, effects = "ran_vcov", model = m)
     cnms <- x$split_formula[[m]]$re_cov_terms$cnms
-    ll <- vapply(cnms, length, FUN.VALUE = 1L)
-    mmc2 <- unlist(cnms, use.names = FALSE)
-    mmc1 <- lapply(names(ll), \(na) rep(na, ll[[na]])) |> unlist()
-    mmc1[duplicated(mmc1)] <- ""
-    mmsd <- lapply(v[[1]], \(x) {
-      if (ncol(x) == 2L) {
-        c(x[1,1], x[2,2])
-      } else {
-        c(x[1,1])
-      }
+    display_groups <- unique(names(cnms))
+    terms <- lapply(display_groups, function(group) {
+      unlist(cnms[names(cnms) == group], use.names = FALSE)
     })
-    mmsd <- unlist(mmsd, use.names = FALSE)
+    mmc1 <- unlist(Map(function(group, term) {
+      c(group, rep("", length(term) - 1L))
+    }, display_groups, terms), use.names = FALSE)
+    mmc2 <- unlist(terms, use.names = FALSE)
+    mmsd <- unlist(lapply(v[[1]], diag), use.names = FALSE)
     mmvar <- mmsd^2
-    mmcor <- lapply(v[[1]], \(x) {
-      if (ncol(x) == 2L) {
-        c("", mround(x[2,1], 2))
-      } else {
-        ""
+    mmcor <- unlist(lapply(v[[1]], function(mat) {
+      out <- rep("", nrow(mat))
+      if (nrow(mat) > 1L) {
+        for (i in 2:nrow(mat)) {
+          out[i] <- paste(mround(mat[i, seq_len(i - 1L)], 2), collapse = " ")
+        }
       }
-    })
-    mmcor <- unlist(mmcor, use.names = FALSE)
+      out
+    }), use.names = FALSE)
     mm <- cbind(mmc1, mmc2, mround(mmvar, 2), mround(mmsd, 2), mmcor)
     colnames(mm) <- c("Groups", "Name", "Variance", "Std.Dev.", "Corr")
     rownames(mm) <- rep("", nrow(mm))

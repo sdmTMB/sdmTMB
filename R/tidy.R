@@ -731,10 +731,10 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
   names(re_b_df)[names(re_b_df) == "group_indices"] <- "group_id"
 
   # this function just expands each row from start: end
-  expand_row <- function(level_id, start, end, group_id, model) {
+  expand_row <- function(level, start, end, group_id, model) {
     seq_len <- end - start + 1
     data.frame(
-      level_ids = rep(level_id, seq_len),
+      level_ids = rep(level, seq_len),
       index = seq(from = start, to = end),
       group_id = rep(group_id, seq_len),
       model = rep(model, seq_len)
@@ -743,7 +743,7 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
 
   # apply to each row and combine the results
   expanded_rows <- Map(
-    expand_row, re_b_df$level_ids,
+    expand_row, re_b_df$level,
     re_b_df$start, re_b_df$end,
     re_b_df$group_id, re_b_df$model
   )
@@ -779,8 +779,6 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
   } else {
     re_b_df <- re_b_df[, c("group_name", "term", "level_ids", "estimate", "std.error", "conf.low", "conf.high")]
   }
-  # remove ":" in the level_ids
-  re_b_df$level_ids <- sapply(strsplit(re_b_df$level_ids, ":"), function(x) x[3])
   out_ranef <- re_b_df
   row.names(out_ranef) <- NULL
 
@@ -801,19 +799,6 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
     re_cov_df$group[i] <- group_key$group_name[indx]
   }
 
-  # Uncorrelated random intercepts and slopes for the same group, e.g. (1|group)+(0+slope|group),
-  # are fit internally as if they were separate groups, but their SDs should be displayed
-  # in a 2-by-2 matrix with NAs on the off-diagonals.
-  true_group_dfs <- list()
-  for (i in seq_len(length(unique(re_cov_df$group)))) {
-    group <- unique(re_cov_df$group)[i]
-    true_group_dfs[[i]] <- re_cov_df[re_cov_df$group == group,]
-    correction <- true_group_dfs[[i]]$group_indices - true_group_dfs[[i]]$group_indices[1]
-    true_group_dfs[[i]]$rows <- true_group_dfs[[i]]$rows + correction
-    true_group_dfs[[i]]$cols <- true_group_dfs[[i]]$cols + correction
-  }
-  re_cov_df <- do.call(rbind, true_group_dfs)
-
   re_indx <- grep("re_cov_pars", names(x$sd_report$value), fixed = TRUE)
   non_nas <- which(x$sd_report$value[re_indx] != 0) # remove parameter that gets mapped off
   re_cov_df$estimate <- x$sd_report$value[re_indx][non_nas]
@@ -830,10 +815,53 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
   # Transform estimates to natural space
   re_cov_df$estimate[sds] <- exp(re_cov_df$estimate[sds])
 
-  # Transform the estimates and CIs for the correlation parameters
-  re_cov_df$estimate[corr_pars] <- re_cov_df$estimate[corr_pars]/sqrt(1+(re_cov_df$estimate[corr_pars])^2)
-  re_cov_df$conf.low[corr_pars] <- re_cov_df$conf.low[corr_pars]/sqrt(1+(re_cov_df$conf.low[corr_pars])^2)
-  re_cov_df$conf.high[corr_pars] <- re_cov_df$conf.high[corr_pars]/sqrt(1+(re_cov_df$conf.high[corr_pars])^2)
+  # TMB fills the unit-diagonal correlation factor row by row. Convert each
+  # internal covariance block before combining separately specified terms.
+  theta_to_cor <- function(theta, n) {
+    m <- matrix(0, n, n)
+    m[upper.tri(m)] <- theta
+    l <- t(m)
+    diag(l) <- 1
+    s <- l %*% t(l)
+    d <- sqrt(diag(s))
+    s / outer(d, d)
+  }
+  for (m in unique(re_cov_df$model)) {
+    model_rows <- which(re_cov_df$model == m)
+    for (g in unique(re_cov_df$group_indices[model_rows])) {
+      block <- which(re_cov_df$model == m & re_cov_df$group_indices == g)
+      block_corr <- block[re_cov_df$is_sd[block] == 0]
+      if (length(block_corr) > 0) {
+        n <- max(re_cov_df$rows[block])
+        cor_matrix <- theta_to_cor(re_cov_df$estimate[block_corr], n)
+        re_cov_df$estimate[block_corr] <- mapply(
+          function(row, col) cor_matrix[row, col],
+          re_cov_df$rows[block_corr], re_cov_df$cols[block_corr]
+        )
+      }
+    }
+  }
+  re_cov_df$conf.low[corr_pars] <- NA_real_
+  re_cov_df$conf.high[corr_pars] <- NA_real_
+
+  # Terms such as (1 | group) + (0 + slope | group) are separate covariance
+  # blocks internally but should be displayed in one matrix. Offset each block
+  # by the cumulative dimensions of earlier blocks with the same display name.
+  display_keys <- unique(re_cov_df[, c("model", "group")])
+  for (i in seq_len(nrow(display_keys))) {
+    display_rows <- which(
+      re_cov_df$model == display_keys$model[i] &
+        re_cov_df$group == display_keys$group[i]
+    )
+    offset <- 0L
+    for (g in unique(re_cov_df$group_indices[display_rows])) {
+      block <- display_rows[re_cov_df$group_indices[display_rows] == g]
+      block_dim <- max(re_cov_df$rows[block], re_cov_df$cols[block])
+      re_cov_df$rows[block] <- re_cov_df$rows[block] + offset
+      re_cov_df$cols[block] <- re_cov_df$cols[block] + offset
+      offset <- offset + block_dim
+    }
+  }
 
   re_cov_df <- re_cov_df[, c("rows", "cols", "model", "group", "estimate", "std.error", "conf.low", "conf.high")]
   cov_matrices_lo = create_cov_matrices(re_cov_df, col_name = "conf.low", model = model)

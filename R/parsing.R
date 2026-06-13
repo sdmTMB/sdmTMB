@@ -65,7 +65,8 @@ parse_formula <- function(f, data) {
     end = integer(0)
   )
   re_cov_terms$re_b_df <- data.frame(
-    level_ids = integer(0),
+    level_ids = character(0),
+    level = character(0),
     start = integer(0), # index of beta vec in TMB
     end = integer(0), # index of beta vec in TMB
     group_indices = integer(0), # which group are these levels associated with
@@ -116,20 +117,22 @@ parse_formula <- function(f, data) {
 
     # index the level / group of the elements of Zt
     for (i in seq_len(length(re_cov_terms$Ztlist))) {
-      levels <- levels(data[, bn[[i]]])
       # Add the term(s) and group to the name for each (separated by ":") -- otherwise
       # the level names might be the same, especially if the levels ids are integers for 2+ groups.
-      level_ids <- paste0(tn[[i]], ":", bn[[i]], ":", rownames(re_cov_terms$Ztlist[[i]]))
+      levels <- rownames(re_cov_terms$Ztlist[[i]])
+      level_ids <- paste0(tn[[i]], ":", bn[[i]], ":", levels)
       if (i == 1) {
         df <- data.frame(
           index = seq_len(length(level_ids)),
           level_ids = level_ids,
+          level = levels,
           group_indices = i
         )
       } else {
         df <- rbind(df, data.frame(
           index = seq_len(length(level_ids)),
           level_ids = level_ids,
+          level = levels,
           group_indices = i
         ))
       }
@@ -137,6 +140,7 @@ parse_formula <- function(f, data) {
     df$index <- seq(1, nrow(df))
     re_cov_terms$re_b_df <- data.frame(
       level_ids = unique(df$level_ids),
+      level = df$level[!duplicated(df$level_ids)],
       start = NA, end = NA, group_indices = NA
     )
     for (i in seq_len(nrow(re_cov_terms$re_b_df))) {
@@ -171,7 +175,7 @@ parse_formula <- function(f, data) {
         to = re_cov_terms$re_b_df$var_end, SIMPLIFY = FALSE
       )
     )
-    re_cov_terms$re_b_df <- re_cov_terms$re_b_df[, c("level_ids", "start", "end", "group_indices")]
+    re_cov_terms$re_b_df <- re_cov_terms$re_b_df[, c("level_ids", "level", "start", "end", "group_indices")]
     # index the groups
     # also need to map these indices to the vector of estimated covariance parameters
     re_cov_terms$re_b_map <- data.frame(

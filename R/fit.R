@@ -1397,7 +1397,7 @@ sdmTMB <- function(
     re_cov_df_map = as.matrix(re_cov_df_map), # dataframe used to map parameters to cov matrices,
     re_cov_df = as.matrix(re_cov_df),
     n_re_groups = c(n_re_groups),
-    re_b_df = as.matrix(re_b_df[, -1]), # data frame containing indidivual level ids. Don't pass in first col (can be char)
+    re_b_df = as.matrix(re_b_df[, c("start", "end", "group_indices", "model")]),
     re_b_map = as.matrix(re_b_map),
     var_indx_matrix = var_indx_matrix,
     Zt_list = Zt_list, # list of RE matrices

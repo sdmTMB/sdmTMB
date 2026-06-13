@@ -77,7 +77,7 @@ Imports:
     mgcv,
     mvtnorm,
     nlme,
-    reformulas,
+    reformulas (>= 0.4.4),
     rlang,
     stats,
     TMB (>= 1.8.0)

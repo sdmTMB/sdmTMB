@@ -314,6 +314,137 @@ test_that("Model with random intercepts fits appropriately.", {
   expect_error(predict(m, newdata = nd), regexp = "missing from `newdata`")
 })
 
+test_that("Interleaved random-effect groups retain covariance parameter order", {
+  skip_on_cran()
+  skip_if_not_installed("glmmTMB")
+  skip_if_not_installed("lme4")
+
+  data("sleepstudy", package = "lme4")
+  sleepstudy$age <- factor(rep(letters[1:5], 36))
+  set.seed(1)
+  devs <- stats::rnorm(5)
+  sleepstudy$Reaction <- sleepstudy$Reaction +
+    devs[rep(seq_along(devs), 36)] + stats::rnorm(nrow(sleepstudy), 0, 0.03)
+
+  form <- Reaction ~ Days + (1 | Subject) + (1 | age) + (0 + Days | Subject)
+  fit <- sdmTMB(form, sleepstudy, spatial = "off", silent = TRUE)
+  fit_glmmTMB <- glmmTMB::glmmTMB(form, sleepstudy, REML = FALSE)
+
+  vc <- tidy(fit, "ran_vcov")$est
+  subject <- vc[["Model 1 Group Subject"]]
+  age <- vc[["Model 1 Group age"]]
+  vc_glmmTMB <- glmmTMB::VarCorr(fit_glmmTMB)$cond
+  subject_glmmTMB <- vc_glmmTMB[grepl("^Subject", names(vc_glmmTMB))]
+
+  expect_equal(dim(subject), c(2L, 2L))
+  expect_true(all(is.na(subject[row(subject) != col(subject)])))
+  expect_equal(
+    diag(subject),
+    unname(vapply(
+      subject_glmmTMB,
+      function(x) unname(attr(x, "stddev")),
+      numeric(1)
+    )),
+    tolerance = 1e-3
+  )
+  expect_equal(age[1, 1], unname(attr(vc_glmmTMB$age, "stddev")), tolerance = 1e-3)
+
+  printed_matrix <- print_int_slope_re(fit)
+  expect_equal(unname(printed_matrix[, "Groups"]), c("Subject", "", "age"))
+  expect_equal(unname(printed_matrix[, "Name"]), c("(Intercept)", "Days", "(Intercept)"))
+  expect_equal(unname(printed_matrix[, "Std.Dev."]), mround(c(diag(subject), age[1, 1]), 2))
+  expect_equal(unname(printed_matrix[, "Corr"]), c("", "NA", ""))
+
+  printed <- capture.output(print(fit))
+  table_start <- grep("^ Groups", printed)
+  table_rows <- printed[table_start + seq_len(nrow(printed_matrix))]
+  expect_match(table_rows[1], "Subject.*\\(Intercept\\)")
+  expect_match(table_rows[2], "Days.*NA")
+  expect_match(table_rows[3], "age.*\\(Intercept\\)")
+})
+
+test_that("Random-slope interaction terms preserve random-effect level IDs", {
+  skip_on_cran()
+  skip_if_not_installed("lme4")
+
+  data("sleepstudy", package = "lme4")
+  sleepstudy$a <- sleepstudy$Days
+  sleepstudy$b <- sleepstudy$Days + 1
+  levels(sleepstudy$Subject)[1] <- "subject:308"
+
+  fit <- sdmTMB(
+    Reaction ~ Days + (1 + a:b | Subject),
+    sleepstudy,
+    spatial = "off",
+    silent = TRUE
+  )
+  re <- tidy(fit, "ran_vals")
+
+  expect_setequal(unique(re$level_ids), levels(sleepstudy$Subject))
+  expect_true("a:b" %in% re$term)
+})
+
+test_that("Tidy reports correlations for multivariate random-effect blocks", {
+  skip_on_cran()
+  skip_if_not_installed("glmmTMB")
+
+  set.seed(42)
+  n_group <- 40L
+  n_rep <- 12L
+  d <- data.frame(g = factor(rep(seq_len(n_group), each = n_rep)))
+  d$a <- stats::rnorm(nrow(d))
+  d$b <- stats::rnorm(nrow(d))
+  d$c <- stats::rnorm(nrow(d))
+  sigma <- matrix(c(
+    1, 0.25, -0.2, 0.15,
+    0.25, 0.7, 0.1, -0.1,
+    -0.2, 0.1, 0.8, 0.2,
+    0.15, -0.1, 0.2, 0.6
+  ), 4, 4)
+  u <- matrix(stats::rnorm(n_group * 4L), n_group, 4L) %*% chol(sigma)
+  group_index <- as.integer(d$g)
+  d$y <- 1 + 0.4 * d$a - 0.3 * d$b + 0.2 * d$c +
+    u[group_index, 1] + u[group_index, 2] * d$a +
+    u[group_index, 3] * d$b + u[group_index, 4] * d$c +
+    stats::rnorm(nrow(d), sd = 0.5)
+
+  formulas <- list(
+    y ~ a + b + (1 + a + b | g),
+    y ~ a + b + c + (1 + a + b + c | g)
+  )
+  for (form in formulas) {
+    fit <- sdmTMB(form, d, spatial = "off", silent = TRUE)
+    fit_glmmTMB <- glmmTMB::glmmTMB(form, d, REML = FALSE)
+    vc <- tidy(fit, "ran_vcov", conf.int = TRUE)
+    correlation_glmmTMB <- attr(glmmTMB::VarCorr(fit_glmmTMB)$cond$g, "correlation")
+
+    expect_equal(
+      vc$est[[1]][lower.tri(vc$est[[1]])],
+      correlation_glmmTMB[lower.tri(correlation_glmmTMB)],
+      tolerance = 1e-3
+    )
+    expect_true(all(is.na(vc$lo[[1]][lower.tri(vc$lo[[1]])])))
+    expect_true(all(is.na(vc$hi[[1]][lower.tri(vc$hi[[1]])])))
+
+    printed_matrix <- print_int_slope_re(fit)
+    expected_correlations <- c("", vapply(2:nrow(correlation_glmmTMB), function(i) {
+      paste(mround(correlation_glmmTMB[i, seq_len(i - 1L)], 2), collapse = " ")
+    }, character(1)))
+    expect_equal(unname(printed_matrix[, "Name"]), colnames(correlation_glmmTMB))
+    expect_equal(unname(printed_matrix[, "Corr"]), expected_correlations)
+
+    printed <- capture.output(print(fit))
+    table_start <- grep("^ Groups", printed)
+    table_rows <- printed[table_start + seq_len(nrow(printed_matrix))]
+    for (i in seq_len(nrow(printed_matrix))) {
+      expect_true(grepl(printed_matrix[i, "Name"], table_rows[i], fixed = TRUE))
+      if (nzchar(expected_correlations[i])) {
+        expect_true(grepl(expected_correlations[i], table_rows[i], fixed = TRUE))
+      }
+    }
+  }
+})
+
 test_that("Random intercepts and cross validation play nicely", {
   skip_on_cran()
   set.seed(1)
