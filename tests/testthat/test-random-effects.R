@@ -349,6 +349,12 @@ test_that("Interleaved random-effect groups retain covariance parameter order", 
   )
   expect_equal(age[1, 1], unname(attr(vc_glmmTMB$age, "stddev")), tolerance = 1e-3)
 
+  ran_pars <- tidy(fit, "ran_pars")
+  subject_terms <- ran_pars$term[
+    !is.na(ran_pars$group_name) & ran_pars$group_name == "Subject"
+  ]
+  expect_equal(subject_terms, c("sd__(Intercept)", "sd__Days"))
+
   printed_matrix <- print_int_slope_re(fit)
   expect_equal(unname(printed_matrix[, "Groups"]), c("Subject", "", "age"))
   expect_equal(unname(printed_matrix[, "Name"]), c("(Intercept)", "Days", "(Intercept)"))
@@ -409,6 +415,7 @@ test_that("Tidy reports correlations for multivariate random-effect blocks", {
     stats::rnorm(nrow(d), sd = 0.5)
 
   formulas <- list(
+    y ~ a + (1 + a | g),
     y ~ a + b + (1 + a + b | g),
     y ~ a + b + c + (1 + a + b + c | g)
   )
@@ -423,8 +430,18 @@ test_that("Tidy reports correlations for multivariate random-effect blocks", {
       correlation_glmmTMB[lower.tri(correlation_glmmTMB)],
       tolerance = 1e-3
     )
-    expect_true(all(is.na(vc$lo[[1]][lower.tri(vc$lo[[1]])])))
-    expect_true(all(is.na(vc$hi[[1]][lower.tri(vc$hi[[1]])])))
+    if (nrow(correlation_glmmTMB) == 2L) {
+      re_indx <- grep("re_cov_pars", names(fit$sd_report$value), fixed = TRUE)
+      theta <- fit$sd_report$value[re_indx][2]
+      theta_se <- fit$sd_report$sd[re_indx][2]
+      crit <- stats::qnorm(0.975)
+      transform_cor <- function(x) x / sqrt(1 + x^2)
+      expect_equal(vc$lo[[1]][2, 1], unname(transform_cor(theta - crit * theta_se)))
+      expect_equal(vc$hi[[1]][2, 1], unname(transform_cor(theta + crit * theta_se)))
+    } else {
+      expect_true(all(is.na(vc$lo[[1]][lower.tri(vc$lo[[1]])])))
+      expect_true(all(is.na(vc$hi[[1]][lower.tri(vc$hi[[1]])])))
+    }
 
     printed_matrix <- print_int_slope_re(fit)
     expected_correlations <- c("", vapply(2:nrow(correlation_glmmTMB), function(i) {

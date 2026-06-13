@@ -826,6 +826,10 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
     d <- sqrt(diag(s))
     s / outer(d, d)
   }
+  raw_conf_low <- re_cov_df$conf.low
+  raw_conf_high <- re_cov_df$conf.high
+  re_cov_df$conf.low[corr_pars] <- NA_real_
+  re_cov_df$conf.high[corr_pars] <- NA_real_
   for (m in unique(re_cov_df$model)) {
     model_rows <- which(re_cov_df$model == m)
     for (g in unique(re_cov_df$group_indices[model_rows])) {
@@ -838,11 +842,20 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
           function(row, col) cor_matrix[row, col],
           re_cov_df$rows[block_corr], re_cov_df$cols[block_corr]
         )
+        # For a 2-by-2 block, the correlation is a monotone scalar transform
+        # of one unconstrained parameter. Larger blocks require a multivariate
+        # delta method because correlations depend on multiple parameters.
+        if (n == 2L) {
+          re_cov_df$conf.low[block_corr] <- theta_to_cor(
+            raw_conf_low[block_corr], n
+          )[2, 1]
+          re_cov_df$conf.high[block_corr] <- theta_to_cor(
+            raw_conf_high[block_corr], n
+          )[2, 1]
+        }
       }
     }
   }
-  re_cov_df$conf.low[corr_pars] <- NA_real_
-  re_cov_df$conf.high[corr_pars] <- NA_real_
 
   # Terms such as (1 | group) + (0 + slope | group) are separate covariance
   # blocks internally but should be displayed in one matrix. Offset each block
@@ -941,7 +954,7 @@ flatten_cov_output <- function(v, cnms) {
     model <- as.integer(split_name[2])
     group_name <- split_name[4]
 
-    term_names <- cnms[[group_name]]
+    term_names <- unlist(cnms[names(cnms) == group_name], use.names = FALSE)
     n <- nrow(est_mat)  # number of coefficients being estimated
 
     # Extract diagonal values only
