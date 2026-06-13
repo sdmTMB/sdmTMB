@@ -716,8 +716,8 @@ get_anisotropic_ranges <- function(x, m = 1L) {
 # Extract and format random effect estimates from sdmTMB model output
 #
 # This function extracts random effect estimates, including individual random intercepts
-# and slopes, as well as covariance matrices, from an `sdmTMB` model output. It formats
-# them into a structured list for further analysis.
+# and slopes, as well as standard deviation and correlation parameters, from an
+# `sdmTMB` model output. It formats them into a structured list for further analysis.
 #
 # @param x An `sdmTMB` model object containing estimated random effects.
 # @param crit The critical value for confidence interval computation,
@@ -780,7 +780,7 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
     re_b_df <- re_b_df[, c("group_name", "term", "level_ids", "estimate", "std.error", "conf.low", "conf.high")]
   }
   # remove ":" in the level_ids
-  re_b_df$level_ids <- sapply(strsplit(re_b_df$level_ids, ":"), function(x) x[2])
+  re_b_df$level_ids <- sapply(strsplit(re_b_df$level_ids, ":"), function(x) x[3])
   out_ranef <- re_b_df
   row.names(out_ranef) <- NULL
 
@@ -791,7 +791,7 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
     df
   })
   re_cov_df <- do.call(rbind, re_cov_dfs)
-  re_cov_df$rows <- re_cov_df$rows + 1 # increement rows/cols from 1, not 0
+  re_cov_df$rows <- re_cov_df$rows + 1 # increment rows/cols from 1, not 0
   re_cov_df$cols <- re_cov_df$cols + 1
   row.names(re_cov_df) <- NULL
 
@@ -801,6 +801,19 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
     re_cov_df$group[i] <- group_key$group_name[indx]
   }
 
+  # Uncorrelated random intercepts and slopes for the same group, e.g. (1|group)+(0+slope|group),
+  # are fit internally as if they were separate groups, but their SDs should be displayed
+  # in a 2-by-2 matrix with NAs on the off-diagonals.
+  true_group_dfs <- list()
+  for (i in seq_len(length(unique(re_cov_df$group)))) {
+    group <- unique(re_cov_df$group)[i]
+    true_group_dfs[[i]] <- re_cov_df[re_cov_df$group == group,]
+    correction <- true_group_dfs[[i]]$group_indices - true_group_dfs[[i]]$group_indices[1]
+    true_group_dfs[[i]]$rows <- true_group_dfs[[i]]$rows + correction
+    true_group_dfs[[i]]$cols <- true_group_dfs[[i]]$cols + correction
+  }
+  re_cov_df <- do.call(rbind, true_group_dfs)
+
   re_indx <- grep("re_cov_pars", names(x$sd_report$value), fixed = TRUE)
   non_nas <- which(x$sd_report$value[re_indx] != 0) # remove parameter that gets mapped off
   re_cov_df$estimate <- x$sd_report$value[re_indx][non_nas]
@@ -809,11 +822,18 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
   re_cov_df$conf.high <- re_cov_df$estimate + crit * re_cov_df$std.error
   # the SD parameters are returned in log space -- calculate CIs in log space then transform
   sds <- which(re_cov_df$is_sd == 1) # index which elements are SDs
+  corr_pars <- which(re_cov_df$is_sd == 0) # assume elements which are not SDs can be transformed
+  # to obtain correlations
   # Calculate CIs in log space first
   re_cov_df$conf.low[sds] <- exp(re_cov_df$estimate[sds] - crit * re_cov_df$std.error[sds])
   re_cov_df$conf.high[sds] <- exp(re_cov_df$estimate[sds] + crit * re_cov_df$std.error[sds])
   # Transform estimates to natural space
   re_cov_df$estimate[sds] <- exp(re_cov_df$estimate[sds])
+
+  # Transform the estimates and CIs for the correlation parameters
+  re_cov_df$estimate[corr_pars] <- re_cov_df$estimate[corr_pars]/sqrt(1+(re_cov_df$estimate[corr_pars])^2)
+  re_cov_df$conf.low[corr_pars] <- re_cov_df$conf.low[corr_pars]/sqrt(1+(re_cov_df$conf.low[corr_pars])^2)
+  re_cov_df$conf.high[corr_pars] <- re_cov_df$conf.high[corr_pars]/sqrt(1+(re_cov_df$conf.high[corr_pars])^2)
 
   re_cov_df <- re_cov_df[, c("rows", "cols", "model", "group", "estimate", "std.error", "conf.low", "conf.high")]
   cov_matrices_lo = create_cov_matrices(re_cov_df, col_name = "conf.low", model = model)

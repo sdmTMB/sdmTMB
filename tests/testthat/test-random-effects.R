@@ -118,7 +118,7 @@ test_that("Model with random intercepts fits appropriately.", {
   expect_equal(as.numeric(attr(summary(lmer_fit)$varcor[[1]], "stddev")),
                as.numeric(exp(REs[c(1,3)])), tolerance = 1.0e-4)
   expect_equal(as.numeric(attr(summary(lmer_fit)$varcor[[1]], "correlation")[1,2]),
-               as.numeric(REs[2]), tolerance = 1.0e-2)
+               as.numeric(REs[2])/sqrt(1+as.numeric(REs[2])^2), tolerance = 1.0e-4)
 
   # Check that ranef() returns the same thing
   expect_equal(mean(diag(cor(ranef(sdmTMB_fit)[[1]]$Subject, ranef(lmer_fit)$Subject))), 1)
@@ -175,13 +175,17 @@ test_that("Model with random intercepts fits appropriately.", {
 
 
   sdmTMB_fit <- sdmTMB(Reaction ~ Days + (1 + Days | Subject) + (1 | age), sleepstudy, spatial="off")
-
+  glmmtmb_fit <- glmmTMB::glmmTMB(Reaction ~ Days + (Days | Subject) + (1|age), sleepstudy, REML = FALSE)
 
   expect_equal(glmmTMB::fixef(glmmTMB_fit)$cond[1], coef(sdmTMB_fit)[1], tolerance = 1e-2)
   expect_equal(glmmTMB::fixef(glmmTMB_fit)$cond[2], coef(sdmTMB_fit)[2], tolerance = 1e-2)
   REs <- sdmTMB_fit$sd_report$value[grep("cov_pars", names(sdmTMB_fit$sd_report$value))]
   expect_equal(as.numeric(attr(summary(glmmTMB_fit)$varcor$cond$Subject, 'stddev')),
                as.numeric(exp(REs[c(1,3)])), tolerance = 1.0e-3)
+
+  # Check uncorrelated random intercept and slope
+  sdmTMB_fit <- sdmTMB(Reaction ~ Days + (1 + Days || Subject) + (1 | age), sleepstudy, spatial="off")
+  expect_equal(tidy(sdmTMB_fit, "ran_vcov")$est[[1]][2,1], NA_real_)
 
   # Add in spatial field
   set.seed(1)
