@@ -1465,9 +1465,6 @@ sdmTMB <- function(
     out[!as.logical(has_component)] <- NA_integer_
     factor(out)
   }
-  tmb_map$log_kappaS_dl <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_spatial)
-  tmb_map$kappaT_dl_raw <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_temporal)
-  tmb_map$kappaST_dl_raw <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_spacetime)
   if (delta) tmb_map$b_j2 <- NULL
   if (family$family[[1]] == "tweedie") tmb_map$thetaf <- NULL
   if (family$family[[1]] == "student") {
@@ -1534,6 +1531,10 @@ sdmTMB <- function(
     # often causes optimization problems if set from phase 1!?
     tmb_params$b_threshold <- if (thresh[[1]]$threshold_func == 2L) matrix(0, 3L, n_m) else matrix(0, 2L, n_m)
   }
+
+  tmb_map$log_kappaS_dl <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_spatial)
+  tmb_map$kappaT_dl_raw <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_temporal)
+  tmb_map$kappaST_dl_raw <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_spacetime)
 
   tmb_random <- c()
   if (any(spatial == "on") && !omit_spatial_intercept) {
@@ -1862,7 +1863,6 @@ sdmTMB <- function(
   out_structure$tmb_params <- tmb_params
   out_structure$lower <- lim$lower
   out_structure$upper <- lim$upper
-
 
   if (!do_fit) {
     return(out_structure)

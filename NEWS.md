@@ -1,5 +1,8 @@
 # sdmTMB (development version)
 
+* Fix bug in diffusion covariate models where the kappa parameter was
+  trying to be optimized during the first (fixed effect) stage.
+
 * Allow for fitting uncorrelated random slopes and intercepts with the form
   `(1 + slope_var || group)`, making sure that results are displayed correctly.
 
