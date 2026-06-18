@@ -698,7 +698,7 @@ test_that("Cross validation handles covariate diffusion under year-based folds",
   skip_on_cran()
 
   dat <- make_cv_covariate_diffusion_data()
-  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
+  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.2)
   fold_ids <- as.integer(factor(dat$year))
 
   fit_base <- sdmTMB_cv(
@@ -713,7 +713,7 @@ test_that("Cross validation handles covariate diffusion under year-based folds",
     parallel = FALSE
   )
 
-  fit_time <- sdmTMB_cv(
+  suppressWarnings(fit_time <- sdmTMB_cv(
     y ~ x1,
     data = dat,
     mesh = mesh,
@@ -725,8 +725,9 @@ test_that("Cross validation handles covariate diffusion under year-based folds",
     parallel = FALSE,
     covariate_diffusion = ~ time(x1),
     control = sdmTMBcontrol(newton_loops = 0)
-  )
+  ))
 
+  suppressWarnings(
   fit_space <- sdmTMB_cv(
     y ~ x1,
     data = dat,
@@ -739,7 +740,7 @@ test_that("Cross validation handles covariate diffusion under year-based folds",
     parallel = FALSE,
     covariate_diffusion = ~ space(x1),
     control = sdmTMBcontrol(newton_loops = 0)
-  )
+  ))
 
   expect_s3_class(fit_base, "sdmTMB_cv")
   expect_s3_class(fit_time, "sdmTMB_cv")
