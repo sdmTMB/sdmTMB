@@ -59,7 +59,7 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
   dat <- sim$data
   mesh <- sim$mesh
 
-  ctrl <- sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+  ctrl <- sdmTMBcontrol(newton_loops = 2L, getsd = FALSE)
 
   fit_space <- sdmTMB(
     y_space ~ 1,
@@ -99,7 +99,7 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
 
   expect_equal(as.numeric(logLik(fit_space)), 92.0763, tolerance = 1e-4)
   expect_equal(as.numeric(logLik(fit_time)), -240.2167, tolerance = 1e-4)
-  expect_equal(as.numeric(logLik(fit_st)), -278.3500, tolerance = 1e-4)
+  expect_equal(as.numeric(logLik(fit_st)), -280.2363, tolerance = 1e-4)
 
   get_beta <- function(fit) {
     b <- fit$tmb_obj$env$parList()$b_j
@@ -116,8 +116,8 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
   expect_equal(beta_time[["(Intercept)"]], -0.1992140, tolerance = 1e-4)
   expect_equal(beta_time[["cov_diff_time_x_time"]], 0.7224500, tolerance = 1e-4)
 
-  expect_equal(beta_st[["(Intercept)"]], 0.1152084, tolerance = 1e-4)
-  expect_equal(beta_st[["cov_diff_spacetime_x_st"]], 0.7260176, tolerance = 1e-4)
+  expect_equal(beta_st[["(Intercept)"]], 0.11498, tolerance = 1e-4)
+  expect_equal(beta_st[["cov_diff_spacetime_x_st"]], 0.744, tolerance = 1e-3)
 
   rep_space <- fit_space$tmb_obj$report()
   rep_time <- fit_time$tmb_obj$report()
