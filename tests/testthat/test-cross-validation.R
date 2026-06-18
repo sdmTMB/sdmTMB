@@ -677,7 +677,7 @@ test_that("Deviance residuals match single-model residuals", {
 
 make_cv_covariate_diffusion_data <- function() {
   set.seed(303)
-  n_t <- 2L
+  n_t <- 4L
   n_s <- 5L
   year <- rep(seq_len(n_t), each = n_s)
   X <- rep(seq_len(n_s), times = n_t)
