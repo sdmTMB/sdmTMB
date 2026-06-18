@@ -674,3 +674,84 @@ test_that("Deviance residuals match single-model residuals", {
     max(abs(dev_res_fit)) * 3
   )
 })
+
+make_cv_covariate_diffusion_data <- function() {
+  set.seed(303)
+  n_t <- 2L
+  n_s <- 5L
+  year <- rep(seq_len(n_t), each = n_s)
+  X <- rep(seq_len(n_s), times = n_t)
+  Y <- rep(seq_len(2L), length.out = n_t * n_s)
+  x1 <- as.numeric(scale(sin(year / 2) + X / max(X)))
+  eta <- 0.1 + 0.6 * x1
+
+  data.frame(
+    y = eta + stats::rnorm(length(eta), sd = 0.05),
+    x1 = x1,
+    year = year,
+    X = X,
+    Y = Y
+  )
+}
+
+test_that("Cross validation handles covariate diffusion under year-based folds", {
+  skip_on_cran()
+
+  dat <- make_cv_covariate_diffusion_data()
+  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
+  fold_ids <- as.integer(factor(dat$year))
+
+  fit_base <- sdmTMB_cv(
+    y ~ x1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    fold_ids = fold_ids,
+    family = gaussian(),
+    spatial = "off",
+    spatiotemporal = "off",
+    parallel = FALSE
+  )
+
+  fit_time <- sdmTMB_cv(
+    y ~ x1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    fold_ids = fold_ids,
+    family = gaussian(),
+    spatial = "off",
+    spatiotemporal = "off",
+    parallel = FALSE,
+    covariate_diffusion = ~ time(x1),
+    control = sdmTMBcontrol(newton_loops = 0)
+  )
+
+  fit_space <- sdmTMB_cv(
+    y ~ x1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    fold_ids = fold_ids,
+    family = gaussian(),
+    spatial = "off",
+    spatiotemporal = "off",
+    parallel = FALSE,
+    covariate_diffusion = ~ space(x1),
+    control = sdmTMBcontrol(newton_loops = 0)
+  )
+
+  expect_s3_class(fit_base, "sdmTMB_cv")
+  expect_s3_class(fit_time, "sdmTMB_cv")
+  expect_s3_class(fit_space, "sdmTMB_cv")
+
+  expect_equal(nrow(fit_time$data), nrow(dat))
+  expect_false(anyNA(fit_time$data$cv_predicted))
+  expect_true(all(is.finite(fit_time$data$cv_predicted)))
+  expect_true(is.finite(fit_time$sum_loglik))
+
+  expect_equal(nrow(fit_space$data), nrow(dat))
+  expect_false(anyNA(fit_space$data$cv_predicted))
+  expect_true(all(is.finite(fit_space$data$cv_predicted)))
+  expect_true(is.finite(fit_space$sum_loglik))
+})

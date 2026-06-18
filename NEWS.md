@@ -1,6 +1,9 @@
 # sdmTMB (development version)
 
-* Fix bug in diffusion covariate models where the kappa parameter was
+* Fix bug in cross validation with the new covariate diffusion models
+  if the blocking is done by time slices.
+
+* Fix bug in covariate diffusion models where the kappa parameter was
   trying to be optimized during the first (fixed effect) stage.
 
 * Allow for fitting uncorrelated random slopes and intercepts with the form

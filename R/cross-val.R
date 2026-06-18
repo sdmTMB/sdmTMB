@@ -403,11 +403,21 @@ sdmTMB_cv <- function(
       cv_data <- data[data$cv_fold == k, , drop = FALSE]
     }
 
+    temporal_covariate_diffusion <- !is.null(object$covariate_diffusion_parsed) &&
+      isTRUE(object$covariate_diffusion_parsed$needs_time)
+
     # FIXME: only use TMB report() below to be faster!
     # predict for withheld data:
     # cli_inform("Testing on data fold {k}.")
-    predicted <- predict(object, newdata = cv_data, type = "response",
-      offset = if (!is.null(.offset)) cv_data[[.offset]] else rep(0, nrow(cv_data)))
+    if (temporal_covariate_diffusion) {
+      predicted_full <- predict(object, newdata = data, type = "response",
+        offset = if (!is.null(.offset)) data[[.offset]] else rep(0, nrow(data)))
+      match_idx <- match(cv_data[["_sdm_order_"]], predicted_full[["_sdm_order_"]])
+      predicted <- predicted_full[match_idx, , drop = FALSE]
+    } else {
+      predicted <- predict(object, newdata = cv_data, type = "response",
+        offset = if (!is.null(.offset)) cv_data[[.offset]] else rep(0, nrow(cv_data)))
+    }
 
     cv_data$cv_predicted <- predicted$est
     response <- get_response(object$formula[[1]])
