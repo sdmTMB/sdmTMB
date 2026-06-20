@@ -16,6 +16,7 @@
 ^README_cache$
 ^cran-comments\.md$
 ^scratch$
+^scratch-local$
 ^CRAN-RELEASE$
 ^Dockerfile$
 ^CRAN-SUBMISSION$

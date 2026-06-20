@@ -1,5 +1,10 @@
 # sdmTMB (development version)
 
+* Allow supplying `covariate_diffusion_grid` to `sdmTMB()` and
+  `predict.sdmTMB()`. This lets one supply a higher resolution covariate
+  dataset for covariate diffusion, which must interpolate to the mesh
+  vertices. It also allows predicting to new time elements with `extra_time`.
+
 * Fix bug in cross validation with the new covariate diffusion models
   if the blocking is done by time slices.
 

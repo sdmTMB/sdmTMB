@@ -104,6 +104,13 @@ NULL
 #'   lag terms with `space()` or `time()` wrappers.
 #'   Example: `~ space(x) + time(x)`. Lag scale parameters
 #'   are estimated separately for each lag covariate.
+#' @param covariate_diffusion_data An optional data frame supplying the
+#'   `covariate_diffusion` covariate(s) at a different resolution and/or
+#'   coverage than `data` (e.g., a finer grid, or one spanning `extra_time`
+#'   slices). Must contain the mesh `xy_cols`, the `time` column (if temporal
+#'   `covariate_diffusion` terms are used), and the diffusion covariate
+#'   columns; must cover every fitted (+ `extra_time`) time slice. Defaults to
+#'   `NULL`, in which case `data` is used.
 #' @param weights A numeric vector representing optional likelihood weights for
 #'   the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
 #'   to sum to one and are not internally modified. Can also be used for trials
@@ -178,7 +185,7 @@ NULL
 #' @importFrom cli cli_abort cli_warn cli_inform
 #' @importFrom mgcv s t2
 #' @importFrom stats gaussian model.frame model.matrix as.formula
-#'   model.response terms model.offset
+#' @importFrom stats model.response terms model.offset
 #' @importFrom lifecycle deprecated is_present deprecate_warn deprecate_stop
 #'
 #' @return
@@ -612,6 +619,7 @@ sdmTMB <- function(
     control = sdmTMBcontrol(),
     priors = sdmTMBpriors(),
     covariate_diffusion = NULL,
+    covariate_diffusion_data = NULL,
     knots = NULL,
     bayesian = FALSE,
     previous_fit = NULL,
@@ -620,6 +628,7 @@ sdmTMB <- function(
     predict_args = NULL,
     index_args = NULL,
     experimental = NULL) {
+  covariate_diffusion_data_arg <- covariate_diffusion_data
   mesh_missing <- missing(mesh)
   spatial_model <- match.arg(tolower(spatial_model[1L]), c("spde", "sar", "car"))
   if (mesh_missing && spatial_model %in% c("sar", "car")) {
@@ -809,6 +818,9 @@ sdmTMB <- function(
   if (!is.null(covariate_diffusion_parsed) && mesh_missing) {
     cli_abort("`mesh` must be supplied when using `covariate_diffusion`.")
   }
+  if (!is.null(covariate_diffusion_data_arg) && is.null(covariate_diffusion_parsed)) {
+    cli_abort("`covariate_diffusion_data` was supplied but `covariate_diffusion` was not.")
+  }
 
   if (is.null(time)) {
     time <- "_sdmTMB_time"
@@ -825,6 +837,23 @@ sdmTMB <- function(
         "Please remove these or turn your time column into an integer."
       )
     }
+  }
+
+  time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
+  n_t <- nrow(time_df)
+  year_i_data <- time_df$year_i[match(data[[time]], time_df$time_from_data)]
+
+  covariate_diffusion_grid_supplied <- !is.null(covariate_diffusion_data_arg)
+  if (covariate_diffusion_grid_supplied) {
+    covariate_diffusion_grid_inputs <- .prepare_covariate_diffusion_grid_inputs(
+      grid = covariate_diffusion_data_arg,
+      covariate_diffusion = covariate_diffusion_parsed,
+      mesh = spde$mesh,
+      xy_cols = spde$xy_cols,
+      time = time,
+      time_df = time_df,
+      full_time_vec = time_df$time_from_data
+    )
   }
 
   domain <- prepare_spatial_domain(
@@ -892,7 +921,8 @@ sdmTMB <- function(
     time_varying,
     extra_time = extra_time,
     covariate_diffusion_temporal = !is.null(covariate_diffusion_parsed) &&
-      isTRUE(covariate_diffusion_parsed$needs_time)
+      isTRUE(covariate_diffusion_parsed$needs_time) &&
+      !covariate_diffusion_grid_supplied
   )
 
   spatial_varying_formula <- spatial_varying # save it
@@ -1237,16 +1267,12 @@ sdmTMB <- function(
   if (delta) y_i <- cbind(ifelse(y_i > 0, 1, 0), ifelse(y_i > 0, y_i, NA_real_))
   if (!delta) y_i <- matrix(y_i, ncol = 1L)
 
-  time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
-  n_t <- nrow(time_df)
-  year_i_data <- time_df$year_i[match(data[[time]], time_df$time_from_data)]
-
   covariate_diffusion_data <- .build_covariate_diffusion_tmb_data(
     covariate_diffusion = covariate_diffusion_parsed,
-    data = data,
-    A_st = A_st,
-    A_spatial_index = A_spatial_index,
-    year_i = year_i_data,
+    data = if (covariate_diffusion_grid_supplied) covariate_diffusion_grid_inputs$data else data,
+    A_st = if (covariate_diffusion_grid_supplied) covariate_diffusion_grid_inputs$A_st else A_st,
+    A_spatial_index = if (covariate_diffusion_grid_supplied) covariate_diffusion_grid_inputs$A_spatial_index else A_spatial_index,
+    year_i = if (covariate_diffusion_grid_supplied) covariate_diffusion_grid_inputs$year_i else year_i_data,
     n_t = n_t
   )
 
@@ -1768,6 +1794,7 @@ sdmTMB <- function(
       covariate_diffusion = covariate_diffusion,
       covariate_diffusion_parsed = covariate_diffusion_parsed,
       covariate_diffusion_data = covariate_diffusion_data,
+      covariate_diffusion_grid_supplied = covariate_diffusion_grid_supplied,
       spatial = spatial_user,
       spatiotemporal = spatiotemporal,
       spatial_varying_formula = spatial_varying_formula,

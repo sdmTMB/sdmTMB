@@ -58,6 +58,16 @@
 #'   If specified, the predict function will return a matrix of a similar form
 #'   as if `nsim > 0` but representing Bayesian posterior samples from the Stan
 #'   model.
+#' @param covariate_diffusion_data An optional data frame overriding the
+#'   `covariate_diffusion` covariate field used at prediction (e.g., for a
+#'   counterfactual/scenario surface), with the same requirements as
+#'   `covariate_diffusion_data` in [sdmTMB()]. `newdata`'s x/y and time columns
+#'   always determine *where* predictions are projected to; this argument only
+#'   controls where the underlying diffused covariate field comes from.
+#'   Defaults to `NULL`: if a grid was supplied at fit time, the fitted field
+#'   is reused as-is (so `newdata` need not contain the diffusion covariate
+#'   columns); otherwise the field is rebuilt from `newdata`'s own covariate
+#'   columns, as before.
 #' @param model Which component to predict from delta/hurdle models when `nsim >
 #'   0` or `mcmc_samples` is supplied. `NA` (default) returns the combined
 #'   prediction from both components; `1` returns the binomial component only; `2`
@@ -265,6 +275,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
   model = c(NA, 1, 2),
   offset = NULL,
   mcmc_samples = NULL,
+  covariate_diffusion_data = NULL,
   return_tmb_object = FALSE,
   return_tmb_report = FALSE,
   return_tmb_data = FALSE,
@@ -349,6 +360,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
   tmb_data$do_predict <- 1L
   no_spatial <- as.logical(object$tmb_data$no_spatial)
   has_covariate_diffusion <- !is.null(object$covariate_diffusion_data)
+  covariate_diffusion_uses_external_grid <-
+    !is.null(covariate_diffusion_data) || isTRUE(object$covariate_diffusion_grid_supplied)
 
   if (!is.null(newdata)) {
     needs_xy <- if (has_covariate_diffusion) TRUE else isFALSE(pop_pred) && !no_spatial && !is_areal
@@ -390,6 +403,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     if (has_covariate_diffusion &&
       !is.null(object$covariate_diffusion_parsed) &&
       isTRUE(object$covariate_diffusion_parsed$needs_time) &&
+      !covariate_diffusion_uses_external_grid &&
       !setequal(new_data_time, original_time)) {
       cli_abort(c(
         "Temporal covariate-diffusion prediction currently requires full time coverage in `newdata`.",
@@ -668,15 +682,42 @@ predict.sdmTMB <- function(object, newdata = NULL,
     tmb_data$proj_spatial_index <- newdata$sdm_spatial_id
     tmb_data$covariate_diffusion$proj_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
     if (has_covariate_diffusion) {
-      proj_dl_data <- .build_covariate_diffusion_tmb_data(
-        covariate_diffusion = object$covariate_diffusion_parsed,
-        data = nd,
-        A_st = proj_mesh,
-        A_spatial_index = nd$sdm_spatial_id,
-        year_i = tmb_data$proj_year,
-        n_t = tmb_data$n_t
-      )
-      tmb_data$covariate_diffusion$proj_covariate_vertex_time <- proj_dl_data$covariate_vertex_time
+      if (!is.null(covariate_diffusion_data)) {
+        # override grid: rebuild the field from the supplied covariate_diffusion_data
+        override_grid_inputs <- .prepare_covariate_diffusion_grid_inputs(
+          grid = covariate_diffusion_data,
+          covariate_diffusion = object$covariate_diffusion_parsed,
+          mesh = object$spde$mesh,
+          xy_cols = object$spde$xy_cols,
+          time = object$time,
+          time_df = object$time_lu,
+          full_time_vec = object$time_lu$time_from_data
+        )
+        proj_dl_data <- .build_covariate_diffusion_tmb_data(
+          covariate_diffusion = object$covariate_diffusion_parsed,
+          data = override_grid_inputs$data,
+          A_st = override_grid_inputs$A_st,
+          A_spatial_index = override_grid_inputs$A_spatial_index,
+          year_i = override_grid_inputs$year_i,
+          n_t = tmb_data$n_t
+        )
+        tmb_data$covariate_diffusion$proj_covariate_vertex_time <- proj_dl_data$covariate_vertex_time
+      } else if (covariate_diffusion_uses_external_grid) {
+        # reuse the fitted field: same mesh vertices, all time slices already present
+        tmb_data$covariate_diffusion$proj_covariate_vertex_time <-
+          object$covariate_diffusion_data$covariate_vertex_time
+      } else {
+        # no grid was used at fit: rebuild the field from newdata, as before
+        proj_dl_data <- .build_covariate_diffusion_tmb_data(
+          covariate_diffusion = object$covariate_diffusion_parsed,
+          data = nd,
+          A_st = proj_mesh,
+          A_spatial_index = nd$sdm_spatial_id,
+          year_i = tmb_data$proj_year,
+          n_t = tmb_data$n_t
+        )
+        tmb_data$covariate_diffusion$proj_covariate_vertex_time <- proj_dl_data$covariate_vertex_time
+      }
     }
     tmb_data$proj_Zs <- sm$Zs
     tmb_data$proj_Xs <- sm$Xs

@@ -206,6 +206,54 @@ tidy(fit_st, effects = "ran_pars")
 In the random-effect parameters, `kappaS_cov_diff[x1]` controls spatial smoothing and `kappaT_cov_diff[x1]` controls temporal diffusion.
 Users applying the time diffusion extension should read and cite @thorson2026.
 
+## Supplying a separate covariate grid
+
+By default, the covariate field used for diffusion is built from `data` alone.
+If the covariate is available on a finer or more complete grid than the
+observation locations, we can supply it via `covariate_diffusion_data`. This
+also lets us define the covariate at a forecast (`extra_time`) slice without
+padding `data` with extra rows.
+
+```{r fit-space-time-grid}
+extra_yr <- n_t + 1
+grid_st <- expand.grid(
+  X = seq(0, 1, length.out = 25),
+  Y = seq(0, 1, length.out = 25),
+  year = seq_len(extra_yr)
+)
+grid_st$x1 <- as.numeric(scale(
+  sin(2 * pi * (grid_st$X + grid_st$year / 8)) +
+    cos(2 * pi * (grid_st$Y - grid_st$year / 10)) +
+    0.6 * sin(4 * pi * grid_st$X) * cos(grid_st$year / 3)
+))
+
+fit_st_grid <- sdmTMB(
+  observed ~ 1,
+  mesh = mesh_st,
+  time = "year",
+  covariate_diffusion = ~ space(x1) + time(x1), #<
+  covariate_diffusion_data = grid_st, #<
+  extra_time = extra_yr, #<
+  spatial = "on",
+  spatiotemporal = "off",
+  data = dat_st
+)
+sanity(fit_st_grid)
+```
+
+Because the diffused field now comes entirely from `grid_st`, `predict()` can
+reuse it for `newdata` that only contains coordinates, time, any regular covariate data, but no diffused covariate data.
+
+```{r predict-space-time-grid}
+nd_st <- replicate_df(site_st, "year", seq_len(extra_yr))
+pred_grid <- predict(fit_st_grid, newdata = nd_st)
+
+ggplot(pred_grid, aes(X, Y, colour = diffusion_cov_space_x1)) +
+  geom_point() +
+  facet_wrap(~year) +
+  scale_colour_gradient2()
+```
+
 ## Plot diffusion kernels
 
 We can separately visualize the spatial diffusion, time diffusion, or their combined effects as either the diffusion kernel or the smoothed covariate field represented on the mesh:

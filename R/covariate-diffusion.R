@@ -278,6 +278,87 @@
   )
 }
 
+.prepare_covariate_diffusion_grid_inputs <- function(grid,
+                                                     covariate_diffusion,
+                                                     mesh,
+                                                     xy_cols,
+                                                     time,
+                                                     time_df,
+                                                     full_time_vec) {
+  if (!inherits(grid, "data.frame")) {
+    cli_abort("`covariate_diffusion_data` must be `NULL` or a data frame.")
+  }
+  if (is.null(xy_cols) || length(xy_cols) != 2L) {
+    cli_abort("`covariate_diffusion_data` requires a mesh built with known `xy_cols` (e.g., from `make_mesh()`).")
+  }
+
+  missing_xy <- setdiff(xy_cols, names(grid))
+  if (length(missing_xy)) {
+    cli_abort(c(
+      "`covariate_diffusion_data` is missing required coordinate column(s).",
+      "x" = "Missing: {.code {paste(missing_xy, collapse = ', ')}}"
+    ))
+  }
+  non_numeric_xy <- xy_cols[!vapply(xy_cols, function(col) is.numeric(grid[[col]]), logical(1L))]
+  if (length(non_numeric_xy)) {
+    cli_abort(c(
+      "`covariate_diffusion_data` coordinates must be numeric.",
+      "x" = "Non-numeric coordinate column(s): {.code {paste(non_numeric_xy, collapse = ', ')}}"
+    ))
+  }
+  invalid_xy <- xy_cols[!vapply(xy_cols, function(col) all(is.finite(grid[[col]])), logical(1L))]
+  if (length(invalid_xy)) {
+    cli_abort(c(
+      "`covariate_diffusion_data` coordinates must be finite and cannot contain `NA` values.",
+      "x" = "Invalid coordinate column(s): {.code {paste(invalid_xy, collapse = ', ')}}"
+    ))
+  }
+
+  missing_covariates <- setdiff(covariate_diffusion$covariates, names(grid))
+  if (length(missing_covariates)) {
+    cli_abort(c(
+      "`covariate_diffusion_data` is missing required covariate column(s).",
+      "x" = "Missing: {.code {paste(missing_covariates, collapse = ', ')}}"
+    ))
+  }
+  non_numeric <- covariate_diffusion$covariates[!vapply(covariate_diffusion$covariates, function(v) {
+    is.numeric(grid[[v]])
+  }, logical(1L))]
+  if (length(non_numeric)) {
+    cli_abort(c(
+      "`covariate_diffusion_data` covariates must be numeric.",
+      "x" = "Non-numeric covariate(s): {.code {paste(non_numeric, collapse = ', ')}}"
+    ))
+  }
+
+  if (isTRUE(covariate_diffusion$needs_time)) {
+    if (!time %in% names(grid)) {
+      cli_abort("`covariate_diffusion_data` is missing the time column {.code {time}}.")
+    }
+    missing_slices <- setdiff(full_time_vec, grid[[time]])
+    if (length(missing_slices)) {
+      cli_abort(c(
+        "`covariate_diffusion_data` does not cover all fitted (+ `extra_time`) time slices.",
+        "x" = "Missing time slice(s): {.code {paste(missing_slices, collapse = ', ')}}"
+      ))
+    }
+    year_i <- time_df$year_i[match(grid[[time]], time_df$time_from_data)]
+  } else {
+    year_i <- rep(0L, nrow(grid))
+  }
+
+  A_st <- fmesher::fm_basis(mesh, loc = as.matrix(grid[, xy_cols, drop = FALSE]))
+  A_spatial_index <- seq_len(nrow(grid)) - 1L
+
+  list(
+    data = grid,
+    A_st = A_st,
+    A_spatial_index = A_spatial_index,
+    year_i = year_i,
+    n_t = nrow(time_df)
+  )
+}
+
 .build_covariate_diffusion_tmb_data <- function(covariate_diffusion,
                                                 data,
                                                 A_st,

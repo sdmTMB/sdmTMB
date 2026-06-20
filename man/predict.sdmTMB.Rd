@@ -17,6 +17,7 @@
   model = c(NA, 1, 2),
   offset = NULL,
   mcmc_samples = NULL,
+  covariate_diffusion_data = NULL,
   return_tmb_object = FALSE,
   return_tmb_report = FALSE,
   return_tmb_data = FALSE,
@@ -90,6 +91,17 @@ more details and the
 If specified, the predict function will return a matrix of a similar form
 as if \code{nsim > 0} but representing Bayesian posterior samples from the Stan
 model.}
+
+\item{covariate_diffusion_data}{An optional data frame overriding the
+\code{covariate_diffusion} covariate field used at prediction (e.g., for a
+counterfactual/scenario surface), with the same requirements as
+\code{covariate_diffusion_data} in \code{\link[=sdmTMB]{sdmTMB()}}. \code{newdata}'s x/y and time columns
+always determine \emph{where} predictions are projected to; this argument only
+controls where the underlying diffused covariate field comes from.
+Defaults to \code{NULL}: if a grid was supplied at fit time, the fitted field
+is reused as-is (so \code{newdata} need not contain the diffusion covariate
+columns); otherwise the field is rebuilt from \code{newdata}'s own covariate
+columns, as before.}
 
 \item{return_tmb_object}{Logical. If \code{TRUE}, will include the TMB object in a
 list format output. Necessary for the \code{\link[=get_index]{get_index()}} or \code{\link[=get_cog]{get_cog()}}

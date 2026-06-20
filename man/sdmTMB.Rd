@@ -26,6 +26,7 @@ sdmTMB(
   control = sdmTMBcontrol(),
   priors = sdmTMBpriors(),
   covariate_diffusion = NULL,
+  covariate_diffusion_data = NULL,
   knots = NULL,
   bayesian = FALSE,
   previous_fit = NULL,
@@ -172,6 +173,14 @@ be shared across delta models.}
 lag terms with \code{space()} or \code{time()} wrappers.
 Example: \code{~ space(x) + time(x)}. Lag scale parameters
 are estimated separately for each lag covariate.}
+
+\item{covariate_diffusion_data}{An optional data frame supplying the
+\code{covariate_diffusion} covariate(s) at a different resolution and/or
+coverage than \code{data} (e.g., a finer grid, or one spanning \code{extra_time}
+slices). Must contain the mesh \code{xy_cols}, the \code{time} column (if temporal
+\code{covariate_diffusion} terms are used), and the diffusion covariate
+columns; must cover every fitted (+ \code{extra_time}) time slice. Defaults to
+\code{NULL}, in which case \code{data} is used.}
 
 \item{knots}{Optional named list containing knot values to be used for basis
 construction of smoothing terms. See \code{\link[mgcv:gam]{mgcv::gam()}} and \code{\link[mgcv:gamm]{mgcv::gamm()}}.
