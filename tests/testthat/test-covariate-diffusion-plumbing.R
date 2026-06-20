@@ -34,13 +34,11 @@ test_that("covariate diffusion tmb_data includes safe defaults when feature is o
   expect_length(fit$tmb_data$covariate_diffusion$term_covariate, 0L)
   expect_null(fit$covariate_diffusion_data)
 
-  expect_true(all(c("log_kappaS_dl", "kappaT_dl_raw", "kappaST_dl_raw") %in% names(fit$tmb_params)))
+  expect_true(all(c("log_kappaS_dl", "kappaT_dl_raw") %in% names(fit$tmb_params)))
   expect_length(fit$tmb_params$log_kappaS_dl, 0L)
   expect_length(fit$tmb_params$kappaT_dl_raw, 0L)
-  expect_length(fit$tmb_params$kappaST_dl_raw, 0L)
   expect_equal(length(fit$tmb_map[["log_kappaS_dl", exact = TRUE]]), 0L)
   expect_equal(length(fit$tmb_map[["kappaT_dl_raw", exact = TRUE]]), 0L)
-  expect_equal(length(fit$tmb_map[["kappaST_dl_raw", exact = TRUE]]), 0L)
 })
 
 test_that("covariate diffusion coefficient slots are appended and lag parameters are length-aware", {
@@ -70,7 +68,6 @@ test_that("covariate diffusion coefficient slots are appended and lag parameters
   expect_equal(fit$tmb_data$covariate_diffusion$n_covariates, 2L)
   expect_equal(fit$covariate_diffusion_data$covariate_has_spatial, c(1L, 0L))
   expect_equal(fit$covariate_diffusion_data$covariate_has_temporal, c(0L, 1L))
-  expect_equal(fit$covariate_diffusion_data$covariate_has_spacetime, c(0L, 0L))
   expect_equal(fit$tmb_data$covariate_diffusion$term_component, c(0L, 1L))
   expect_equal(fit$tmb_data$covariate_diffusion$term_covariate, c(0L, 1L))
   expect_equal(
@@ -81,10 +78,8 @@ test_that("covariate diffusion coefficient slots are appended and lag parameters
   expect_null(fit$tmb_map[["b_j", exact = TRUE]])
   expect_length(fit$tmb_params$log_kappaS_dl, 2L)
   expect_length(fit$tmb_params$kappaT_dl_raw, 2L)
-  expect_length(fit$tmb_params$kappaST_dl_raw, 2L)
   expect_equal(as.integer(fit$tmb_map$log_kappaS_dl), c(1L, NA_integer_))
   expect_equal(as.integer(fit$tmb_map$kappaT_dl_raw), c(NA_integer_, 1L))
-  expect_true(all(is.na(as.integer(fit$tmb_map$kappaST_dl_raw))))
 })
 
 test_that("covariate diffusion coefficient slots are appended to both delta components", {
@@ -116,28 +111,23 @@ test_that("covariate diffusion coefficient slots are appended to both delta comp
   expect_equal(length(fit$tmb_params$b_j2), ncol(fit$tmb_data$X_ij[[2]]))
 })
 
-test_that("covariate diffusion parameter lengths follow used components", {
+test_that("unsupported spacetime wrapper errors clearly", {
   dat <- make_dl_plumbing_data()
   mesh <- make_dl_plumbing_mesh(dat)
 
-  fit <- suppressWarnings(sdmTMB(
-    y ~ 1,
-    data = dat,
-    mesh = mesh,
-    time = "year",
-    spatial = "off",
-    spatiotemporal = "off",
-    covariate_diffusion = ~ spacetime(x1),
-    do_fit = FALSE
-  ))
-
-  expect_length(fit$tmb_params$log_kappaS_dl, 1L)
-  expect_length(fit$tmb_params$kappaT_dl_raw, 1L)
-  expect_length(fit$tmb_params$kappaST_dl_raw, 1L)
-  expect_equal(fit$covariate_diffusion_data$covariate_has_spatial, 1L)
-  expect_equal(fit$covariate_diffusion_data$covariate_has_temporal, 0L)
-  expect_equal(fit$covariate_diffusion_data$covariate_has_spacetime, 1L)
-  expect_true(is.na(as.integer(fit$tmb_map$kappaT_dl_raw)))
+  expect_error(
+    sdmTMB(
+      y ~ 1,
+      data = dat,
+      mesh = mesh,
+      time = "year",
+      spatial = "off",
+      spatiotemporal = "off",
+      covariate_diffusion = ~ spacetime(x1),
+      do_fit = FALSE
+    ),
+    regexp = "Unsupported wrapper"
+  )
 })
 
 test_that("covariate diffusion control names set start and map values", {
@@ -151,18 +141,18 @@ test_that("covariate diffusion control names set start and map values", {
     time = "year",
     spatial = "off",
     spatiotemporal = "off",
-    covariate_diffusion = ~ time(x1) + spacetime(x2),
+    covariate_diffusion = ~ space(x2) + time(x1),
     control = sdmTMBcontrol(
-      start = list(kappaT_dl_raw = c(0.2, 0.3), kappaST_dl_raw = c(0, 0.4)),
-      map = list(kappaT_dl_raw = factor(c(1L, NA)), kappaST_dl_raw = factor(c(NA, 1L)))
+      start = list(log_kappaS_dl = c(0, 0.4), kappaT_dl_raw = c(0.2, 0.3)),
+      map = list(log_kappaS_dl = factor(c(NA, 1L)), kappaT_dl_raw = factor(c(1L, NA)))
     ),
     do_fit = FALSE
   )
 
+  expect_equal(fit$tmb_params$log_kappaS_dl, c(0, 0.4))
   expect_equal(fit$tmb_params$kappaT_dl_raw, c(0.2, 0.3))
-  expect_equal(fit$tmb_params$kappaST_dl_raw, c(0, 0.4))
+  expect_equal(as.integer(fit$tmb_map$log_kappaS_dl), c(NA_integer_, 1L))
   expect_equal(as.integer(fit$tmb_map$kappaT_dl_raw), c(1L, NA_integer_))
-  expect_equal(as.integer(fit$tmb_map$kappaST_dl_raw), c(NA_integer_, 1L))
 })
 
 test_that("no-lag fit remains numerically identical with explicit covariate_diffusion = NULL", {

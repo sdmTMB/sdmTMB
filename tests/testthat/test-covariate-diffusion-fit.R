@@ -30,8 +30,7 @@ test_that("covariate diffusion fits run for each wrapper and combined terms", {
   lag_forms <- list(
     spatial = ~ space(x1),
     temporal = ~ time(x1),
-    spatiotemporal = ~ spacetime(x2),
-    combined = ~ space(x1) + time(x1) + spacetime(x2)
+    combined = ~ space(x1) + time(x1)
   )
 
   for (nm in names(lag_forms)) {

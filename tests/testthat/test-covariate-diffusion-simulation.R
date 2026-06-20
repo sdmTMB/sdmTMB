@@ -91,9 +91,9 @@ test_that("simulate_new supports combined covariate diffusion terms", {
     range = 0.5,
     sigma_O = 0,
     phi = 0.1,
-    B = c(0.2, 0.5, -0.3, 0.4),
-    covariate_diffusion = ~ space(x_s) + time(x_t) + spacetime(x_st),
-    diffusion_kappaS = c(1.3, 1.1),
+    B = c(0.2, 0.5, -0.3),
+    covariate_diffusion = ~ space(x_s) + time(x_t),
+    diffusion_kappaS = 1.3,
     diffusion_rhoT = 0.4,
     seed = 3
   )
@@ -101,8 +101,7 @@ test_that("simulate_new supports combined covariate diffusion terms", {
   expect_s3_class(sim, "data.frame")
   expect_true(all(c(
     "diffusion_truth_space_x_s",
-    "diffusion_truth_time_x_t",
-    "diffusion_truth_spacetime_x_st"
+    "diffusion_truth_time_x_t"
   ) %in% names(sim)))
   expect_false(any(grepl("^cov_diff_", names(sim))))
 })
@@ -161,10 +160,9 @@ test_that("simulate_new errors for missing covariate diffusion parameters", {
       phi = 0.1,
       B = c(0.2, 0.7),
       covariate_diffusion = ~ spacetime(x_st),
-      diffusion_kappaS = 1.3,
-      diffusion_kappaST = 0.3
+      diffusion_kappaS = 1.3
     ),
-    "not currently supported"
+    "Unsupported wrapper"
   )
 })
 

@@ -25,6 +25,7 @@ sdmTMB(
   anisotropy = FALSE,
   control = sdmTMBcontrol(),
   priors = sdmTMBpriors(),
+  covariate_diffusion = NULL,
   knots = NULL,
   bayesian = FALSE,
   previous_fit = NULL,
@@ -32,7 +33,6 @@ sdmTMB(
   do_index = FALSE,
   predict_args = NULL,
   index_args = NULL,
-  covariate_diffusion = NULL,
   experimental = NULL
 )
 }
@@ -168,6 +168,11 @@ Must be shared across delta models.}
 \item{priors}{Optional penalties/priors via \code{\link[=sdmTMBpriors]{sdmTMBpriors()}}. Must currently
 be shared across delta models.}
 
+\item{covariate_diffusion}{An optional one-sided formula describing distributed
+lag terms with \code{space()} or \code{time()} wrappers.
+Example: \code{~ space(x) + time(x)}. Lag scale parameters
+are estimated separately for each lag covariate.}
+
 \item{knots}{Optional named list containing knot values to be used for basis
 construction of smoothing terms. See \code{\link[mgcv:gam]{mgcv::gam()}} and \code{\link[mgcv:gamm]{mgcv::gamm()}}.
 E.g., \verb{s(x, bs = 'cc', k = 4), knots = list(x = c(1, 2, 3, 4))}}
@@ -200,11 +205,6 @@ to \code{\link[=get_index]{get_index()}}.}
 Bias correction can be done when calling \code{\link[=get_index]{get_index()}} on the resulting
 fitted object.
 Most users can ignore this option.}
-
-\item{covariate_diffusion}{An optional one-sided formula describing distributed
-lag terms with \code{space()} or \code{time()} wrappers.
-Example: \code{~ space(x) + time(x)}. Lag scale parameters
-are estimated separately for each lag covariate.}
 
 \item{experimental}{A named list for esoteric or in-development options. Here
 be dragons.}

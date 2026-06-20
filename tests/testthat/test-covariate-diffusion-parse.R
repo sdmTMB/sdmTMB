@@ -20,21 +20,21 @@ test_that("covariate_diffusion parses valid terms", {
     time = "year",
     spatial = "off",
     spatiotemporal = "off",
-    covariate_diffusion = ~ space(x_num) + time(x_lag) + spacetime(x_num),
+    covariate_diffusion = ~ space(x_num) + time(x_lag),
     do_fit = FALSE
   )
 
   expect_equal(
     fit$covariate_diffusion_parsed$terms$component,
-    c("space", "time", "spacetime")
+    c("space", "time")
   )
   expect_equal(
     fit$covariate_diffusion_parsed$terms$variable,
-    c("x_num", "x_lag", "x_num")
+    c("x_num", "x_lag")
   )
   expect_equal(
     fit$covariate_diffusion_parsed$terms$coef_name,
-    c("cov_diff_space_x_num", "cov_diff_time_x_lag", "cov_diff_spacetime_x_num")
+    c("cov_diff_space_x_num", "cov_diff_time_x_lag")
   )
 })
 
@@ -169,7 +169,7 @@ test_that("covariate_diffusion time terms require time", {
       covariate_diffusion = ~ spacetime(x_num),
       do_fit = FALSE
     ),
-    regexp = "require a `time` argument"
+    regexp = "Unsupported wrapper"
   )
 })
 

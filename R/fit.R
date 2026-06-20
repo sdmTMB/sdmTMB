@@ -611,6 +611,7 @@ sdmTMB <- function(
     anisotropy = FALSE,
     control = sdmTMBcontrol(),
     priors = sdmTMBpriors(),
+    covariate_diffusion = NULL,
     knots = NULL,
     bayesian = FALSE,
     previous_fit = NULL,
@@ -618,7 +619,6 @@ sdmTMB <- function(
     do_index = FALSE,
     predict_args = NULL,
     index_args = NULL,
-    covariate_diffusion = NULL,
     experimental = NULL) {
   mesh_missing <- missing(mesh)
   spatial_model <- match.arg(tolower(spatial_model[1L]), c("spde", "sar", "car"))
@@ -709,7 +709,6 @@ sdmTMB <- function(
   }
   epsilon_model <- NULL
   epsilon_predictor <- NULL
-  covariate_diffusion_covariate_vertex_override <- NULL
   if (!is.null(experimental)) {
     if ("epsilon_predictor" %in% names(experimental)) {
       epsilon_predictor <- experimental$epsilon_predictor
@@ -721,10 +720,6 @@ sdmTMB <- function(
       epsilon_model <- experimental$epsilon_model
     } else {
       epsilon_model <- NULL
-    }
-
-    if ("covariate_diffusion_covariate_vertex" %in% names(experimental)) {
-      covariate_diffusion_covariate_vertex_override <- experimental$covariate_diffusion_covariate_vertex
     }
   }
 
@@ -814,9 +809,6 @@ sdmTMB <- function(
   if (!is.null(covariate_diffusion_parsed) && mesh_missing) {
     cli_abort("`mesh` must be supplied when using `covariate_diffusion`.")
   }
-  if (is.null(covariate_diffusion_parsed) && !is.null(covariate_diffusion_covariate_vertex_override)) {
-    cli_abort("`experimental$covariate_diffusion_covariate_vertex` requires `covariate_diffusion`.")
-  }
 
   if (is.null(time)) {
     time <- "_sdmTMB_time"
@@ -900,8 +892,7 @@ sdmTMB <- function(
     time_varying,
     extra_time = extra_time,
     covariate_diffusion_temporal = !is.null(covariate_diffusion_parsed) &&
-      isTRUE(covariate_diffusion_parsed$needs_time) &&
-      is.null(covariate_diffusion_covariate_vertex_override)
+      isTRUE(covariate_diffusion_parsed$needs_time)
   )
 
   spatial_varying_formula <- spatial_varying # save it
@@ -1256,8 +1247,7 @@ sdmTMB <- function(
     A_st = A_st,
     A_spatial_index = A_spatial_index,
     year_i = year_i_data,
-    n_t = n_t,
-    covariate_vertex_time = covariate_diffusion_covariate_vertex_override
+    n_t = n_t
   )
 
   if (!is.null(covariate_diffusion_data)) {
@@ -1272,7 +1262,6 @@ sdmTMB <- function(
     covariate_diffusion_covariate_vertex_time <- covariate_diffusion_data$covariate_vertex_time
     covariate_diffusion_covariate_has_spatial <- as.integer(covariate_diffusion_data$covariate_has_spatial)
     covariate_diffusion_covariate_has_temporal <- as.integer(covariate_diffusion_data$covariate_has_temporal)
-    covariate_diffusion_covariate_has_spacetime <- as.integer(covariate_diffusion_data$covariate_has_spacetime)
     covariate_diffusion_term_component <- as.integer(covariate_diffusion_data$term_component_id - 1L)
     covariate_diffusion_term_covariate <- as.integer(covariate_diffusion_data$term_covariate_index0)
   } else {
@@ -1281,7 +1270,6 @@ sdmTMB <- function(
     covariate_diffusion_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
     covariate_diffusion_covariate_has_spatial <- integer(0)
     covariate_diffusion_covariate_has_temporal <- integer(0)
-    covariate_diffusion_covariate_has_spacetime <- integer(0)
     covariate_diffusion_term_component <- integer(0)
     covariate_diffusion_term_covariate <- integer(0)
   }
@@ -1418,7 +1406,6 @@ sdmTMB <- function(
     ln_kappa = matrix(0, 2L, n_m),
     log_kappaS_dl = numeric(covariate_diffusion_n_covariates),
     kappaT_dl_raw = numeric(covariate_diffusion_n_covariates),
-    kappaST_dl_raw = numeric(covariate_diffusion_n_covariates),
     # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
     thetaf = 0,
     ln_student_df = if (family$family[1] == "student") {
@@ -1534,7 +1521,6 @@ sdmTMB <- function(
 
   tmb_map$log_kappaS_dl <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_spatial)
   tmb_map$kappaT_dl_raw <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_temporal)
-  tmb_map$kappaST_dl_raw <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_spacetime)
 
   tmb_random <- c()
   if (any(spatial == "on") && !omit_spatial_intercept) {
@@ -1631,7 +1617,7 @@ sdmTMB <- function(
       "i" = paste0("Covariate diffusion covariates (in order): ", cov_text, ".")
     ))
   }
-  dl_param_names <- c("log_kappaS_dl", "kappaT_dl_raw", "kappaST_dl_raw")
+  dl_param_names <- c("log_kappaS_dl", "kappaT_dl_raw")
   for (param_name in dl_param_names) {
     if (param_name %in% names(start)) {
       .validate_covariate_diffusion_control_length(start[[param_name]], param_name, "start")

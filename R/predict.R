@@ -850,14 +850,10 @@ predict.sdmTMB <- function(object, newdata = NULL,
     r <- new_tmb_obj$report(lp)
     if (return_tmb_report) return(r)
     if (has_covariate_diffusion) {
-      nd <- .append_covariate_diffusion_term_values(
-        nd, object, new_tmb_obj, lp,
-        covariate_vertex_time = tmb_data$covariate_diffusion$proj_covariate_vertex_time,
-        A_st = tmb_data$proj_mesh,
-        A_spatial_index = tmb_data$proj_spatial_index,
-        year_i = tmb_data$proj_year,
-        n_t = tmb_data$n_t
-      )
+      dl_term_values <- r$proj_covariate_diffusion_values
+      colnames(dl_term_values) <- .covariate_diffusion_predict_colnames(
+        object$covariate_diffusion_data$term_coef_name)
+      nd <- cbind(nd, as.data.frame(dl_term_values))
     }
 
     if (isFALSE(pop_pred)) {
@@ -1025,14 +1021,10 @@ predict.sdmTMB <- function(object, newdata = NULL,
     # object$tmb_obj$fn(lp) # call once to update internal structures?
     r <- object$tmb_obj$report(lp)
     if (has_covariate_diffusion) {
-      nd <- .append_covariate_diffusion_term_values(
-        nd, object, object$tmb_obj, lp,
-        covariate_vertex_time = object$tmb_data$covariate_diffusion$covariate_vertex_time,
-        A_st = object$tmb_data$A_st,
-        A_spatial_index = object$tmb_data$A_spatial_index,
-        year_i = object$tmb_data$year_i,
-        n_t = object$tmb_data$n_t
-      )
+      dl_term_values <- r$covariate_diffusion_values
+      colnames(dl_term_values) <- .covariate_diffusion_predict_colnames(
+        object$covariate_diffusion_data$term_coef_name)
+      nd <- cbind(nd, as.data.frame(dl_term_values))
     }
 
     nd$est <- r$eta_i[,1] # DELTA FIXME

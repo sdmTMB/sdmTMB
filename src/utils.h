@@ -190,34 +190,6 @@ struct spde_barrier_t {
   }
 };
 
-// Function to calculate Q (precision) matrix using barrier-SPDE
-// From Olav Nikolai Breivik and Hans Skaug via VAST
-template <class Type>
-Eigen::SparseMatrix<Type> Q_spde(spde_barrier_t<Type> spde, Type kappa,
-                                 vector<Type> c) {
-  // using namespace Eigen;
-  vector<Type> range(2);
-  range(0) = sqrt(8) / kappa * c(0);
-  range(1) = range(0) * c(1);
-
-  int dimLatent = spde.D0.row(0).size();
-  vector<Type> Cdiag(dimLatent);
-  Eigen::SparseMatrix<Type> Cinv(dimLatent, dimLatent);
-
-  Cdiag = spde.C0 * pow(range(0), 2) + spde.C1 * pow(range(1), 2);
-  
-  for (int i = 0; i < dimLatent; ++i) {
-    Cinv.coeffRef(i, i) = 1 / Cdiag(i);
-  }
-
-  Eigen::SparseMatrix<Type> A = spde.I;
-  A = A + (pow(range(0), 2) / 8) * spde.D0 + (pow(range(1), 2) / 8) * spde.D1;
-
-  Eigen::SparseMatrix<Type> Q = A.transpose() * Cinv * A / M_PI * 2;
-
-  return Q;
-}
-
 template<class Type>
 Eigen::SparseMatrix<Type> Q_SAR(Type rho, const Eigen::SparseMatrix<Type>& W) {
   int n_s = W.rows();
@@ -320,21 +292,6 @@ matrix<Type> MakeH(vector<Type> x) {
   return H;
 }
 
-// FIXME no longer needed!?
-template <class Type>
-vector<Type> RepeatVector(vector<Type> x, int times) {
-  int n = x.size() * times;
-  vector<Type> res(n);
-  int k = 0;
-  for (int i = 0; i < times; i++) {
-    for (int j = 0; j < x.size(); j++) {
-      res[k] = x(j);
-      k++;
-    }
-  }
-  return res;
-}
-
 // https://github.com/hrue/r-inla/blob/devel/r-inla.org/doc/prior/pc.matern.pdf
 template <class Type>
 Type pc_prior_matern(Type logtau, Type logkappa, Type matern_range,
@@ -364,27 +321,6 @@ Type pc_prior_matern(Type logtau, Type logkappa, Type matern_range,
     return penalty;
   else
     return exp(penalty);
-}
-
-template <class Type>
-vector<Type> GetQuadraticRoots(Type a, Type b, Type threshold) {
-  vector<Type> res(4);
-  Type c = 1.;  // doesn't matter; setting to an arbitrary value
-  Type crit_y =
-      (a * pow(-b / (2. * a), 2.) + b * (-b / (2. * a)) + c) + log(threshold);
-  // solve for 0 = ax2 + bx + (c - crit_y)
-  c = c - crit_y;
-  res(0) = -1. * (b - sqrt(pow(b, 2.) - 4. * c * a)) / (2. * a);
-  res(1) = -1. * (b + sqrt(pow(b, 2.) - 4. * c * a)) / (2. * a);
-
-  // calculate vertex of parabola
-  Type xpeak = -b / (2. * a);
-  // res(2) is the hi/lowpoint of parabola evaluated at xpeak
-  res(2) = (a * (pow(xpeak, 2.)) + b * (xpeak) + c);
-
-  // calculate reduction of changing from mean to +/- 1 SD
-  res(3) = (a * (pow(xpeak + 1, 2.)) + b * (xpeak + 1) + c) / res(2);
-  return res;
 }
 
 template <class Type>

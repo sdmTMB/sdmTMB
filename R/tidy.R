@@ -405,7 +405,6 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   covariate_diffusion_term_masks <- list(
     list(term_name = "kappaS_dl", display_name = "kappaS_cov_diff", covariate_mask_name = "covariate_has_spatial"),
     list(term_name = "kappaT_dl", display_name = "kappaT_cov_diff", covariate_mask_name = "covariate_has_temporal"),
-    list(term_name = "kappaST_dl", display_name = "kappaST_cov_diff", covariate_mask_name = "covariate_has_spacetime"),
     list(term_name = "rhoT", display_name = "rhoT", covariate_mask_name = "covariate_has_temporal"),
     list(term_name = "MSD", display_name = "MSD", covariate_mask_name = "covariate_has_spatial"),
     list(term_name = "RMSD", display_name = "RMSD", covariate_mask_name = "covariate_has_spatial")

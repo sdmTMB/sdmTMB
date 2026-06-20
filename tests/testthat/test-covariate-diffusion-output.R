@@ -65,36 +65,32 @@ test_that("covariate diffusion ran_pars include lag scales and derived diagnosti
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1) + time(x1) + spacetime(x2),
+    covariate_diffusion = ~ space(x1) + time(x1),
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 
   td <- tidy(fit, effects = "ran_pars", silent = TRUE)
   expected_terms <- c(
-    "kappaS_cov_diff[x1]", "kappaS_cov_diff[x2]",
+    "kappaS_cov_diff[x1]",
     "kappaT_cov_diff[x1]",
-    "kappaST_cov_diff[x2]",
     "rhoT[x1]",
-    "MSD[x1]", "MSD[x2]",
-    "RMSD[x1]", "RMSD[x2]"
+    "MSD[x1]",
+    "RMSD[x1]"
   )
   expect_true(all(expected_terms %in% td$term), info = paste(setdiff(expected_terms, td$term), collapse = ", "))
-  expect_false("kappaT_cov_diff[x2]" %in% td$term)
 
   rep_est <- as.list(fit$sd_report, "Estimate", report = TRUE)
   rep_se <- as.list(fit$sd_report, "Std. Error", report = TRUE)
-  expect_length(rep_est$kappaS_dl, 2L)
+  expect_length(rep_est$kappaS_dl, 1L)
   expect_length(rep_est$kappaT_dl, 1L)
-  expect_length(rep_est$kappaST_dl, 1L)
   expect_length(rep_est$rhoT, 1L)
-  expect_length(rep_est$MSD, 2L)
-  expect_length(rep_est$RMSD, 2L)
-  expect_length(rep_se$kappaS_dl, 2L)
+  expect_length(rep_est$MSD, 1L)
+  expect_length(rep_est$RMSD, 1L)
+  expect_length(rep_se$kappaS_dl, 1L)
   expect_length(rep_se$kappaT_dl, 1L)
-  expect_length(rep_se$kappaST_dl, 1L)
   expect_length(rep_se$rhoT, 1L)
-  expect_length(rep_se$MSD, 2L)
-  expect_length(rep_se$RMSD, 2L)
+  expect_length(rep_se$MSD, 1L)
+  expect_length(rep_se$RMSD, 1L)
 })
 
 test_that("print output reports covariate diffusion structure and diagnostics", {
@@ -110,12 +106,12 @@ test_that("print output reports covariate diffusion structure and diagnostics", 
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1) + time(x1) + spacetime(x2),
+    covariate_diffusion = ~ space(x1) + time(x1),
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 
   out <- paste(capture.output(print(fit)), collapse = "\n")
-  expect_match(out, "Covariate diffusion: space\\(x1\\) \\+ time\\(x1\\) \\+ spacetime\\(x2\\)")
+  expect_match(out, "Covariate diffusion: space\\(x1\\) \\+ time\\(x1\\)")
   expect_match(out, "rhoT\\[x1\\]=")
   expect_match(out, "RMSD\\[x1\\]=")
 })

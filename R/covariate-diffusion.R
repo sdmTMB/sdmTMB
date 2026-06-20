@@ -5,6 +5,7 @@
   methods::as(x, "dgCMatrix")
 }
 
+# FIXME: what is this doing?
 .extract_covariate_diffusion_term_exprs <- function(expr) {
   if (is.call(expr)) {
     fn <- as.character(expr[[1]])
@@ -46,27 +47,6 @@
   cbind(X, lag_cols)
 }
 
-.coerce_integerish <- function(x, name) {
-  if (!is.numeric(x)) {
-    cli_abort("`{name}` must be numeric and integer-valued.")
-  }
-  if (anyNA(x)) {
-    cli_abort("`{name}` cannot contain `NA` values.")
-  }
-  if (!length(x)) {
-    return(integer(0))
-  }
-  if (any(!is.finite(x))) {
-    cli_abort("`{name}` cannot contain non-finite values.")
-  }
-  tol <- sqrt(.Machine$double.eps)
-  rounded <- round(x)
-  if (any(abs(x - rounded) > tol)) {
-    cli_abort("`{name}` must contain whole-number indices.")
-  }
-  as.integer(rounded)
-}
-
 .parse_covariate_diffusion_formula <- function(covariate_diffusion) {
   if (is.null(covariate_diffusion)) {
     return(NULL)
@@ -85,7 +65,7 @@
     cli_abort("`covariate_diffusion` must include at least one lag term.")
   }
 
-  allowed_wrappers <- c("space", "time", "spacetime")
+  allowed_wrappers <- c("space", "time")
 
   parsed_terms <- lapply(term_exprs, function(expr) {
     term_label <- paste(deparse(expr), collapse = "")
@@ -110,7 +90,7 @@
     if (length(expr) != 2L || !is.symbol(expr[[2]])) {
       cli_abort(c(
         "Unsupported `covariate_diffusion` term structure.",
-        "i" = "Use a bare variable name inside each wrapper, e.g. `space(depth)`.",
+        "i" = "Use a bare variable name inside each wrapper, e.g. `space(x)`.",
         "x" = "Problematic term: {.code {term_label}}"
       ))
     }
@@ -140,7 +120,7 @@
     formula = covariate_diffusion,
     terms = terms_df,
     covariates = unique_covariates,
-    needs_time = any(terms_df$component %in% c("time", "spacetime"))
+    needs_time = any(terms_df$component == "time")
   )
 }
 
@@ -181,61 +161,15 @@
   covariate_diffusion
 }
 
-.to_zero_based <- function(x, name) {
-  x <- .coerce_integerish(x, name = name)
-  if (!length(x)) return(x)
-  min_x <- min(x)
-  if (min_x == 1L) {
-    x <- x - 1L
-  } else if (min_x != 0L) {
-    cli_abort("`{name}` must use 0-based or 1-based indexing.")
-  }
-  x
-}
-
-.normalize_dl_index <- function(x, n_max, name) {
-  x <- .to_zero_based(x, name) + 1L
-  if (!length(x)) return(x)
-  if (any(x < 1L | x > n_max)) {
-    cli_abort("`{name}` contains indices outside valid range.")
-  }
-  x
-}
-
-.normalize_dl_year_i <- function(year_i, n_t = NULL) {
-  year_i <- .to_zero_based(year_i, name = "year_i")
-  if (!length(year_i)) {
-    if (is.null(n_t)) {
-      cli_abort("`year_i` cannot be empty.")
-    }
-    if (!is.numeric(n_t) || length(n_t) != 1L || !is.finite(n_t) ||
-      abs(n_t - round(n_t)) > sqrt(.Machine$double.eps) || n_t <= 0) {
-      cli_abort("`n_t` must be a single positive integer.")
-    }
-    return(list(year_i = integer(0), n_t = as.integer(round(n_t))))
-  }
-  if (is.null(n_t)) {
-    n_t <- max(year_i) + 1L
-  } else {
-    if (!is.numeric(n_t) || length(n_t) != 1L || !is.finite(n_t) ||
-      abs(n_t - round(n_t)) > sqrt(.Machine$double.eps)) {
-      cli_abort("`n_t` must be a single positive integer.")
-    }
-    n_t <- as.integer(round(n_t))
-    if (n_t <= 0L) cli_abort("`n_t` must be > 0.")
-    if (max(year_i) >= n_t) {
-      cli_abort("`year_i` contains a time index >= `n_t`.")
-    }
-  }
-  list(year_i = year_i, n_t = n_t)
-}
-
 .build_vertex_time_covariates <- function(covariate_data,
                                           covariates,
                                           A_st,
                                           year_i,
                                           A_spatial_index = NULL,
                                           n_t = NULL) {
+  # This is the single vertex-aggregation entry point for covariate diffusion.
+  # A future raster-like covariate input can reuse it by supplying its own
+  # projection matrix and index vectors.
   if (!inherits(covariate_data, "data.frame")) {
     cli_abort("`covariate_data` must be a data frame.")
   }
@@ -246,10 +180,19 @@
     cli_abort("`year_i` length must equal `nrow(covariate_data)`.")
   }
   if (is.null(A_spatial_index)) {
-    A_spatial_index <- seq_len(n_obs)
+    A_spatial_index <- seq_len(n_obs) - 1L
   }
   if (length(A_spatial_index) != n_obs) {
     cli_abort("`A_spatial_index` length must equal `nrow(covariate_data)`.")
+  }
+  if (!is.numeric(year_i) || anyNA(year_i) || any(!is.finite(year_i))) {
+    cli_abort("`year_i` must contain finite numeric indices.")
+  }
+  if (!is.numeric(A_spatial_index) || anyNA(A_spatial_index) || any(!is.finite(A_spatial_index))) {
+    cli_abort("`A_spatial_index` must contain finite numeric indices.")
+  }
+  if (any(year_i != round(year_i)) || any(A_spatial_index != round(A_spatial_index))) {
+    cli_abort("`year_i` and `A_spatial_index` must contain whole-number indices.")
   }
 
   missing_covariates <- setdiff(covariates, names(covariate_data))
@@ -268,15 +211,29 @@
     ))
   }
 
-  year_lu <- .normalize_dl_year_i(year_i, n_t = n_t)
-  year_i <- year_lu$year_i
-  n_t <- year_lu$n_t
+  year_i <- as.integer(year_i)
+  if (!length(year_i)) {
+    cli_abort("`year_i` cannot be empty.")
+  }
+  if (any(year_i < 0L)) {
+    cli_abort("`year_i` must use 0-based non-negative indexing.")
+  }
+  if (is.null(n_t)) {
+    n_t <- max(year_i) + 1L
+  } else {
+    if (!is.numeric(n_t) || length(n_t) != 1L || !is.finite(n_t) || n_t != round(n_t) || n_t <= 0) {
+      cli_abort("`n_t` must be a single positive integer.")
+    }
+    n_t <- as.integer(n_t)
+    if (max(year_i) >= n_t) {
+      cli_abort("`year_i` contains a time index >= `n_t`.")
+    }
+  }
 
-  A_spatial_index <- .normalize_dl_index(
-    A_spatial_index,
-    n_max = nrow(A_st),
-    name = "A_spatial_index"
-  )
+  A_spatial_index <- as.integer(A_spatial_index) + 1L
+  if (any(A_spatial_index < 1L | A_spatial_index > nrow(A_st))) {
+    cli_abort("`A_spatial_index` contains indices outside valid range.")
+  }
 
   n_vertices <- ncol(A_st)
   n_covariates <- length(covariates)
@@ -322,81 +279,35 @@
 }
 
 .build_covariate_diffusion_tmb_data <- function(covariate_diffusion,
-                                            data,
-                                            A_st,
-                                            A_spatial_index,
-                                            year_i,
-                                            n_t,
-                                            covariate_vertex_time = NULL) {
+                                                data,
+                                                A_st,
+                                                A_spatial_index,
+                                                year_i,
+                                                n_t) {
   if (is.null(covariate_diffusion)) {
     return(NULL)
   }
 
-  n_vertices <- ncol(A_st)
+  vertex_cov <- .build_vertex_time_covariates(
+    covariate_data = data,
+    covariates = covariate_diffusion$covariates,
+    A_st = A_st,
+    year_i = year_i,
+    A_spatial_index = A_spatial_index,
+    n_t = n_t
+  )
+  covariate_vertex_time <- vertex_cov$covariate_vertex_time
 
-  if (is.null(covariate_vertex_time)) {
-    vertex_cov <- .build_vertex_time_covariates(
-      covariate_data = data,
-      covariates = covariate_diffusion$covariates,
-      A_st = A_st,
-      year_i = year_i,
-      A_spatial_index = A_spatial_index,
-      n_t = n_t
-    )
-    covariate_vertex_time <- vertex_cov$covariate_vertex_time
-    n_vertices <- vertex_cov$n_vertices
-    n_t <- vertex_cov$n_t
-  } else {
-    if (!is.numeric(covariate_vertex_time) || any(!is.finite(covariate_vertex_time))) {
-      cli_abort("`experimental$covariate_diffusion_covariate_vertex` must be finite numeric values.")
-    }
-    if (is.null(dim(covariate_vertex_time))) {
-      if (length(covariate_diffusion$covariates) != 1L) {
-        cli_abort("A vector `experimental$covariate_diffusion_covariate_vertex` supports exactly one covariate-diffusion covariate.")
-      }
-      if (length(covariate_vertex_time) != n_vertices) {
-        cli_abort("A vector `experimental$covariate_diffusion_covariate_vertex` must have length equal to the number of mesh vertices.")
-      }
-      covariate_vertex_time <- array(
-        rep(covariate_vertex_time, n_t),
-        dim = c(n_vertices, n_t, 1L),
-        dimnames = list(NULL, NULL, covariate_diffusion$covariates)
-      )
-    } else if (length(dim(covariate_vertex_time)) == 2L) {
-      if (length(covariate_diffusion$covariates) != 1L) {
-        cli_abort("A matrix `experimental$covariate_diffusion_covariate_vertex` supports exactly one covariate-diffusion covariate.")
-      }
-      if (!all(dim(covariate_vertex_time) == c(n_vertices, n_t))) {
-        cli_abort("A matrix `experimental$covariate_diffusion_covariate_vertex` must have dimensions `n_vertices` by `n_t`.")
-      }
-      covariate_vertex_time <- array(
-        covariate_vertex_time,
-        dim = c(n_vertices, n_t, 1L),
-        dimnames = list(NULL, NULL, covariate_diffusion$covariates)
-      )
-    } else if (length(dim(covariate_vertex_time)) == 3L) {
-      expected_dim <- c(n_vertices, n_t, length(covariate_diffusion$covariates))
-      if (!all(dim(covariate_vertex_time) == expected_dim)) {
-        cli_abort("An array `experimental$covariate_diffusion_covariate_vertex` must have dimensions `n_vertices` by `n_t` by `n_covariates`.")
-      }
-      dimnames(covariate_vertex_time) <- list(NULL, NULL, covariate_diffusion$covariates)
-    } else {
-      cli_abort("`experimental$covariate_diffusion_covariate_vertex` must be a vector, matrix, or 3D array.")
-    }
-  }
-
-  component_levels <- c("space", "time", "spacetime")
+  component_levels <- c("space", "time")
   component_id <- match(covariate_diffusion$terms$component, component_levels)
   terms_df <- covariate_diffusion$terms
   covariates <- covariate_diffusion$covariates
   covariate_has_spatial <- integer(length(covariates))
   covariate_has_temporal <- integer(length(covariates))
-  covariate_has_spacetime <- integer(length(covariates))
   for (i in seq_along(covariates)) {
     components <- terms_df$component[terms_df$variable == covariates[i]]
-    covariate_has_spatial[i]   <- any(components %in% c("space", "spacetime"))
-    covariate_has_temporal[i]  <- any(components == "time")
-    covariate_has_spacetime[i] <- any(components == "spacetime")
+    covariate_has_spatial[i] <- any(components == "space")
+    covariate_has_temporal[i] <- any(components == "time")
   }
 
   list(
@@ -404,24 +315,22 @@
     covariates = covariates,
     covariate_has_spatial = covariate_has_spatial,
     covariate_has_temporal = covariate_has_temporal,
-    covariate_has_spacetime = covariate_has_spacetime,
     term_component = covariate_diffusion$terms$component,
     term_component_id = as.integer(component_id),
     term_covariate_index = as.integer(covariate_diffusion$terms$covariate_id),
     term_covariate_index0 = as.integer(covariate_diffusion$terms$covariate_id - 1L),
     term_coef_name = covariate_diffusion$terms$coef_name,
-    n_vertices = n_vertices,
-    n_t = n_t,
+    n_vertices = vertex_cov$n_vertices,
+    n_t = vertex_cov$n_t,
     n_covariates = length(covariates),
     n_terms = nrow(covariate_diffusion$terms)
   )
 }
 
 .solve_covariate_diffusion_vertex_time <- function(component, vertex_time_input, M0, M1,
-                                                  kappaS, kappaT, kappaST,
+                                                  kappaS, kappaT,
                                                   has_space = NULL,
-                                                  has_time = NULL,
-                                                  has_spacetime = NULL) {
+                                                  has_time = NULL) {
   n_vertices <- nrow(vertex_time_input)
   n_t <- ncol(vertex_time_input)
   out <- matrix(0, nrow = n_vertices, ncol = n_t)
@@ -441,24 +350,25 @@
   if (component == "combined") {
     has_space <- isTRUE(has_space)
     has_time <- isTRUE(has_time)
-    has_spacetime <- isTRUE(has_spacetime)
-    kappaS_scale <- if (has_space || has_spacetime) 1 / (kappaS^2) else 0
-    kappaT_scale <- if (has_time) kappaT else 0
-    kappaST_scale <- if (has_spacetime) kappaST * kappaS_scale else 0
-    system_mat <- M0 + kappaS_scale * M1
-    for (tt in seq_len(n_t)) {
-      rhs <- as.numeric(M0 %*% vertex_time_input[, tt, drop = TRUE])
-      if (tt > 1L) {
-        if (kappaT_scale != 0) {
+    if (has_space && !has_time) {
+      component <- "space"
+    } else if (has_time && !has_space) {
+      component <- "time"
+    } else if (!has_space && !has_time) {
+      cli_abort("`component = \"combined\"` requires at least one fitted `space()` or `time()` term.")
+    } else {
+      kappaS_scale <- 1 / (kappaS^2)
+      kappaT_scale <- kappaT
+      system_mat <- M0 + kappaS_scale * M1
+      for (tt in seq_len(n_t)) {
+        rhs <- as.numeric(M0 %*% vertex_time_input[, tt, drop = TRUE])
+        if (tt > 1L && kappaT_scale != 0) {
           rhs <- rhs + as.numeric(kappaT_scale * (M0 %*% out[, tt - 1L, drop = TRUE]))
         }
-        if (kappaST_scale != 0) {
-          rhs <- rhs - as.numeric(kappaST_scale * (M1 %*% out[, tt - 1L, drop = TRUE]))
-        }
+        out[, tt] <- solve_sparse(system_mat, rhs, "combined system (space + time)")
       }
-      out[, tt] <- solve_sparse(system_mat, rhs, "combined system (space + time + spacetime)")
+      return(out)
     }
-    return(out)
   }
 
   if (component == "space") {
@@ -482,38 +392,19 @@
     return(out)
   }
 
-  if (component == "spacetime") {
-    kappaS_scale <- 1 / (kappaS^2)
-    kappaST_scale <- kappaST * kappaS_scale
-    system_mat <- M0 + (kappaS_scale - kappaST_scale) * M1
-    for (tt in seq_len(n_t)) {
-      rhs <- as.numeric(M0 %*% vertex_time_input[, tt, drop = TRUE])
-      if (tt > 1L) {
-        rhs <- rhs - as.numeric(kappaST_scale * (M1 %*% out[, tt - 1L, drop = TRUE]))
-      }
-      out[, tt] <- solve_sparse(system_mat, rhs, "spatiotemporal system (M0 + (kappaS^-2 - kappaST * kappaS^-2) * M1)")
-    }
-    return(out)
-  }
-
   cli_abort("Unknown covariate-diffusion component in solver.")
 }
 
 .project_covariate_diffusion_vertex_time <- function(transformed_vertex_time,
-                                                 A_st,
-                                                 A_spatial_index,
-                                                 year_i,
-                                                 n_t) {
+                                                     A_st,
+                                                     A_spatial_index,
+                                                     year_i,
+                                                     n_t) {
   A_st <- .as_dgC(A_st)
   n_i <- length(A_spatial_index)
-  A_spatial_index <- .normalize_dl_index(
-    A_spatial_index,
-    n_max = nrow(A_st),
-    name = "A_spatial_index"
-  )
-  year_lu <- .normalize_dl_year_i(year_i, n_t = n_t)
-  year_i <- year_lu$year_i
-  projected_by_t <- lapply(seq_len(year_lu$n_t), function(tt) {
+  A_spatial_index <- as.integer(A_spatial_index) + 1L
+  year_i <- as.integer(year_i)
+  projected_by_t <- lapply(seq_len(n_t), function(tt) {
     as.numeric(A_st %*% transformed_vertex_time[, tt, drop = TRUE])
   })
   out <- numeric(n_i)
@@ -527,32 +418,6 @@
   paste0("diffusion_cov_", sub("^cov_diff_", "", term_coef_name))
 }
 
-.append_covariate_diffusion_term_values <- function(nd, object, tmb_obj, lp,
-                                                covariate_vertex_time, A_st,
-                                                A_spatial_index, year_i, n_t) {
-  x <- lp
-  # `lp` can include random effects (e.g., profile models). `parList()`
-  # expects only fixed effects in that case.
-  if (length(tmb_obj$env$random) > 0L && length(x) == length(tmb_obj$env$par)) {
-    x <- x[-tmb_obj$env$random]
-  }
-  par_list <- tmb_obj$env$parList(x = x)
-  dl_term_values <- .compute_covariate_diffusion_term_values(
-    covariate_diffusion_data = object$covariate_diffusion_data,
-    covariate_vertex_time = covariate_vertex_time,
-    A_st = A_st,
-    A_spatial_index = A_spatial_index,
-    year_i = year_i,
-    n_t = n_t,
-    M0 = object$tmb_data$spde$M0,
-    M1 = object$tmb_data$spde$M1,
-    log_kappaS_dl = par_list$log_kappaS_dl,
-    kappaT_dl_raw = par_list$kappaT_dl_raw,
-    kappaST_dl_raw = par_list$kappaST_dl_raw
-  )
-  cbind(nd, as.data.frame(dl_term_values))
-}
-
 .compute_covariate_diffusion_term_values <- function(covariate_diffusion_data,
                                                  covariate_vertex_time,
                                                  A_st,
@@ -562,8 +427,7 @@
                                                  M0,
                                                  M1,
                                                  log_kappaS_dl,
-                                                 kappaT_dl_raw,
-                                                 kappaST_dl_raw) {
+                                                 kappaT_dl_raw) {
   if (is.null(covariate_diffusion_data)) {
     return(NULL)
   }
@@ -573,8 +437,7 @@
   }
   n_covariates <- covariate_diffusion_data$n_covariates
   if (length(log_kappaS_dl) != n_covariates ||
-      length(kappaT_dl_raw) != n_covariates ||
-      length(kappaST_dl_raw) != n_covariates) {
+      length(kappaT_dl_raw) != n_covariates) {
     cli_abort("Covariate diffusion parameter vectors did not match the expected number of lag covariates.")
   }
 
@@ -598,15 +461,13 @@
     )
     kappaS <- exp(log_kappaS_dl[[cov_i]])
     kappaT <- kappaT_dl_raw[[cov_i]]
-    kappaST <- kappaST_dl_raw[[cov_i]]
     transformed_vertex_time <- .solve_covariate_diffusion_vertex_time(
       component = component,
       vertex_time_input = cov_slice,
       M0 = M0,
       M1 = M1,
       kappaS = kappaS,
-      kappaT = kappaT,
-      kappaST = kappaST
+      kappaT = kappaT
     )
     term_out[, term_i] <- .project_covariate_diffusion_vertex_time(
       transformed_vertex_time = transformed_vertex_time,
@@ -693,8 +554,7 @@
   }
   list(
     kappaS = exp(params$log_kappaS_dl[cov_i]),
-    kappaT = params$kappaT_dl_raw[cov_i],
-    kappaST = params$kappaST_dl_raw[cov_i]
+    kappaT = params$kappaT_dl_raw[cov_i]
   )
 }
 
@@ -706,10 +566,10 @@
     cli_abort("`ggplot2` must be installed to use `{function_name}()`.")
   }
   if (isTRUE(component_missing)) {
-    cli_abort("`component` is required and must be one of `space`, `time`, `spacetime`, or `combined`.")
+    cli_abort("`component` is required and must be one of `space`, `time`, or `combined`.")
   }
-  if (!component %in% c("space", "time", "spacetime", "combined")) {
-    cli_abort("`component` must be exactly one of `space`, `time`, `spacetime`, or `combined`.")
+  if (!component %in% c("space", "time", "combined")) {
+    cli_abort("`component` must be exactly one of `space`, `time`, or `combined`.")
   }
   if (is.null(object$covariate_diffusion_data)) {
     cli_abort("`object` does not contain `covariate_diffusion_data`.")
@@ -749,7 +609,7 @@
       "x" = "No term `{component}({covariate})` in `object$covariate_diffusion`."
     ))
   }
-  component_for_time <- if (component == "combined" && !any(components_for_covariate %in% c("time", "spacetime"))) "space" else component
+  component_for_time <- if (component == "combined" && !"time" %in% components_for_covariate) "space" else component
 
   mesh_info <- .dl_plot_extract_mesh(object$spde$mesh)
   time_info <- .dl_plot_resolve_time(
@@ -772,7 +632,6 @@
     kappas = .dl_plot_extract_kappas(object, cov_i),
     has_space = as.logical(object$covariate_diffusion_data$covariate_has_spatial[cov_i]),
     has_time = as.logical(object$covariate_diffusion_data$covariate_has_temporal[cov_i]),
-    has_spacetime = as.logical(object$covariate_diffusion_data$covariate_has_spacetime[cov_i]),
     xlab = if (!is.null(xy_cols) && length(xy_cols) >= 2L) xy_cols[1] else "x",
     ylab = if (!is.null(xy_cols) && length(xy_cols) >= 2L) xy_cols[2] else "y"
   )
@@ -1058,10 +917,8 @@ plot_diffused_covariate <- function(object,
     M1 = object$tmb_data$spde$M1,
     kappaS = ctx$kappas$kappaS,
     kappaT = ctx$kappas$kappaT,
-    kappaST = ctx$kappas$kappaST,
     has_space = ctx$has_space,
-    has_time = ctx$has_time,
-    has_spacetime = ctx$has_spacetime
+    has_time = ctx$has_time
   )
 
   time_values <- ctx$time_info$time_values
@@ -1158,10 +1015,8 @@ plot_diffusion_kernel <- function(object,
     M1 = object$tmb_data$spde$M1,
     kappaS = ctx$kappas$kappaS,
     kappaT = ctx$kappas$kappaT,
-    kappaST = ctx$kappas$kappaST,
     has_space = ctx$has_space,
-    has_time = ctx$has_time,
-    has_spacetime = ctx$has_spacetime
+    has_time = ctx$has_time
   )
 
   panels <- .dl_plot_time_panels(

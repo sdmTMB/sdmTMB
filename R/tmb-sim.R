@@ -163,9 +163,6 @@ simulate_new <- function(formula,
   assert_that(all(sigma_Z >= 0) || is.null(sigma_Z))
 
   dots <- list(...)
-  if ("diffusion_kappaST" %in% names(dots)) {
-    cli::cli_abort("`diffusion_kappaST` is not currently supported by `simulate_new()`.")
-  }
   dots$time_varying <- NULL
   dots$time_varying_type <- NULL
   time_varying_type <- match.arg(time_varying_type)
@@ -301,7 +298,6 @@ simulate_new <- function(formula,
       valid = function(x) all(is.finite(x) & x >= 0 & x < 1),
       transform = function(x) x / (1 - x)
     )
-    params$kappaST_dl_raw[as.logical(dl_data$covariate_has_spacetime)] <- 0
   } else if (!is.null(diffusion_kappaS) || !is.null(diffusion_rhoT)) {
     cli::cli_abort("Diffusion parameters require `covariate_diffusion`.")
   }
@@ -473,8 +469,7 @@ simulate_new <- function(formula,
       M0 = fit$tmb_data$spde$M0,
       M1 = fit$tmb_data$spde$M1,
       log_kappaS_dl = as.numeric(params$log_kappaS_dl),
-      kappaT_dl_raw = as.numeric(params$kappaT_dl_raw),
-      kappaST_dl_raw = as.numeric(params$kappaST_dl_raw)
+      kappaT_dl_raw = as.numeric(params$kappaT_dl_raw)
     )
     colnames(dl_truth) <- sub("^diffusion_cov_", "diffusion_truth_", colnames(dl_truth))
     d <- cbind(d, as.data.frame(dl_truth))
