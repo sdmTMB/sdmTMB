@@ -378,7 +378,7 @@ Type objective_function<Type>::operator()()
 
   // DELTA DONE
   // Matern:
-  array<Type> range(2,n_m);
+  tmbutils::array<Type> range(2,n_m);
   range.setZero();
   if (spatial_model == 0) {
     for (int m = 0; m < n_m; m++) {
@@ -389,13 +389,13 @@ Type objective_function<Type>::operator()()
   }
 
   // DELTA DONE
-  array<Type> sigma_O(1,n_m); // array b/c ADREPORT crashes if vector elements mapped
-  array<Type> log_sigma_O(1,n_m); // array b/c ADREPORT crashes if vector elements mapped
+  tmbutils::array<Type> sigma_O(1,n_m); // array b/c ADREPORT crashes if vector elements mapped
+  tmbutils::array<Type> log_sigma_O(1,n_m); // array b/c ADREPORT crashes if vector elements mapped
   sigma_O.setZero();
   log_sigma_O.setZero();
   int n_z = ln_tau_Z.rows();
-  array<Type> sigma_Z(n_z, n_m);
-  array<Type> log_sigma_Z(n_z,n_m); // for SE
+  tmbutils::array<Type> sigma_Z(n_z, n_m);
+  tmbutils::array<Type> log_sigma_Z(n_z,n_m); // for SE
   sigma_Z.setZero();
   log_sigma_Z.setZero();
   for (int m = 0; m < n_m; m++) {
@@ -434,8 +434,8 @@ Type objective_function<Type>::operator()()
   //}
 
   // optional non-stationary model on epsilon
-  array<Type> sigma_E(n_t, n_m);
-  array<Type> ln_tau_E_vec(n_t, n_m);
+  tmbutils::array<Type> sigma_E(n_t, n_m);
+  tmbutils::array<Type> ln_tau_E_vec(n_t, n_m);
   if (!est_epsilon_model) { // constant model
     for (int m = 0; m < n_m; m++) {
       // do calculation once,
@@ -481,7 +481,7 @@ Type objective_function<Type>::operator()()
       }
     }
   }
-  array<Type> log_sigma_E(sigma_E.rows(),sigma_E.cols()); // for SE
+  tmbutils::array<Type> log_sigma_E(sigma_E.rows(),sigma_E.cols()); // for SE
   log_sigma_E.setZero();
   for (int i = 0; i < sigma_E.rows(); i++) {
     for (int m = 0; m < sigma_E.cols(); m++) {
@@ -641,7 +641,7 @@ Type objective_function<Type>::operator()()
           // Penalty to match TMB AR1_t() implementation:
           PARALLEL_REGION jnll += Type((n_cols - 1.) * n_rows) * log(sqrt(1. - rho(m) * rho(m)));
           if (sim_re(1)) {
-            // array<Type> epsilon_st_tmp(epsilon_st.col(m).rows(),n_t);
+            // tmbutils::array<Type> epsilon_st_tmp(epsilon_st.col(m).rows(),n_t);
             // SIMULATE {SEPARABLE(AR1(rho(m)), GMRF(Q_temp, s)).simulate(epsilon_st_tmp);
             //   epsilon_st.col(m) = epsilon_st_tmp / exp(ln_tau_E(m));}
             for (int t = 0; t < n_t; t++) {
@@ -757,10 +757,10 @@ Type objective_function<Type>::operator()()
   REPORT(re_b_pars);
   ADREPORT(re_b_pars);
 
-  array<Type> sigma_V(X_rw_ik.cols(),n_m);
+  tmbutils::array<Type> sigma_V(X_rw_ik.cols(),n_m);
   // Time-varying effects (dynamic regression):
   if (random_walk == 1 || ar1_time || random_walk == 2) {
-    array<Type> rho_time(X_rw_ik.cols(), n_m);
+    tmbutils::array<Type> rho_time(X_rw_ik.cols(), n_m);
     rho_time.setZero();
     for (int m = 0; m < n_m; m++) {
       for (int k = 0; k < X_rw_ik.cols(); k++) {
@@ -822,10 +822,10 @@ Type objective_function<Type>::operator()()
 
   // Here we are projecting the spatiotemporal and spatial random effects to the
   // locations of the data using the INLA 'A' matrices.
-  array<Type> omega_s_A(n_i, n_m);
-  array<Type> zeta_s_A(n_i, n_z, n_m);
-  array<Type> epsilon_st_A(n_i, n_t, n_m);
-  array<Type> epsilon_st_A_vec(n_i, n_m);
+  tmbutils::array<Type> omega_s_A(n_i, n_m);
+  tmbutils::array<Type> zeta_s_A(n_i, n_z, n_m);
+  tmbutils::array<Type> epsilon_st_A(n_i, n_t, n_m);
+  tmbutils::array<Type> epsilon_st_A_vec(n_i, n_m);
   omega_s_A.setZero();
   zeta_s_A.setZero();
   epsilon_st_A.setZero();
@@ -844,7 +844,7 @@ Type objective_function<Type>::operator()()
 
   // ------------------ Linear predictor ---------------------------------------
 
-  array<Type> eta_fixed_i(n_i, n_m);
+  tmbutils::array<Type> eta_fixed_i(n_i, n_m);
   for (int m = 0; m < n_m; m++) {
     if (m == 0) eta_fixed_i.col(m) = X_ij(m) * b_j;
     if (m == 1) eta_fixed_i.col(m) = X_ij(m) * b_j2;
@@ -879,12 +879,12 @@ Type objective_function<Type>::operator()()
 
   // FIXME delta must be same in 2 components:
   // p-splines/smoothers
-  array<Type> eta_smooth_i(n_i, n_m);
+  tmbutils::array<Type> eta_smooth_i(n_i, n_m);
   eta_smooth_i.setZero();
   if (has_smooths) {
     for (int m = 0; m < n_m; m++) {
       for (int s = 0; s < b_smooth_start.size(); s++) { // iterate over # of smooth elements
-        array<Type> beta_s(Zs(s).cols(),n_m);
+        tmbutils::array<Type> beta_s(Zs(s).cols(),n_m);
         beta_s.setZero();
         for (int j = 0; j < beta_s.rows(); j++) {
           beta_s(j,m) = b_smooth(b_smooth_start(s) + j,m);
@@ -1376,7 +1376,7 @@ Type objective_function<Type>::operator()()
   if (do_predict) {
     int n_p = proj_X_ij(0).rows(); // n 'p'redicted newdata
     int n_p_mesh = proj_mesh.rows(); // n 'p'redicted mesh (less than n_p if duplicate locations)
-    array<Type> proj_fe(n_p, n_m);
+    tmbutils::array<Type> proj_fe(n_p, n_m);
 
     for (int m = 0; m < n_m; m++) {
       if (m == 0) proj_fe.col(m) = proj_X_ij(m) * b_j;
@@ -1435,12 +1435,12 @@ Type objective_function<Type>::operator()()
     }
 
     // Smoothers:
-    array<Type> proj_smooth_i(n_p, n_m);
+    tmbutils::array<Type> proj_smooth_i(n_p, n_m);
     proj_smooth_i.setZero();
     if (has_smooths) {
       for (int m = 0; m < n_m; m++) {
         for (int s = 0; s < b_smooth_start.size(); s++) { // iterate over # of smooth elements
-          array<Type> beta_s(proj_Zs(s).cols(),n_m);
+          tmbutils::array<Type> beta_s(proj_Zs(s).cols(),n_m);
           beta_s.setZero();
           for (int j = 0; j < beta_s.rows(); j++) {
             beta_s(j,m) = b_smooth(b_smooth_start(s) + j,m);
@@ -1453,7 +1453,7 @@ Type objective_function<Type>::operator()()
     }
 
     // Random slopes and intercepts:
-    array<Type> proj_iid_re_i(n_p, n_m);
+    tmbutils::array<Type> proj_iid_re_i(n_p, n_m);
     proj_iid_re_i.setZero();
     if (!exclude_RE) {
       for (int m = 0; m < n_m; m++) {
@@ -1476,7 +1476,7 @@ Type objective_function<Type>::operator()()
     }
 
     // Random walk covariates:
-    array<Type> proj_rw_i(n_p,n_m);
+    tmbutils::array<Type> proj_rw_i(n_p,n_m);
     proj_rw_i.setZero();
     if (random_walk == 1 || ar1_time || random_walk == 2) {
       for (int m = 0; m < n_m; m++) {
@@ -1490,20 +1490,20 @@ Type objective_function<Type>::operator()()
     }
 
     // Spatial and spatiotemporal random fields (by unique location):
-    array<Type> proj_omega_s_A_unique(n_p_mesh, n_m);
-    array<Type> proj_zeta_s_A_unique(n_p_mesh, n_z, n_m);
-    array<Type> proj_epsilon_st_A_unique(n_p_mesh, n_t, n_m);
+    tmbutils::array<Type> proj_omega_s_A_unique(n_p_mesh, n_m);
+    tmbutils::array<Type> proj_zeta_s_A_unique(n_p_mesh, n_z, n_m);
+    tmbutils::array<Type> proj_epsilon_st_A_unique(n_p_mesh, n_t, n_m);
     proj_epsilon_st_A_unique.setZero();
 
     // Expanded to full length:
-    array<Type> proj_omega_s_A(n_p, n_m);
-    array<Type> proj_zeta_s_A(n_p, n_z, n_m);
-    array<Type> proj_epsilon_st_A_vec(n_p, n_m);
+    tmbutils::array<Type> proj_omega_s_A(n_p, n_m);
+    tmbutils::array<Type> proj_zeta_s_A(n_p, n_z, n_m);
+    tmbutils::array<Type> proj_epsilon_st_A_vec(n_p, n_m);
     proj_omega_s_A.setZero(); // may not get filled
     proj_zeta_s_A.setZero(); // may not get filled
     proj_epsilon_st_A_vec.setZero(); // may not get filled
 
-    array<Type> proj_zeta_s_A_cov(n_p, n_z, n_m);
+    tmbutils::array<Type> proj_zeta_s_A_cov(n_p, n_z, n_m);
     proj_zeta_s_A_cov.setZero();
 
     if (!no_spatial) {
@@ -1553,8 +1553,8 @@ Type objective_function<Type>::operator()()
     //   }
     // }
 
-    array<Type> proj_rf(n_p, n_m);
-    array<Type> proj_eta(n_p, n_m);
+    tmbutils::array<Type> proj_rf(n_p, n_m);
+    tmbutils::array<Type> proj_eta(n_p, n_m);
     for (int m = 0; m < n_m; m++)
       proj_rf.col(m) = proj_omega_s_A.col(m) + proj_epsilon_st_A_vec.col(m);
 
@@ -1805,7 +1805,7 @@ Type objective_function<Type>::operator()()
     REPORT(rho);          // AR1 correlation in -1 to 1 space
   }
   if (!no_spatial && spatial_model == 0) {
-    array<Type> log_range(range.rows(),range.cols()); // for SE
+    tmbutils::array<Type> log_range(range.rows(),range.cols()); // for SE
     log_range.setZero();
     for (int i = 0; i < range.rows(); i++) {
       for (int m = 0; m < range.cols(); m++) {
