@@ -6,8 +6,8 @@ template <class Type>
 struct covariate_diffusion_data_t {
   int n_terms;
   int n_covariates;
-  array<Type> covariate_vertex_time;
-  array<Type> proj_covariate_vertex_time;
+  tmbutils::array<Type> covariate_vertex_time;
+  tmbutils::array<Type> proj_covariate_vertex_time;
   vector<int> term_component;
   vector<int> term_covariate;
   matrix<int> has; // [n_covariates x 3], cols = {space, time, spacetime}
@@ -42,7 +42,7 @@ struct CovariateDiffusionContext {
   int n_t;
   const vector<int>& term_component;
   const vector<int>& term_covariate;
-  array<Type>& covariate_vertex_time;
+  tmbutils::array<Type>& covariate_vertex_time;
   const Eigen::SparseMatrix<Type>& A_st;
   const vector<int>& A_spatial_index;
   const vector<int>& year_i;
@@ -69,7 +69,7 @@ inline bool dl_is_valid_component(int component) {
 
 template <class Type>
 Eigen::Matrix<Type, Eigen::Dynamic, 1> dl_get_covariate_col(
-    array<Type>& covariate_vertex_time, int cov_i, int t, int n_vertices) {
+    tmbutils::array<Type>& covariate_vertex_time, int cov_i, int t, int n_vertices) {
   Eigen::Matrix<Type, Eigen::Dynamic, 1> col(n_vertices);
   for (int v = 0; v < n_vertices; v++) col(v) = covariate_vertex_time(v, t, cov_i);
   return col;
@@ -78,7 +78,7 @@ Eigen::Matrix<Type, Eigen::Dynamic, 1> dl_get_covariate_col(
 template <class Type>
 bool dl_solve_transformed_vertex_time(
     int component,
-    array<Type>& covariate_vertex_time,
+    tmbutils::array<Type>& covariate_vertex_time,
     int cov_i,
     int n_vertices,
     int n_t,
@@ -162,7 +162,7 @@ Eigen::Matrix<Type, Eigen::Dynamic, 1> dl_project_vertex_time_to_observations(
 
 template <class Type>
 void add_covariate_diffusion_to_eta_fixed(
-    array<Type>& eta_fixed_i,
+    tmbutils::array<Type>& eta_fixed_i,
     CovariateDiffusionContext<Type>& ctx) {
   if (ctx.n_terms <= 0) return;
   if (ctx.n_covariates <= 0) {
