@@ -241,22 +241,20 @@ fit_st_grid <- sdmTMB(
 sanity(fit_st_grid)
 ```
 
-Because the diffused field now comes entirely from `grid_st`, `predict()` can
-reuse it for `newdata` that only contains coordinates, time, any regular covariate data, but no diffused covariate data.
+We will plot the diffused covariate on the nonlocal grid locations:
 
 ```{r predict-space-time-grid}
-nd_st <- replicate_df(site_st, "year", seq_len(extra_yr))
-pred_grid <- predict(fit_st_grid, newdata = nd_st)
+pred_grid <- predict(fit_st_grid, newdata = grid_st)
 
-ggplot(pred_grid, aes(X, Y, colour = nl_diffusion_x1)) +
-  geom_point() +
+ggplot(pred_grid, aes(X, Y, fill = nl_diffusion_x1)) +
+  geom_raster() +
   facet_wrap(~year) +
-  scale_colour_gradient2()
+  scale_fill_gradient2()
 ```
 
 ## Plot diffusion kernels
 
-We can separately visualize the spatial diffusion, time diffusion, or their combined effects as either the diffusion kernel or the smoothed covariate field represented on the mesh:
+We can separately visualize the spatial diffusion, time diffusion, or their combined effects as either the diffusion kernel or the smoothed covariate field. By default, the diffusion kernel is shown at the mesh vertices:
 
 ```{r plot-diffusion}
 plot_diffusion_kernel(fit_st, component = "diffusion")
@@ -265,10 +263,45 @@ plot_diffusion_kernel(fit_st, component = "combined")
 plot_diffusion_kernel(fit_st, component = "combined", common_scale = TRUE)
 ```
 
+In the last case, the colour scale makes it hard to see the variation. We could add our own ggplot scale:
+
+```{r plot-diffusion-scale}
+plot_diffusion_kernel(fit_st, component = "combined", common_scale = TRUE) +
+  scale_colour_viridis_c(trans = "log10")
+```
+
+All but one knot in the "original" panel were zero, so they become -Inf when log transformed, but now we can see the space and time nonlocal effects.
+
+If we have a grid available, we can evaluate the same kernel at those grid coordinates and plot it as a raster:
+
+```{r plot-diffusion-grid}
+plot_diffusion_kernel(
+  fit_st_grid,
+  component = "diffusion",
+  newdata = grid_st,
+  type = "raster"
+)
+```
+
+You'll note that the "original" panel is not just a single coloured grid cell.
+This is because that single covariate value is actually represented on the mesh vertices and then visualized here after projecting from the mesh vertex (knot) to the grid.
+As a result, we're seeing the piecewise-linear finite-element basis function expansion centered at that vertex as the "original."
+
 ```{r}
 plot_diffused_covariate(fit_st, component = "diffusion")
-plot_diffused_covariate(fit_st, component = "time_lag")
-plot_diffused_covariate(fit_st, component = "combined")
+plot_diffused_covariate(fit_st, component = "time_lag", n_steps = 2)
+plot_diffused_covariate(fit_st, component = "combined", n_steps = 2)
+```
+
+The same plotting interface can show the covariate field on the supplied grid:
+
+```{r}
+plot_diffused_covariate(
+  fit_st_grid,
+  component = "diffusion",
+  newdata = grid_st,
+  type = "raster"
+)
 ```
 
 We could also have plotted the spatially diffused covariate at the original locations from the predictions.

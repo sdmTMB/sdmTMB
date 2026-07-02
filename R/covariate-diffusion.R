@@ -579,8 +579,7 @@
   list(loc = loc, tv = tv, vertex_i = vertex_i)
 }
 
-.nl_plot_resolve_time <- function(object, component, time_value, n_steps,
-                                  allow_spatial_steps = FALSE) {
+.nl_plot_resolve_time <- function(object, component, time_value, n_steps) {
   n_t <- object$tmb_data$n_t
   if (is.null(n_t) || !length(n_t) || n_t < 1L) {
     cli_abort("Could not determine the number of time slices from `object$tmb_data$n_t`.")
@@ -610,7 +609,7 @@
       ))
     }
   }
-  if (component == "diffusion" && !isTRUE(allow_spatial_steps)) {
+  if (component == "diffusion") {
     time_idx <- time_i
   } else {
     time_idx <- seq.int(time_i, min(n_t, time_i + n_steps - 1L))
@@ -639,8 +638,7 @@
 }
 
 .nl_plot_context <- function(object, covariate, component, component_missing,
-                             time_value, n_steps, allow_spatial_steps,
-                             function_name) {
+                             time_value, n_steps, function_name) {
   stopifnot(inherits(object, "sdmTMB"))
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     cli_abort("`ggplot2` must be installed to use `{function_name}()`.")
@@ -693,8 +691,7 @@
 
   mesh_info <- .nl_plot_extract_mesh(object$spde$mesh)
   time_info <- .nl_plot_resolve_time(
-    object, component_for_time, time_value, n_steps,
-    allow_spatial_steps = allow_spatial_steps
+    object, component_for_time, time_value, n_steps
   )
 
   cov_i <- match(covariate, object$nonlocal_parsed$covariates)
@@ -717,19 +714,6 @@
   )
 }
 
-.nl_plot_transform_values <- function(x, value_transform) {
-  switch(value_transform,
-    identity = x,
-    sqrt = {
-      if (any(x < 0, na.rm = TRUE)) {
-        cli_abort("`value_transform = \"sqrt\"` requires non-negative values. Use `\"signed_sqrt\"` for signed values.")
-      }
-      sqrt(x)
-    },
-    signed_sqrt = sign(x) * sqrt(abs(x))
-  )
-}
-
 .nl_plot_time_panels <- function(first_field, first_title, transformed_vertex_time,
                                  time_i, time_idx, time_values) {
   panel_fields <- vector("list", length(time_idx) + 1L)
@@ -749,85 +733,120 @@
   list(fields = panel_fields, titles = panel_titles)
 }
 
-.nl_plot_panel_dfs <- function(loc, tv, panel_fields, panel_titles, vertex_i,
-                               common_scale, value_transform) {
-  n_tri <- nrow(tv)
-  triangle_values <- vapply(panel_fields, function(v) {
-    rowMeans(matrix(v[tv], nrow = n_tri, ncol = 3L))
-  }, numeric(n_tri))
-  if (!is.matrix(triangle_values)) {
-    triangle_values <- matrix(triangle_values, ncol = 1L)
+.nl_plot_locations <- function(object, newdata, type) {
+  mesh <- object$spde$mesh
+  xy_cols <- object$spde$xy_cols
+  mesh_info <- .nl_plot_extract_mesh(mesh)
+  if (is.null(newdata)) {
+    if (identical(type, "raster")) {
+      cli_abort('`type = "raster"` requires `newdata`.')
+    }
+    loc <- mesh_info$loc
+    tv <- mesh_info$tv
+    edge_i <- rbind(tv[, c(1L, 2L)], tv[, c(2L, 3L)], tv[, c(3L, 1L)])
+    edge_i <- t(apply(edge_i, 1L, sort))
+    edge_i <- unique(edge_i)
+    edge_df <- data.frame(
+      x = loc[edge_i[, 1L], 1],
+      y = loc[edge_i[, 1L], 2],
+      xend = loc[edge_i[, 2L], 1],
+      yend = loc[edge_i[, 2L], 2]
+    )
+    return(list(
+      loc = loc,
+      A = Matrix::Diagonal(nrow(loc)),
+      edge_df = edge_df
+    ))
   }
-  colnames(triangle_values) <- panel_titles
 
-  tri_x <- matrix(loc[tv, 1], nrow = n_tri, ncol = 3L)
-  tri_y <- matrix(loc[tv, 2], nrow = n_tri, ncol = 3L)
+  if (is.null(xy_cols) || length(xy_cols) != 2L) {
+    cli_abort("`newdata` requires a mesh built with known `xy_cols` (e.g., from `make_mesh()`).")
+  }
+  if (!inherits(newdata, "data.frame") || any(!xy_cols %in% names(newdata))) {
+    cli_abort(c(
+      "`newdata` must be a data frame with coordinate columns matching the fitted mesh.",
+      "x" = "Required columns: {.code {paste(xy_cols, collapse = ', ')}}."
+    ))
+  }
+  loc <- unique(as.data.frame(newdata[, xy_cols, drop = FALSE]))
+  loc <- as.matrix(loc)
+  if (!is.numeric(loc) || any(!is.finite(loc))) {
+    cli_abort("`newdata` coordinate columns must be finite numeric values.")
+  }
+  list(
+    loc = loc,
+    A = fmesher::fm_basis(mesh, loc = loc),
+    edge_df = NULL
+  )
+}
 
-  triangle_df <- do.call(rbind, lapply(seq_len(ncol(triangle_values)), function(j) {
+.nl_plot_df <- function(loc, A, panel_fields, panel_titles, common_scale) {
+  plot_values <- vapply(panel_fields, function(v) {
+    as.numeric(A %*% v)
+  }, numeric(nrow(loc)))
+  if (!is.matrix(plot_values)) {
+    plot_values <- matrix(plot_values, ncol = 1L)
+  }
+  colnames(plot_values) <- panel_titles
+
+  plot_df <- do.call(rbind, lapply(seq_len(ncol(plot_values)), function(j) {
     data.frame(
       panel = panel_titles[j],
-      tri = rep(seq_len(n_tri), each = 3L),
-      x = as.vector(t(tri_x)),
-      y = as.vector(t(tri_y)),
-      value = rep(triangle_values[, j], each = 3L),
+      x = loc[, 1],
+      y = loc[, 2],
+      value = plot_values[, j],
       stringsAsFactors = FALSE
     )
   }))
-  triangle_df$panel <- factor(triangle_df$panel, levels = panel_titles)
-  point_df <- data.frame(
-    panel = factor(panel_titles, levels = panel_titles),
-    x = rep(loc[vertex_i, 1], length(panel_titles)),
-    y = rep(loc[vertex_i, 2], length(panel_titles))
-  )
+  plot_df$panel <- factor(plot_df$panel, levels = panel_titles)
+  plot_df$value_plot <- plot_df$value
 
-  triangle_df$value_plot <- .nl_plot_transform_values(triangle_df$value, value_transform)
-  fill_name <- if (value_transform == "identity") "Value" else paste0("Value (", value_transform, ")")
+  fill_name <- "Value"
   if (!isTRUE(common_scale)) {
-    fill_name <- if (value_transform == "identity") "Relative value" else paste0("Relative value (", value_transform, ")")
-    for (p in levels(triangle_df$panel)) {
-      i <- which(triangle_df$panel == p)
-      rng <- range(triangle_df$value_plot[i], finite = TRUE)
+    fill_name <- "Relative value"
+    for (p in levels(plot_df$panel)) {
+      i <- which(plot_df$panel == p)
+      rng <- range(plot_df$value_plot[i], finite = TRUE)
       if (!all(is.finite(rng)) || rng[1] == rng[2]) {
-        triangle_df$value_plot[i] <- 0
+        plot_df$value_plot[i] <- 0
       } else {
-        triangle_df$value_plot[i] <- (triangle_df$value_plot[i] - rng[1]) / (rng[2] - rng[1])
+        plot_df$value_plot[i] <- (plot_df$value_plot[i] - rng[1]) / (rng[2] - rng[1])
       }
     }
   }
   fill_limits <- if (isTRUE(common_scale)) NULL else c(0, 1)
 
   list(
-    triangle_values = triangle_values,
-    triangle_df = triangle_df,
-    point_df = point_df,
+    plot_df = plot_df,
     fill_name = fill_name,
     fill_limits = fill_limits
   )
 }
 
-.nl_plot_ggplot <- function(triangle_df, point_df, fill_limits, fill_name, xlim, ylim, xlab, ylab) {
-  ggplot2::ggplot(
-    triangle_df,
-    ggplot2::aes(x = .data$x, y = .data$y, group = interaction(.data$panel, .data$tri))
-  ) +
-    ggplot2::geom_polygon(
-      ggplot2::aes(fill = .data$value_plot),
-      color = "#FFFFFF10", linewidth = 0.4
-    ) +
-    ggplot2::geom_point(
-      data = point_df,
-      ggplot2::aes(x = .data$x, y = .data$y),
-      inherit.aes = FALSE,
-      shape = 21,
-      fill = "black",
-      color = "black",
-      size = 1.4
-    ) +
+.nl_plot_ggplot <- function(plot_df, edge_df, type, fill_limits, fill_name, xlim, ylim, xlab, ylab) {
+  p <- ggplot2::ggplot(plot_df, ggplot2::aes(x = .data$x, y = .data$y))
+  if (!is.null(edge_df)) {
+    p <- p +
+      ggplot2::geom_segment(
+        data = edge_df,
+        ggplot2::aes(x = .data$x, y = .data$y, xend = .data$xend, yend = .data$yend),
+        inherit.aes = FALSE,
+        colour = "grey85",
+        linewidth = 0.2
+      )
+  }
+  if (identical(type, "raster")) {
+    p <- p + ggplot2::geom_raster(ggplot2::aes(fill = .data$value_plot))
+  } else {
+    p <- p + ggplot2::geom_point(ggplot2::aes(colour = .data$value_plot))
+  }
+  p +
     ggplot2::facet_wrap(stats::as.formula("~ panel"), nrow = 1L) +
-    ggplot2::coord_equal(xlim = xlim, ylim = ylim, expand = FALSE) +
-    ggplot2::scale_fill_viridis_c(
+    ggplot2::coord_equal(xlim = xlim, ylim = ylim, expand = identical(type, "point")) +
+    ggplot2::scale_colour_viridis_c(
       limits = fill_limits,
-      name = fill_name, option = "C"
+      name = fill_name, option = "C",
+      aesthetics = c("colour", "fill")
     ) +
     ggplot2::theme_bw() +
     ggplot2::theme(
@@ -836,12 +855,13 @@
     ggplot2::labs(x = xlab, y = ylab)
 }
 
-#' Plot Covariate-Diffusion Diagnostics on the Mesh
+#' Plot Covariate-Diffusion Diagnostics
 #'
 #' Visualize fitted covariate-diffusion transforms or impulse-response kernels
 #' for one selected covariate-diffusion term.
-#' Values are plotted as colored mesh triangles, so no prediction grid is
-#' required.
+#' By default, values are plotted at mesh vertices with the mesh edges shown in
+#' light grey. Values can also be evaluated at supplied `newdata` coordinates
+#' and plotted as points or a raster.
 #'
 #' @param object A fitted [sdmTMB()] model with `nonlocal_formula`.
 #' @param covariate Optional covariate name from `nonlocal_formula`.
@@ -858,7 +878,11 @@
 #'   Defaults to `TRUE` for `plot_diffused_covariate()` and `FALSE` for
 #'   `plot_diffusion_kernel()`. `component = "time_lag"` alone likely needs
 #'   `common_scale = TRUE` to make sense.
-#' @param plot Should the plot be printed? Defaults to `TRUE`.
+#' @param newdata Optional data frame with x/y coordinate columns matching the
+#'   fitted mesh. If supplied, values are evaluated at the unique `newdata`
+#'   coordinates. If `NULL`, values are evaluated at mesh vertices.
+#' @param type Plot type: `"point"` or `"raster"`. `"raster"` requires
+#'   `newdata`.
 #'
 #' @details
 #' `plot_diffused_covariate()` visualizes the original mesh-vertex covariate
@@ -868,8 +892,7 @@
 #' `plot_diffusion_kernel()` visualizes an impulse covariate diffusing through
 #' one covariate-diffusion component.
 #'
-#' @return Invisibly returns a list with fields on vertices, triangle summaries
-#'   used for plotting, selected indices, and a `ggplot` object.
+#' @return A `ggplot` object.
 #'
 #' @examplesIf ggplot2_installed()
 #'
@@ -964,12 +987,14 @@
 #' @rdname nonlocal_formula_plots
 #' @export
 plot_diffused_covariate <- function(object,
-                                    covariate = NULL,
                                     component,
+                                    newdata = NULL,
+                                    type = c("point", "raster"),
+                                    covariate = NULL,
                                     time_value = 1,
                                     n_steps = 1L,
-                                    common_scale = TRUE,
-                                    plot = TRUE) {
+                                    common_scale = TRUE) {
+  type <- match.arg(type)
   ctx <- .nl_plot_context(
     object = object,
     covariate = covariate,
@@ -977,9 +1002,9 @@ plot_diffused_covariate <- function(object,
     component_missing = missing(component),
     time_value = time_value,
     n_steps = n_steps,
-    function_name = "plot_diffused_covariate",
-    allow_spatial_steps = FALSE
+    function_name = "plot_diffused_covariate"
   )
+  plot_locations <- .nl_plot_locations(object, newdata, type)
 
   original_vertex_time <- matrix(
     object$nonlocal_parsed$covariate_vertex_time[, , ctx$cov_i],
@@ -1012,62 +1037,38 @@ plot_diffused_covariate <- function(object,
     time_idx = time_idx,
     time_values = time_values
   )
-  panel <- .nl_plot_panel_dfs(
-    loc = ctx$mesh_info$loc,
-    tv = ctx$mesh_info$tv,
+  panel <- .nl_plot_df(
+    loc = plot_locations$loc,
+    A = plot_locations$A,
     panel_fields = panels$fields,
     panel_titles = panels$titles,
-    vertex_i = ctx$mesh_info$vertex_i,
-    common_scale = common_scale,
-    value_transform = "identity"
+    common_scale = common_scale
   )
-  point_df <- data.frame(
-    panel = factor(character(0L), levels = panels$titles),
-    x = numeric(0L),
-    y = numeric(0L)
-  )
-  plot_obj <- .nl_plot_ggplot(
-    triangle_df = panel$triangle_df,
-    point_df = point_df,
+
+  .nl_plot_ggplot(
+    plot_df = panel$plot_df,
+    edge_df = plot_locations$edge_df,
+    type = type,
     fill_limits = panel$fill_limits,
     fill_name = panel$fill_name,
-    xlim = range(ctx$mesh_info$loc[, 1]),
-    ylim = range(ctx$mesh_info$loc[, 2]),
+    xlim = range(plot_locations$loc[, 1]),
+    ylim = range(plot_locations$loc[, 2]),
     xlab = ctx$xlab,
     ylab = ctx$ylab
   )
-
-  if (isTRUE(plot)) {
-    print(plot_obj)
-  }
-
-  invisible(list(
-    covariate = ctx$covariate,
-    component = ctx$component,
-    time_index = time_i,
-    time_value = time_values[time_i],
-    transformed_time_index = time_idx,
-    transformed_time_values = time_values[time_idx],
-    original_vertex_time = original_vertex_time,
-    source_vertex_time = source_vertex_time,
-    transformed_vertex_time = transformed_vertex_time,
-    triangle_values = panel$triangle_values,
-    triangle_df = panel$triangle_df,
-    plot = plot_obj,
-    mesh_loc = ctx$mesh_info$loc,
-    mesh_triangles = ctx$mesh_info$tv
-  ))
 }
 
 #' @rdname nonlocal_formula_plots
 #' @export
 plot_diffusion_kernel <- function(object,
-                                           covariate = NULL,
-                                           component,
-                                           time_value = 1,
-                                           n_steps = 3L,
-                                           common_scale = FALSE,
-                                           plot = TRUE) {
+                                  component,
+                                  newdata = NULL,
+                                  type = c("point", "raster"),
+                                  covariate = NULL,
+                                  time_value = 1,
+                                  n_steps = 3L,
+                                  common_scale = FALSE) {
+  type <- match.arg(type)
   ctx <- .nl_plot_context(
     object = object,
     covariate = covariate,
@@ -1075,9 +1076,9 @@ plot_diffusion_kernel <- function(object,
     component_missing = missing(component),
     time_value = time_value,
     n_steps = n_steps,
-    function_name = "plot_diffusion_kernel",
-    allow_spatial_steps = FALSE
+    function_name = "plot_diffusion_kernel"
   )
+  plot_locations <- .nl_plot_locations(object, newdata, type)
 
   time_values <- ctx$time_info$time_values
   n_t <- ctx$time_info$n_t
@@ -1107,42 +1108,23 @@ plot_diffusion_kernel <- function(object,
     time_idx = time_idx,
     time_values = time_values
   )
-  panel <- .nl_plot_panel_dfs(
-    ctx$mesh_info$loc, ctx$mesh_info$tv, panels$fields, panels$titles, vertex_i,
-    common_scale = common_scale,
-    value_transform = "identity"
+  panel <- .nl_plot_df(
+    loc = plot_locations$loc,
+    A = plot_locations$A,
+    panel_fields = panels$fields,
+    panel_titles = panels$titles,
+    common_scale = common_scale
   )
 
-  plot_obj <- .nl_plot_ggplot(
-    triangle_df = panel$triangle_df,
-    point_df = panel$point_df,
+  .nl_plot_ggplot(
+    plot_df = panel$plot_df,
+    edge_df = plot_locations$edge_df,
+    type = type,
     fill_limits = panel$fill_limits,
     fill_name = panel$fill_name,
-    xlim = range(ctx$mesh_info$loc[, 1]),
-    ylim = range(ctx$mesh_info$loc[, 2]),
+    xlim = range(plot_locations$loc[, 1]),
+    ylim = range(plot_locations$loc[, 2]),
     xlab = ctx$xlab,
     ylab = ctx$ylab
   )
-
-  if (isTRUE(plot)) {
-    print(plot_obj)
-  }
-
-  invisible(list(
-    covariate = ctx$covariate,
-    component = ctx$component,
-    vertex = vertex_i,
-    vertex_xy = ctx$mesh_info$loc[vertex_i, , drop = TRUE],
-    impulse_time_index = time_i,
-    impulse_time_value = time_values[time_i],
-    transformed_time_index = time_idx,
-    transformed_time_values = time_values[time_idx],
-    impulse_vertex_time = impulse_vertex_time,
-    transformed_vertex_time = transformed_vertex_time,
-    triangle_values = panel$triangle_values,
-    triangle_df = panel$triangle_df,
-    plot = plot_obj,
-    mesh_loc = ctx$mesh_info$loc,
-    mesh_triangles = ctx$mesh_info$tv
-  ))
 }

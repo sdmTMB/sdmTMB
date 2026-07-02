@@ -3,38 +3,47 @@
 \name{plot_diffused_covariate}
 \alias{plot_diffused_covariate}
 \alias{plot_diffusion_kernel}
-\title{Plot Covariate-Diffusion Diagnostics on the Mesh}
+\title{Plot Covariate-Diffusion Diagnostics}
 \usage{
 plot_diffused_covariate(
   object,
-  covariate = NULL,
   component,
+  newdata = NULL,
+  type = c("point", "raster"),
+  covariate = NULL,
   time_value = 1,
   n_steps = 1L,
-  common_scale = TRUE,
-  plot = TRUE
+  common_scale = TRUE
 )
 
 plot_diffusion_kernel(
   object,
-  covariate = NULL,
   component,
+  newdata = NULL,
+  type = c("point", "raster"),
+  covariate = NULL,
   time_value = 1,
   n_steps = 3L,
-  common_scale = FALSE,
-  plot = TRUE
+  common_scale = FALSE
 )
 }
 \arguments{
 \item{object}{A fitted \code{\link[=sdmTMB]{sdmTMB()}} model with \code{nonlocal_formula}.}
 
-\item{covariate}{Optional covariate name from \code{nonlocal_formula}.
-Required when multiple lag covariates were fitted.}
-
 \item{component}{Covariate-diffusion component name. Must be one of
 \code{"diffusion"}, \code{"time_lag"}, or \code{"combined"}. \code{"combined"}
 plots the joint response of all covariate-diffusion components fitted for
 \code{covariate}.}
+
+\item{newdata}{Optional data frame with x/y coordinate columns matching the
+fitted mesh. If supplied, values are evaluated at the unique \code{newdata}
+coordinates. If \code{NULL}, values are evaluated at mesh vertices.}
+
+\item{type}{Plot type: \code{"point"} or \code{"raster"}. \code{"raster"} requires
+\code{newdata}.}
+
+\item{covariate}{Optional covariate name from \code{nonlocal_formula}.
+Required when multiple lag covariates were fitted.}
 
 \item{time_value}{Optional time slice to plot or use for the impulse. Supply
 either a modeled time value or a 1-based time index. Defaults to 1.}
@@ -46,18 +55,16 @@ either a modeled time value or a 1-based time index. Defaults to 1.}
 Defaults to \code{TRUE} for \code{plot_diffused_covariate()} and \code{FALSE} for
 \code{plot_diffusion_kernel()}. \code{component = "time_lag"} alone likely needs
 \code{common_scale = TRUE} to make sense.}
-
-\item{plot}{Should the plot be printed? Defaults to \code{TRUE}.}
 }
 \value{
-Invisibly returns a list with fields on vertices, triangle summaries
-used for plotting, selected indices, and a \code{ggplot} object.
+A \code{ggplot} object.
 }
 \description{
 Visualize fitted covariate-diffusion transforms or impulse-response kernels
 for one selected covariate-diffusion term.
-Values are plotted as colored mesh triangles, so no prediction grid is
-required.
+By default, values are plotted at mesh vertices with the mesh edges shown in
+light grey. Values can also be evaluated at supplied \code{newdata} coordinates
+and plotted as points or a raster.
 }
 \details{
 \code{plot_diffused_covariate()} visualizes the original mesh-vertex covariate
