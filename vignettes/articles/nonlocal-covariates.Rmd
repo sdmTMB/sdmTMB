@@ -1,5 +1,5 @@
 ---
-title: "Estimating covariate diffusion with sdmTMB"
+title: "Estimating non-local covariates (spatial diffusion and time lags) with sdmTMB"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 bibliography: '../refs.bib'
