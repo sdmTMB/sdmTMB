@@ -5,16 +5,20 @@ NULL
 #'
 #' Fit a spatial or spatiotemporal generalized linear mixed effects model (GLMM)
 #' with the TMB (Template Model Builder) R package. Spatial and spatiotemporal
-#' random fields are approximated using the SPDE (stochastic partial differential
-#' equation) approach, which allows for efficient modeling of data that are
-#' correlated in space and/or time. See the [model description
-#' vignette](https://sdmTMB.github.io/sdmTMB/articles/model-description.html) for
-#' details.
+#' Gaussian random fields are approximated using the SPDE (stochastic partial differential
+#' equation) approach with Gaussian Markov random fields. This allows for
+#' efficient modeling of data that are correlated in space and/or time. 
+#' Areal spatial/spatiotemporal models (conditional or simultaneous
+#' autogressive models, CAR + SAR) are also possible. 
+#' See the
+#' [model description vignette](https://sdmTMB.github.io/sdmTMB/articles/model-description.html)
+#' for details.
 #'
 #' @param formula Model formula. IID random intercepts and slopes are possible using
-#'   \pkg{lme4} syntax, e.g., `+ (1 | g)` or `+ (0 + depth | g)` or `+ (1 + depth | g)` where `g` is a column of class
-#'   character or factor representing groups. Penalized splines are possible via
-#'   \pkg{mgcv} with `s()`. Optionally a list for delta (hurdle) models.  See
+#'   \pkg{lme4} syntax, e.g., `+ (1 | g)` or `+ (0 + depth | g)` or `+ (1 +
+#'   depth | g)` where `g` is a column of class character or factor
+#'   representing groups. Penalized splines are possible via \pkg{mgcv} with
+#'   `s()`. Optionally a list for delta (hurdle) models.  See
 #'   examples and details below.
 #' @param data A data frame.
 #' @param mesh An object from [make_mesh()] for `spatial_model = "spde"` or
@@ -25,8 +29,8 @@ NULL
 #'   Capitalization is ignored.
 #' @param time An optional time column name (as character). Can be left as
 #'   `NULL` for a model with only spatial random fields; however, if the data
-#'   are actually spatiotemporal and you wish to use [get_index()] or [get_cog()]
-#'   downstream, supply the time argument.
+#'   are actually spatiotemporal and you wish to calculate derived quantities
+#'   downstream (e.g., [get_index()] or [get_cog()]), then supply the time argument.
 #' @param family The family and link. Supports [gaussian()], [Gamma()],
 #'   [binomial()], [poisson()], \code{\link[sdmTMB:families]{Beta()}},
 #'   \code{\link[sdmTMB:families]{betabinomial()}},
@@ -52,13 +56,13 @@ NULL
 #'   details. For binomial family options, see 'Binomial families' in the Details
 #'   section below.
 #' @param spatial Estimate spatial random fields? Options are `'on'` / `'off'`
-#'   or `TRUE` / `FALSE`. Optionally, a list for delta models, e.g. `list('on',
-#'   'off')`.
+#'   or equivalently `TRUE` / `FALSE`. Optionally, a list for delta models, 
+#'   e.g. `list('on', 'off')`.
 #' @param spatiotemporal Estimate the spatiotemporal random fields as `'iid'`
 #'   (independent and identically distributed; default), stationary `'ar1'`
 #'   (first-order autoregressive), a random walk (`'rw'`), or fixed at 0
 #'   `'off'`. Will be set to `'off'` if `time = NULL`. If a delta model, can be
-#'   a list. E.g., `list('off', 'ar1')`. Guidance: Use `'iid'` if temporal
+#'   a list. E.g., `list('off', 'ar1')`. Guidance: Use `'iid'` if spatiotemporal
 #'   correlation is negligible or already accounted for in fixed effects; `'ar1'`
 #'   if correlation between consecutive time steps decays gradually; `'rw'` if
 #'   changes between time steps are cumulative (each step builds on the last). If
@@ -88,7 +92,7 @@ NULL
 #'   should vary in space as random fields. Allows the effect of a covariate to
 #'   differ spatially. You likely want to include the same variable as a fixed
 #'   effect in `formula` to estimate the average effect—the spatial field then
-#'   represents deviations from that average (since it has mean zero). For example,
+#'   represents deviations from that average. For example,
 #'   use `formula = y ~ depth` and `spatial_varying = ~ 0 + depth` to model an
 #'   average depth effect plus spatially varying deviations. If a (scaled) time
 #'   column is used, this creates a local-time-trend model. See
@@ -98,16 +102,18 @@ NULL
 #'   approximately 1. **The spatial intercept is controlled by the `spatial`
 #'   argument**; set `spatial = 'on'` or `'off'` to include or exclude it. For
 #'   factor predictors, if `spatial_varying` excludes the intercept (`~ 0` or `~
-#'   -1`), set `spatial = 'off'` to match. Structure must be shared in delta
+#'   -1`), set `spatial = 'off'` to match. Structure is shared in delta
 #'   models.
 #' @param nonlocal_formula An optional one-sided formula describing distributed
 #'   lag terms with `diffusion()` or `time_lag()` wrappers.
-#'   Example: `~ diffusion(x) + time_lag(x)`. Lag scale parameters
-#'   are estimated separately for each lag covariate.
+#'   Example: `~ diffusion(x) + time_lag(x)`. Note that diffused spatial 
+#'   covariates will be held constant across time slices unless the
+#'   `time` argument is specified. 
+#'   See the [non-local covariates vignette](https://sdmTMB.github.io/sdmTMB/articles/nonlocal-covariates.html).
 #' @param nonlocal_data An optional data frame supplying the
 #'   `nonlocal_formula` covariate(s) at a different resolution and/or
 #'   coverage than `data` (e.g., a finer grid, or one spanning `extra_time`
-#'   slices). Must contain the mesh `xy_cols`, the `time` column (if temporal
+#'   slices). Must contain the mesh `xy_cols`, the `time` column (if time-lag
 #'   `nonlocal_formula` terms are used), and the diffusion covariate
 #'   columns; must cover every fitted (+ `extra_time`) time slice. Defaults to
 #'   `NULL`, in which case `data` is used.
@@ -366,6 +372,16 @@ NULL
 #' spatiotemporal individual condition of a bottom-associated marine fish.
 #' bioRxiv 2022.04.19.488709. \doi{10.1101/2022.04.19.488709}.
 #'
+#' *Non-local covariates:*
+#' Lindmark, M., Anderson, S.C., and Thorson, J.T. 2025. Estimating scale-dependent
+#' covariate responses using two-dimensional diffusion derived from the stochastic
+#' partial differential equation method. Methods in Ecology and Evolution 17: 
+#' 207–218. \doi{10.1111/2041-210X.70177}.
+#'
+#' Thorson, J.T., Anderson, S.C., and Lindmark, M. 2026. 
+#' Temperature carryover effect revealed for marine fishes using spatio-temporal 
+#' distributed lag models. EcoEvoRxiv. \doi{10.32942/X2W95P}.
+#'
 #' *Several sections of the original TMB model code were adapted from the
 #' VAST R package:*
 #'
@@ -610,6 +626,8 @@ sdmTMB <- function(
     time_varying = NULL,
     time_varying_type = c("rw", "rw0", "ar1"),
     spatial_varying = NULL,
+    nonlocal_formula = NULL,
+    nonlocal_data = NULL,
     weights = NULL,
     offset = NULL,
     extra_time = NULL,
@@ -618,8 +636,6 @@ sdmTMB <- function(
     anisotropy = FALSE,
     control = sdmTMBcontrol(),
     priors = sdmTMBpriors(),
-    nonlocal_formula = NULL,
-    nonlocal_data = NULL,
     knots = NULL,
     bayesian = FALSE,
     previous_fit = NULL,

@@ -17,6 +17,8 @@ sdmTMB(
   time_varying = NULL,
   time_varying_type = c("rw", "rw0", "ar1"),
   spatial_varying = NULL,
+  nonlocal_formula = NULL,
+  nonlocal_data = NULL,
   weights = NULL,
   offset = NULL,
   extra_time = NULL,
@@ -25,8 +27,6 @@ sdmTMB(
   anisotropy = FALSE,
   control = sdmTMBcontrol(),
   priors = sdmTMBpriors(),
-  nonlocal_formula = NULL,
-  nonlocal_data = NULL,
   knots = NULL,
   bayesian = FALSE,
   previous_fit = NULL,
@@ -39,9 +39,9 @@ sdmTMB(
 }
 \arguments{
 \item{formula}{Model formula. IID random intercepts and slopes are possible using
-\pkg{lme4} syntax, e.g., \code{+ (1 | g)} or \code{+ (0 + depth | g)} or \code{+ (1 + depth | g)} where \code{g} is a column of class
-character or factor representing groups. Penalized splines are possible via
-\pkg{mgcv} with \code{s()}. Optionally a list for delta (hurdle) models.  See
+\pkg{lme4} syntax, e.g., \code{+ (1 | g)} or \code{+ (0 + depth | g)} or \code{+ (1 + depth | g)} where \code{g} is a column of class character or factor
+representing groups. Penalized splines are possible via \pkg{mgcv} with
+\code{s()}. Optionally a list for delta (hurdle) models.  See
 examples and details below.}
 
 \item{data}{A data frame.}
@@ -51,8 +51,8 @@ from \code{\link[=make_areal_domain]{make_areal_domain()}} / \code{\link[=make_a
 
 \item{time}{An optional time column name (as character). Can be left as
 \code{NULL} for a model with only spatial random fields; however, if the data
-are actually spatiotemporal and you wish to use \code{\link[=get_index]{get_index()}} or \code{\link[=get_cog]{get_cog()}}
-downstream, supply the time argument.}
+are actually spatiotemporal and you wish to calculate derived quantities
+downstream (e.g., \code{\link[=get_index]{get_index()}} or \code{\link[=get_cog]{get_cog()}}), then supply the time argument.}
 
 \item{family}{The family and link. Supports \code{\link[=gaussian]{gaussian()}}, \code{\link[=Gamma]{Gamma()}},
 \code{\link[=binomial]{binomial()}}, \code{\link[=poisson]{poisson()}}, \code{\link[sdmTMB:families]{Beta()}},
@@ -79,13 +79,14 @@ details. For binomial family options, see 'Binomial families' in the Details
 section below.}
 
 \item{spatial}{Estimate spatial random fields? Options are \code{'on'} / \code{'off'}
-or \code{TRUE} / \code{FALSE}. Optionally, a list for delta models, e.g. \code{list('on', 'off')}.}
+or equivalently \code{TRUE} / \code{FALSE}. Optionally, a list for delta models,
+e.g. \code{list('on', 'off')}.}
 
 \item{spatiotemporal}{Estimate the spatiotemporal random fields as \code{'iid'}
 (independent and identically distributed; default), stationary \code{'ar1'}
 (first-order autoregressive), a random walk (\code{'rw'}), or fixed at 0
 \code{'off'}. Will be set to \code{'off'} if \code{time = NULL}. If a delta model, can be
-a list. E.g., \code{list('off', 'ar1')}. Guidance: Use \code{'iid'} if temporal
+a list. E.g., \code{list('off', 'ar1')}. Guidance: Use \code{'iid'} if spatiotemporal
 correlation is negligible or already accounted for in fixed effects; \code{'ar1'}
 if correlation between consecutive time steps decays gradually; \code{'rw'} if
 changes between time steps are cumulative (each step builds on the last). If
@@ -123,7 +124,7 @@ shared in delta models.}
 should vary in space as random fields. Allows the effect of a covariate to
 differ spatially. You likely want to include the same variable as a fixed
 effect in \code{formula} to estimate the average effect—the spatial field then
-represents deviations from that average (since it has mean zero). For example,
+represents deviations from that average. For example,
 use \code{formula = y ~ depth} and \code{spatial_varying = ~ 0 + depth} to model an
 average depth effect plus spatially varying deviations. If a (scaled) time
 column is used, this creates a local-time-trend model. See
@@ -131,8 +132,23 @@ column is used, this creates a local-time-trend model. See
 Predictors should usually be centered to have mean zero and standard deviation
 approximately 1. \strong{The spatial intercept is controlled by the \code{spatial}
 argument}; set \code{spatial = 'on'} or \code{'off'} to include or exclude it. For
-factor predictors, if \code{spatial_varying} excludes the intercept (\code{~ 0} or \code{~ -1}), set \code{spatial = 'off'} to match. Structure must be shared in delta
+factor predictors, if \code{spatial_varying} excludes the intercept (\code{~ 0} or \code{~ -1}), set \code{spatial = 'off'} to match. Structure is shared in delta
 models.}
+
+\item{nonlocal_formula}{An optional one-sided formula describing distributed
+lag terms with \code{diffusion()} or \code{time_lag()} wrappers.
+Example: \code{~ diffusion(x) + time_lag(x)}. Note that diffused spatial
+covariates will be held constant across time slices unless the
+\code{time} argument is specified.
+See the \href{https://sdmTMB.github.io/sdmTMB/articles/nonlocal-covariates.html}{non-local covariates vignette}.}
+
+\item{nonlocal_data}{An optional data frame supplying the
+\code{nonlocal_formula} covariate(s) at a different resolution and/or
+coverage than \code{data} (e.g., a finer grid, or one spanning \code{extra_time}
+slices). Must contain the mesh \code{xy_cols}, the \code{time} column (if time-lag
+\code{nonlocal_formula} terms are used), and the diffusion covariate
+columns; must cover every fitted (+ \code{extra_time}) time slice. Defaults to
+\code{NULL}, in which case \code{data} is used.}
 
 \item{weights}{A numeric vector representing optional likelihood weights for
 the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
@@ -168,19 +184,6 @@ Must be shared across delta models.}
 
 \item{priors}{Optional penalties/priors via \code{\link[=sdmTMBpriors]{sdmTMBpriors()}}. Must currently
 be shared across delta models.}
-
-\item{nonlocal_formula}{An optional one-sided formula describing distributed
-lag terms with \code{diffusion()} or \code{time_lag()} wrappers.
-Example: \code{~ diffusion(x) + time_lag(x)}. Lag scale parameters
-are estimated separately for each lag covariate.}
-
-\item{nonlocal_data}{An optional data frame supplying the
-\code{nonlocal_formula} covariate(s) at a different resolution and/or
-coverage than \code{data} (e.g., a finer grid, or one spanning \code{extra_time}
-slices). Must contain the mesh \code{xy_cols}, the \code{time} column (if temporal
-\code{nonlocal_formula} terms are used), and the diffusion covariate
-columns; must cover every fitted (+ \code{extra_time}) time slice. Defaults to
-\code{NULL}, in which case \code{data} is used.}
 
 \item{knots}{Optional named list containing knot values to be used for basis
 construction of smoothing terms. See \code{\link[mgcv:gam]{mgcv::gam()}} and \code{\link[mgcv:gamm]{mgcv::gamm()}}.
@@ -236,10 +239,14 @@ An object (list) of class \code{sdmTMB}. Useful elements include:
 \description{
 Fit a spatial or spatiotemporal generalized linear mixed effects model (GLMM)
 with the TMB (Template Model Builder) R package. Spatial and spatiotemporal
-random fields are approximated using the SPDE (stochastic partial differential
-equation) approach, which allows for efficient modeling of data that are
-correlated in space and/or time. See the \href{https://sdmTMB.github.io/sdmTMB/articles/model-description.html}{model description vignette} for
-details.
+Gaussian random fields are approximated using the SPDE (stochastic partial differential
+equation) approach with Gaussian Markov random fields. This allows for
+efficient modeling of data that are correlated in space and/or time.
+Areal spatial/spatiotemporal models (conditional or simultaneous
+autogressive models, CAR + SAR) are also possible.
+See the
+\href{https://sdmTMB.github.io/sdmTMB/articles/model-description.html}{model description vignette}
+for details.
 }
 \details{
 \strong{Model description}
@@ -606,6 +613,16 @@ and a physiologically based index. Ecography. 2022: e06249
 Lindmark, M., S.C. Anderson, M. Gogina, M. Casini. Evaluating drivers of
 spatiotemporal individual condition of a bottom-associated marine fish.
 bioRxiv 2022.04.19.488709. \doi{10.1101/2022.04.19.488709}.
+
+\emph{Non-local covariates:}
+Lindmark, M., Anderson, S.C., and Thorson, J.T. 2025. Estimating scale-dependent
+covariate responses using two-dimensional diffusion derived from the stochastic
+partial differential equation method. Methods in Ecology and Evolution 17:
+207–218. \doi{10.1111/2041-210X.70177}.
+
+Thorson, J.T., Anderson, S.C., and Lindmark, M. 2026.
+Temperature carryover effect revealed for marine fishes using spatio-temporal
+distributed lag models. EcoEvoRxiv. \doi{10.32942/X2W95P}.
 
 \emph{Several sections of the original TMB model code were adapted from the
 VAST R package:}
