@@ -25,7 +25,7 @@ articles:
   - articles/residual-checking
   - articles/cross-validation
   - articles/bayesian
-  - articles/covariate-diffusion
+  - articles/nonlocal-covariates
 
 - title: Predictions and Applications
   contents:
