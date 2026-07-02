@@ -1,4 +1,4 @@
-make_dl_fit_data <- function() {
+make_nl_fit_data <- function() {
   set.seed(42)
   n_t <- 5L
   n_s <- 6L
@@ -18,19 +18,19 @@ make_dl_fit_data <- function() {
   )
 }
 
-make_dl_fit_mesh <- function(dat) {
+make_nl_fit_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
 test_that("covariate diffusion fits run for each wrapper and combined terms", {
   skip_on_cran()
-  dat <- make_dl_fit_data()
-  mesh <- make_dl_fit_mesh(dat)
+  dat <- make_nl_fit_data()
+  mesh <- make_nl_fit_mesh(dat)
 
   lag_forms <- list(
-    spatial = ~ space(x1),
-    temporal = ~ time(x1),
-    combined = ~ space(x1) + time(x1)
+    spatial = ~ diffusion(x1),
+    temporal = ~ time_lag(x1),
+    combined = ~ diffusion(x1) + time_lag(x1)
   )
 
   for (nm in names(lag_forms)) {
@@ -42,7 +42,7 @@ test_that("covariate diffusion fits run for each wrapper and combined terms", {
       spatial = "off",
       spatiotemporal = "off",
       family = gaussian(),
-      covariate_diffusion = lag_forms[[nm]],
+      nonlocal_formula = lag_forms[[nm]],
       control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
     )
     expect_true(is.finite(fit$model$objective), info = nm)
@@ -51,8 +51,8 @@ test_that("covariate diffusion fits run for each wrapper and combined terms", {
 
 test_that("covariate diffusion model matches no-lag model when lag coefficients are fixed at 0", {
   skip_on_cran()
-  dat <- make_dl_fit_data()
-  mesh <- make_dl_fit_mesh(dat)
+  dat <- make_nl_fit_data()
+  mesh <- make_nl_fit_mesh(dat)
 
   fit_base <- sdmTMB(
     y ~ x1 + x2,
@@ -65,7 +65,7 @@ test_that("covariate diffusion model matches no-lag model when lag coefficients 
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 
-  dl_formula <- ~ space(x1) + time(x2)
+  nl_formula <- ~ diffusion(x1) + time_lag(x2)
   proto <- sdmTMB(
     y ~ x1 + x2,
     data = dat,
@@ -74,11 +74,11 @@ test_that("covariate diffusion model matches no-lag model when lag coefficients 
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = dl_formula,
+    nonlocal_formula = nl_formula,
     do_fit = FALSE
   )
 
-  lag_cols <- proto$covariate_diffusion_data$term_coef_name
+  lag_cols <- proto$nonlocal_parsed$term_coef_name
   lag_idx <- match(lag_cols, colnames(proto$tmb_data$X_ij[[1]]))
   b_map <- seq_along(proto$tmb_params$b_j)
   b_map[lag_idx] <- NA_integer_
@@ -93,7 +93,7 @@ test_that("covariate diffusion model matches no-lag model when lag coefficients 
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = dl_formula,
+    nonlocal_formula = nl_formula,
     control = sdmTMBcontrol(
       start = list(b_j = b_start),
       map = list(
@@ -111,8 +111,8 @@ test_that("covariate diffusion model matches no-lag model when lag coefficients 
 
 test_that("covariate diffusion derived quantities are conditionally reported", {
   skip_on_cran()
-  dat <- make_dl_fit_data()
-  mesh <- make_dl_fit_mesh(dat)
+  dat <- make_nl_fit_data()
+  mesh <- make_nl_fit_mesh(dat)
 
   fit_time <- sdmTMB(
     y ~ x1 + x2,
@@ -122,7 +122,7 @@ test_that("covariate diffusion derived quantities are conditionally reported", {
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ time(x1),
+    nonlocal_formula = ~ time_lag(x1),
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
   rep_time <- fit_time$tmb_obj$report()
@@ -139,7 +139,7 @@ test_that("covariate diffusion derived quantities are conditionally reported", {
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1),
+    nonlocal_formula = ~ diffusion(x1),
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
   rep_space <- fit_space$tmb_obj$report()

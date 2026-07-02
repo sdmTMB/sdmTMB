@@ -127,7 +127,7 @@ test_that(".build_vertex_time_covariates rejects non-integer indices", {
   )
 })
 
-test_that(".build_covariate_diffusion_tmb_data returns term-covariate mapping", {
+test_that(".build_nonlocal_tmb_data returns term-covariate mapping", {
   A_st <- Matrix::Matrix(
     rbind(
       c(1, 0),
@@ -143,18 +143,18 @@ test_that(".build_covariate_diffusion_tmb_data returns term-covariate mapping", 
     year = c(1, 1, 2, 2)
   )
 
-  parsed <- suppressWarnings(.parse_covariate_diffusion_formula(
-    ~ space(x1) + time(x2)
+  parsed <- suppressWarnings(.parse_nonlocal_formula(
+    ~ diffusion(x1) + time_lag(x2)
   ))
-  parsed <- suppressWarnings(.validate_covariate_diffusion_terms(
+  parsed <- suppressWarnings(.validate_nonlocal_terms(
     parsed,
     data = dat,
     time = "year",
     multi_family = FALSE
   ))
 
-  out <- .build_covariate_diffusion_tmb_data(
-    covariate_diffusion = parsed,
+  out <- .build_nonlocal_tmb_data(
+    nonlocal_formula = parsed,
     data = dat,
     A_st = A_st,
     A_spatial_index = c(0L, 1L, 2L, 1L),
@@ -167,7 +167,7 @@ test_that(".build_covariate_diffusion_tmb_data returns term-covariate mapping", 
   expect_equal(dim(out$covariate_vertex_time), c(2L, 2L, 2L))
 })
 
-test_that("sdmTMB builds covariate_diffusion_data in fit path", {
+test_that("sdmTMB builds nonlocal_parsed in fit path", {
   dat <- data.frame(
     y = rnorm(8),
     x1 = rnorm(8),
@@ -186,15 +186,15 @@ test_that("sdmTMB builds covariate_diffusion_data in fit path", {
     time = "year",
     spatial = "off",
     spatiotemporal = "off",
-    covariate_diffusion = ~ space(x1) + time(x2),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
     do_fit = FALSE
   )
 
-  expect_true(!is.null(fit$covariate_diffusion_data))
-  expect_equal(fit$covariate_diffusion_data$n_terms, 2L)
-  expect_equal(fit$covariate_diffusion_data$n_covariates, 2L)
+  expect_true(!is.null(fit$nonlocal_parsed))
+  expect_equal(fit$nonlocal_parsed$n_terms, 2L)
+  expect_equal(fit$nonlocal_parsed$n_covariates, 2L)
   expect_equal(
-    dim(fit$covariate_diffusion_data$covariate_vertex_time),
+    dim(fit$nonlocal_parsed$covariate_vertex_time),
     c(ncol(fit$tmb_data$A_st), fit$tmb_data$n_t, 2L)
   )
 })

@@ -1,4 +1,4 @@
-simulate_covariate_diffusion_regression_data <- function(
+simulate_nonlocal_regression_data <- function(
   n_obs = 700,
   n_t = 6,
   cutoff = 0.08,
@@ -55,7 +55,7 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
   skip_on_cran()
   skip_on_ci()
 
-  sim <- simulate_covariate_diffusion_regression_data()
+  sim <- simulate_nonlocal_regression_data()
   dat <- sim$data
   mesh <- sim$mesh
 
@@ -69,7 +69,7 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x_space),
+    nonlocal_formula = ~ diffusion(x_space),
     control = ctrl
   )
 
@@ -81,7 +81,7 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ time(x_time),
+    nonlocal_formula = ~ time_lag(x_time),
     control = ctrl
   )
 
@@ -97,15 +97,15 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
   beta_time <- get_beta(fit_time)
 
   expect_equal(beta_space[["(Intercept)"]], 0.4815081, tolerance = 1e-4)
-  expect_equal(beta_space[["cov_diff_space_x_space"]], 0.3733943, tolerance = 1e-4)
+  expect_equal(beta_space[["nl_diffusion_x_space"]], 0.3733943, tolerance = 1e-4)
 
   expect_equal(beta_time[["(Intercept)"]], -0.1992140, tolerance = 1e-4)
-  expect_equal(beta_time[["cov_diff_time_x_time"]], 0.7224500, tolerance = 1e-4)
+  expect_equal(beta_time[["nl_time_lag_x_time"]], 0.7224500, tolerance = 1e-4)
 
   rep_space <- fit_space$tmb_obj$report()
   rep_time <- fit_time$tmb_obj$report()
 
-  expect_equal(rep_space$kappaS_dl[1], 10.206683946, tolerance = 1e-3)
-  expect_equal(rep_time$kappaT_dl[1], 0.001683076, tolerance = 1e-3)
+  expect_equal(rep_space$kappaS_nl[1], 10.206683946, tolerance = 1e-3)
+  expect_equal(rep_time$kappaT_nl[1], 0.001683076, tolerance = 1e-3)
   expect_equal(rep_time$rhoT[1], 0.001680248, tolerance = 1e-3)
 })

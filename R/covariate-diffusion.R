@@ -5,29 +5,28 @@
   methods::as(x, "dgCMatrix")
 }
 
-# FIXME: what is this doing?
-.extract_covariate_diffusion_term_exprs <- function(expr) {
+.extract_nonlocal_term_exprs <- function(expr) {
   if (is.call(expr)) {
     fn <- as.character(expr[[1]])
     if (identical(fn, "+")) {
       if (length(expr) == 2L) {
-        return(.extract_covariate_diffusion_term_exprs(expr[[2]]))
+        return(.extract_nonlocal_term_exprs(expr[[2]]))
       }
       if (length(expr) == 3L) {
         return(c(
-          .extract_covariate_diffusion_term_exprs(expr[[2]]),
-          .extract_covariate_diffusion_term_exprs(expr[[3]])
+          .extract_nonlocal_term_exprs(expr[[2]]),
+          .extract_nonlocal_term_exprs(expr[[3]])
         ))
       }
     }
     if (identical(fn, "(") && length(expr) == 2L) {
-      return(.extract_covariate_diffusion_term_exprs(expr[[2]]))
+      return(.extract_nonlocal_term_exprs(expr[[2]]))
     }
   }
   list(expr)
 }
 
-.append_covariate_diffusion_coef_columns <- function(X, coef_names) {
+.append_nonlocal_coef_columns <- function(X, coef_names) {
   if (!length(coef_names)) {
     return(X)
   }
@@ -47,33 +46,33 @@
   cbind(X, lag_cols)
 }
 
-.parse_covariate_diffusion_formula <- function(covariate_diffusion) {
-  if (is.null(covariate_diffusion)) {
+.parse_nonlocal_formula <- function(nonlocal_formula) {
+  if (is.null(nonlocal_formula)) {
     return(NULL)
   }
 
-  if (!inherits(covariate_diffusion, "formula")) {
-    cli_abort("`covariate_diffusion` must be `NULL` or a one-sided formula.")
+  if (!inherits(nonlocal_formula, "formula")) {
+    cli_abort("`nonlocal_formula` must be `NULL` or a one-sided formula.")
   }
 
-  if (length(covariate_diffusion) != 2L) {
-    cli_abort("`covariate_diffusion` must be a one-sided formula such as `~ space(x) + time(x)`.")
+  if (length(nonlocal_formula) != 2L) {
+    cli_abort("`nonlocal_formula` must be a one-sided formula such as `~ diffusion(x) + time_lag(x)`.")
   }
 
-  term_exprs <- .extract_covariate_diffusion_term_exprs(covariate_diffusion[[2]])
+  term_exprs <- .extract_nonlocal_term_exprs(nonlocal_formula[[2]])
   if (!length(term_exprs)) {
-    cli_abort("`covariate_diffusion` must include at least one lag term.")
+    cli_abort("`nonlocal_formula` must include at least one lag term.")
   }
 
-  allowed_wrappers <- c("space", "time")
+  allowed_wrappers <- c("diffusion", "time_lag")
 
   parsed_terms <- lapply(term_exprs, function(expr) {
     term_label <- paste(deparse(expr), collapse = "")
 
     if (!is.call(expr)) {
       cli_abort(c(
-        "Unsupported term in `covariate_diffusion`.",
-        "i" = "Terms must be wrapped in `space()` or `time()`.",
+        "Unsupported term in `nonlocal_formula`.",
+        "i" = "Terms must be wrapped in `diffusion()` or `time_lag()`.",
         "x" = "Problematic term: {.code {term_label}}"
       ))
     }
@@ -81,16 +80,16 @@
     wrapper <- as.character(expr[[1]])
     if (!wrapper %in% allowed_wrappers) {
       cli_abort(c(
-        "Unsupported wrapper in `covariate_diffusion`.",
-        "i" = "Allowed wrappers are `space()` and `time()`.",
+        "Unsupported wrapper in `nonlocal_formula`.",
+        "i" = "Allowed wrappers are `diffusion()` and `time_lag()`.",
         "x" = "Problematic term: {.code {term_label}}"
       ))
     }
 
     if (length(expr) != 2L || !is.symbol(expr[[2]])) {
       cli_abort(c(
-        "Unsupported `covariate_diffusion` term structure.",
-        "i" = "Use a bare variable name inside each wrapper, e.g. `space(x)`.",
+        "Unsupported `nonlocal_formula` term structure.",
+        "i" = "Use a bare variable name inside each wrapper, e.g. `diffusion(x)`.",
         "x" = "Problematic term: {.code {term_label}}"
       ))
     }
@@ -107,47 +106,47 @@
   if (any(duplicated_terms)) {
     dup_labels <- paste0(terms_df$component[duplicated_terms], "(", terms_df$variable[duplicated_terms], ")")
     cli_abort(c(
-      "Duplicate `covariate_diffusion` terms are not supported.",
+      "Duplicate `nonlocal_formula` terms are not supported.",
       "x" = "Duplicated term(s): {.code {paste(dup_labels, collapse = ', ')}}"
     ))
   }
 
   unique_covariates <- unique(terms_df$variable)
   terms_df$covariate_id <- match(terms_df$variable, unique_covariates)
-  terms_df$coef_name <- paste0("cov_diff_", terms_df$component, "_", make.names(terms_df$variable))
+  terms_df$coef_name <- paste0("nl_", terms_df$component, "_", make.names(terms_df$variable))
 
   list(
-    formula = covariate_diffusion,
+    formula = nonlocal_formula,
     terms = terms_df,
     covariates = unique_covariates,
-    needs_time = any(terms_df$component == "time")
+    needs_time = any(terms_df$component == "time_lag")
   )
 }
 
-.validate_covariate_diffusion_terms <- function(covariate_diffusion, data, time, multi_family) {
-  if (is.null(covariate_diffusion)) {
+.validate_nonlocal_terms <- function(nonlocal_formula, data, time, multi_family) {
+  if (is.null(nonlocal_formula)) {
     return(NULL)
   }
 
   if (isTRUE(multi_family)) {
-    cli_abort("`covariate_diffusion` is currently unsupported for multi-family models.")
+    cli_abort("`nonlocal_formula` is currently unsupported for multi-family models.")
   }
 
-  if (isTRUE(covariate_diffusion$needs_time) && is.null(time)) {
+  if (isTRUE(nonlocal_formula$needs_time) && is.null(time)) {
     cli_abort(
-      "Temporal `covariate_diffusion` terms require a `time` argument."
+      "Temporal `nonlocal_formula` terms require a `time` argument."
     )
   }
 
-  missing_covariates <- setdiff(covariate_diffusion$covariates, names(data))
+  missing_covariates <- setdiff(nonlocal_formula$covariates, names(data))
   if (length(missing_covariates)) {
     cli_abort(c(
-      "Missing covariate diffusion covariate(s) in `data`.",
+      "Missing nonlocal covariate(s) in `data`.",
       "x" = "Missing: {.code {paste(missing_covariates, collapse = ', ')}}"
     ))
   }
 
-  non_numeric <- covariate_diffusion$covariates[!vapply(covariate_diffusion$covariates, function(v) {
+  non_numeric <- nonlocal_formula$covariates[!vapply(nonlocal_formula$covariates, function(v) {
     is.numeric(data[[v]])
   }, logical(1L))]
 
@@ -158,7 +157,7 @@
     ))
   }
 
-  covariate_diffusion
+  nonlocal_formula
 }
 
 .build_vertex_time_covariates <- function(covariate_data,
@@ -278,67 +277,67 @@
   )
 }
 
-.prepare_covariate_diffusion_grid_inputs <- function(grid,
-                                                     covariate_diffusion,
+.prepare_nonlocal_grid_inputs <- function(grid,
+                                                     nonlocal_formula,
                                                      mesh,
                                                      xy_cols,
                                                      time,
                                                      time_df,
                                                      full_time_vec) {
   if (!inherits(grid, "data.frame")) {
-    cli_abort("`covariate_diffusion_data` must be `NULL` or a data frame.")
+    cli_abort("The nonlocal grid data must be `NULL` or a data frame.")
   }
   if (is.null(xy_cols) || length(xy_cols) != 2L) {
-    cli_abort("`covariate_diffusion_data` requires a mesh built with known `xy_cols` (e.g., from `make_mesh()`).")
+    cli_abort("The nonlocal grid data requires a mesh built with known `xy_cols` (e.g., from `make_mesh()`).")
   }
 
   missing_xy <- setdiff(xy_cols, names(grid))
   if (length(missing_xy)) {
     cli_abort(c(
-      "`covariate_diffusion_data` is missing required coordinate column(s).",
+      "The nonlocal grid data is missing required coordinate column(s).",
       "x" = "Missing: {.code {paste(missing_xy, collapse = ', ')}}"
     ))
   }
   non_numeric_xy <- xy_cols[!vapply(xy_cols, function(col) is.numeric(grid[[col]]), logical(1L))]
   if (length(non_numeric_xy)) {
     cli_abort(c(
-      "`covariate_diffusion_data` coordinates must be numeric.",
+      "The nonlocal grid data coordinates must be numeric.",
       "x" = "Non-numeric coordinate column(s): {.code {paste(non_numeric_xy, collapse = ', ')}}"
     ))
   }
   invalid_xy <- xy_cols[!vapply(xy_cols, function(col) all(is.finite(grid[[col]])), logical(1L))]
   if (length(invalid_xy)) {
     cli_abort(c(
-      "`covariate_diffusion_data` coordinates must be finite and cannot contain `NA` values.",
+      "The nonlocal grid data coordinates must be finite and cannot contain `NA` values.",
       "x" = "Invalid coordinate column(s): {.code {paste(invalid_xy, collapse = ', ')}}"
     ))
   }
 
-  missing_covariates <- setdiff(covariate_diffusion$covariates, names(grid))
+  missing_covariates <- setdiff(nonlocal_formula$covariates, names(grid))
   if (length(missing_covariates)) {
     cli_abort(c(
-      "`covariate_diffusion_data` is missing required covariate column(s).",
+      "The nonlocal grid data is missing required covariate column(s).",
       "x" = "Missing: {.code {paste(missing_covariates, collapse = ', ')}}"
     ))
   }
-  non_numeric <- covariate_diffusion$covariates[!vapply(covariate_diffusion$covariates, function(v) {
+  non_numeric <- nonlocal_formula$covariates[!vapply(nonlocal_formula$covariates, function(v) {
     is.numeric(grid[[v]])
   }, logical(1L))]
   if (length(non_numeric)) {
     cli_abort(c(
-      "`covariate_diffusion_data` covariates must be numeric.",
+      "The nonlocal grid data covariates must be numeric.",
       "x" = "Non-numeric covariate(s): {.code {paste(non_numeric, collapse = ', ')}}"
     ))
   }
 
-  if (isTRUE(covariate_diffusion$needs_time)) {
+  if (isTRUE(nonlocal_formula$needs_time)) {
     if (!time %in% names(grid)) {
-      cli_abort("`covariate_diffusion_data` is missing the time column {.code {time}}.")
+      cli_abort("The nonlocal grid data is missing the time column {.code {time}}.")
     }
     missing_slices <- setdiff(full_time_vec, grid[[time]])
     if (length(missing_slices)) {
       cli_abort(c(
-        "`covariate_diffusion_data` does not cover all fitted (+ `extra_time`) time slices.",
+        "The nonlocal grid data does not cover all fitted (+ `extra_time`) time slices.",
         "x" = "Missing time slice(s): {.code {paste(missing_slices, collapse = ', ')}}"
       ))
     }
@@ -359,19 +358,19 @@
   )
 }
 
-.build_covariate_diffusion_tmb_data <- function(covariate_diffusion,
+.build_nonlocal_tmb_data <- function(nonlocal_formula,
                                                 data,
                                                 A_st,
                                                 A_spatial_index,
                                                 year_i,
                                                 n_t) {
-  if (is.null(covariate_diffusion)) {
+  if (is.null(nonlocal_formula)) {
     return(NULL)
   }
 
   vertex_cov <- .build_vertex_time_covariates(
     covariate_data = data,
-    covariates = covariate_diffusion$covariates,
+    covariates = nonlocal_formula$covariates,
     A_st = A_st,
     year_i = year_i,
     A_spatial_index = A_spatial_index,
@@ -379,16 +378,16 @@
   )
   covariate_vertex_time <- vertex_cov$covariate_vertex_time
 
-  component_levels <- c("space", "time")
-  component_id <- match(covariate_diffusion$terms$component, component_levels)
-  terms_df <- covariate_diffusion$terms
-  covariates <- covariate_diffusion$covariates
+  component_levels <- c("diffusion", "time_lag")
+  component_id <- match(nonlocal_formula$terms$component, component_levels)
+  terms_df <- nonlocal_formula$terms
+  covariates <- nonlocal_formula$covariates
   covariate_has_spatial <- integer(length(covariates))
   covariate_has_temporal <- integer(length(covariates))
   for (i in seq_along(covariates)) {
     components <- terms_df$component[terms_df$variable == covariates[i]]
-    covariate_has_spatial[i] <- any(components == "space")
-    covariate_has_temporal[i] <- any(components == "time")
+    covariate_has_spatial[i] <- any(components == "diffusion")
+    covariate_has_temporal[i] <- any(components == "time_lag")
   }
 
   list(
@@ -396,19 +395,19 @@
     covariates = covariates,
     covariate_has_spatial = covariate_has_spatial,
     covariate_has_temporal = covariate_has_temporal,
-    term_component = covariate_diffusion$terms$component,
+    term_component = nonlocal_formula$terms$component,
     term_component_id = as.integer(component_id),
-    term_covariate_index = as.integer(covariate_diffusion$terms$covariate_id),
-    term_covariate_index0 = as.integer(covariate_diffusion$terms$covariate_id - 1L),
-    term_coef_name = covariate_diffusion$terms$coef_name,
+    term_covariate_index = as.integer(nonlocal_formula$terms$covariate_id),
+    term_covariate_index0 = as.integer(nonlocal_formula$terms$covariate_id - 1L),
+    term_coef_name = nonlocal_formula$terms$coef_name,
     n_vertices = vertex_cov$n_vertices,
     n_t = vertex_cov$n_t,
     n_covariates = length(covariates),
-    n_terms = nrow(covariate_diffusion$terms)
+    n_terms = nrow(nonlocal_formula$terms)
   )
 }
 
-.solve_covariate_diffusion_vertex_time <- function(component, vertex_time_input, M0, M1,
+.solve_nonlocal_vertex_time <- function(component, vertex_time_input, M0, M1,
                                                   kappaS, kappaT,
                                                   has_space = NULL,
                                                   has_time = NULL) {
@@ -432,11 +431,11 @@
     has_space <- isTRUE(has_space)
     has_time <- isTRUE(has_time)
     if (has_space && !has_time) {
-      component <- "space"
+      component <- "diffusion"
     } else if (has_time && !has_space) {
-      component <- "time"
+      component <- "time_lag"
     } else if (!has_space && !has_time) {
-      cli_abort("`component = \"combined\"` requires at least one fitted `space()` or `time()` term.")
+      cli_abort("`component = \"combined\"` requires at least one fitted `diffusion()` or `time_lag()` term.")
     } else {
       kappaS_scale <- 1 / (kappaS^2)
       kappaT_scale <- kappaT
@@ -452,7 +451,7 @@
     }
   }
 
-  if (component == "space") {
+  if (component == "diffusion") {
     kappaS_scale <- 1 / (kappaS^2)
     system_mat <- M0 + kappaS_scale * M1
     for (tt in seq_len(n_t)) {
@@ -462,7 +461,7 @@
     return(out)
   }
 
-  if (component == "time") {
+  if (component == "time_lag") {
     denom <- 1 + kappaT
     out[, 1L] <- vertex_time_input[, 1L] / denom
     if (n_t > 1L) {
@@ -476,7 +475,7 @@
   cli_abort("Unknown covariate-diffusion component in solver.")
 }
 
-.project_covariate_diffusion_vertex_time <- function(transformed_vertex_time,
+.project_nonlocal_vertex_time <- function(transformed_vertex_time,
                                                      A_st,
                                                      A_spatial_index,
                                                      year_i,
@@ -495,11 +494,11 @@
   out
 }
 
-.covariate_diffusion_predict_colnames <- function(term_coef_name) {
-  paste0("diffusion_cov_", sub("^cov_diff_", "", term_coef_name))
+.nonlocal_predict_colnames <- function(term_coef_name) {
+  term_coef_name
 }
 
-.compute_covariate_diffusion_term_values <- function(covariate_diffusion_data,
+.compute_nonlocal_term_values <- function(nonlocal_parsed,
                                                  covariate_vertex_time,
                                                  A_st,
                                                  A_spatial_index,
@@ -507,18 +506,18 @@
                                                  n_t,
                                                  M0,
                                                  M1,
-                                                 log_kappaS_dl,
-                                                 kappaT_dl_raw) {
-  if (is.null(covariate_diffusion_data)) {
+                                                 log_kappaS_nl,
+                                                 kappaT_nl_raw) {
+  if (is.null(nonlocal_parsed)) {
     return(NULL)
   }
-  n_terms <- covariate_diffusion_data$n_terms
+  n_terms <- nonlocal_parsed$n_terms
   if (is.null(n_terms) || n_terms < 1L) {
     return(NULL)
   }
-  n_covariates <- covariate_diffusion_data$n_covariates
-  if (length(log_kappaS_dl) != n_covariates ||
-      length(kappaT_dl_raw) != n_covariates) {
+  n_covariates <- nonlocal_parsed$n_covariates
+  if (length(log_kappaS_nl) != n_covariates ||
+      length(kappaT_nl_raw) != n_covariates) {
     cli_abort("Covariate diffusion parameter vectors did not match the expected number of lag covariates.")
   }
 
@@ -530,19 +529,19 @@
   }
 
   term_out <- matrix(0, nrow = length(A_spatial_index), ncol = n_terms)
-  colnames(term_out) <- .covariate_diffusion_predict_colnames(covariate_diffusion_data$term_coef_name)
+  colnames(term_out) <- .nonlocal_predict_colnames(nonlocal_parsed$term_coef_name)
 
   for (term_i in seq_len(n_terms)) {
-    component <- covariate_diffusion_data$term_component[[term_i]]
-    cov_i <- covariate_diffusion_data$term_covariate_index[[term_i]]
+    component <- nonlocal_parsed$term_component[[term_i]]
+    cov_i <- nonlocal_parsed$term_covariate_index[[term_i]]
     cov_slice <- matrix(
       covariate_vertex_time[, , cov_i],
       nrow = dim(covariate_vertex_time)[1],
       ncol = dim(covariate_vertex_time)[2]
     )
-    kappaS <- exp(log_kappaS_dl[[cov_i]])
-    kappaT <- kappaT_dl_raw[[cov_i]]
-    transformed_vertex_time <- .solve_covariate_diffusion_vertex_time(
+    kappaS <- exp(log_kappaS_nl[[cov_i]])
+    kappaT <- kappaT_nl_raw[[cov_i]]
+    transformed_vertex_time <- .solve_nonlocal_vertex_time(
       component = component,
       vertex_time_input = cov_slice,
       M0 = M0,
@@ -550,7 +549,7 @@
       kappaS = kappaS,
       kappaT = kappaT
     )
-    term_out[, term_i] <- .project_covariate_diffusion_vertex_time(
+    term_out[, term_i] <- .project_nonlocal_vertex_time(
       transformed_vertex_time = transformed_vertex_time,
       A_st = A_st,
       A_spatial_index = A_spatial_index,
@@ -562,7 +561,7 @@
   term_out
 }
 
-.dl_plot_extract_mesh <- function(mesh) {
+.nl_plot_extract_mesh <- function(mesh) {
   if (is.null(mesh$loc) || is.null(mesh$graph) || is.null(mesh$graph$tv)) {
     cli_abort("Could not find mesh vertices/triangles in `object$spde$mesh`.")
   }
@@ -580,7 +579,7 @@
   list(loc = loc, tv = tv, vertex_i = vertex_i)
 }
 
-.dl_plot_resolve_time <- function(object, component, time_value, n_steps,
+.nl_plot_resolve_time <- function(object, component, time_value, n_steps,
                                   allow_spatial_steps = FALSE) {
   n_t <- object$tmb_data$n_t
   if (is.null(n_t) || !length(n_t) || n_t < 1L) {
@@ -611,7 +610,7 @@
       ))
     }
   }
-  if (component == "space" && !isTRUE(allow_spatial_steps)) {
+  if (component == "diffusion" && !isTRUE(allow_spatial_steps)) {
     time_idx <- time_i
   } else {
     time_idx <- seq.int(time_i, min(n_t, time_i + n_steps - 1L))
@@ -622,7 +621,7 @@
   list(n_t = n_t, time_values = time_values, time_i = time_i, time_idx = time_idx)
 }
 
-.dl_plot_extract_kappas <- function(object, cov_i) {
+.nl_plot_extract_kappas <- function(object, cov_i) {
   if (!is.null(object$model) &&
       !is.null(object$model$par) &&
       !is.null(object$tmb_obj) &&
@@ -634,12 +633,12 @@
     cli_abort("Could not extract covariate-diffusion parameters from `object`.")
   }
   list(
-    kappaS = exp(params$log_kappaS_dl[cov_i]),
-    kappaT = params$kappaT_dl_raw[cov_i]
+    kappaS = exp(params$log_kappaS_nl[cov_i]),
+    kappaT = params$kappaT_nl_raw[cov_i]
   )
 }
 
-.dl_plot_context <- function(object, covariate, component, component_missing,
+.nl_plot_context <- function(object, covariate, component, component_missing,
                              time_value, n_steps, allow_spatial_steps,
                              function_name) {
   stopifnot(inherits(object, "sdmTMB"))
@@ -647,25 +646,25 @@
     cli_abort("`ggplot2` must be installed to use `{function_name}()`.")
   }
   if (isTRUE(component_missing)) {
-    cli_abort("`component` is required and must be one of `space`, `time`, or `combined`.")
+    cli_abort("`component` is required and must be one of `diffusion`, `time_lag`, or `combined`.")
   }
-  if (!component %in% c("space", "time", "combined")) {
-    cli_abort("`component` must be exactly one of `space`, `time`, or `combined`.")
+  if (!component %in% c("diffusion", "time_lag", "combined")) {
+    cli_abort("`component` must be exactly one of `diffusion`, `time_lag`, or `combined`.")
   }
-  if (is.null(object$covariate_diffusion_data)) {
-    cli_abort("`object` does not contain `covariate_diffusion_data`.")
+  if (is.null(object$nonlocal_parsed)) {
+    cli_abort("`object` does not contain `nonlocal_parsed`.")
   }
   if (!is.numeric(n_steps) || length(n_steps) != 1L || !is.finite(n_steps) || n_steps < 1L) {
     cli_abort("`n_steps` must be a single positive integer.")
   }
   n_steps <- as.integer(round(n_steps))
-  if (is.null(object$covariate_diffusion_parsed) ||
-      is.null(object$covariate_diffusion_parsed$terms) ||
-      nrow(object$covariate_diffusion_parsed$terms) == 0L) {
+  if (is.null(object$nonlocal_formula_parsed) ||
+      is.null(object$nonlocal_formula_parsed$terms) ||
+      nrow(object$nonlocal_formula_parsed$terms) == 0L) {
     cli_abort("`object` does not contain covariate-diffusion terms.")
   }
 
-  terms_df <- object$covariate_diffusion_parsed$terms
+  terms_df <- object$nonlocal_formula_parsed$terms
   covariates <- unique(terms_df$variable)
   if (is.null(covariate)) {
     if (length(covariates) != 1L) {
@@ -687,20 +686,20 @@
   if (component != "combined" && !component %in% components_for_covariate) {
     cli_abort(c(
       "Requested component/covariate term was not fitted.",
-      "x" = "No term `{component}({covariate})` in `object$covariate_diffusion`."
+      "x" = "No term `{component}({covariate})` in `object$nonlocal_formula`."
     ))
   }
-  component_for_time <- if (component == "combined" && !"time" %in% components_for_covariate) "space" else component
+  component_for_time <- if (component == "combined" && !"time_lag" %in% components_for_covariate) "diffusion" else component
 
-  mesh_info <- .dl_plot_extract_mesh(object$spde$mesh)
-  time_info <- .dl_plot_resolve_time(
+  mesh_info <- .nl_plot_extract_mesh(object$spde$mesh)
+  time_info <- .nl_plot_resolve_time(
     object, component_for_time, time_value, n_steps,
     allow_spatial_steps = allow_spatial_steps
   )
 
-  cov_i <- match(covariate, object$covariate_diffusion_data$covariates)
+  cov_i <- match(covariate, object$nonlocal_parsed$covariates)
   if (is.na(cov_i)) {
-    cli_abort("Internal mismatch: selected covariate not found in `covariate_diffusion_data$covariates`.")
+    cli_abort("Internal mismatch: selected covariate not found in `nonlocal_parsed$covariates`.")
   }
 
   xy_cols <- object$spde$xy_cols
@@ -710,15 +709,15 @@
     mesh_info = mesh_info,
     time_info = time_info,
     cov_i = cov_i,
-    kappas = .dl_plot_extract_kappas(object, cov_i),
-    has_space = as.logical(object$covariate_diffusion_data$covariate_has_spatial[cov_i]),
-    has_time = as.logical(object$covariate_diffusion_data$covariate_has_temporal[cov_i]),
+    kappas = .nl_plot_extract_kappas(object, cov_i),
+    has_space = as.logical(object$nonlocal_parsed$covariate_has_spatial[cov_i]),
+    has_time = as.logical(object$nonlocal_parsed$covariate_has_temporal[cov_i]),
     xlab = if (!is.null(xy_cols) && length(xy_cols) >= 2L) xy_cols[1] else "x",
     ylab = if (!is.null(xy_cols) && length(xy_cols) >= 2L) xy_cols[2] else "y"
   )
 }
 
-.dl_plot_transform_values <- function(x, value_transform) {
+.nl_plot_transform_values <- function(x, value_transform) {
   switch(value_transform,
     identity = x,
     sqrt = {
@@ -731,7 +730,7 @@
   )
 }
 
-.dl_plot_time_panels <- function(first_field, first_title, transformed_vertex_time,
+.nl_plot_time_panels <- function(first_field, first_title, transformed_vertex_time,
                                  time_i, time_idx, time_values) {
   panel_fields <- vector("list", length(time_idx) + 1L)
   panel_titles <- character(length(panel_fields))
@@ -750,7 +749,7 @@
   list(fields = panel_fields, titles = panel_titles)
 }
 
-.dl_plot_panel_dfs <- function(loc, tv, panel_fields, panel_titles, vertex_i,
+.nl_plot_panel_dfs <- function(loc, tv, panel_fields, panel_titles, vertex_i,
                                common_scale, value_transform) {
   n_tri <- nrow(tv)
   triangle_values <- vapply(panel_fields, function(v) {
@@ -781,7 +780,7 @@
     y = rep(loc[vertex_i, 2], length(panel_titles))
   )
 
-  triangle_df$value_plot <- .dl_plot_transform_values(triangle_df$value, value_transform)
+  triangle_df$value_plot <- .nl_plot_transform_values(triangle_df$value, value_transform)
   fill_name <- if (value_transform == "identity") "Value" else paste0("Value (", value_transform, ")")
   if (!isTRUE(common_scale)) {
     fill_name <- if (value_transform == "identity") "Relative value" else paste0("Relative value (", value_transform, ")")
@@ -806,7 +805,7 @@
   )
 }
 
-.dl_plot_ggplot <- function(triangle_df, point_df, fill_limits, fill_name, xlim, ylim, xlab, ylab) {
+.nl_plot_ggplot <- function(triangle_df, point_df, fill_limits, fill_name, xlim, ylim, xlab, ylab) {
   ggplot2::ggplot(
     triangle_df,
     ggplot2::aes(x = .data$x, y = .data$y, group = interaction(.data$panel, .data$tri))
@@ -844,11 +843,11 @@
 #' Values are plotted as colored mesh triangles, so no prediction grid is
 #' required.
 #'
-#' @param object A fitted [sdmTMB()] model with `covariate_diffusion`.
-#' @param covariate Optional covariate name from `covariate_diffusion`.
+#' @param object A fitted [sdmTMB()] model with `nonlocal_formula`.
+#' @param covariate Optional covariate name from `nonlocal_formula`.
 #'   Required when multiple lag covariates were fitted.
 #' @param component Covariate-diffusion component name. Must be one of
-#'   `"space"`, `"time"`, or `"combined"`. `"combined"`
+#'   `"diffusion"`, `"time_lag"`, or `"combined"`. `"combined"`
 #'   plots the joint response of all covariate-diffusion components fitted for
 #'   `covariate`.
 #' @param time_value Optional time slice to plot or use for the impulse. Supply
@@ -857,7 +856,7 @@
 #'   `time_value`.
 #' @param common_scale Should plotted panels share a common color scale?
 #'   Defaults to `TRUE` for `plot_diffused_covariate()` and `FALSE` for
-#'   `plot_diffusion_kernel()`. `component = "time"` alone likely needs
+#'   `plot_diffusion_kernel()`. `component = "time_lag"` alone likely needs
 #'   `common_scale = TRUE` to make sense.
 #' @param plot Should the plot be printed? Defaults to `TRUE`.
 #'
@@ -904,9 +903,9 @@
 #'   sigma_E = 0,
 #'   phi = 0.1,
 #'   B = c(0, 0.7, 0.6),
-#'   covariate_diffusion = ~ space(x1) + time(x1),
-#'   diffusion_kappaS = 4.4,
-#'   diffusion_rhoT = 0.3,
+#'   nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
+#'   lags_kappaS = 4.4,
+#'   lags_rhoT = 0.3,
 #'   seed = 123
 #' )
 #' dat$observed <- sim$observed
@@ -920,18 +919,18 @@
 #'   spatial = "off", # keeping example simple
 #'   spatiotemporal = "off", # keeping example simple
 #'   family = gaussian(),
-#'   covariate_diffusion = ~ space(x1) + time(x1) #<
+#'   nonlocal_formula = ~ diffusion(x1) + time_lag(x1) #<
 #' )
 #'
 #' plot_diffused_covariate(
 #'   fit,
 #'   covariate = "x1",
-#'   component = "space"
+#'   component = "diffusion"
 #' )
 #' plot_diffused_covariate(
 #'   fit,
 #'   covariate = "x1",
-#'   component = "time",
+#'   component = "time_lag",
 #'   time_value = 1,
 #'   n_steps = 2
 #' )
@@ -945,12 +944,12 @@
 #' plot_diffusion_kernel(
 #'   fit,
 #'   covariate = "x1",
-#'   component = "space"
+#'   component = "diffusion"
 #' )
 #' plot_diffusion_kernel(
 #'   fit,
 #'   covariate = "x1",
-#'   component = "time",
+#'   component = "time_lag",
 #'   time_value = 1,
 #'   n_steps = 2,
 #'   common_scale = TRUE #<
@@ -962,7 +961,7 @@
 #'   time_value = 1,
 #'   n_steps = 2
 #' )
-#' @rdname covariate_diffusion_plots
+#' @rdname nonlocal_formula_plots
 #' @export
 plot_diffused_covariate <- function(object,
                                     covariate = NULL,
@@ -971,7 +970,7 @@ plot_diffused_covariate <- function(object,
                                     n_steps = 1L,
                                     common_scale = TRUE,
                                     plot = TRUE) {
-  ctx <- .dl_plot_context(
+  ctx <- .nl_plot_context(
     object = object,
     covariate = covariate,
     component = if (missing(component)) NULL else component,
@@ -983,15 +982,15 @@ plot_diffused_covariate <- function(object,
   )
 
   original_vertex_time <- matrix(
-    object$covariate_diffusion_data$covariate_vertex_time[, , ctx$cov_i],
-    nrow = object$covariate_diffusion_data$n_vertices,
+    object$nonlocal_parsed$covariate_vertex_time[, , ctx$cov_i],
+    nrow = object$nonlocal_parsed$n_vertices,
     ncol = ctx$time_info$n_t
   )
 
   source_vertex_time <- matrix(0, nrow = nrow(original_vertex_time), ncol = ctx$time_info$n_t)
   source_vertex_time[, ctx$time_info$time_i] <- original_vertex_time[, ctx$time_info$time_i]
 
-  transformed_vertex_time <- .solve_covariate_diffusion_vertex_time(
+  transformed_vertex_time <- .solve_nonlocal_vertex_time(
     component = ctx$component,
     vertex_time_input = source_vertex_time,
     M0 = object$tmb_data$spde$M0,
@@ -1005,7 +1004,7 @@ plot_diffused_covariate <- function(object,
   time_values <- ctx$time_info$time_values
   time_i <- ctx$time_info$time_i
   time_idx <- ctx$time_info$time_idx
-  panels <- .dl_plot_time_panels(
+  panels <- .nl_plot_time_panels(
     first_field = original_vertex_time[, time_i],
     first_title = paste0("original (t=", time_values[time_i], ")"),
     transformed_vertex_time = transformed_vertex_time,
@@ -1013,7 +1012,7 @@ plot_diffused_covariate <- function(object,
     time_idx = time_idx,
     time_values = time_values
   )
-  panel <- .dl_plot_panel_dfs(
+  panel <- .nl_plot_panel_dfs(
     loc = ctx$mesh_info$loc,
     tv = ctx$mesh_info$tv,
     panel_fields = panels$fields,
@@ -1027,7 +1026,7 @@ plot_diffused_covariate <- function(object,
     x = numeric(0L),
     y = numeric(0L)
   )
-  plot_obj <- .dl_plot_ggplot(
+  plot_obj <- .nl_plot_ggplot(
     triangle_df = panel$triangle_df,
     point_df = point_df,
     fill_limits = panel$fill_limits,
@@ -1060,7 +1059,7 @@ plot_diffused_covariate <- function(object,
   ))
 }
 
-#' @rdname covariate_diffusion_plots
+#' @rdname nonlocal_formula_plots
 #' @export
 plot_diffusion_kernel <- function(object,
                                            covariate = NULL,
@@ -1069,7 +1068,7 @@ plot_diffusion_kernel <- function(object,
                                            n_steps = 3L,
                                            common_scale = FALSE,
                                            plot = TRUE) {
-  ctx <- .dl_plot_context(
+  ctx <- .nl_plot_context(
     object = object,
     covariate = covariate,
     component = if (missing(component)) NULL else component,
@@ -1089,7 +1088,7 @@ plot_diffusion_kernel <- function(object,
   impulse_vertex_time <- matrix(0, nrow = n_vertices, ncol = n_t)
   impulse_vertex_time[vertex_i, time_i] <- 1
 
-  transformed_vertex_time <- .solve_covariate_diffusion_vertex_time(
+  transformed_vertex_time <- .solve_nonlocal_vertex_time(
     component = ctx$component,
     vertex_time_input = impulse_vertex_time,
     M0 = object$tmb_data$spde$M0,
@@ -1100,7 +1099,7 @@ plot_diffusion_kernel <- function(object,
     has_time = ctx$has_time
   )
 
-  panels <- .dl_plot_time_panels(
+  panels <- .nl_plot_time_panels(
     first_field = impulse_vertex_time[, time_i],
     first_title = paste0("original (t=", time_values[time_i], ")"),
     transformed_vertex_time = transformed_vertex_time,
@@ -1108,13 +1107,13 @@ plot_diffusion_kernel <- function(object,
     time_idx = time_idx,
     time_values = time_values
   )
-  panel <- .dl_plot_panel_dfs(
+  panel <- .nl_plot_panel_dfs(
     ctx$mesh_info$loc, ctx$mesh_info$tv, panels$fields, panels$titles, vertex_i,
     common_scale = common_scale,
     value_transform = "identity"
   )
 
-  plot_obj <- .dl_plot_ggplot(
+  plot_obj <- .nl_plot_ggplot(
     triangle_df = panel$triangle_df,
     point_df = panel$point_df,
     fill_limits = panel$fill_limits,

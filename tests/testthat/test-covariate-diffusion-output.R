@@ -1,4 +1,4 @@
-make_dl_output_data <- function() {
+make_nl_output_data <- function() {
   set.seed(101)
   n_t <- 5L
   n_s <- 6L
@@ -18,14 +18,14 @@ make_dl_output_data <- function() {
   )
 }
 
-make_dl_output_mesh <- function(dat) {
+make_nl_output_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
 test_that("covariate diffusion fixed effects are named consistently in tidy/coef/vcov", {
   skip_on_cran()
-  dat <- make_dl_output_data()
-  mesh <- make_dl_output_mesh(dat)
+  dat <- make_nl_output_data()
+  mesh <- make_nl_output_mesh(dat)
 
   fit <- suppressWarnings(sdmTMB(
     y ~ x1 + x2,
@@ -35,11 +35,11 @@ test_that("covariate diffusion fixed effects are named consistently in tidy/coef
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1) + time(x2),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 
-  lag_terms <- fit$covariate_diffusion_data$term_coef_name
+  lag_terms <- fit$nonlocal_parsed$term_coef_name
   td <- tidy(fit, effects = "fixed", silent = TRUE)
   expect_true(all(lag_terms %in% td$term))
   expect_equal(length(unique(td$term)), nrow(td))
@@ -54,8 +54,8 @@ test_that("covariate diffusion fixed effects are named consistently in tidy/coef
 
 test_that("covariate diffusion ran_pars include lag scales and derived diagnostics", {
   skip_on_cran()
-  dat <- make_dl_output_data()
-  mesh <- make_dl_output_mesh(dat)
+  dat <- make_nl_output_data()
+  mesh <- make_nl_output_mesh(dat)
 
   fit <- suppressWarnings(sdmTMB(
     y ~ x1 + x2,
@@ -65,14 +65,14 @@ test_that("covariate diffusion ran_pars include lag scales and derived diagnosti
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1) + time(x1),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 
   td <- tidy(fit, effects = "ran_pars", silent = TRUE)
   expected_terms <- c(
-    "kappaS_cov_diff[x1]",
-    "kappaT_cov_diff[x1]",
+    "kappaS_nl[x1]",
+    "kappaT_nl[x1]",
     "rhoT[x1]",
     "MSD[x1]",
     "RMSD[x1]"
@@ -81,13 +81,13 @@ test_that("covariate diffusion ran_pars include lag scales and derived diagnosti
 
   rep_est <- as.list(fit$sd_report, "Estimate", report = TRUE)
   rep_se <- as.list(fit$sd_report, "Std. Error", report = TRUE)
-  expect_length(rep_est$kappaS_dl, 1L)
-  expect_length(rep_est$kappaT_dl, 1L)
+  expect_length(rep_est$kappaS_nl, 1L)
+  expect_length(rep_est$kappaT_nl, 1L)
   expect_length(rep_est$rhoT, 1L)
   expect_length(rep_est$MSD, 1L)
   expect_length(rep_est$RMSD, 1L)
-  expect_length(rep_se$kappaS_dl, 1L)
-  expect_length(rep_se$kappaT_dl, 1L)
+  expect_length(rep_se$kappaS_nl, 1L)
+  expect_length(rep_se$kappaT_nl, 1L)
   expect_length(rep_se$rhoT, 1L)
   expect_length(rep_se$MSD, 1L)
   expect_length(rep_se$RMSD, 1L)
@@ -95,8 +95,8 @@ test_that("covariate diffusion ran_pars include lag scales and derived diagnosti
 
 test_that("print output reports covariate diffusion structure and diagnostics", {
   skip_on_cran()
-  dat <- make_dl_output_data()
-  mesh <- make_dl_output_mesh(dat)
+  dat <- make_nl_output_data()
+  mesh <- make_nl_output_mesh(dat)
 
   fit <- suppressWarnings(sdmTMB(
     y ~ x1 + x2,
@@ -106,12 +106,12 @@ test_that("print output reports covariate diffusion structure and diagnostics", 
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1) + time(x1),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 
   out <- paste(capture.output(print(fit)), collapse = "\n")
-  expect_match(out, "Covariate diffusion: space\\(x1\\) \\+ time\\(x1\\)")
+  expect_match(out, "Nonlocal formula: diffusion\\(x1\\) \\+ time_lag\\(x1\\)")
   expect_match(out, "rhoT\\[x1\\]=")
   expect_match(out, "RMSD\\[x1\\]=")
 })

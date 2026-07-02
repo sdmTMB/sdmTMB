@@ -55,17 +55,17 @@ struct CovariateDiffusionContext {
 };
 
 enum CovariateDiffusionComponent {
-  dl_space = 0,
-  dl_time = 1
+  nl_space = 0,
+  nl_time = 1
 };
 
-inline bool dl_is_valid_component(int component) {
-  return component == dl_space ||
-    component == dl_time;
+inline bool nl_is_valid_component(int component) {
+  return component == nl_space ||
+    component == nl_time;
 }
 
 template <class Type>
-Eigen::Matrix<Type, Eigen::Dynamic, 1> dl_get_covariate_col(
+Eigen::Matrix<Type, Eigen::Dynamic, 1> nl_get_covariate_col(
     array<Type>& covariate_vertex_time, int cov_i, int t, int n_vertices) {
   Eigen::Matrix<Type, Eigen::Dynamic, 1> col(n_vertices);
   for (int v = 0; v < n_vertices; v++) col(v) = covariate_vertex_time(v, t, cov_i);
@@ -73,27 +73,27 @@ Eigen::Matrix<Type, Eigen::Dynamic, 1> dl_get_covariate_col(
 }
 
 template <class Type>
-bool dl_solve_transformed_vertex_time(
+bool nl_solve_transformed_vertex_time(
     int component,
     array<Type>& covariate_vertex_time,
     int cov_i,
     int n_vertices,
     int n_t,
-    const Eigen::SparseMatrix<Type>& M0_dl,
-    const Eigen::SparseMatrix<Type>& M1_dl,
+    const Eigen::SparseMatrix<Type>& M0_nl,
+    const Eigen::SparseMatrix<Type>& M1_nl,
     Type kappaS_scale,
-    Type kappaT_dl,
+    Type kappaT_nl,
     bool has_spatial_solver,
     Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> >& lu_spatial,
     Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic>& transformed_vertex_time) {
   transformed_vertex_time.setZero();
-  if (!dl_is_valid_component(component)) return false;
+  if (!nl_is_valid_component(component)) return false;
 
-  if (component == dl_space) {
+  if (component == nl_space) {
     if (!has_spatial_solver || lu_spatial.info() != Eigen::Success) return false;
     for (int t = 0; t < n_t; t++) {
       Eigen::Matrix<Type, Eigen::Dynamic, 1> rhs =
-        M0_dl * dl_get_covariate_col(covariate_vertex_time, cov_i, t, n_vertices);
+        M0_nl * nl_get_covariate_col(covariate_vertex_time, cov_i, t, n_vertices);
       Eigen::Matrix<Type, Eigen::Dynamic, 1> solved = lu_spatial.solve(rhs);
       if (lu_spatial.info() != Eigen::Success) return false;
       transformed_vertex_time.col(t) = solved;
@@ -101,15 +101,15 @@ bool dl_solve_transformed_vertex_time(
     return true;
   }
 
-  if (component == dl_time) {
-    Type denom = Type(1.0) + kappaT_dl;
+  if (component == nl_time) {
+    Type denom = Type(1.0) + kappaT_nl;
     for (int v = 0; v < n_vertices; v++) {
       transformed_vertex_time(v, 0) = covariate_vertex_time(v, 0, cov_i) / denom;
     }
     for (int t = 1; t < n_t; t++) {
       for (int v = 0; v < n_vertices; v++) {
         transformed_vertex_time(v, t) =
-          (covariate_vertex_time(v, t, cov_i) + kappaT_dl * transformed_vertex_time(v, t - 1)) / denom;
+          (covariate_vertex_time(v, t, cov_i) + kappaT_nl * transformed_vertex_time(v, t - 1)) / denom;
       }
     }
     return true;
@@ -119,7 +119,7 @@ bool dl_solve_transformed_vertex_time(
 }
 
 template <class Type>
-Eigen::Matrix<Type, Eigen::Dynamic, 1> dl_project_vertex_time_to_observations(
+Eigen::Matrix<Type, Eigen::Dynamic, 1> nl_project_vertex_time_to_observations(
     const Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic>& transformed_vertex_time,
     const Eigen::SparseMatrix<Type>& A_st,
     const vector<int>& A_spatial_index,
@@ -146,15 +146,15 @@ void add_covariate_diffusion_to_eta_fixed(
     matrix<Type>* term_values_out = nullptr) {
   if (ctx.n_terms <= 0) return;
   if (ctx.n_covariates <= 0) {
-    error("Distributed lag metadata error: n_covariates must be > 0 when n_terms > 0.");
+    error("Nonlocal metadata error: n_covariates must be > 0 when n_terms > 0.");
   }
   if (ctx.kappaS_by_covariate.size() != ctx.n_covariates ||
       ctx.kappaT_by_covariate.size() != ctx.n_covariates) {
-    error("Distributed lag parameter length mismatch with n_covariates.");
+    error("Nonlocal parameter length mismatch with n_covariates.");
   }
 
-  int n_vertices_dl = ctx.covariate_vertex_time.dim[0];
-  int n_t_dl = ctx.covariate_vertex_time.dim[1];
+  int n_vertices_nl = ctx.covariate_vertex_time.dim[0];
+  int n_t_nl = ctx.covariate_vertex_time.dim[1];
 
   // Determine required solvers/scales by scanning terms
   std::vector<int> cov_needs_spatial_scale(ctx.n_covariates, 0);
@@ -162,13 +162,13 @@ void add_covariate_diffusion_to_eta_fixed(
   for (int term = 0; term < ctx.n_terms; term++) {
     int component = ctx.term_component(term);
     int cov_i = ctx.term_covariate(term);
-    if (!dl_is_valid_component(component)) {
-      error("Distributed lag metadata error: invalid component code (expected spatial=0 or temporal=1).");
+    if (!nl_is_valid_component(component)) {
+      error("Nonlocal metadata error: invalid component code (expected spatial=0 or temporal=1).");
     }
     if (cov_i < 0 || cov_i >= ctx.n_covariates) {
-      error("Distributed lag metadata error: term covariate index out of bounds.");
+      error("Nonlocal metadata error: term covariate index out of bounds.");
     }
-    if (component == dl_space) {
+    if (component == nl_space) {
       cov_needs_spatial_scale[cov_i] = 1;
       cov_needs_spatial_solver[cov_i] = 1;
     }
@@ -191,22 +191,22 @@ void add_covariate_diffusion_to_eta_fixed(
     Eigen::SparseMatrix<Type> spatial_system = ctx.M0 + kappaS_scale(cov_i) * ctx.M1;
     lu_spatial_by_covariate[cov_i].compute(spatial_system);
     if (lu_spatial_by_covariate[cov_i].info() != Eigen::Success) {
-      error("Distributed lag sparse solve failed while factorizing spatial system (M0 + kappa^{-2} M1).");
+      error("Nonlocal sparse solve failed while factorizing spatial system (M0 + kappa^{-2} M1).");
     }
   }
 
-  int dl_coef_start = ctx.b_j.size() - ctx.n_terms;
+  int nl_coef_start = ctx.b_j.size() - ctx.n_terms;
   for (int term = 0; term < ctx.n_terms; term++) {
     int component = ctx.term_component(term);
     int cov_i = ctx.term_covariate(term);
 
-    Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> transformed_vertex_time(n_vertices_dl, n_t_dl);
-    bool solved = dl_solve_transformed_vertex_time(
+    Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic> transformed_vertex_time(n_vertices_nl, n_t_nl);
+    bool solved = nl_solve_transformed_vertex_time(
       component,
       ctx.covariate_vertex_time,
       cov_i,
-      n_vertices_dl,
-      n_t_dl,
+      n_vertices_nl,
+      n_t_nl,
       ctx.M0,
       ctx.M1,
       kappaS_scale(cov_i),
@@ -216,10 +216,10 @@ void add_covariate_diffusion_to_eta_fixed(
       transformed_vertex_time
     );
     if (!solved) {
-      error("Distributed lag sparse solve failed while transforming a lagged covariate.");
+      error("Nonlocal sparse solve failed while transforming a lagged covariate.");
     }
 
-    Eigen::Matrix<Type, Eigen::Dynamic, 1> term_i = dl_project_vertex_time_to_observations(
+    Eigen::Matrix<Type, Eigen::Dynamic, 1> term_i = nl_project_vertex_time_to_observations(
       transformed_vertex_time,
       ctx.A_st,
       ctx.A_spatial_index,
@@ -232,8 +232,8 @@ void add_covariate_diffusion_to_eta_fixed(
       term_values_out->col(term) = term_i;
     }
 
-    Type beta_dl = ctx.b_j(dl_coef_start + term);
-    for (int i = 0; i < ctx.n_i; i++) eta_fixed_i(i, ctx.model_col) += beta_dl * term_i(i);
+    Type beta_nl = ctx.b_j(nl_coef_start + term);
+    for (int i = 0; i < ctx.n_i; i++) eta_fixed_i(i, ctx.model_col) += beta_nl * term_i(i);
   }
 }
 

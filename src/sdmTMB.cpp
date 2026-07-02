@@ -284,8 +284,8 @@ Type objective_function<Type>::operator()()
   PARAMETER_ARRAY(ln_tau_Z);    // optional spatially varying covariate process
   PARAMETER_VECTOR(ln_tau_E);    // spatio-temporal process
   PARAMETER_ARRAY(ln_kappa);    // Matern parameter
-  PARAMETER_VECTOR(log_kappaS_dl);    // covariate diffusion spatial scale
-  PARAMETER_VECTOR(kappaT_dl_raw);    // covariate diffusion temporal scale
+  PARAMETER_VECTOR(log_kappaS_nl);    // covariate diffusion spatial scale
+  PARAMETER_VECTOR(kappaT_nl_raw);    // covariate diffusion temporal scale
 
   PARAMETER(thetaf);           // tweedie only
   PARAMETER(ln_student_df);    // student-t df (log(df - 1))
@@ -348,20 +348,20 @@ Type objective_function<Type>::operator()()
 
   // Covariate diffusion
   // Transform distributed-lag parameters onto the scales used by the solvers
-  if (log_kappaS_dl.size() != covariate_diffusion.n_covariates ||
-      kappaT_dl_raw.size() != covariate_diffusion.n_covariates) {
-    error("Distributed lag parameter vectors must have length `covariate_diffusion.n_covariates`.");
+  if (log_kappaS_nl.size() != covariate_diffusion.n_covariates ||
+      kappaT_nl_raw.size() != covariate_diffusion.n_covariates) {
+    error("Nonlocal parameter vectors must have length `covariate_diffusion.n_covariates`.");
   }
-  vector<Type> kappaS_dl_by_covariate(covariate_diffusion.n_covariates);
-  vector<Type> kappaT_dl_by_covariate(covariate_diffusion.n_covariates);
-  kappaS_dl_by_covariate.setZero();
-  kappaT_dl_by_covariate.setZero();
+  vector<Type> kappaS_nl_by_covariate(covariate_diffusion.n_covariates);
+  vector<Type> kappaT_nl_by_covariate(covariate_diffusion.n_covariates);
+  kappaS_nl_by_covariate.setZero();
+  kappaT_nl_by_covariate.setZero();
   for (int cov_i = 0; cov_i < covariate_diffusion.n_covariates; cov_i++) {
-    if (covariate_diffusion.has(cov_i, sdmTMB::dl_space) == 1) {
-      kappaS_dl_by_covariate(cov_i) = exp(log_kappaS_dl(cov_i));
+    if (covariate_diffusion.has(cov_i, sdmTMB::nl_space) == 1) {
+      kappaS_nl_by_covariate(cov_i) = exp(log_kappaS_nl(cov_i));
     }
-    if (covariate_diffusion.has(cov_i, sdmTMB::dl_time) == 1) {
-      kappaT_dl_by_covariate(cov_i) = kappaT_dl_raw(cov_i);
+    if (covariate_diffusion.has(cov_i, sdmTMB::nl_time) == 1) {
+      kappaT_nl_by_covariate(cov_i) = kappaT_nl_raw(cov_i);
     }
   }
 
@@ -844,8 +844,8 @@ Type objective_function<Type>::operator()()
   // Covariate diffusion
   // Add transformed covariate-diffusion columns to the fixed-effect predictor.
   matrix<Type> covariate_diffusion_values(n_i, covariate_diffusion.n_terms);
-  auto add_dl_obs_for_model = [&](const vector<Type>& b_model, int model_col) {
-    sdmTMB::CovariateDiffusionContext<Type> dl_ctx = {
+  auto add_nl_obs_for_model = [&](const vector<Type>& b_model, int model_col) {
+    sdmTMB::CovariateDiffusionContext<Type> nl_ctx = {
       covariate_diffusion.n_terms,
       covariate_diffusion.n_covariates,
       n_i,
@@ -858,18 +858,18 @@ Type objective_function<Type>::operator()()
       year_i,
       spde.M0,
       spde.M1,
-      kappaS_dl_by_covariate,
-      kappaT_dl_by_covariate,
+      kappaS_nl_by_covariate,
+      kappaT_nl_by_covariate,
       b_model,
       model_col
     };
     // The diffused term values themselves don't depend on which model's
     // coefficients are used, so only capture them once.
     sdmTMB::add_covariate_diffusion_to_eta_fixed(
-      eta_fixed_i, dl_ctx, model_col == 0 ? &covariate_diffusion_values : nullptr);
+      eta_fixed_i, nl_ctx, model_col == 0 ? &covariate_diffusion_values : nullptr);
   };
-  add_dl_obs_for_model(b_j, 0);
-  if (n_m > 1) add_dl_obs_for_model(b_j2, 1);
+  add_nl_obs_for_model(b_j, 0);
+  if (n_m > 1) add_nl_obs_for_model(b_j2, 1);
   REPORT(covariate_diffusion_values);
 
   // FIXME delta must be same in 2 components:
@@ -1380,8 +1380,8 @@ Type objective_function<Type>::operator()()
 
     // Repeat the diffusion transform for prediction data before adding offsets.
     matrix<Type> proj_covariate_diffusion_values(n_p, covariate_diffusion.n_terms);
-    auto add_dl_proj_for_model = [&](const vector<Type>& b_model, int model_col) {
-      sdmTMB::CovariateDiffusionContext<Type> dl_ctx = {
+    auto add_nl_proj_for_model = [&](const vector<Type>& b_model, int model_col) {
+      sdmTMB::CovariateDiffusionContext<Type> nl_ctx = {
         covariate_diffusion.n_terms,
         covariate_diffusion.n_covariates,
         n_p,
@@ -1394,18 +1394,18 @@ Type objective_function<Type>::operator()()
         proj_year,
         spde.M0,
         spde.M1,
-        kappaS_dl_by_covariate,
-        kappaT_dl_by_covariate,
+        kappaS_nl_by_covariate,
+        kappaT_nl_by_covariate,
         b_model,
         model_col
       };
       // The diffused term values themselves don't depend on which model's
       // coefficients are used, so only capture them once.
       sdmTMB::add_covariate_diffusion_to_eta_fixed(
-        proj_fe, dl_ctx, model_col == 0 ? &proj_covariate_diffusion_values : nullptr);
+        proj_fe, nl_ctx, model_col == 0 ? &proj_covariate_diffusion_values : nullptr);
     };
-    add_dl_proj_for_model(b_j, 0);
-    if (n_m > 1) add_dl_proj_for_model(b_j2, 1);
+    add_nl_proj_for_model(b_j, 0);
+    if (n_m > 1) add_nl_proj_for_model(b_j2, 1);
     REPORT(proj_covariate_diffusion_values);
     for (int m = 0; m < n_m; m++) {
       if (n_m == 1) proj_fe.col(m) += proj_offset_i;
@@ -1799,23 +1799,23 @@ Type objective_function<Type>::operator()()
     // Report only summaries for components present in the fitted diffusion terms.
     int n_S = 0, n_T = 0;
     for (int i = 0; i < covariate_diffusion.n_covariates; i++) {
-      if (covariate_diffusion.has(i, sdmTMB::dl_space) == 1) n_S++;
-      if (covariate_diffusion.has(i, sdmTMB::dl_time) == 1)      n_T++;
+      if (covariate_diffusion.has(i, sdmTMB::nl_space) == 1) n_S++;
+      if (covariate_diffusion.has(i, sdmTMB::nl_time) == 1)      n_T++;
     }
-    vector<Type> kappaS_dl(n_S), kappaT_dl(n_T);
+    vector<Type> kappaS_nl(n_S), kappaT_nl(n_T);
     vector<Type> rhoT(n_T), MSD(n_S), RMSD(n_S);
     int iS = 0, iT = 0;
     for (int i = 0; i < covariate_diffusion.n_covariates; i++) {
-      if (covariate_diffusion.has(i, sdmTMB::dl_time) == 1) {
-        kappaT_dl(iT) = kappaT_dl_by_covariate(i);
-        rhoT(iT) = kappaT_dl_by_covariate(i) / (Type(1.0) + kappaT_dl_by_covariate(i));
+      if (covariate_diffusion.has(i, sdmTMB::nl_time) == 1) {
+        kappaT_nl(iT) = kappaT_nl_by_covariate(i);
+        rhoT(iT) = kappaT_nl_by_covariate(i) / (Type(1.0) + kappaT_nl_by_covariate(i));
         iT++;
       }
-      if (covariate_diffusion.has(i, sdmTMB::dl_space) == 1) {
-        kappaS_dl(iS) = kappaS_dl_by_covariate(i);
-        Type m = Type(4.0) / (kappaS_dl_by_covariate(i) * kappaS_dl_by_covariate(i));
-        if (covariate_diffusion.has(i, sdmTMB::dl_time) == 1) {
-          Type r = kappaT_dl_by_covariate(i) / (Type(1.0) + kappaT_dl_by_covariate(i));
+      if (covariate_diffusion.has(i, sdmTMB::nl_space) == 1) {
+        kappaS_nl(iS) = kappaS_nl_by_covariate(i);
+        Type m = Type(4.0) / (kappaS_nl_by_covariate(i) * kappaS_nl_by_covariate(i));
+        if (covariate_diffusion.has(i, sdmTMB::nl_time) == 1) {
+          Type r = kappaT_nl_by_covariate(i) / (Type(1.0) + kappaT_nl_by_covariate(i));
           m = m * (Type(1.0) - r);
         }
         MSD(iS) = m;
@@ -1823,8 +1823,8 @@ Type objective_function<Type>::operator()()
         iS++;
       }
     }
-    if (n_S > 0)  { REPORT(kappaS_dl);  ADREPORT(kappaS_dl); REPORT(MSD); REPORT(RMSD); ADREPORT(MSD); ADREPORT(RMSD); }
-    if (n_T > 0)  { REPORT(kappaT_dl);  ADREPORT(kappaT_dl); REPORT(rhoT); ADREPORT(rhoT); }
+    if (n_S > 0)  { REPORT(kappaS_nl);  ADREPORT(kappaS_nl); REPORT(MSD); REPORT(RMSD); ADREPORT(MSD); ADREPORT(RMSD); }
+    if (n_T > 0)  { REPORT(kappaT_nl);  ADREPORT(kappaT_nl); REPORT(rhoT); ADREPORT(rhoT); }
   }
 
   // only ADREPORT phi if a family uses it:

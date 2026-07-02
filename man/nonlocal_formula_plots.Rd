@@ -26,13 +26,13 @@ plot_diffusion_kernel(
 )
 }
 \arguments{
-\item{object}{A fitted \code{\link[=sdmTMB]{sdmTMB()}} model with \code{covariate_diffusion}.}
+\item{object}{A fitted \code{\link[=sdmTMB]{sdmTMB()}} model with \code{nonlocal_formula}.}
 
-\item{covariate}{Optional covariate name from \code{covariate_diffusion}.
+\item{covariate}{Optional covariate name from \code{nonlocal_formula}.
 Required when multiple lag covariates were fitted.}
 
 \item{component}{Covariate-diffusion component name. Must be one of
-\code{"space"}, \code{"time"}, or \code{"combined"}. \code{"combined"}
+\code{"diffusion"}, \code{"time_lag"}, or \code{"combined"}. \code{"combined"}
 plots the joint response of all covariate-diffusion components fitted for
 \code{covariate}.}
 
@@ -44,7 +44,7 @@ either a modeled time value or a 1-based time index. Defaults to 1.}
 
 \item{common_scale}{Should plotted panels share a common color scale?
 Defaults to \code{TRUE} for \code{plot_diffused_covariate()} and \code{FALSE} for
-\code{plot_diffusion_kernel()}. \code{component = "time"} alone likely needs
+\code{plot_diffusion_kernel()}. \code{component = "time_lag"} alone likely needs
 \code{common_scale = TRUE} to make sense.}
 
 \item{plot}{Should the plot be printed? Defaults to \code{TRUE}.}
@@ -100,9 +100,9 @@ sim <- simulate_new(
   sigma_E = 0,
   phi = 0.1,
   B = c(0, 0.7, 0.6),
-  covariate_diffusion = ~ space(x1) + time(x1),
-  diffusion_kappaS = 4.4,
-  diffusion_rhoT = 0.3,
+  nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
+  lags_kappaS = 4.4,
+  lags_rhoT = 0.3,
   seed = 123
 )
 dat$observed <- sim$observed
@@ -116,18 +116,18 @@ fit <- sdmTMB(
   spatial = "off", # keeping example simple
   spatiotemporal = "off", # keeping example simple
   family = gaussian(),
-  covariate_diffusion = ~ space(x1) + time(x1) #<
+  nonlocal_formula = ~ diffusion(x1) + time_lag(x1) #<
 )
 
 plot_diffused_covariate(
   fit,
   covariate = "x1",
-  component = "space"
+  component = "diffusion"
 )
 plot_diffused_covariate(
   fit,
   covariate = "x1",
-  component = "time",
+  component = "time_lag",
   time_value = 1,
   n_steps = 2
 )
@@ -141,12 +141,12 @@ plot_diffused_covariate(
 plot_diffusion_kernel(
   fit,
   covariate = "x1",
-  component = "space"
+  component = "diffusion"
 )
 plot_diffusion_kernel(
   fit,
   covariate = "x1",
-  component = "time",
+  component = "time_lag",
   time_value = 1,
   n_steps = 2,
   common_scale = TRUE #<

@@ -100,15 +100,15 @@ NULL
 #'   factor predictors, if `spatial_varying` excludes the intercept (`~ 0` or `~
 #'   -1`), set `spatial = 'off'` to match. Structure must be shared in delta
 #'   models.
-#' @param covariate_diffusion An optional one-sided formula describing distributed
-#'   lag terms with `space()` or `time()` wrappers.
-#'   Example: `~ space(x) + time(x)`. Lag scale parameters
+#' @param nonlocal_formula An optional one-sided formula describing distributed
+#'   lag terms with `diffusion()` or `time_lag()` wrappers.
+#'   Example: `~ diffusion(x) + time_lag(x)`. Lag scale parameters
 #'   are estimated separately for each lag covariate.
-#' @param covariate_diffusion_data An optional data frame supplying the
-#'   `covariate_diffusion` covariate(s) at a different resolution and/or
+#' @param nonlocal_data An optional data frame supplying the
+#'   `nonlocal_formula` covariate(s) at a different resolution and/or
 #'   coverage than `data` (e.g., a finer grid, or one spanning `extra_time`
 #'   slices). Must contain the mesh `xy_cols`, the `time` column (if temporal
-#'   `covariate_diffusion` terms are used), and the diffusion covariate
+#'   `nonlocal_formula` terms are used), and the diffusion covariate
 #'   columns; must cover every fitted (+ `extra_time`) time slice. Defaults to
 #'   `NULL`, in which case `data` is used.
 #' @param weights A numeric vector representing optional likelihood weights for
@@ -618,8 +618,8 @@ sdmTMB <- function(
     anisotropy = FALSE,
     control = sdmTMBcontrol(),
     priors = sdmTMBpriors(),
-    covariate_diffusion = NULL,
-    covariate_diffusion_data = NULL,
+    nonlocal_formula = NULL,
+    nonlocal_data = NULL,
     knots = NULL,
     bayesian = FALSE,
     previous_fit = NULL,
@@ -628,7 +628,7 @@ sdmTMB <- function(
     predict_args = NULL,
     index_args = NULL,
     experimental = NULL) {
-  covariate_diffusion_data_arg <- covariate_diffusion_data
+  nonlocal_data_arg <- nonlocal_data
   mesh_missing <- missing(mesh)
   spatial_model <- match.arg(tolower(spatial_model[1L]), c("spde", "sar", "car"))
   if (mesh_missing && spatial_model %in% c("sar", "car")) {
@@ -808,18 +808,18 @@ sdmTMB <- function(
     }
   }
 
-  covariate_diffusion_parsed <- .parse_covariate_diffusion_formula(covariate_diffusion)
-  covariate_diffusion_parsed <- .validate_covariate_diffusion_terms(
-    covariate_diffusion_parsed,
+  nonlocal_formula_parsed <- .parse_nonlocal_formula(nonlocal_formula)
+  nonlocal_formula_parsed <- .validate_nonlocal_terms(
+    nonlocal_formula_parsed,
     data = data,
     time = time,
     multi_family = FALSE
   )
-  if (!is.null(covariate_diffusion_parsed) && mesh_missing) {
-    cli_abort("`mesh` must be supplied when using `covariate_diffusion`.")
+  if (!is.null(nonlocal_formula_parsed) && mesh_missing) {
+    cli_abort("`mesh` must be supplied when using `nonlocal_formula`.")
   }
-  if (!is.null(covariate_diffusion_data_arg) && is.null(covariate_diffusion_parsed)) {
-    cli_abort("`covariate_diffusion_data` was supplied but `covariate_diffusion` was not.")
+  if (!is.null(nonlocal_data_arg) && is.null(nonlocal_formula_parsed)) {
+    cli_abort("`nonlocal_data` was supplied but `nonlocal_formula` was not.")
   }
 
   if (is.null(time)) {
@@ -843,11 +843,11 @@ sdmTMB <- function(
   n_t <- nrow(time_df)
   year_i_data <- time_df$year_i[match(data[[time]], time_df$time_from_data)]
 
-  covariate_diffusion_grid_supplied <- !is.null(covariate_diffusion_data_arg)
-  if (covariate_diffusion_grid_supplied) {
-    covariate_diffusion_grid_inputs <- .prepare_covariate_diffusion_grid_inputs(
-      grid = covariate_diffusion_data_arg,
-      covariate_diffusion = covariate_diffusion_parsed,
+  nonlocal_grid_supplied <- !is.null(nonlocal_data_arg)
+  if (nonlocal_grid_supplied) {
+    nonlocal_grid_inputs <- .prepare_nonlocal_grid_inputs(
+      grid = nonlocal_data_arg,
+      nonlocal_formula = nonlocal_formula_parsed,
       mesh = spde$mesh,
       xy_cols = spde$xy_cols,
       time = time,
@@ -862,7 +862,7 @@ sdmTMB <- function(
     mesh_missing = mesh_missing,
     share_range = share_range,
     anisotropy = anisotropy,
-    covariate_diffusion = covariate_diffusion_parsed,
+    nonlocal_formula = nonlocal_formula_parsed,
     priors = priors,
     normalize = normalize,
     experimental = experimental,
@@ -920,9 +920,9 @@ sdmTMB <- function(
     spatiotemporal,
     time_varying,
     extra_time = extra_time,
-    covariate_diffusion_temporal = !is.null(covariate_diffusion_parsed) &&
-      isTRUE(covariate_diffusion_parsed$needs_time) &&
-      !covariate_diffusion_grid_supplied
+    nonlocal_temporal = !is.null(nonlocal_formula_parsed) &&
+      isTRUE(nonlocal_formula_parsed$needs_time) &&
+      !nonlocal_grid_supplied
   )
 
   spatial_varying_formula <- spatial_varying # save it
@@ -1267,45 +1267,45 @@ sdmTMB <- function(
   if (delta) y_i <- cbind(ifelse(y_i > 0, 1, 0), ifelse(y_i > 0, y_i, NA_real_))
   if (!delta) y_i <- matrix(y_i, ncol = 1L)
 
-  covariate_diffusion_data <- .build_covariate_diffusion_tmb_data(
-    covariate_diffusion = covariate_diffusion_parsed,
-    data = if (covariate_diffusion_grid_supplied) covariate_diffusion_grid_inputs$data else data,
-    A_st = if (covariate_diffusion_grid_supplied) covariate_diffusion_grid_inputs$A_st else A_st,
-    A_spatial_index = if (covariate_diffusion_grid_supplied) covariate_diffusion_grid_inputs$A_spatial_index else A_spatial_index,
-    year_i = if (covariate_diffusion_grid_supplied) covariate_diffusion_grid_inputs$year_i else year_i_data,
+  nonlocal_parsed <- .build_nonlocal_tmb_data(
+    nonlocal_formula = nonlocal_formula_parsed,
+    data = if (nonlocal_grid_supplied) nonlocal_grid_inputs$data else data,
+    A_st = if (nonlocal_grid_supplied) nonlocal_grid_inputs$A_st else A_st,
+    A_spatial_index = if (nonlocal_grid_supplied) nonlocal_grid_inputs$A_spatial_index else A_spatial_index,
+    year_i = if (nonlocal_grid_supplied) nonlocal_grid_inputs$year_i else year_i_data,
     n_t = n_t
   )
 
-  if (!is.null(covariate_diffusion_data)) {
+  if (!is.null(nonlocal_parsed)) {
     for (m in seq_len(n_m)) {
-      X_ij[[m]] <- .append_covariate_diffusion_coef_columns(
+      X_ij[[m]] <- .append_nonlocal_coef_columns(
         X = X_ij[[m]],
-        coef_names = covariate_diffusion_data$term_coef_name
+        coef_names = nonlocal_parsed$term_coef_name
       )
     }
-    covariate_diffusion_n_terms <- as.integer(covariate_diffusion_data$n_terms)
-    covariate_diffusion_n_covariates <- as.integer(covariate_diffusion_data$n_covariates)
-    covariate_diffusion_covariate_vertex_time <- covariate_diffusion_data$covariate_vertex_time
-    covariate_diffusion_covariate_has_spatial <- as.integer(covariate_diffusion_data$covariate_has_spatial)
-    covariate_diffusion_covariate_has_temporal <- as.integer(covariate_diffusion_data$covariate_has_temporal)
-    covariate_diffusion_term_component <- as.integer(covariate_diffusion_data$term_component_id - 1L)
-    covariate_diffusion_term_covariate <- as.integer(covariate_diffusion_data$term_covariate_index0)
+    nonlocal_n_terms <- as.integer(nonlocal_parsed$n_terms)
+    nonlocal_n_covariates <- as.integer(nonlocal_parsed$n_covariates)
+    nonlocal_covariate_vertex_time <- nonlocal_parsed$covariate_vertex_time
+    nonlocal_covariate_has_spatial <- as.integer(nonlocal_parsed$covariate_has_spatial)
+    nonlocal_covariate_has_temporal <- as.integer(nonlocal_parsed$covariate_has_temporal)
+    nonlocal_term_component <- as.integer(nonlocal_parsed$term_component_id - 1L)
+    nonlocal_term_covariate <- as.integer(nonlocal_parsed$term_covariate_index0)
   } else {
-    covariate_diffusion_n_terms <- 0L
-    covariate_diffusion_n_covariates <- 0L
-    covariate_diffusion_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
-    covariate_diffusion_covariate_has_spatial <- integer(0)
-    covariate_diffusion_covariate_has_temporal <- integer(0)
-    covariate_diffusion_term_component <- integer(0)
-    covariate_diffusion_term_covariate <- integer(0)
+    nonlocal_n_terms <- 0L
+    nonlocal_n_covariates <- 0L
+    nonlocal_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
+    nonlocal_covariate_has_spatial <- integer(0)
+    nonlocal_covariate_has_temporal <- integer(0)
+    nonlocal_term_component <- integer(0)
+    nonlocal_term_covariate <- integer(0)
   }
-  covariate_diffusion_tmb <- list(
-    n_terms = covariate_diffusion_n_terms,
-    n_covariates = covariate_diffusion_n_covariates,
-    covariate_vertex_time = covariate_diffusion_covariate_vertex_time,
+  nonlocal_tmb <- list(
+    n_terms = nonlocal_n_terms,
+    n_covariates = nonlocal_n_covariates,
+    covariate_vertex_time = nonlocal_covariate_vertex_time,
     proj_covariate_vertex_time = array(0, dim = c(1L, 1L, 1L)),
-    term_component = covariate_diffusion_term_component,
-    term_covariate = covariate_diffusion_term_covariate
+    term_component = nonlocal_term_component,
+    term_covariate = nonlocal_term_covariate
   )
 
   # TODO: make this cleaner
@@ -1335,7 +1335,7 @@ sdmTMB <- function(
     sim_obs = 1L,
     A_spatial_index = A_spatial_index,
     year_i = year_i_data,
-    covariate_diffusion = covariate_diffusion_tmb,
+    covariate_diffusion = nonlocal_tmb,
     ar1_fields = ar1_fields,
     simulate_t = rep(1L, n_t),
     rw_fields = rw_fields,
@@ -1430,8 +1430,8 @@ sdmTMB <- function(
     ln_tau_Z = matrix(0, n_z, n_m),
     ln_tau_E = rep(0, n_m),
     ln_kappa = matrix(0, 2L, n_m),
-    log_kappaS_dl = numeric(covariate_diffusion_n_covariates),
-    kappaT_dl_raw = numeric(covariate_diffusion_n_covariates),
+    log_kappaS_nl = numeric(nonlocal_n_covariates),
+    kappaT_nl_raw = numeric(nonlocal_n_covariates),
     # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
     thetaf = 0,
     ln_student_df = if (family$family[1] == "student") {
@@ -1470,7 +1470,7 @@ sdmTMB <- function(
   # Map off parameters not needed
   tmb_map <- map_all_params(tmb_params)
   tmb_map$b_j <- NULL
-  .make_covariate_diffusion_kappa_map <- function(has_component) {
+  .make_nonlocal_kappa_map <- function(has_component) {
     if (!length(has_component)) {
       return(factor(integer(0)))
     }
@@ -1545,8 +1545,8 @@ sdmTMB <- function(
     tmb_params$b_threshold <- if (thresh[[1]]$threshold_func == 2L) matrix(0, 3L, n_m) else matrix(0, 2L, n_m)
   }
 
-  tmb_map$log_kappaS_dl <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_spatial)
-  tmb_map$kappaT_dl_raw <- .make_covariate_diffusion_kappa_map(covariate_diffusion_covariate_has_temporal)
+  tmb_map$log_kappaS_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_spatial)
+  tmb_map$kappaT_nl_raw <- .make_nonlocal_kappa_map(nonlocal_covariate_has_temporal)
 
   tmb_random <- c()
   if (any(spatial == "on") && !omit_spatial_intercept) {
@@ -1628,28 +1628,28 @@ sdmTMB <- function(
     }
   }
 
-  .validate_covariate_diffusion_control_length <- function(x, param_name, control_name) {
-    if (length(x) == covariate_diffusion_n_covariates) return(invisible(NULL))
-    cov_text <- if (covariate_diffusion_n_covariates > 0L) {
-      paste(covariate_diffusion_data$covariates, collapse = ", ")
+  .validate_nonlocal_control_length <- function(x, param_name, control_name) {
+    if (length(x) == nonlocal_n_covariates) return(invisible(NULL))
+    cov_text <- if (nonlocal_n_covariates > 0L) {
+      paste(nonlocal_parsed$covariates, collapse = ", ")
     } else {
       "<none>"
     }
     cli_abort(c(
       paste0(
         "`control$", control_name, "$", param_name, "` must have length ",
-        covariate_diffusion_n_covariates, "."
+        nonlocal_n_covariates, "."
       ),
-      "i" = paste0("Covariate diffusion covariates (in order): ", cov_text, ".")
+      "i" = paste0("Nonlocal covariates (in order): ", cov_text, ".")
     ))
   }
-  dl_param_names <- c("log_kappaS_dl", "kappaT_dl_raw")
-  for (param_name in dl_param_names) {
+  nl_param_names <- c("log_kappaS_nl", "kappaT_nl_raw")
+  for (param_name in nl_param_names) {
     if (param_name %in% names(start)) {
-      .validate_covariate_diffusion_control_length(start[[param_name]], param_name, "start")
+      .validate_nonlocal_control_length(start[[param_name]], param_name, "start")
     }
     if (param_name %in% names(map)) {
-      .validate_covariate_diffusion_control_length(map[[param_name]], param_name, "map")
+      .validate_nonlocal_control_length(map[[param_name]], param_name, "map")
     }
   }
 
@@ -1791,10 +1791,10 @@ sdmTMB <- function(
       tmb_map = tmb_map,
       tmb_random = tmb_random,
       spatial_varying = spatial_varying,
-      covariate_diffusion = covariate_diffusion,
-      covariate_diffusion_parsed = covariate_diffusion_parsed,
-      covariate_diffusion_data = covariate_diffusion_data,
-      covariate_diffusion_grid_supplied = covariate_diffusion_grid_supplied,
+      nonlocal_formula = nonlocal_formula,
+      nonlocal_formula_parsed = nonlocal_formula_parsed,
+      nonlocal_parsed = nonlocal_parsed,
+      nonlocal_grid_supplied = nonlocal_grid_supplied,
       spatial = spatial_user,
       spatiotemporal = spatiotemporal,
       spatial_varying_formula = spatial_varying_formula,
@@ -2136,9 +2136,9 @@ set_limits <- function(tmb_obj, lower, upper, loc = NULL, spatial_model = 0L,
     .lower["ar1_phi"] <- stats::qlogis((-0.999 + 1) / 2)
     .upper["ar1_phi"] <- stats::qlogis((0.999 + 1) / 2)
   }
-  if ("kappaT_dl_raw" %in% names(tmb_obj$par) &&
-    !"kappaT_dl_raw" %in% names(lower)) {
-    .lower[names(.lower) == "kappaT_dl_raw"] <- -1 + 1e-6
+  if ("kappaT_nl_raw" %in% names(tmb_obj$par) &&
+    !"kappaT_nl_raw" %in% names(lower)) {
+    .lower[names(.lower) == "kappaT_nl_raw"] <- -1 + 1e-6
   }
   if ("logit_rho_sar" %in% names(tmb_obj$par) &&
     !"logit_rho_sar" %in% union(names(lower), names(upper))) {
@@ -2190,38 +2190,38 @@ parse_spatial_arg <- function(spatial) {
 }
 
 check_irregalar_time <- function(data, time, spatiotemporal, time_varying, extra_time,
-                                 covariate_diffusion_temporal = FALSE) {
+                                 nonlocal_temporal = FALSE) {
   has_ar1_rw <- any(spatiotemporal %in% c("ar1", "rw")) || !is.null(time_varying)
-  has_dl_temporal <- isTRUE(covariate_diffusion_temporal)
-  if (!(has_ar1_rw || has_dl_temporal)) return(invisible(NULL))
+  has_nl_temporal <- isTRUE(nonlocal_temporal)
+  if (!(has_ar1_rw || has_nl_temporal)) return(invisible(NULL))
 
   if (!is.numeric(data[[time]])) {
-    cli_abort("Time column should be integer or numeric if using AR(1), random walk, or temporal covariate-diffusion processes.")
+    cli_abort("Time column should be integer or numeric if using AR(1), random walk, or temporal nonlocal processes.")
   }
 
   ti_data <- sort(unique(data[[time]]))
   ti <- sort(union(ti_data, extra_time))
   irregular_fit <- length(unique(diff(ti))) > 1L
-  irregular_dl <- has_dl_temporal && length(unique(diff(ti_data))) > 1L
+  irregular_nl <- has_nl_temporal && length(unique(diff(ti_data))) > 1L
 
-  if (irregular_fit || irregular_dl) {
+  if (irregular_fit || irregular_nl) {
     missed <- find_missing_time(data[[time]])
     msg <- c(
-      "Detected irregular time spacing with an AR(1), random walk, or temporal covariate-diffusion process.",
+      "Detected irregular time spacing with an AR(1), random walk, or temporal nonlocal process.",
       if (has_ar1_rw) {
         "Consider filling in the missing time slices with `extra_time`."
       },
-      if (irregular_dl) {
+      if (irregular_nl) {
         c(
-          "For temporal `covariate_diffusion` terms, include rows in `data` for missing time slices so lag covariates are defined.",
-          "Using `extra_time` alone is not sufficient for temporal covariate diffusions."
+          "For temporal `nonlocal_formula` terms, include rows in `data` for missing time slices so lag covariates are defined.",
+          "Using `extra_time` alone is not sufficient for temporal nonlocal terms."
         )
       },
       if (length(missed)) {
         paste0("`extra_time = c(", paste(missed, collapse = ", "), ")`")
       }
     )
-    if (irregular_dl) cli_abort(msg) else cli_inform(msg)
+    if (irregular_nl) cli_abort(msg) else cli_inform(msg)
   }
 }
 

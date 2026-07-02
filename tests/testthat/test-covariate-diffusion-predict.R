@@ -1,4 +1,4 @@
-make_dl_predict_data <- function() {
+make_nl_predict_data <- function() {
   set.seed(101)
   n_t <- 5L
   n_s <- 6L
@@ -18,11 +18,11 @@ make_dl_predict_data <- function() {
   )
 }
 
-make_dl_predict_mesh <- function(dat) {
+make_nl_predict_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
-make_dl_predict_delta_data <- function() {
+make_nl_predict_delta_data <- function() {
   set.seed(202)
   n_t <- 5L
   n_s <- 6L
@@ -46,8 +46,8 @@ make_dl_predict_delta_data <- function() {
 test_that("covariate diffusion predict works for default and newdata pathways", {
   skip_on_cran()
 
-  dat <- make_dl_predict_data()
-  mesh <- make_dl_predict_mesh(dat)
+  dat <- make_nl_predict_data()
+  mesh <- make_nl_predict_mesh(dat)
 
   fit <- sdmTMB(
     y ~ x1 + x2,
@@ -57,7 +57,7 @@ test_that("covariate diffusion predict works for default and newdata pathways", 
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1) + time(x2),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
     control = sdmTMBcontrol(newton_loops = 0)
   )
 
@@ -66,9 +66,9 @@ test_that("covariate diffusion predict works for default and newdata pathways", 
   expect_equal(nrow(p_fit), nrow(dat))
   expect_equal(p_fit$est, p_new$est, tolerance = 1e-6)
   expect_equal(p_fit$est_non_rf, p_new$est_non_rf, tolerance = 1e-6)
-  expect_true(all(c("diffusion_cov_space_x1", "diffusion_cov_time_x2") %in% names(p_fit)))
-  expect_equal(p_fit$diffusion_cov_space_x1, p_new$diffusion_cov_space_x1, tolerance = 1e-6)
-  expect_equal(p_fit$diffusion_cov_time_x2, p_new$diffusion_cov_time_x2, tolerance = 1e-6)
+  expect_true(all(c("nl_diffusion_x1", "nl_time_lag_x2") %in% names(p_fit)))
+  expect_equal(p_fit$nl_diffusion_x1, p_new$nl_diffusion_x1, tolerance = 1e-6)
+  expect_equal(p_fit$nl_time_lag_x2, p_new$nl_time_lag_x2, tolerance = 1e-6)
 
   p_se <- predict(fit, newdata = dat, re_form = NA, se_fit = TRUE)
   expect_true("est_se" %in% names(p_se))
@@ -81,8 +81,8 @@ test_that("covariate diffusion predict works for default and newdata pathways", 
 test_that("covariate diffusion newdata covariate changes prediction direction when lag beta is fixed positive", {
   skip_on_cran()
 
-  dat <- make_dl_predict_data()
-  mesh <- make_dl_predict_mesh(dat)
+  dat <- make_nl_predict_data()
+  mesh <- make_nl_predict_mesh(dat)
 
   proto <- sdmTMB(
     y ~ 1,
@@ -92,11 +92,11 @@ test_that("covariate diffusion newdata covariate changes prediction direction wh
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ time(x1),
+    nonlocal_formula = ~ time_lag(x1),
     do_fit = FALSE
   )
 
-  lag_col <- proto$covariate_diffusion_data$term_coef_name
+  lag_col <- proto$nonlocal_parsed$term_coef_name
   lag_idx <- match(lag_col, colnames(proto$tmb_data$X_ij[[1]]))
   b_map <- seq_along(proto$tmb_params$b_j)
   b_map[lag_idx] <- NA_integer_
@@ -111,7 +111,7 @@ test_that("covariate diffusion newdata covariate changes prediction direction wh
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ time(x1),
+    nonlocal_formula = ~ time_lag(x1),
     control = sdmTMBcontrol(
       start = list(b_j = b_start),
       map = list(b_j = factor(b_map)),
@@ -127,16 +127,16 @@ test_that("covariate diffusion newdata covariate changes prediction direction wh
   p_low <- predict(fit, newdata = nd_low)
   p_high <- predict(fit, newdata = nd_high)
 
-  expect_true("diffusion_cov_time_x1" %in% names(p_low))
-  expect_gt(mean(p_high$diffusion_cov_time_x1 - p_low$diffusion_cov_time_x1), 0)
+  expect_true("nl_time_lag_x1" %in% names(p_low))
+  expect_gt(mean(p_high$nl_time_lag_x1 - p_low$nl_time_lag_x1), 0)
   expect_gt(mean(p_high$est - p_low$est), 0)
 })
 
 test_that("delta covariate diffusion in component 2 changes combined response predictions", {
   skip_on_cran()
 
-  dat <- make_dl_predict_delta_data()
-  mesh <- make_dl_predict_mesh(dat)
+  dat <- make_nl_predict_delta_data()
+  mesh <- make_nl_predict_mesh(dat)
 
   proto <- sdmTMB(
     y ~ 1,
@@ -146,11 +146,11 @@ test_that("delta covariate diffusion in component 2 changes combined response pr
     spatial = "off",
     spatiotemporal = "off",
     family = delta_gamma(),
-    covariate_diffusion = ~ time(x1),
+    nonlocal_formula = ~ time_lag(x1),
     do_fit = FALSE
   )
 
-  lag_col <- proto$covariate_diffusion_data$term_coef_name
+  lag_col <- proto$nonlocal_parsed$term_coef_name
   lag_idx1 <- match(lag_col, colnames(proto$tmb_data$X_ij[[1]]))
   lag_idx2 <- match(lag_col, colnames(proto$tmb_data$X_ij[[2]]))
 
@@ -172,7 +172,7 @@ test_that("delta covariate diffusion in component 2 changes combined response pr
     spatial = "off",
     spatiotemporal = "off",
     family = delta_gamma(),
-    covariate_diffusion = ~ time(x1),
+    nonlocal_formula = ~ time_lag(x1),
     control = sdmTMBcontrol(
       start = list(b_j = b_start1, b_j2 = b_start2),
       map = list(b_j = factor(b_map1), b_j2 = factor(b_map2)),
@@ -194,8 +194,8 @@ test_that("delta covariate diffusion in component 2 changes combined response pr
 test_that("temporal covariate diffusions require full modeled time coverage in newdata", {
   skip_on_cran()
 
-  dat <- make_dl_predict_data()
-  mesh <- make_dl_predict_mesh(dat)
+  dat <- make_nl_predict_data()
+  mesh <- make_nl_predict_mesh(dat)
 
   fit_time <- sdmTMB(
     y ~ x1 + x2,
@@ -205,7 +205,7 @@ test_that("temporal covariate diffusions require full modeled time coverage in n
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ time(x1),
+    nonlocal_formula = ~ time_lag(x1),
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 
@@ -223,7 +223,7 @@ test_that("temporal covariate diffusions require full modeled time coverage in n
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1),
+    nonlocal_formula = ~ diffusion(x1),
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 
@@ -236,9 +236,9 @@ test_that("temporal covariate diffusions require full modeled time coverage in n
 test_that("space-only covariate diffusion predict works without modeled time", {
   skip_on_cran()
 
-  dat <- make_dl_predict_data()
+  dat <- make_nl_predict_data()
   dat$year <- NULL
-  mesh <- make_dl_predict_mesh(dat)
+  mesh <- make_nl_predict_mesh(dat)
 
   fit <- sdmTMB(
     y ~ x1 + x2,
@@ -247,11 +247,11 @@ test_that("space-only covariate diffusion predict works without modeled time", {
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1),
+    nonlocal_formula = ~ diffusion(x1),
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 
   p <- predict(fit)
   expect_equal(nrow(p), nrow(dat))
-  expect_true("diffusion_cov_space_x1" %in% names(p))
+  expect_true("nl_diffusion_x1" %in% names(p))
 })

@@ -58,10 +58,10 @@
 #'   If specified, the predict function will return a matrix of a similar form
 #'   as if `nsim > 0` but representing Bayesian posterior samples from the Stan
 #'   model.
-#' @param covariate_diffusion_data An optional data frame overriding the
-#'   `covariate_diffusion` covariate field used at prediction (e.g., for a
+#' @param nonlocal_newdata An optional data frame overriding the
+#'   `nonlocal_formula` covariate field used at prediction (e.g., for a
 #'   counterfactual/scenario surface), with the same requirements as
-#'   `covariate_diffusion_data` in [sdmTMB()]. `newdata`'s x/y and time columns
+#'   `nonlocal_data` in [sdmTMB()]. `newdata`'s x/y and time columns
 #'   always determine *where* predictions are projected to; this argument only
 #'   controls where the underlying diffused covariate field comes from.
 #'   Defaults to `NULL`: if a grid was supplied at fit time, the fitted field
@@ -96,8 +96,8 @@
 #' * `omega_s`: Spatial random field (models consistent spatial patterns)
 #' * `zeta_s`: Spatially varying coefficient field (models how effects vary across space)
 #' * `epsilon_st`: Spatiotemporal random field (models spatial patterns that vary over time)
-#' * `diffusion_cov_*`: Covariate diffusion transformed covariate values (one column per
-#'   covariate-diffusion term; available when `covariate_diffusion` were fitted)
+#' * `nl_*`: Nonlocal transformed covariate values (one column per
+#'   nonlocal term; available when `nonlocal_formula` were fitted)
 #'
 #' If `return_tmb_object = TRUE` (and `nsim = 0` and `mcmc_samples = NULL`):
 #'
@@ -275,7 +275,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
   model = c(NA, 1, 2),
   offset = NULL,
   mcmc_samples = NULL,
-  covariate_diffusion_data = NULL,
+  nonlocal_newdata = NULL,
   return_tmb_object = FALSE,
   return_tmb_report = FALSE,
   return_tmb_data = FALSE,
@@ -359,18 +359,18 @@ predict.sdmTMB <- function(object, newdata = NULL,
   }
   tmb_data$do_predict <- 1L
   no_spatial <- as.logical(object$tmb_data$no_spatial)
-  has_covariate_diffusion <- !is.null(object$covariate_diffusion_data)
-  covariate_diffusion_uses_external_grid <-
-    !is.null(covariate_diffusion_data) || isTRUE(object$covariate_diffusion_grid_supplied)
+  has_nonlocal <- !is.null(object$nonlocal_parsed)
+  nonlocal_uses_external_grid <-
+    !is.null(nonlocal_newdata) || isTRUE(object$nonlocal_grid_supplied)
 
   if (!is.null(newdata)) {
-    needs_xy <- if (has_covariate_diffusion) TRUE else isFALSE(pop_pred) && !no_spatial && !is_areal
+    needs_xy <- if (has_nonlocal) TRUE else isFALSE(pop_pred) && !no_spatial && !is_areal
     if (any(!xy_cols %in% names(newdata)) && needs_xy)
       cli_abort(c("`xy_cols` (the column names for the x and y coordinates) are not in `newdata`.",
           "Did you miss specifying the argument `xy_cols` to match your data?",
           "The newer `make_mesh()` (vs. `make_spde()`) takes care of this for you."))
 
-    if (isFALSE(pop_pred) && !is_areal && (!no_spatial || has_covariate_diffusion)) {
+    if (isFALSE(pop_pred) && !is_areal && (!no_spatial || has_nonlocal)) {
       xy_orig <- object$data[,xy_cols]
       xy_nd <- newdata[,xy_cols]
       all_outside <- function(x1, x2) {
@@ -400,13 +400,13 @@ predict.sdmTMB <- function(object, newdata = NULL,
         "If you would like to predict on new time elements,",
         "see the `extra_time` argument in `?sdmTMB`.")
       )
-    if (has_covariate_diffusion &&
-      !is.null(object$covariate_diffusion_parsed) &&
-      isTRUE(object$covariate_diffusion_parsed$needs_time) &&
-      !covariate_diffusion_uses_external_grid &&
+    if (has_nonlocal &&
+      !is.null(object$nonlocal_formula_parsed) &&
+      isTRUE(object$nonlocal_formula_parsed$needs_time) &&
+      !nonlocal_uses_external_grid &&
       !setequal(new_data_time, original_time)) {
       cli_abort(c(
-        "Temporal covariate-diffusion prediction currently requires full time coverage in `newdata`.",
+        "Temporal nonlocal prediction currently requires full time coverage in `newdata`.",
         "i" = "Include exactly the same time values used in the fitted model."
       ))
     }
@@ -449,7 +449,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
           dims = c(nrow(newdata), object$spde$n_s)
         )
       }
-    } else if (!no_spatial || has_covariate_diffusion) {
+    } else if (!no_spatial || has_nonlocal) {
       if (requireNamespace("dplyr", quietly = TRUE)) { # faster
         unique_newdata <- dplyr::distinct(newdata[, xy_cols, drop = FALSE])
       } else {
@@ -591,15 +591,15 @@ predict.sdmTMB <- function(object, newdata = NULL,
       mf <- model.frame(Terms, newdata, xlev = object$xlevels[[i]])
       proj_X_ij[[i]] <- model.matrix(Terms, mf, contrasts.arg = object$contrasts[[i]])
     }
-    if (has_covariate_diffusion) {
-      proj_X_ij[[1]] <- .append_covariate_diffusion_coef_columns(
+    if (has_nonlocal) {
+      proj_X_ij[[1]] <- .append_nonlocal_coef_columns(
         X = proj_X_ij[[1]],
-        coef_names = object$covariate_diffusion_data$term_coef_name
+        coef_names = object$nonlocal_parsed$term_coef_name
       )
       if (isTRUE(object$family$delta)) {
-        proj_X_ij[[2]] <- .append_covariate_diffusion_coef_columns(
+        proj_X_ij[[2]] <- .append_nonlocal_coef_columns(
           X = proj_X_ij[[2]],
-          coef_names = object$covariate_diffusion_data$term_coef_name
+          coef_names = object$nonlocal_parsed$term_coef_name
         )
       }
     }
@@ -681,42 +681,42 @@ predict.sdmTMB <- function(object, newdata = NULL,
     tmb_data$exclude_RE <- exclude_RE
     tmb_data$proj_spatial_index <- newdata$sdm_spatial_id
     tmb_data$covariate_diffusion$proj_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
-    if (has_covariate_diffusion) {
-      if (!is.null(covariate_diffusion_data)) {
-        # override grid: rebuild the field from the supplied covariate_diffusion_data
-        override_grid_inputs <- .prepare_covariate_diffusion_grid_inputs(
-          grid = covariate_diffusion_data,
-          covariate_diffusion = object$covariate_diffusion_parsed,
+    if (has_nonlocal) {
+      if (!is.null(nonlocal_newdata)) {
+        # override grid: rebuild the field from the supplied nonlocal_newdata
+        override_grid_inputs <- .prepare_nonlocal_grid_inputs(
+          grid = nonlocal_newdata,
+          nonlocal_formula = object$nonlocal_formula_parsed,
           mesh = object$spde$mesh,
           xy_cols = object$spde$xy_cols,
           time = object$time,
           time_df = object$time_lu,
           full_time_vec = object$time_lu$time_from_data
         )
-        proj_dl_data <- .build_covariate_diffusion_tmb_data(
-          covariate_diffusion = object$covariate_diffusion_parsed,
+        proj_nonlocal_data <- .build_nonlocal_tmb_data(
+          nonlocal_formula = object$nonlocal_formula_parsed,
           data = override_grid_inputs$data,
           A_st = override_grid_inputs$A_st,
           A_spatial_index = override_grid_inputs$A_spatial_index,
           year_i = override_grid_inputs$year_i,
           n_t = tmb_data$n_t
         )
-        tmb_data$covariate_diffusion$proj_covariate_vertex_time <- proj_dl_data$covariate_vertex_time
-      } else if (covariate_diffusion_uses_external_grid) {
+        tmb_data$covariate_diffusion$proj_covariate_vertex_time <- proj_nonlocal_data$covariate_vertex_time
+      } else if (nonlocal_uses_external_grid) {
         # reuse the fitted field: same mesh vertices, all time slices already present
         tmb_data$covariate_diffusion$proj_covariate_vertex_time <-
-          object$covariate_diffusion_data$covariate_vertex_time
+          object$nonlocal_parsed$covariate_vertex_time
       } else {
         # no grid was used at fit: rebuild the field from newdata, as before
-        proj_dl_data <- .build_covariate_diffusion_tmb_data(
-          covariate_diffusion = object$covariate_diffusion_parsed,
+        proj_nonlocal_data <- .build_nonlocal_tmb_data(
+          nonlocal_formula = object$nonlocal_formula_parsed,
           data = nd,
           A_st = proj_mesh,
           A_spatial_index = nd$sdm_spatial_id,
           year_i = tmb_data$proj_year,
           n_t = tmb_data$n_t
         )
-        tmb_data$covariate_diffusion$proj_covariate_vertex_time <- proj_dl_data$covariate_vertex_time
+        tmb_data$covariate_diffusion$proj_covariate_vertex_time <- proj_nonlocal_data$covariate_vertex_time
       }
     }
     tmb_data$proj_Zs <- sm$Zs
@@ -890,11 +890,11 @@ predict.sdmTMB <- function(object, newdata = NULL,
     lp <- new_tmb_obj$env$last.par.best
     r <- new_tmb_obj$report(lp)
     if (return_tmb_report) return(r)
-    if (has_covariate_diffusion) {
-      dl_term_values <- r$proj_covariate_diffusion_values
-      colnames(dl_term_values) <- .covariate_diffusion_predict_colnames(
-        object$covariate_diffusion_data$term_coef_name)
-      nd <- cbind(nd, as.data.frame(dl_term_values))
+    if (has_nonlocal) {
+      nl_term_values <- r$proj_covariate_diffusion_values
+      colnames(nl_term_values) <- .nonlocal_predict_colnames(
+        object$nonlocal_parsed$term_coef_name)
+      nd <- cbind(nd, as.data.frame(nl_term_values))
     }
 
     if (isFALSE(pop_pred)) {
@@ -1061,11 +1061,11 @@ predict.sdmTMB <- function(object, newdata = NULL,
     lp <- object$tmb_obj$env$last.par.best
     # object$tmb_obj$fn(lp) # call once to update internal structures?
     r <- object$tmb_obj$report(lp)
-    if (has_covariate_diffusion) {
-      dl_term_values <- r$covariate_diffusion_values
-      colnames(dl_term_values) <- .covariate_diffusion_predict_colnames(
-        object$covariate_diffusion_data$term_coef_name)
-      nd <- cbind(nd, as.data.frame(dl_term_values))
+    if (has_nonlocal) {
+      nl_term_values <- r$covariate_diffusion_values
+      colnames(nl_term_values) <- .nonlocal_predict_colnames(
+        object$nonlocal_parsed$term_coef_name)
+      nd <- cbind(nd, as.data.frame(nl_term_values))
     }
 
     nd$est <- r$eta_i[,1] # DELTA FIXME

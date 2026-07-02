@@ -675,7 +675,7 @@ test_that("Deviance residuals match single-model residuals", {
   )
 })
 
-make_cv_covariate_diffusion_data <- function() {
+make_cv_nonlocal_data <- function() {
   set.seed(303)
   n_t <- 4L
   n_s <- 5L
@@ -697,7 +697,7 @@ make_cv_covariate_diffusion_data <- function() {
 test_that("Cross validation handles covariate diffusion under year-based folds", {
   skip_on_cran()
 
-  dat <- make_cv_covariate_diffusion_data()
+  dat <- make_cv_nonlocal_data()
   mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.2)
   fold_ids <- as.integer(factor(dat$year))
 
@@ -723,7 +723,7 @@ test_that("Cross validation handles covariate diffusion under year-based folds",
     spatial = "off",
     spatiotemporal = "off",
     parallel = FALSE,
-    covariate_diffusion = ~ time(x1),
+    nonlocal_formula = ~ time_lag(x1),
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 
@@ -738,7 +738,7 @@ test_that("Cross validation handles covariate diffusion under year-based folds",
     spatial = "off",
     spatiotemporal = "off",
     parallel = FALSE,
-    covariate_diffusion = ~ space(x1),
+    nonlocal_formula = ~ diffusion(x1),
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 

@@ -181,8 +181,8 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   .formula <- remove_s_and_t2(.formula)
   if (!"mgcv" %in% names(x)) x[["mgcv"]] <- FALSE
   fe_names <- colnames(model.matrix(.formula, x$data))
-  if (!is.null(x$covariate_diffusion_data)) {
-    fe_names <- c(fe_names, x$covariate_diffusion_data$term_coef_name)
+  if (!is.null(x$nonlocal_parsed)) {
+    fe_names <- c(fe_names, x$nonlocal_parsed$term_coef_name)
   }
 
   b_j <- est$b_j[!fe_names == "offset", drop = TRUE]
@@ -372,13 +372,13 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     ii <- ii + 1
   }
 
-  add_covariate_diffusion_parameter <- function(term_name, covariate_mask_name,
+  add_nonlocal_parameter <- function(term_name, covariate_mask_name,
                                                 display_name = term_name) {
-    if (is.null(x$covariate_diffusion_data) || !length(x$covariate_diffusion_data$covariates)) {
+    if (is.null(x$nonlocal_parsed) || !length(x$nonlocal_parsed$covariates)) {
       return(NULL)
     }
-    covariates <- x$covariate_diffusion_data$covariates
-    keep <- x$covariate_diffusion_data[[covariate_mask_name]]
+    covariates <- x$nonlocal_parsed$covariates
+    keep <- x$nonlocal_parsed[[covariate_mask_name]]
     if (is.null(keep) || length(keep) != length(covariates)) {
       return(NULL)
     }
@@ -402,21 +402,21 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     )
     out[keep_idx, , drop = FALSE]
   }
-  covariate_diffusion_term_masks <- list(
-    list(term_name = "kappaS_dl", display_name = "kappaS_cov_diff", covariate_mask_name = "covariate_has_spatial"),
-    list(term_name = "kappaT_dl", display_name = "kappaT_cov_diff", covariate_mask_name = "covariate_has_temporal"),
+  nonlocal_term_masks <- list(
+    list(term_name = "kappaS_nl", display_name = "kappaS_nl", covariate_mask_name = "covariate_has_spatial"),
+    list(term_name = "kappaT_nl", display_name = "kappaT_nl", covariate_mask_name = "covariate_has_temporal"),
     list(term_name = "rhoT", display_name = "rhoT", covariate_mask_name = "covariate_has_temporal"),
     list(term_name = "MSD", display_name = "MSD", covariate_mask_name = "covariate_has_spatial"),
     list(term_name = "RMSD", display_name = "RMSD", covariate_mask_name = "covariate_has_spatial")
   )
-  for (term_info in covariate_diffusion_term_masks) {
-    term_df <- add_covariate_diffusion_parameter(
+  for (term_info in nonlocal_term_masks) {
+    term_df <- add_nonlocal_parameter(
       term_info$term_name,
       term_info$covariate_mask_name,
       term_info$display_name
     )
     if (!is.null(term_df)) {
-      out_re[[paste0("covariate_diffusion_", term_info$display_name)]] <- term_df
+      out_re[[paste0("nonlocal_", term_info$display_name)]] <- term_df
     }
   }
 

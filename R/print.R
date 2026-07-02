@@ -41,19 +41,19 @@ print_model_info <- function(x) {
 
   mesh <- paste0("Mesh: ", extract_call_name(x$call$mesh), " (", covariance, " covariance)\n")
   data <- paste0("Data: ", extract_call_name(x$call$data), "\n")
-  covariate_diffusion <- NULL
-  if (!is.null(x$covariate_diffusion_parsed) &&
-      !is.null(x$covariate_diffusion_parsed$terms) &&
-      nrow(x$covariate_diffusion_parsed$terms) > 0L) {
-    dl_terms <- x$covariate_diffusion_parsed$terms
-    dl_labels <- paste0(dl_terms$component, "(", dl_terms$variable, ")")
-    covariate_diffusion <- paste0("Covariate diffusion: ", paste(dl_labels, collapse = " + "), "\n")
-  } else if ("covariate_diffusion" %in% names(x$call)) {
-    dl_name <- extract_call_name(x$call$covariate_diffusion)
-    if (!is.null(dl_name) && dl_name != "NULL") {
-      covariate_diffusion <- paste0("Covariate diffusion: ", dl_name, "\n")
-      covariate_diffusion <- gsub('\\"', "", covariate_diffusion)
-      covariate_diffusion <- gsub("\\'", "", covariate_diffusion)
+  nonlocal_formula <- NULL
+  if (!is.null(x$nonlocal_formula_parsed) &&
+      !is.null(x$nonlocal_formula_parsed$terms) &&
+      nrow(x$nonlocal_formula_parsed$terms) > 0L) {
+    nl_terms <- x$nonlocal_formula_parsed$terms
+    nl_labels <- paste0(nl_terms$component, "(", nl_terms$variable, ")")
+    nonlocal_formula <- paste0("Nonlocal formula: ", paste(nl_labels, collapse = " + "), "\n")
+  } else if ("nonlocal_formula" %in% names(x$call)) {
+    nl_name <- extract_call_name(x$call$nonlocal_formula)
+    if (!is.null(nl_name) && nl_name != "NULL") {
+      nonlocal_formula <- paste0("Nonlocal formula: ", nl_name, "\n")
+      nonlocal_formula <- gsub('\\"', "", nonlocal_formula)
+      nonlocal_formula <- gsub("\\'", "", nonlocal_formula)
     }
   }
 
@@ -85,7 +85,7 @@ print_model_info <- function(x) {
     family1,
     family2,
     overall_family,
-    covariate_diffusion,
+    nonlocal_formula,
     criterion,
     covariance
   )
@@ -452,7 +452,7 @@ print_other_parameters <- function(x, m = 1L) {
     }
     a
   }
-  covariate_diffusion_term_text <- function(term_prefix = "", pretext = "") {
+  nonlocal_term_text <- function(term_prefix = "", pretext = "") {
     idx <- grepl(paste0("^", term_prefix, "\\["), b$term)
     if (!any(idx)) {
       return("")
@@ -483,8 +483,8 @@ print_other_parameters <- function(x, m = 1L) {
   rho <- get_term_text("rho", "Spatiotemporal AR1 correlation (rho)")
   rho_sar <- get_term_text("rho_sar", "SAR spatial dependence")
   alpha_car <- get_term_text("alpha_car", "CAR spatial dependence")
-  rhoT <- covariate_diffusion_term_text("rhoT", "Covariate diffusion temporal persistence")
-  RMSD <- covariate_diffusion_term_text("RMSD", "Covariate diffusion RMSD")
+  rhoT <- nonlocal_term_text("rhoT", "Nonlocal temporal persistence")
+  RMSD <- nonlocal_term_text("RMSD", "Nonlocal RMSD")
 
   if ("sigma_Z" %in% b$term) {
     # tidy() takes sigma_Z from the sdreport,
@@ -518,7 +518,7 @@ print_header <- function(x) {
   cat(info$mesh)
   cat(info$time)
   cat(info$data)
-  cat(info$covariate_diffusion)
+  cat(info$nonlocal_formula)
   cat(info$overall_family)
 }
 

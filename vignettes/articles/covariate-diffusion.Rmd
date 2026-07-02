@@ -42,7 +42,7 @@ One option is to fit models using covariates with different levels of smoothing 
 
 Users are encouraged to read and cite @lindmark2025 for spatial models and @thorson2026 for extensions to temporal and spatiotemporal settings, including the introduction of the MSD and RMSD terms.
 
-We begin with a simple spatial-diffusion example and then fit an example that combines `space()` and `time()` terms.
+We begin with a simple spatial-diffusion example and then fit an example that combines `diffusion()` and `time_lag()` terms.
 
 ## Simple spatial diffusion example
 
@@ -71,13 +71,13 @@ sim_space <- simulate_new(
   sigma_O = 0,
   phi = 0.1,
   B = c(0, 0.8),
-  covariate_diffusion = ~ space(x1),
-  diffusion_kappaS = 1.5,
+  nonlocal_formula = ~ diffusion(x1),
+  lags_kappaS = 1.5,
   seed = 1
 )
 
 dat$observed <- sim_space$observed
-dat$x1_truth <- sim_space$diffusion_truth_space_x1
+dat$x1_truth <- sim_space$nl_truth_diffusion_x1
 head(dat)
 ```
 
@@ -87,7 +87,7 @@ Fit the matching covariate-diffusion model:
 fit <- sdmTMB(
   observed ~ 1,
   mesh = mesh,
-  covariate_diffusion = ~ space(x1), #<
+  nonlocal_formula = ~ diffusion(x1), #<
   spatial = "off",
   data = dat
 )
@@ -97,9 +97,9 @@ tidy(fit)
 tidy(fit, effects = "ran_pars")
 ```
 
-Here `kappaS_cov_diff[x1]` is the estimated spatial diffusion scale parameter for `x1` (larger values imply less smoothing).
+Here `kappaS_nl[x1]` is the estimated spatial diffusion scale parameter for `x1` (larger values imply less smoothing).
 
-The output also reports `MSD[x1]` and `RMSD[x1]`, the implied mean squared displacement (`4 / kappaS_cov_diff[x1]^2`) and root mean squared displacement (`2 / kappaS_cov_diff[x1]`).
+The output also reports `MSD[x1]` and `RMSD[x1]`, the implied mean squared displacement (`4 / kappaS_nl[x1]^2`) and root mean squared displacement (`2 / kappaS_nl[x1]`).
 `RMSD[x1]` is a typical diffusion distance (a blur radius) in coordinate units.
 Users applying this spatial diffusion method should cite @lindmark2025.
 Users using these MSD and RMSD metrics should consult and cite @thorson2026.
@@ -111,7 +111,7 @@ pred <- predict(fit)
 pred$X <- dat$X
 pred$Y <- dat$Y
 
-cor(pred$diffusion_cov_space_x1, pred$x1_truth)
+cor(pred$nl_diffusion_x1, pred$x1_truth)
 
 g1 <- ggplot(pred, aes(X, Y, colour = x1)) +
   geom_point(size = 0.7) +
@@ -125,7 +125,7 @@ g2 <- ggplot(pred, aes(X, Y, colour = x1_truth)) +
   coord_equal() +
   ggtitle("True diffused covariate (from simulation)")
 
-g3 <- ggplot(pred, aes(X, Y, colour = diffusion_cov_space_x1)) +
+g3 <- ggplot(pred, aes(X, Y, colour = nl_diffusion_x1)) +
   geom_point(size = 0.7) +
   scale_colour_gradient2() +
   coord_equal() +
@@ -139,13 +139,13 @@ print(g3)
 We can visualize the diffusion operator and the original and smoothed covariate on the mesh:
 
 ```{r}
-plot_diffusion_kernel(fit, component = "space")
-plot_diffused_covariate(fit, component = "space")
+plot_diffusion_kernel(fit, component = "diffusion")
+plot_diffused_covariate(fit, component = "diffusion")
 ```
 
 ## Space-time example with additive terms
 
-Next we will simulate and fit a model containing spatial and temporal components: `~ space(x1) + time(x1)`.
+Next we will simulate and fit a model containing spatial and temporal components: `~ diffusion(x1) + time_lag(x1)`.
 
 ```{r fit-space-time-all}
 set.seed(1)
@@ -177,9 +177,9 @@ sim_st <- simulate_new(
   sigma_O = 0.2,
   phi = 0.1,
   B = c(0, 0.7, 0.6),
-  covariate_diffusion = ~ space(x1) + time(x1),
-  diffusion_kappaS = 4.4,
-  diffusion_rhoT = 0.3,
+  nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
+  lags_kappaS = 4.4,
+  lags_rhoT = 0.3,
   seed = 123
 )
 
@@ -191,7 +191,7 @@ fit_st <- sdmTMB(
   observed ~ 1,
   mesh = mesh_st,
   time = "year",
-  covariate_diffusion = ~ space(x1) + time(x1), #<
+  nonlocal_formula = ~ diffusion(x1) + time_lag(x1), #<
   spatial = "on",
   spatiotemporal = "off",
   data = dat_st
@@ -203,14 +203,14 @@ fit_st
 tidy(fit_st, effects = "ran_pars")
 ```
 
-In the random-effect parameters, `kappaS_cov_diff[x1]` controls spatial smoothing and `kappaT_cov_diff[x1]` controls temporal diffusion.
+In the random-effect parameters, `kappaS_nl[x1]` controls spatial smoothing and `kappaT_nl[x1]` controls temporal diffusion.
 Users applying the time diffusion extension should read and cite @thorson2026.
 
 ## Supplying a separate covariate grid
 
 By default, the covariate field used for diffusion is built from `data` alone.
 If the covariate is available on a finer or more complete grid than the
-observation locations, we can supply it via `covariate_diffusion_data`. This
+observation locations, we can supply it via `nonlocal_data`. This
 also lets us define the covariate at a forecast (`extra_time`) slice without
 padding `data` with extra rows.
 
@@ -231,8 +231,8 @@ fit_st_grid <- sdmTMB(
   observed ~ 1,
   mesh = mesh_st,
   time = "year",
-  covariate_diffusion = ~ space(x1) + time(x1), #<
-  covariate_diffusion_data = grid_st, #<
+  nonlocal_formula = ~ diffusion(x1) + time_lag(x1), #<
+  nonlocal_data = grid_st, #<
   extra_time = extra_yr, #<
   spatial = "on",
   spatiotemporal = "off",
@@ -248,7 +248,7 @@ reuse it for `newdata` that only contains coordinates, time, any regular covaria
 nd_st <- replicate_df(site_st, "year", seq_len(extra_yr))
 pred_grid <- predict(fit_st_grid, newdata = nd_st)
 
-ggplot(pred_grid, aes(X, Y, colour = diffusion_cov_space_x1)) +
+ggplot(pred_grid, aes(X, Y, colour = nl_diffusion_x1)) +
   geom_point() +
   facet_wrap(~year) +
   scale_colour_gradient2()
@@ -259,15 +259,15 @@ ggplot(pred_grid, aes(X, Y, colour = diffusion_cov_space_x1)) +
 We can separately visualize the spatial diffusion, time diffusion, or their combined effects as either the diffusion kernel or the smoothed covariate field represented on the mesh:
 
 ```{r plot-diffusion}
-plot_diffusion_kernel(fit_st, component = "space")
-plot_diffusion_kernel(fit_st, component = "time", common_scale = TRUE)
+plot_diffusion_kernel(fit_st, component = "diffusion")
+plot_diffusion_kernel(fit_st, component = "time_lag", common_scale = TRUE)
 plot_diffusion_kernel(fit_st, component = "combined")
 plot_diffusion_kernel(fit_st, component = "combined", common_scale = TRUE)
 ```
 
 ```{r}
-plot_diffused_covariate(fit_st, component = "space")
-plot_diffused_covariate(fit_st, component = "time")
+plot_diffused_covariate(fit_st, component = "diffusion")
+plot_diffused_covariate(fit_st, component = "time_lag")
 plot_diffused_covariate(fit_st, component = "combined")
 ```
 
@@ -279,7 +279,7 @@ pred <- predict(fit_st)
 ggplot(pred, aes(X, Y, colour = x1)) + geom_point() +
   scale_colour_gradient2()
 
-ggplot(pred, aes(X, Y, colour = diffusion_cov_space_x1)) + geom_point() +
+ggplot(pred, aes(X, Y, colour = nl_diffusion_x1)) + geom_point() +
   scale_colour_gradient2()
 ```
 

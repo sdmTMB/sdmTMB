@@ -151,7 +151,7 @@ test_that("prepare_spatial_domain validates data memberships", {
       data = data.frame(region = c("a", "x")),
       mesh_missing = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "no match in the areal domain"
@@ -179,7 +179,7 @@ test_that("prepare_spatial_domain validates required membership column and missi
       data = data.frame(x = 1:2),
       mesh_missing = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "areal domain was not found in `data`"
@@ -190,7 +190,7 @@ test_that("prepare_spatial_domain validates required membership column and missi
       data = data.frame(region = c("a", NA)),
       mesh_missing = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "contains missing values"
@@ -269,7 +269,7 @@ test_that("prepare_spatial_domain returns areal domain pieces", {
     data = dat,
     mesh_missing = FALSE,
     anisotropy = FALSE,
-    covariate_diffusion = NULL,
+    nonlocal_formula = NULL,
     spatial_model = "sar"
   )
 
@@ -305,7 +305,7 @@ test_that("prepare_spatial_domain returns raw adjacency for CAR", {
     data = dat,
     mesh_missing = FALSE,
     anisotropy = FALSE,
-    covariate_diffusion = NULL,
+    nonlocal_formula = NULL,
     spatial_model = "car"
   )
 
@@ -334,7 +334,7 @@ test_that("prepare_spatial_domain can return raw adjacency for SAR", {
     data = dat,
     mesh_missing = FALSE,
     anisotropy = FALSE,
-    covariate_diffusion = NULL,
+    nonlocal_formula = NULL,
     spatial_model = "sar",
     sar_weight_style = "raw"
   )
@@ -364,7 +364,7 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
       mesh_missing = FALSE,
       share_range = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "share_range = FALSE"
@@ -376,7 +376,7 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
       data = dat,
       mesh_missing = FALSE,
       anisotropy = TRUE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "anisotropy.*not supported"
@@ -388,10 +388,10 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
       data = dat,
       mesh_missing = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = list(dummy = 1),
+      nonlocal_formula = list(dummy = 1),
       spatial_model = "sar"
     ),
-    "covariate_diffusion.*not supported"
+    "nonlocal_formula.*not supported"
   )
 
   expect_error(
@@ -400,7 +400,7 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
       data = dat["x"],
       mesh_missing = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "areal domain was not found in `data`"
@@ -414,7 +414,7 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
       mesh_missing = FALSE,
       anisotropy = FALSE,
       priors = pri,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "PC Matern priors.*not supported"
@@ -428,7 +428,7 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
       data = dat,
       mesh_missing = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "Barrier models are not supported"
@@ -440,7 +440,7 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
       data = dat,
       mesh_missing = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       experimental = list(epsilon_model = ~x),
       spatial_model = "sar"
     ),

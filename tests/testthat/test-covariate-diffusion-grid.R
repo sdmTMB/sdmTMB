@@ -1,4 +1,4 @@
-make_dl_grid_data <- function() {
+make_nl_grid_data <- function() {
   set.seed(303)
   n_t <- 5L
   n_s <- 6L
@@ -16,11 +16,11 @@ make_dl_grid_data <- function() {
   )
 }
 
-make_dl_grid_mesh <- function(dat) {
+make_nl_grid_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
-make_dl_dense_grid <- function(years) {
+make_nl_dense_grid <- function(years) {
   set.seed(404)
   n_grid <- 40L
   X <- runif(n_grid, 1, 6)
@@ -33,14 +33,14 @@ make_dl_dense_grid <- function(years) {
   grid
 }
 
-test_that("covariate_diffusion_data can supply missing temporal slices", {
+test_that("nonlocal_data can supply missing temporal slices", {
   skip_on_cran()
   skip_on_ci()
 
-  dat <- make_dl_grid_data()
-  mesh <- make_dl_grid_mesh(dat)
+  dat <- make_nl_grid_data()
+  mesh <- make_nl_grid_mesh(dat)
   dat_irregular <- dat[dat$year != 3, , drop = FALSE]
-  grid <- make_dl_dense_grid(sort(unique(dat$year)))
+  grid <- make_nl_dense_grid(sort(unique(dat$year)))
 
   expect_error(
     sdmTMB(
@@ -51,7 +51,7 @@ test_that("covariate_diffusion_data can supply missing temporal slices", {
       spatial = "off",
       spatiotemporal = "off",
       family = gaussian(),
-      covariate_diffusion = ~ time(x1),
+      nonlocal_formula = ~ time_lag(x1),
       extra_time = 3,
       control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
     ),
@@ -66,23 +66,23 @@ test_that("covariate_diffusion_data can supply missing temporal slices", {
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ time(x1),
-    covariate_diffusion_data = grid,
+    nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
     extra_time = 3,
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 
-  expect_true(isTRUE(fit_grid$covariate_diffusion_grid_supplied))
-  expect_equal(fit_grid$covariate_diffusion_data$n_t, length(unique(dat$year)))
+  expect_true(isTRUE(fit_grid$nonlocal_grid_supplied))
+  expect_equal(fit_grid$nonlocal_parsed$n_t, length(unique(dat$year)))
 })
 
-test_that("covariate_diffusion_data validates the new grid requirements", {
+test_that("nonlocal_data validates the new grid requirements", {
   skip_on_cran()
   skip_on_ci()
 
-  dat <- make_dl_grid_data()
-  mesh <- make_dl_grid_mesh(dat)
-  grid <- make_dl_dense_grid(sort(unique(dat$year)))
+  dat <- make_nl_grid_data()
+  mesh <- make_nl_grid_mesh(dat)
+  grid <- make_nl_dense_grid(sort(unique(dat$year)))
 
   fit_args <- function(grid_data) {
     sdmTMB(
@@ -93,8 +93,8 @@ test_that("covariate_diffusion_data validates the new grid requirements", {
       spatial = "off",
       spatiotemporal = "off",
       family = gaussian(),
-      covariate_diffusion = ~ space(x1) + time(x1),
-      covariate_diffusion_data = grid_data,
+      nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
+      nonlocal_data = grid_data,
       control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
     )
   }
@@ -117,10 +117,10 @@ test_that("covariate_diffusion_data validates the new grid requirements", {
       spatial = "off",
       spatiotemporal = "off",
       family = gaussian(),
-      covariate_diffusion_data = grid,
+      nonlocal_data = grid,
       control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
     ),
-    regexp = "covariate_diffusion_data.*was supplied"
+    regexp = "nonlocal_data.*was supplied"
   )
 })
 
@@ -128,9 +128,9 @@ test_that("predict() reuses or overrides the stored covariate diffusion grid", {
   skip_on_cran()
   skip_on_ci()
 
-  dat <- make_dl_grid_data()
-  mesh <- make_dl_grid_mesh(dat)
-  grid <- make_dl_dense_grid(sort(unique(dat$year)))
+  dat <- make_nl_grid_data()
+  mesh <- make_nl_grid_mesh(dat)
+  grid <- make_nl_dense_grid(sort(unique(dat$year)))
 
   fit_grid <- sdmTMB(
     y ~ 1,
@@ -140,8 +140,8 @@ test_that("predict() reuses or overrides the stored covariate diffusion grid", {
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1) + time(x1),
-    covariate_diffusion_data = grid,
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 
@@ -161,11 +161,11 @@ test_that("predict() reuses or overrides the stored covariate diffusion grid", {
   p_override <- predict(
     fit_grid,
     newdata = nd_xy_time_only,
-    covariate_diffusion_data = grid_counterfactual
+    nonlocal_newdata = grid_counterfactual
   )
 
   expect_false(isTRUE(all.equal(
-    p_reused$diffusion_cov_space_x1,
-    p_override$diffusion_cov_space_x1
+    p_reused$nl_diffusion_x1,
+    p_override$nl_diffusion_x1
   )))
 })

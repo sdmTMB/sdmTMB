@@ -485,7 +485,7 @@ areal_projection_matrix <- function(mesh, data) {
 }
 
 prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
-                                   anisotropy = FALSE, covariate_diffusion, priors = sdmTMBpriors(),
+                                   anisotropy = FALSE, nonlocal_formula, priors = sdmTMBpriors(),
                                    normalize, experimental = NULL,
                                    share_range_user = share_range,
                                    spatial_model = c("spde", "sar", "car"),
@@ -521,8 +521,8 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
     if ("spde_barrier" %in% names(spde)) {
       cli::cli_abort("Barrier models are not supported with areal domains.")
     }
-    if (!is.null(covariate_diffusion)) {
-      cli::cli_abort("`covariate_diffusion` is not supported with areal domains.")
+    if (!is.null(nonlocal_formula)) {
+      cli::cli_abort("`nonlocal_formula` is not supported with areal domains.")
     }
     share_range_user <- unlist(share_range_user)
     if (any(!share_range_user)) {

@@ -23,7 +23,7 @@
 #' @param family Family as in [sdmTMB()]. Delta families are not supported.
 #'   Instead, simulate the two component models separately and combine.
 #' @param B A vector of beta values (fixed-effect coefficient values).
-#'   If `covariate_diffusion` is used, include regular fixed-effect
+#'   If `nonlocal_formula` is used, include regular fixed-effect
 #'   coefficients followed by covariate-diffusion coefficients in formula term
 #'   order.
 #' @param range Parameter that controls the decay of spatial correlation. If a
@@ -55,13 +55,13 @@
 #' @param rho_time Autoregressive correlation(s) for time-varying parameters
 #'   when `time_varying_type = "ar1"`. Values must lie between -1 and 1 and may
 #'   be supplied as a single value or a vector the same length as `sigma_V`.
-#' @param covariate_diffusion An optional one-sided formula describing
+#' @param nonlocal_formula An optional one-sided formula describing
 #'   covariate-diffusion terms to pass to [sdmTMB()]. Supported wrappers are
-#'   `space()` and `time()`.
-#' @param diffusion_kappaS Spatial diffusion scale for `space()` terms.
+#'   `diffusion()` and `time_lag()`.
+#' @param lags_kappaS Spatial diffusion scale for `diffusion()` terms.
 #'   Must be positive and finite. Supply a single value or
 #'   one value per covariate needing a spatial scale.
-#' @param diffusion_rhoT Temporal diffusion persistence for `time()` terms.
+#' @param lags_rhoT Temporal diffusion persistence for `time_lag()` terms.
 #'   Must be finite and satisfy `0 <= rhoT < 1`. Supply a single value or one
 #'   value per covariate needing temporal diffusion.
 #' @param ... Any other arguments to pass to [sdmTMB()].
@@ -137,9 +137,9 @@ simulate_new <- function(formula,
                          time_varying_type = c("rw", "rw0", "ar1"),
                          sigma_V = NULL,
                          rho_time = NULL,
-                         covariate_diffusion = NULL,
-                         diffusion_kappaS = NULL,
-                         diffusion_rhoT = NULL,
+                         nonlocal_formula = NULL,
+                         lags_kappaS = NULL,
+                         lags_rhoT = NULL,
                          ...) {
 
   if (!is.null(previous_fit)) stop("`previous_fit` is deprecated. See `simulate.sdmTMB()`", call. = FALSE)
@@ -225,7 +225,7 @@ simulate_new <- function(formula,
         share_range = length(range) == 1L,
         time_varying = time_varying,
         time_varying_type = time_varying_type,
-        covariate_diffusion = covariate_diffusion
+        nonlocal_formula = nonlocal_formula
       ),
       dots
     )
@@ -246,7 +246,7 @@ simulate_new <- function(formula,
       msg = paste0(
         "Number of specified fixed-effect `B` parameters does ",
         "not match model matrix columns implied by the formula ",
-        "and any `covariate_diffusion` terms."
+        "and any `nonlocal_formula` terms."
       )
     )
   }
@@ -257,49 +257,49 @@ simulate_new <- function(formula,
     n_needed <- sum(mask)
     if (n_needed == 0L) {
       if (!is.null(user_value)) {
-        cli::cli_warn("Ignoring `{label}` because no matching `covariate_diffusion` terms were supplied.")
+        cli::cli_warn("Ignoring `{label}` because no matching `nonlocal_formula` terms were supplied.")
       }
       return(params)
     }
     if (is.null(user_value)) {
-      cli::cli_abort("`{label}` must be supplied for the requested `covariate_diffusion` terms.")
+      cli::cli_abort("`{label}` must be supplied for the requested `nonlocal_formula` terms.")
     }
     user_value <- as.numeric(user_value)
     if (!(length(user_value) %in% c(1L, n_needed))) {
       cli::cli_abort(
-        "`{label}` must have length 1 or match the number of relevant `covariate_diffusion` covariates ({n_needed})."
+        "`{label}` must have length 1 or match the number of relevant `nonlocal_formula` covariates ({n_needed})."
       )
     }
     user_value <- rep_len(user_value, n_needed)
     if (!valid(user_value)) {
-      cli::cli_abort("Invalid `{label}` value for the requested `covariate_diffusion` terms.")
+      cli::cli_abort("Invalid `{label}` value for the requested `nonlocal_formula` terms.")
     }
     params[[param_name]][mask] <- transform(user_value)
     params
   }
 
-  if (!is.null(fit$covariate_diffusion_data)) {
-    dl_data <- fit$covariate_diffusion_data
+  if (!is.null(fit$nonlocal_parsed)) {
+    nonlocal_dat <- fit$nonlocal_parsed
     params <- .set_diffusion_parameter(
       params = params,
-      param_name = "log_kappaS_dl",
-      user_value = diffusion_kappaS,
-      mask = dl_data$covariate_has_spatial,
-      label = "diffusion_kappaS",
+      param_name = "log_kappaS_nl",
+      user_value = lags_kappaS,
+      mask = nonlocal_dat$covariate_has_spatial,
+      label = "lags_kappaS",
       valid = function(x) all(is.finite(x) & x > 0),
       transform = log
     )
     params <- .set_diffusion_parameter(
       params = params,
-      param_name = "kappaT_dl_raw",
-      user_value = diffusion_rhoT,
-      mask = dl_data$covariate_has_temporal,
-      label = "diffusion_rhoT",
+      param_name = "kappaT_nl_raw",
+      user_value = lags_rhoT,
+      mask = nonlocal_dat$covariate_has_temporal,
+      label = "lags_rhoT",
       valid = function(x) all(is.finite(x) & x >= 0 & x < 1),
       transform = function(x) x / (1 - x)
     )
-  } else if (!is.null(diffusion_kappaS) || !is.null(diffusion_rhoT)) {
-    cli::cli_abort("Diffusion parameters require `covariate_diffusion`.")
+  } else if (!is.null(lags_kappaS) || !is.null(lags_rhoT)) {
+    cli::cli_abort("Diffusion parameters require `nonlocal_formula`.")
   }
 
   if (tmb_data$threshold_func > 0) {
@@ -454,25 +454,25 @@ simulate_new <- function(formula,
   d[["observed"]] <- s$y_i
   d <- do.call("data.frame", d)
   d <- cbind(d, fit$tmb_data$X_ij)
-  dl_cols <- grepl("^cov_diff_", names(d))
-  if (any(dl_cols)) d <- d[, !dl_cols, drop = FALSE]
+  nl_design_cols <- names(d) %in% fit$nonlocal_parsed$term_coef_name
+  if (any(nl_design_cols)) d <- d[, !nl_design_cols, drop = FALSE]
 
-  if (!is.null(fit$covariate_diffusion_data) &&
-      isTRUE(fit$covariate_diffusion_data$n_terms > 0L)) {
-    dl_truth <- .compute_covariate_diffusion_term_values(
-      covariate_diffusion_data = fit$covariate_diffusion_data,
-      covariate_vertex_time = fit$covariate_diffusion_data$covariate_vertex_time,
+  if (!is.null(fit$nonlocal_parsed) &&
+      isTRUE(fit$nonlocal_parsed$n_terms > 0L)) {
+    nl_truth <- .compute_nonlocal_term_values(
+      nonlocal_parsed = fit$nonlocal_parsed,
+      covariate_vertex_time = fit$nonlocal_parsed$covariate_vertex_time,
       A_st = fit$tmb_data$A_st,
       A_spatial_index = fit$tmb_data$A_spatial_index,
       year_i = fit$tmb_data$year_i,
       n_t = fit$tmb_data$n_t,
       M0 = fit$tmb_data$spde$M0,
       M1 = fit$tmb_data$spde$M1,
-      log_kappaS_dl = as.numeric(params$log_kappaS_dl),
-      kappaT_dl_raw = as.numeric(params$kappaT_dl_raw)
+      log_kappaS_nl = as.numeric(params$log_kappaS_nl),
+      kappaT_nl_raw = as.numeric(params$kappaT_nl_raw)
     )
-    colnames(dl_truth) <- sub("^diffusion_cov_", "diffusion_truth_", colnames(dl_truth))
-    d <- cbind(d, as.data.frame(dl_truth))
+    colnames(nl_truth) <- sub("^nl_", "nl_truth_", colnames(nl_truth))
+    d <- cbind(d, as.data.frame(nl_truth))
   }
 
   tpar <- fit$threshold_parameter

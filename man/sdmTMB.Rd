@@ -25,8 +25,8 @@ sdmTMB(
   anisotropy = FALSE,
   control = sdmTMBcontrol(),
   priors = sdmTMBpriors(),
-  covariate_diffusion = NULL,
-  covariate_diffusion_data = NULL,
+  nonlocal_formula = NULL,
+  nonlocal_data = NULL,
   knots = NULL,
   bayesian = FALSE,
   previous_fit = NULL,
@@ -169,16 +169,16 @@ Must be shared across delta models.}
 \item{priors}{Optional penalties/priors via \code{\link[=sdmTMBpriors]{sdmTMBpriors()}}. Must currently
 be shared across delta models.}
 
-\item{covariate_diffusion}{An optional one-sided formula describing distributed
-lag terms with \code{space()} or \code{time()} wrappers.
-Example: \code{~ space(x) + time(x)}. Lag scale parameters
+\item{nonlocal_formula}{An optional one-sided formula describing distributed
+lag terms with \code{diffusion()} or \code{time_lag()} wrappers.
+Example: \code{~ diffusion(x) + time_lag(x)}. Lag scale parameters
 are estimated separately for each lag covariate.}
 
-\item{covariate_diffusion_data}{An optional data frame supplying the
-\code{covariate_diffusion} covariate(s) at a different resolution and/or
+\item{nonlocal_data}{An optional data frame supplying the
+\code{nonlocal_formula} covariate(s) at a different resolution and/or
 coverage than \code{data} (e.g., a finer grid, or one spanning \code{extra_time}
 slices). Must contain the mesh \code{xy_cols}, the \code{time} column (if temporal
-\code{covariate_diffusion} terms are used), and the diffusion covariate
+\code{nonlocal_formula} terms are used), and the diffusion covariate
 columns; must cover every fitted (+ \code{extra_time}) time slice. Defaults to
 \code{NULL}, in which case \code{data} is used.}
 

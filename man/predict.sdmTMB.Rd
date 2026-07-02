@@ -17,7 +17,7 @@
   model = c(NA, 1, 2),
   offset = NULL,
   mcmc_samples = NULL,
-  covariate_diffusion_data = NULL,
+  nonlocal_newdata = NULL,
   return_tmb_object = FALSE,
   return_tmb_report = FALSE,
   return_tmb_data = FALSE,
@@ -92,10 +92,10 @@ If specified, the predict function will return a matrix of a similar form
 as if \code{nsim > 0} but representing Bayesian posterior samples from the Stan
 model.}
 
-\item{covariate_diffusion_data}{An optional data frame overriding the
-\code{covariate_diffusion} covariate field used at prediction (e.g., for a
+\item{nonlocal_newdata}{An optional data frame overriding the
+\code{nonlocal_formula} covariate field used at prediction (e.g., for a
 counterfactual/scenario surface), with the same requirements as
-\code{covariate_diffusion_data} in \code{\link[=sdmTMB]{sdmTMB()}}. \code{newdata}'s x/y and time columns
+\code{nonlocal_data} in \code{\link[=sdmTMB]{sdmTMB()}}. \code{newdata}'s x/y and time columns
 always determine \emph{where} predictions are projected to; this argument only
 controls where the underlying diffused covariate field comes from.
 Defaults to \code{NULL}: if a grid was supplied at fit time, the fitted field
@@ -129,8 +129,8 @@ A data frame:
 \item \code{omega_s}: Spatial random field (models consistent spatial patterns)
 \item \code{zeta_s}: Spatially varying coefficient field (models how effects vary across space)
 \item \code{epsilon_st}: Spatiotemporal random field (models spatial patterns that vary over time)
-\item \verb{diffusion_cov_*}: Covariate diffusion transformed covariate values (one column per
-covariate-diffusion term; available when \code{covariate_diffusion} were fitted)
+\item \verb{nl_*}: Nonlocal transformed covariate values (one column per
+nonlocal term; available when \code{nonlocal_formula} were fitted)
 }
 
 If \code{return_tmb_object = TRUE} (and \code{nsim = 0} and \code{mcmc_samples = NULL}):
