@@ -823,7 +823,9 @@
   )
 }
 
-.nl_plot_ggplot <- function(plot_df, edge_df, type, fill_limits, fill_name, xlim, ylim, xlab, ylab) {
+.nl_plot_ggplot <- function(plot_df, edge_df, type, fill_limits, fill_name, xlim, ylim, xlab, ylab,
+                            scale = c("distiller", "viridis")) {
+  scale <- match.arg(scale)
   p <- ggplot2::ggplot(plot_df, ggplot2::aes(x = .data$x, y = .data$y))
   if (!is.null(edge_df)) {
     p <- p +
@@ -840,15 +842,24 @@
   } else {
     p <- p + ggplot2::geom_point(ggplot2::aes(colour = .data$value_plot))
   }
-  p +
+  p <- p +
     ggplot2::facet_wrap(stats::as.formula("~ panel"), nrow = 1L) +
-    ggplot2::coord_equal(xlim = xlim, ylim = ylim, expand = identical(type, "point")) +
-    ggplot2::scale_colour_viridis_c(
-      limits = fill_limits,
-      name = fill_name, option = "C",
-      aesthetics = c("colour", "fill")
-    ) +
-    ggplot2::theme_bw() +
+    ggplot2::coord_equal(xlim = xlim, ylim = ylim, expand = identical(type, "point"))
+  p <- p +
+    if (scale == "viridis") {
+      ggplot2::scale_colour_viridis_c(
+        limits = fill_limits,
+        name = fill_name,
+        aesthetics = c("colour", "fill")
+      )
+    } else {
+      ggplot2::scale_colour_distiller(
+        limits = fill_limits, palette = "Blues",
+        name = fill_name, direction = 1,
+        aesthetics = c("colour", "fill")
+      )
+    }
+  p +
     ggplot2::theme(
       panel.grid = ggplot2::element_blank()
     ) +
@@ -1054,7 +1065,8 @@ plot_diffused_covariate <- function(object,
     xlim = range(plot_locations$loc[, 1]),
     ylim = range(plot_locations$loc[, 2]),
     xlab = ctx$xlab,
-    ylab = ctx$ylab
+    ylab = ctx$ylab,
+    scale = "viridis"
   )
 }
 

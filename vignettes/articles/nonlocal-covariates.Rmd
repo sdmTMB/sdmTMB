@@ -1,5 +1,5 @@
 ---
-title: "Estimating non-local covariates (spatial diffusion and time lags) with sdmTMB"
+title: "Estimating non-local covariate effects with sdmTMB: spatial diffusion and time lags"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 bibliography: '../refs.bib'
@@ -32,13 +32,16 @@ library(sdmTMB)
 theme_set(theme_light())
 ```
 
-This vignette demonstrates covariate-diffusion models using simulated data. These models could alternatively be described as "distributed lag" models.
+This vignette demonstrates non-local-covariate models using simulated data. These models could alternatively be described as "distributed lag" models or, in the case of spatial diffusion, "covariate diffusion" models.
 
 When might you want to fit these models? Sometimes, the spatial or temporal scale at which covariates influence the response is unclear.
 
-For example, fish move. Therefore, if we measure temperature at the location where a fish was sampled, it may be unclear whether the model should use the temperature at the sampling site or a smoothed version of the temperature surface that accounts for fish movement and integration over a broader spatial range.
+For example, fish move.
+Therefore, if we measure temperature at the location where a fish was sampled, it may be unclear whether the model should use the temperature at the sampling site or a smoothed version of the temperature surface that accounts for fish movement and integration over a broader spatial range.
 
-One option is to fit models using covariates with different levels of smoothing and compare them. Alternatively, we can estimate the appropriate degree of smoothing simultaneously with the parameters of the main model. This is what the covariate-diffusion functionality does.
+One option is to fit models using covariates with different levels of smoothing and compare them.
+Alternatively, we can estimate the appropriate degree of smoothing simultaneously while we fit the model.
+This is what the covariate-diffusion functionality does.
 
 Users are encouraged to read and cite @lindmark2025 for spatial models and @thorson2026 for extensions to temporal and spatiotemporal settings, including the introduction of the MSD and RMSD terms.
 
@@ -203,15 +206,14 @@ fit_st
 tidy(fit_st, effects = "ran_pars")
 ```
 
-In the random-effect parameters, `kappaS_nl[x1]` controls spatial smoothing and `kappaT_nl[x1]` controls temporal diffusion.
-Users applying the time diffusion extension should read and cite @thorson2026.
+In the random-effect parameters, `kappaS_nl[x1]` controls spatial diffusion and `kappaT_nl[x1]` controls temporal lags.
+Users applying the time-lag functionality should read and cite @thorson2026.
 
 ## Supplying a separate covariate grid
 
 By default, the covariate field used for diffusion is built from `data` alone.
-If the covariate is available on a finer or more complete grid than the
-observation locations, we can supply it via `nonlocal_data`. This
-also lets us define the covariate at a forecast (`extra_time`) slice without
+If the covariate is available on a finer or more complete grid than the observation locations, we can supply it via `nonlocal_data`.
+This also lets us define the covariate at a forecast (`extra_time`) slice without
 padding `data` with extra rows.
 
 ```{r fit-space-time-grid}
@@ -241,7 +243,7 @@ fit_st_grid <- sdmTMB(
 sanity(fit_st_grid)
 ```
 
-We will plot the diffused covariate on the nonlocal grid locations:
+We will plot the spatially diffused covariate on the non-local data grid locations:
 
 ```{r predict-space-time-grid}
 pred_grid <- predict(fit_st_grid, newdata = grid_st)
@@ -254,7 +256,8 @@ ggplot(pred_grid, aes(X, Y, fill = nl_diffusion_x1)) +
 
 ## Plot diffusion kernels
 
-We can separately visualize the spatial diffusion, time diffusion, or their combined effects as either the diffusion kernel or the smoothed covariate field. By default, the diffusion kernel is shown at the mesh vertices:
+We can separately visualize the spatial diffusion, time diffusion, or their combined effects as either the diffusion kernel or the smoothed covariate field.
+By default, the diffusion kernel is shown at the mesh vertices:
 
 ```{r plot-diffusion}
 plot_diffusion_kernel(fit_st, component = "diffusion")
@@ -263,14 +266,15 @@ plot_diffusion_kernel(fit_st, component = "combined")
 plot_diffusion_kernel(fit_st, component = "combined", common_scale = TRUE)
 ```
 
-In the last case, the colour scale makes it hard to see the variation. We could add our own ggplot scale:
+In the last case, the colour scale makes it hard to see the variation.
+We could add our own ggplot colour scale transformation:
 
 ```{r plot-diffusion-scale}
 plot_diffusion_kernel(fit_st, component = "combined", common_scale = TRUE) +
-  scale_colour_viridis_c(trans = "log10")
+  scale_colour_distiller(trans = "log10", palette = "Blues", direction = 1)
 ```
 
-All but one knot in the "original" panel were zero, so they become -Inf when log transformed, but now we can see the space and time nonlocal effects.
+All the knots except one in the "original" panel were zero, so they become -Inf when log transformed, but now we can see the space and time nonlocal effects.
 
 If we have a grid available, we can evaluate the same kernel at those grid coordinates and plot it as a raster:
 
@@ -285,7 +289,7 @@ plot_diffusion_kernel(
 
 You'll note that the "original" panel is not just a single coloured grid cell.
 This is because that single covariate value is actually represented on the mesh vertices and then visualized here after projecting from the mesh vertex (knot) to the grid.
-As a result, we're seeing the piecewise-linear finite-element basis function expansion centered at that vertex as the "original."
+As a result, we're seeing the piecewise-linear basis expansion from the mesh vertex to the grid, which creates a bit of smoothing.
 
 ```{r}
 plot_diffused_covariate(fit_st, component = "diffusion")

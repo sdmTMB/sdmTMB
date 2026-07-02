@@ -25,3 +25,6 @@ AGENTS.md
 .claude
 .positai
 scratch-local/
+
+/.quarto/
+**/*.quarto_ipynb
