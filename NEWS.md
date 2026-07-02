@@ -1,18 +1,40 @@
 # sdmTMB (development version)
 
-* Allow supplying `covariate_diffusion_grid` to `sdmTMB()` and
-  `predict.sdmTMB()`. This lets one supply a higher resolution covariate
-  dataset for covariate diffusion, which must interpolate to the mesh
-  vertices. It also allows predicting to new time elements with `extra_time`.
+## New features
 
-* Fix bug in cross validation with the new covariate diffusion models
-  if the blocking is done by time slices.
+* Add experimental support for CAR/SAR areal models instead of the SPDE.
+  See the relevant vignette at https://sdmtmb.github.io/sdmTMB/articles/index.html
 
-* Fix bug in covariate diffusion models where the kappa parameter was
-  trying to be optimized during the first (fixed effect) stage.
+* Add non-local covariates functionality including spatial diffusion and
+  time lags. See the relevant vignette at
+  https://sdmtmb.github.io/sdmTMB/articles/index.html
+  New arguments include `nonlocal_formula` and `nonlocal_data` in `sdmTMB()`
+  as well as `plot_diffusion_kernel()` and `plot_diffused_covariate()`. #507
 
 * Allow for fitting uncorrelated random slopes and intercepts with the form
   `(1 + slope_var || group)`, making sure that results are displayed correctly.
+
+* Add `allow_new_levels` in `predict.sdmTMB()` for predicting with new levels
+  in random intercepts or slopes. New levels get the population value. #196 #480
+
+* Update `get_index()` so index totals are reported on a log-total scale after
+  integrating response-scale predictions. This preserves existing behaviour for
+  log-link abundance models and allows binomial/beta-binomial proportion models,
+  including `logit` and `cloglog` links, to use `area` as an explicit
+  standardization multiplier (e.g., hooks per longline set) for expected-count
+  indices.
+
+* Add `derived_link` in `get_index()` to allow override of inverse link.
+  Useful for fitting Bernoulli data with a cloglog link but then predicting
+  as an expectation from a count from a thinned count process. #339
+
+* Add experimental Restricted Spatial Regression (RSR) fixed-effect
+  coefficients adjusted for spatial confounding with the random fields
+  (Hanks et al. 2015, Diaz and Thorson 2025). Opt in
+  via `control = sdmTMBcontrol(get_rsr = TRUE)` and access via
+  `tidy(fit, effects = "rsr")`.
+
+## Minor improvements and fixes
 
 * The correctly transformed correlation between a random slope and intercept is
   now displayed by `print()` and `tidy()`.
@@ -24,12 +46,6 @@
   predictors. #533
 
 * Add more useful indicators in `sanity()` by identifying the fixed effects. #506
-
-* Add experimental Restricted Spatial Regression (RSR) fixed-effect
-  coefficients adjusted for spatial confounding with the random fields
-  (Hanks et al. 2015, Diaz and Thorson 2025). Opt in
-  via `control = sdmTMBcontrol(get_rsr = TRUE)` and access via
-  `tidy(fit, effects = "rsr")`.
 
 * The interaction between `spatial`, `spatial_varying`, and the intercept of
   the `spatial_varying` design matrix has been clarified. See the vignette/article
@@ -47,41 +63,17 @@
   `K - 1` deviation fields with no reference field. It now fits a genuine
   SVC intercept field plus `K - 1` deviation fields. A warning is
   emitted for this specification for now.
-  
+
   The previous message suggesting `spatial = "off"` when using
   `spatial = "on", spatial_varying = ~ 0 + factor_var` has been removed; this
   is a valid model specification (global spatial field plus per-level SVC
   deviations) although it can be more challenging to estimate.
 
-* Add `derived_link` in `get_index()` to allow override of inverse link.
-  Useful for fitting Bernoulli data with a cloglog link but then predicting
-  as an expectation from a count from a thinned count process. #339
-
-* Add `allow_new_levels` in `predict.sdmTMB()` for predicting with new levels
-  in random intercepts or slopes. New levels get the population value. #196 #480
-
-* Add `plot_diffusion_kernel()` for plotting covariate-diffusion impulse
-  responses and `plot_diffused_covariate()` for plotting original and estimated
-  diffused covariate fields on the fitted mesh. #507
-
-* Add experimental support for CAR/SAR areal/lattice models.
-
-* Add covariate-diffusion article/vignette. #507
-
-* Add experimental support for covariate diffusion models. #507
-
-* Update `get_index()` so index totals are reported on a log-total scale after
-  integrating response-scale predictions. This preserves existing behaviour for
-  log-link abundance models and allows binomial/beta-binomial proportion models,
-  including `logit` and `cloglog` links, to use `area` as an explicit
-  standardization multiplier (e.g., hooks per longline set) for expected-count
-  indices.
-
-* Fix `se_natural` column in `get_index()` output. #523 
+* Fix `se_natural` column in `get_index()` output. #523
   Thanks to @CataRoman and @gavinfay.
 
 * Fix `residuals()` for Poisson-link delta models so residuals use the
-  correct inverse link for encounter and positive-component 
+  correct inverse link for encounter and positive-component
   mechanism(including offsets), avoiding spurious `NaN`/`Inf` values in
   the first linear predictor residuals. For most scenarios, using
   simulation-based residuals from `dharma_residuals()` for delta models
@@ -95,10 +87,10 @@
 
 * Switch the recommended citation from the preprint to the Journal of
   Statistical Software version. See `citation("sdmTMB")`.
-  
+
 ## Minor improvements and fixes
 
-* Fix crash with betabinomial and binomial when a response value was `NA` but the 
+* Fix crash with betabinomial and binomial when a response value was `NA` but the
   corresponding `weights` argument (turned into 'size') was not `NA`.
 
 * Add `simulate_new()` as a synonym for `sdmTMB_simulate()`. `simulate_new()`
@@ -108,7 +100,7 @@
 
 ## Minor improvements and fixes
 
-* Refactor `get_cog()`, `get_weighted_average()`, and `get_eao()`. 
+* Refactor `get_cog()`, `get_weighted_average()`, and `get_eao()`.
   `get_cog()` should be more memory efficient and bias correction is now
   enabled for `get_eao()` and `get_weighted_average()`. These all now work
   with subsets of the full set of fitted time elements as `get_index()` has
@@ -116,7 +108,7 @@
 
 * Optimize memory usage and speed of `get_range_edge()`.
 
-* Remove extraDistr import to avoid CRAN warning. 
+* Remove extraDistr import to avoid CRAN warning.
 
 * Switch from `lme4` to `reformulas` package for random effects parsing functions
   (`findbars()`, `nobars()`, `subbars()`, `mkReTrms()`). The `lme4` maintainers
@@ -268,10 +260,10 @@
 * Let `simulate.sdmTMB()` work with binomial GLMs with size specified via
   `weights` and `newdata` supplied. #465
 
-* Fix issue with fold logic in LFO (leave-future-out) cross validation 
+* Fix issue with fold logic in LFO (leave-future-out) cross validation
   for `lfo_forecast > 1`. #454 Thanks to @Joseph-Barss.
 
-* Add `update.sdmTMB()` so that the mesh argument doesn't have to be 
+* Add `update.sdmTMB()` so that the mesh argument doesn't have to be
   specified if model is loaded in a fresh session. #461
 
 * Change default in `get_index()` etc. to `bias_correct = TRUE`. This is the
@@ -283,7 +275,7 @@
 
 * Only run Newton updates if maximum absolute gradient is `>= 1e-9` to save
   time. #455
-  
+
 * Suppress `nlminb()` warnings by default, which can usually be ignored by the
   user and may be confusing. This can be controlled via
   `sdmTMB(..., control = sdmTMBcontrol(suppress_nlminb_warnings = FALSE))`.
@@ -297,8 +289,8 @@
 
 * Add deviance residuals (`residuals(fit, type = "deviance")`) and
   `deviance.sdmTMB()` method (`deviance(fit)`). Proportion deviance explained
-  can be calculated as `1 - deviance(fit) / deviance(fit_null)` where 
-  `fit_null` is a null model, e.g., fit with `formula = ~ 1` and turning 
+  can be calculated as `1 - deviance(fit) / deviance(fit_null)` where
+  `fit_null` is a null model, e.g., fit with `formula = ~ 1` and turning
   off any random fields as desired
   (e.g., `spatial = "off", spatiotemporal = "off"`).
 
@@ -317,7 +309,7 @@
   linear predictor smoother fixed effects (`bs`) was accidentally a copy
   of the 1st linear predictor smoother fixed effects.
 
-* Fix bug in simulation with time-varying AR(1) when using the 
+* Fix bug in simulation with time-varying AR(1) when using the
   `project()` function. Thanks to A. Allyn for pointing out the bug.
 
 * Fix reporting of converged models with `sdmTMB_cv()`. A recent change
@@ -325,9 +317,9 @@
 
 * Remove warning about old default residuals type.
 
-* Fix `project()` and `simulate.sdmTMB(..., newdata = ...)` when 
+* Fix `project()` and `simulate.sdmTMB(..., newdata = ...)` when
   random intercepts/slopes are present. #431
-  
+
 * Remove extra TMB data slots for `project()` and
   `simulate.sdmTMB(..., newdata = ...)` to save memory. #431
 
@@ -335,7 +327,7 @@
 
 ## New features
 
-* Add option for random slopes, or random intercepts to be passed in in 
+* Add option for random slopes, or random intercepts to be passed in in
   `lme4` style formulas, `density ~ (1 | fyear)` or `density ~ (depth | fyear)`,
   Matches output of `lme4` and `glmmTMB`, and summarizes output with `tidy()`.
 
@@ -355,12 +347,12 @@
   EDF (effective degrees of freedom) will ultimately be further split
   (e.g., split by smoothers) and added to `summary.sdmTMB()`. #383 #387
 
-* Add EDF (effective degrees of freedom) printing to smoothers with 
+* Add EDF (effective degrees of freedom) printing to smoothers with
   `print.sdmTMB()` and `summary.sdmTMB()`. Set argument `edf = TRUE`.
   E.g. `print(fit, edf = TRUE)`. #383 #387
 
-* At experimental function `get_index_split()`, which takes care of 
-  splitting a prediction grid by time, undoing the prediction and 
+* At experimental function `get_index_split()`, which takes care of
+  splitting a prediction grid by time, undoing the prediction and
   area-integration index calculations for each chunk to save memory.
 
 * Add `newdata` argument to `simulate.sdmTMB()`. This enables simulating on
@@ -428,16 +420,16 @@
 * Fig bug in `exponentiate` argument for `tidy()`. Set `conf.int = TRUE` as
   default. #353
 
-* Fix bug in prediction from `delta_truncated_nbinom1()` and 
+* Fix bug in prediction from `delta_truncated_nbinom1()` and
   `delta_truncated_nbinom2()` families. The positive component
   needs to be transformed to represent the mean of the *un*truncated
   distribution first before multiplying by the probability of a non-zero.
   Thanks to @tom-peatman #350
 
-* Add option for `area` to be passed in as the name of a column in the 
-  data frame to be used for area weighting. Used in `get_index()`, 
+* Add option for `area` to be passed in as the name of a column in the
+  data frame to be used for area weighting. Used in `get_index()`,
   `get_cog()`, `get_eao()`, etc.
-  
+
 # sdmTMB 0.6.0
 
 * Pass several arguments to `DHARMa::plotQQunif()`.
@@ -457,7 +449,7 @@
 * Add suggestion to use an optimized BLAS library to README.
 
 * Add warning if it's detected that there were problems reloading (e.g., with
-  `readRDS()`) a fitted model. Simultaneously revert the approach to 
+  `readRDS()`) a fitted model. Simultaneously revert the approach to
   how reloaded models are reattached.
 
 * Move `log_ratio_mix` parameter to 2nd phase with starting value of -1 instead
@@ -470,10 +462,10 @@
   the inner problem (but omits from the from the Laplace approximation). See
   documentation in TMB. This can considerably speed up fitting models with many
   fixed effects.
-  
+
 * Add theoretical quantile residuals for the generalized gamma distribution.
-  Thanks to J.C. Dunic. #333 
-  
+  Thanks to J.C. Dunic. #333
+
 * Add `"poisson-link"` option to delta-mixture lognormal.
 
 * Fix bug in simulation from Poisson-link delta models.
@@ -487,7 +479,7 @@
 
 # sdmTMB 0.5.0
 
-* Overhaul residuals vignette ('article') 
+* Overhaul residuals vignette ('article')
   <https://sdmTMB.github.io/sdmTMB/articles/residual-checking.html>
   including brief intros to randomized quantile residuals, simulation-based
   residuals, 'one-sample' residuals, and uniform vs. Gaussian residuals.
@@ -496,7 +488,7 @@
 
 * Fix memory issue with Tweedie family on large datasets. #302
 
-* Add experimental option to return standard normal residuals from 
+* Add experimental option to return standard normal residuals from
   `dharma_residuals()`.
 
 * Make `simulate.sdmTMB()` not include `extra_time` elements.
@@ -512,7 +504,7 @@
   than the previous default. See the details section in `?residuals.sdmTMB`
   for details. The previous default is now called `"mvn-eb"` but is not
   recommended.
-  
+
 * Bring `dharma_residuals()` back over from sdmTMBextra to sdmTMB. Add a new
   option in the `type` argument (`"mle-mvn"`) that should make the
   simulation residuals consistent with the expected distribution.
@@ -526,7 +518,7 @@
   rows of data in the `data` element of the fitted object do not include the
   extra time slices.
 
-* Add experimental residuals option "mle-mvn" where a single approximate 
+* Add experimental residuals option "mle-mvn" where a single approximate
   posterior sample of the random effects is drawn and these are combined
   with the MLE fixed effects to produce residuals. This may become the
   default option.
@@ -534,7 +526,7 @@
 * Add the generalized gamma distribution (thanks to J.T. Thorson with additional
   work by J.C. Dunic.) See `gengamma()`. This distribution is still in a testing
   phase and is not recommended for applied use yet. #286
-  
+
 * Detect possible issue with factor(time) in formula if same column name is used
   for `time` and `extra_time` is specified. #320
 
@@ -550,12 +542,12 @@
   `extra_time` was specified. This is an important bug and models fit with
   `extra_time` between that date (if using the GitHub version) and v0.4.2.9004
   (2024-02-24) should be checked against a current version of sdmTMB
-  (v0.4.2.9005 or greater). On CRAN, this affected v0.4.0 (2023-10-20) to 
+  (v0.4.2.9005 or greater). On CRAN, this affected v0.4.0 (2023-10-20) to
   v0.4.2. Details:
-  
+
   * The essence of the bug was that `extra_time` works by padding the data
     with a fake row of data for every extra time element (using the first row of
-    data as the template). This is supposed to then be omitted from the 
+    data as the template). This is supposed to then be omitted from the
     likelihood so it has no impact on model fitting beyond spacing
     time-series processes appropriately and setting up internal structures for
     forecasting. Unfortunately, a bug was introduced that caused these fake data
@@ -569,8 +561,8 @@
 * Poisson-link delta models now use a `type` argument in `delta_gamma()` and
   `delta_lognormal()`. `delta_poisson_link_gamma()` and
   `delta_poisson_link_lognormal()` are deprecated. #290
-  
-* Delta families can now pass links that are different from the default 
+
+* Delta families can now pass links that are different from the default
   `"logit"` and `"log"`. #290
 
 # sdmTMB 0.4.2
@@ -602,7 +594,7 @@
 
 * Fix memory issues detected by CRAN 'Additional issues' clang-UBSAN, valgrind.
 
-* Fix a bug predicting on new data with a specified offset and `extra_time`. 
+* Fix a bug predicting on new data with a specified offset and `extra_time`.
   #270
 
 * Add warning around non-factor handling of the `spatial_varying` formula. #269
@@ -617,12 +609,12 @@
 
 * Switch to using the new fmesher package for all mesh/SPDE calculations. INLA
   is no longer a dependency.
-  
-* Switch to `diagonal.penalty = FALSE` in mgcv::smoothCon(). 
+
+* Switch to `diagonal.penalty = FALSE` in mgcv::smoothCon().
   This changes the scale of the linear component of the smoother, but
   should result in the same model.
   https://github.com/glmmTMB/glmmTMB/issues/928#issuecomment-1642862066
-  
+
 * Implement cross validation for delta models #239
 
 * Remove ELPD from cross validation output. Use sum_loglik instead. #235
@@ -633,13 +625,13 @@
 
 * Poisson-link delta models and censored likelihood distributions have been made
   considerably more robust. #186
-  
+
 * Standard errors are now available on SD parameters etc. in tidy() #240
 
 * Fix bug in print()/tidy() for delta-model positive model component sigma_E.
   A recently introduce bug was causing sigma_E for the 2nd model to be reported
   as the 1st model component sigma_E.
-  
+
 * Add new anisotropy plotting function.
 
 * Add anisotropic range printing. #149 by @jdunic
@@ -649,7 +641,7 @@
 * Create the sdmTMBextra package to remove rstan/tmbstan helpers, which
   were causing memory sanitizer errors on CRAN.
   https://github.com/sdmTMB/sdmTMBextra
-  
+
 * The following functions are affected:
 
   - `predict.sdmTMB()` now takes `mcmc_samples`, which is output from
@@ -657,13 +649,13 @@
   - `simulate.sdmTMB()` now takes `mcmc_samples`, which is output from
     `sdmTMBextra::extract_mcmc()`.
   - `residuals.sdmTMB()` now takes `mcmc_samples`, which is output
-    `sdmTMBextra::predict_mle_mcmc()`. This only affects 
+    `sdmTMBextra::predict_mle_mcmc()`. This only affects
     `residuals(..., type = "mle-mcmc")`.
 
-* Move `dharma_residuals()` to 
+* Move `dharma_residuals()` to
   [sdmTMBextra](https://github.com/sdmTMB/sdmTMBextra) to reduce heavy
   dependencies.
-  
+
 * See examples in the Bayesian and residuals vignettes or in the help files for
   those functions within sdmTMBextra.
 
@@ -689,7 +681,7 @@
 
 * Fix `predict(..., type = "response", se_fit = TRUE)`, which involves issuing
   a warning and sticking to link space. #140
-  
+
 # sdmTMB 0.2.1
 
 * Fixes for resubmission to CRAN.
@@ -716,7 +708,7 @@
   delta/hurdle families: `delta_gamma_mix()`, `delta_lognormal_mix()`. These
   families feature a mixture of two distributions with different means but
   shared variance parameters.
-  
+
 * Add `delta_beta()` family.
 
 # sdmTMB 0.1.3
@@ -733,16 +725,16 @@ is now `plot_anisotropy2()`.
 * Switch `effects = 'ran_vals'` for random intercept values from `tidy.sdmTMB()`
   to match the broom.mixed package.
 
-* Make `tidy.sdmTMB()` return a tibble if the tibble package is installed. Note 
+* Make `tidy.sdmTMB()` return a tibble if the tibble package is installed. Note
   this could affect old code since `drop = FALSE` is the default for tibbles
   but `drop = TRUE` is the default for data frames (i.e., tibbles always return
   a data frame when subsetted).
 
-* Fix longstanding issue with predicting on newdata with mgcv's `t2()`. 
+* Fix longstanding issue with predicting on newdata with mgcv's `t2()`.
   Previously this was disabled because of issues. It now works as expected.
-  
+
 * Add `knots` argument in `sdmTMB()`, which is passed to mgcv. A common use
-  would be to specify end points in a cyclical spline 
+  would be to specify end points in a cyclical spline
   (e.g., `s(x, bs = 'cc', k = 4), knots = list(x = c(1, 3, 5, 7))`) when the
   data don't extend fully to the boundaries that should match up.
 
@@ -750,14 +742,14 @@ is now `plot_anisotropy2()`.
 
 * Preparing for release on CRAN.
 
-* Add time-varying AR1 option (originally was always a random walk). See 
+* Add time-varying AR1 option (originally was always a random walk). See
   `time_varying_type` argument in `?sdmTMB`.
 
 * Allow prediction on `newdata` with missing time elements. #130
 
 * Add check for `offset()` (which *does not* work in sdmTMB, use the `offset`
   argument instead). #131
-  
+
 * Add check for random slopes (sdmTMB currently only does random intercepts,
   although slopes can vary spatially). #131
 
@@ -770,7 +762,7 @@ is now `plot_anisotropy2()`.
 
 * Let `sims_var` work with multiple spatially varying slopes (`zeta_s`); return
   output in named list by coefficients. #107
-  
+
 * Add `threshold_coefs` to `sdmTMB_simulate()`.
 
 * Don't make a fake mesh for non-spatial model (faster).
@@ -785,7 +777,7 @@ is now `plot_anisotropy2()`.
 * Add support for effects package. The `ggeffects::ggeffect()` function
   can be used to make fast marginal effects plots. `ggeffects::ggpredict()`
   works with a custom fork of ggeffects. A pull request will be made shortly.
-  #101 
+  #101
 
 * Add `vcov()`, `fixef()`, `df.residual`(), `formula()`, `terms()`, and
   `model.frame()` methods.
@@ -793,17 +785,17 @@ is now `plot_anisotropy2()`.
 * Add support for `"cloglog"` link. Code adapted from glmmTMB for robust
   likelihood implementation.
 
-* For delta models, by default share the anisotropy parameters as in VAST. 
+* For delta models, by default share the anisotropy parameters as in VAST.
   Separate anisotropy (old behavior) can be estimated with
   `control = sdmTMBcontrol(map = list(ln_H_input = factor(c(1, 2, 3, 4))))`
-  
+
 * Add experimental `do_index`, `predict_args`, and `index_args` in `sdmTMB()`.
   These can be used to perform prediction and index calculation at the same
   time as fitting. For very large datasets or meshes this can save time
   compared to fitting, predicting, and index calculation in 3 separate steps
   since the TMB AD object doesn't have to be rebuilt. This will somewhat slow
   down the initial fitting.
-  
+
 * Remove `max_gradient` and `bad_eig` from `get_index()` output.
 
 * Use unique locations on prediction for huge speedups on large `newdata`
@@ -812,9 +804,9 @@ is now `plot_anisotropy2()`.
 * Fix bug where in rare cases `get_index()` would return gibberish small values.
 
 * Add `bayesian` argument, which when `TRUE` adds Jacobian adjustments for
-  non-linear transformed parameters. This should be `TRUE` if the model 
+  non-linear transformed parameters. This should be `TRUE` if the model
   will be passed to tmbstan, but `FALSE` otherwise. #95
-  
+
 * Add experimental and not-yet-exported `sdmTMB:::plot_anisotropy2()`.
 
 * Add many anisotropy, delta model, and index calculation unit tests.
@@ -827,7 +819,7 @@ is now `plot_anisotropy2()`.
 
 * Fix bugs introduced by delta model code (offsets with `extra_time` and
   threshold model prediction).
-  
+
 * Fix bug in `sanity()` message with small random field SDs.
 
 # sdmTMB 0.0.24.9000
@@ -867,7 +859,7 @@ is now `plot_anisotropy2()`.
   By default, grabs value of `sdmTMB.cores` option. E.g.
   `options(sdmTMB.cores = 4)`. Only currently enabled on Mac/Linux.
   Using too many cores can be much slower than 1 core.
-  
+
 * Use 'cli' package `cli_abort()`/`cli_warn()`/`cli_inform()` over
   `stop()`/`warning()`/`message()`.
 
@@ -900,7 +892,7 @@ is now `plot_anisotropy2()`.
 * `sims` and `n_sims` arguments have been deprecated and standardized
   to `nsim` to match the `simulate()` S3 method.
 
-* Bias correction on `get_index()` and `get_cog()` is now selective and 
+* Bias correction on `get_index()` and `get_cog()` is now selective and
   is just applied to the necessary derived parameters.
 
 * INLA projection matrix 'A' is now shared across spatial and spatiotemporal
@@ -927,25 +919,25 @@ is now `plot_anisotropy2()`.
 
 * `include_spatial` in `sdmTMB()` is now deprecated and replaced by `spatial`.
 
-* `spatial_only` in `sdmTMB()` is now deprecated and replaced by `spatiotemporal`. 
-   E.g. `spatial_only = TRUE` is now `spatiotemporal = 'off'` or leaving 
+* `spatial_only` in `sdmTMB()` is now deprecated and replaced by `spatiotemporal`.
+   E.g. `spatial_only = TRUE` is now `spatiotemporal = 'off'` or leaving
    `time = NULL`.
-   
+
 * `spde` in `sdmTMB()` is now deprecated and replaced by `mesh`.
 
-* `sdmTMB_simulate()` is new and will likely replace `sdmTMB_sim()` eventually. 
+* `sdmTMB_simulate()` is new and will likely replace `sdmTMB_sim()` eventually.
   `sdmTMB_simulate()` is set up to take a formula and a data frame and is easier
   to use if you want different spatial observations (and covariates) for each
   time slice. It can also take a fitted model and modify parts of it to simulate.
   Finally, this function uses TMB for simulation and so is much faster and
   more flexible in what it can simulate (e.g., anisotropy) than the previous version.
-  
+
 * `spatial_trend` is now `spatial_varying` and accepts a one-sided formula
   *with a single predictor* of any coefficient that should varying in space as a
   random field. Note that you may want to include a fixed effect for the same
   variable to improve interpretability. If the (scaled) time column is used, it will
   represent a local-time-trend model as before.
-  
+
 * The Tweedie power (p) parameter is now in `print()` and `tidy()` output.
 
 * `thetaf` is now `tweedie_p` in `sdmTMB_sim()`.
@@ -961,7 +953,7 @@ is now `plot_anisotropy2()`.
 
 # sdmTMB 0.0.19.9000
 
-* Smoothers `s()` are now *penalized* smoothers: they determine the 
+* Smoothers `s()` are now *penalized* smoothers: they determine the
   degree of wiggliness (as in mgcv) and it is no longer necessary to
   choose an appropriate `k` value a priori. Models fit with previous
   versions of sdmTMB with  `s(x, k = ...)` will not match models
@@ -973,7 +965,7 @@ is now `plot_anisotropy2()`.
 
 * Add ELPD (expected log predictive density) to `sdmTMB_cv()`
   <https://arxiv.org/abs/1507.04544>
-  
+
 * Fix bug evaluating `...` when `sdmTMB_cv()` was called within a function. #54
 
 # sdmTMB 0.0.18.9000
@@ -996,26 +988,26 @@ is now `plot_anisotropy2()`.
   improve model fitting speed with many fixed effects. Note the
   result is likely to be slightly different with `TRUE` vs. `FALSE`.
 
-* Added simulation from the MVN precision matrix to `predict.sdmTMB()`. 
+* Added simulation from the MVN precision matrix to `predict.sdmTMB()`.
   See the `sims` argument.
-  
+
 * Added `gather_sims()` and `spread_sims()` to extract parameter
   simulations from the joint precision matrix in a format that
   matches the tidybayes package.
 
 * Added `get_index_sims()` for a population index calculated from
   the MVN simulation draws.
-  
+
 * Added `extract_mcmc()` to extract MCMC samples if the model is
   passed to tmbstan.
-  
+
 * Added the ability to predict from a model fitted with tmbstan.
   See the `tmbstan_model` argument in `predict.sdmTMB()`.
 
-* Allowed for separate random field Matern range parameters for 
+* Allowed for separate random field Matern range parameters for
   spatial and spatiotemporal fields. E.g. `sdmTMB(shared_range = FALSE)`
 
-* Bounded the AR1 rho parameter between -0.999 and 0.999 to improve 
+* Bounded the AR1 rho parameter between -0.999 and 0.999 to improve
   convergence; was -1 to 1. Please post an issue if this creates
   problems for your model.
 
@@ -1025,7 +1017,7 @@ is now `plot_anisotropy2()`.
 * Added priors for all parameters. See `?sdmTMB::priors` and the
   `priors` argument in `sdmTMB()`. PC priors are available for
   the random fields. See `?pc_matern` and the details there.
-  
+
 * Moved many less-common arguments from `sdmTMB()` to `sdmTMBcontrol()`.
 
 * Fix bug in `sdmTMB_cv()` where fitting and testing data splits
