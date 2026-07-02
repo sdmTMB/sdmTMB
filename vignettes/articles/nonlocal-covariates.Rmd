@@ -5,7 +5,7 @@ output: rmarkdown::html_vignette
 bibliography: '../refs.bib'
 csl: '../mee.csl'
 vignette: >
-  %\VignetteIndexEntry{Estimating covariate diffusion with sdmTMB}
+  %\VignetteIndexEntry{Estimating non-local covariate effects with sdmTMB: spatial diffusion and time lags}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
