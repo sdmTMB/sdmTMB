@@ -536,15 +536,15 @@ broom::tidy(fit_glm)
 
 ### Using a custom fmesher mesh
 
-Defining a mesh directly with INLA:
+Defining a mesh directly with fmesher:
 
 ```{r inla-mesh, warning=FALSE, fig.asp = 1, dpi = 40, out.width = "30%"}
-bnd <- INLA::inla.nonconvex.hull(cbind(pcod$X, pcod$Y), convex = -0.1)
-mesh_inla <- INLA::inla.mesh.2d(
+bnd <- fmesher::fm_nonconvex_hull(cbind(pcod$X, pcod$Y), convex = -0.1)
+mesh_fmesher <- fmesher::fm_mesh_2d(
   boundary = bnd,
   max.edge = c(25, 50)
 )
-mesh <- make_mesh(pcod, c("X", "Y"), mesh = mesh_inla)
+mesh <- make_mesh(pcod, c("X", "Y"), mesh = mesh_fmesher)
 plot(mesh)
 ```
 
