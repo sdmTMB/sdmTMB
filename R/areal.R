@@ -21,8 +21,6 @@
 #' @return A list with class `c("sdmTMBareal", "sdmTMBdomain")`.
 #' @export
 #'
-#' @seealso [make_areal_grid()]
-#'
 #' @examplesIf require("sf", quietly = TRUE)
 #' data(ohio_df)
 #' data(ohio_sf)
@@ -96,178 +94,6 @@ make_areal_domain <- function(spatial_domain, space_column = NULL,
       space_column = space_column
     ),
     class = c("sdmTMBareal", "sdmTMBdomain")
-  )
-}
-
-#' Create an areal grid domain by overlaying point data
-#'
-#' @description
-#' `r lifecycle::badge("experimental")`
-#'
-#'
-#' Build or use an `sf` polygon grid, overlay point observations onto grid
-#' cells, construct grid-cell adjacency, and return labelled data plus an
-#' `sdmTMBareal` domain for SAR/CAR models.
-#'
-#' @param data A data frame containing point coordinates.
-#' @param xy_cols Character vector of length 2 naming spatial coordinate columns
-#'   in `data`.
-#' @param spatial_domain Optional `sf`/`sfc` polygon object. If `cellsize` or
-#'   `n` is supplied, this object is treated as a boundary from which a grid is
-#'   generated and clipped. Otherwise it is treated as the grid itself.
-#' @param cellsize Optional cell size passed to [sf::st_make_grid()].
-#' @param n Optional grid dimensions passed to [sf::st_make_grid()]. Ignored if
-#'   `cellsize` is supplied.
-#' @param square Logical passed to [sf::st_make_grid()]. Use `FALSE` for
-#'   hexagonal grids.
-#' @param space_column Column name to add to returned data.
-#' @param adjacency Polygon adjacency type: `"rook"` for shared edges or
-#'   `"queen"` for any touching boundary.
-#' @param crs Optional coordinate reference system for `data` coordinates,
-#'   passed to [sf::st_as_sf()].
-#'
-#' @seealso [make_areal_domain()]
-#'
-#' @return A list with `data`, `grid`, and `domain` elements. `domain` can be
-#'   supplied to [sdmTMB()] via the `mesh` argument.
-#' @export
-#'
-#' @examplesIf require("sf", quietly = TRUE) && ggplot2_installed()
-#' library(ggplot2)
-#'
-#' # Basic example of using make_areal_grid()
-#'
-#' dat <- data.frame(
-#'   x = c(0.25, 1.25, 0.25, 1.25),
-#'   y = c(0.25, 0.25, 1.25, 1.25),
-#'   depth = c(12, 18, 9, 15)
-#' )
-#'
-#' boundary <- sf::st_as_sf(
-#'   sf::st_as_sfc(sf::st_bbox(c(xmin = 0, ymin = 0, xmax = 2, ymax = 2)))
-#' )
-#'
-#' areal_grid <- make_areal_grid(
-#'   data = dat,
-#'   xy_cols = c("x", "y"),
-#'   spatial_domain = boundary,
-#'   n = c(2, 2)
-#' )
-#'
-#' head(areal_grid$data)
-#' areal_grid$domain$n_s
-#'
-#' # Dogfish example going from a data frame to overlaying a grid
-#'
-#' # Convert to an sf object:
-#' dogfish_points <- st_as_sf(dogfish, coords = c("X", "Y"), crs = NA)
-#' 
-#' # make a boundary polygon around observations:
-#' dogfish_boundary <- st_union(dogfish_points) |>
-#'   st_convex_hull() |>
-#'   st_as_sf()
-#' 
-#' # overlay a grid and create objects for fitting:
-#' dogfish_grid_obj <- make_areal_grid(
-#'   dogfish,
-#'   xy_cols = c("X", "Y"),
-#'   spatial_domain = dogfish_boundary,
-#'   n = c(25L, 20L),
-#'   space_column = "cell_id"
-#' )
-#' 
-#' names(dogfish_grid_obj)
-#' 
-#' ggplot() + 
-#'   geom_sf(data = dogfish_grid_obj$grid) + 
-#'   geom_point(data = dogfish_grid_obj$data, aes(X, Y), alpha = 0.2)
-#' 
-#' fit_car <- sdmTMB(
-#'   catch_weight ~ poly(log(depth), 2),
-#'   data = dogfish_grid_obj$data,
-#'   mesh = dogfish_grid_obj$domain,
-#'   spatial_model = "car",
-#'   family = tweedie(link = "log"),
-#'   spatial = "on",
-#'   offset = log(dogfish_grid_obj$data$area_swept)
-#' )
-#' fit_car
-
-make_areal_grid <- function(data, xy_cols, spatial_domain = NULL,
-                            cellsize = NULL, n = NULL, square = TRUE,
-                            space_column = "grid_cell",
-                            adjacency = c("rook", "queen"),
-                            crs = NA) {
-  if (!requireNamespace("sf", quietly = TRUE)) {
-    cli::cli_abort("Package {.pkg sf} must be installed to use `make_areal_grid()`.")
-  }
-  if (!inherits(data, "data.frame")) {
-    cli::cli_abort("`data` must be a data frame.")
-  }
-  if (!is.character(xy_cols) || length(xy_cols) != 2L || anyNA(xy_cols) || any(!nzchar(xy_cols))) {
-    cli::cli_abort("`xy_cols` must be a character vector of length 2.")
-  }
-  if (!all(xy_cols %in% names(data))) {
-    cli::cli_abort("All `xy_cols` must be columns in `data`.")
-  }
-  if (!is.character(space_column) || length(space_column) != 1L || is.na(space_column) || !nzchar(space_column)) {
-    cli::cli_abort("`space_column` must be a single non-empty column name.")
-  }
-  adjacency <- match.arg(adjacency)
-
-  pts <- sf::st_as_sf(data, coords = xy_cols, crs = crs, remove = FALSE)
-  if (is.null(spatial_domain)) {
-    spatial_domain <- sf::st_as_sf(sf::st_as_sfc(sf::st_bbox(pts)))
-  }
-  spatial_domain <- .as_sf_polygons(spatial_domain, arg = "spatial_domain")
-  pts <- .align_sf_crs(pts, spatial_domain)
-
-  make_grid <- !is.null(cellsize) || !is.null(n)
-  if (make_grid) {
-    grid_args <- list(x = spatial_domain, square = square)
-    if (!is.null(cellsize)) {
-      grid_args$cellsize <- cellsize
-    } else {
-      grid_args$n <- n
-    }
-    grid_geom <- do.call(sf::st_make_grid, grid_args)
-    grid_geom <- sf::st_intersection(grid_geom, sf::st_union(spatial_domain))
-    if (any(sf::st_geometry_type(grid_geom) == "GEOMETRYCOLLECTION")) {
-      grid_geom <- sf::st_collection_extract(grid_geom, "POLYGON")
-    }
-    grid <- sf::st_sf(geometry = grid_geom)
-  } else {
-    grid <- spatial_domain
-  }
-
-  centers <- sf::st_coordinates(sf::st_centroid(sf::st_geometry(grid)))
-  grid[[xy_cols[1L]]] <- centers[, 1L]
-  grid[[xy_cols[2L]]] <- centers[, 2L]
-  grid[[space_column]] <- sprintf("cell_%03d", seq_len(nrow(grid)))
-  hits <- sf::st_intersects(pts, grid)
-  if (any(lengths(hits) == 0L)) {
-    cli::cli_abort("Some points in `data` did not overlay any areal grid cell.")
-  }
-  multi <- which(lengths(hits) > 1L)
-  if (length(multi)) {
-    cli::cli_warn(c(
-      "Some points overlay multiple areal grid cells; using the first match.",
-      "i" = "This can happen for points exactly on polygon boundaries."
-    ))
-  }
-
-  out_data <- data
-  out_data[[space_column]] <- grid[[space_column]][vapply(hits, `[[`, integer(1), 1L)]
-  domain <- make_areal_domain(
-    grid,
-    id_column = space_column,
-    adjacency = adjacency
-  )
-
-  list(
-    data = out_data,
-    grid = grid,
-    domain = domain
   )
 }
 
@@ -499,7 +325,7 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
     cli::cli_abort("`spatial_model = \"spde\"` requires an SPDE mesh from `make_mesh()`. Use `spatial_model = \"sar\"` or `\"car\"` with an areal domain.")
   }
   if (spatial_model %in% c("sar", "car") && !is_areal) {
-    cli::cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain from `make_areal_domain()` or `make_areal_grid()`.")
+    cli::cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain from `make_areal_domain()`.")
   }
 
   if (is_areal) {

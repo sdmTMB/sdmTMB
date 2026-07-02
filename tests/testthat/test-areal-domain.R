@@ -80,56 +80,22 @@ test_that("make_areal_domain works with labelled sf polygon input", {
   expect_equal(as.numeric(Matrix::rowSums(d$W)), c(1, 1))
 })
 
-test_that("make_areal_grid overlays point data on an existing sf grid", {
-  skip_if_not_installed("sf")
-
-  grid <- sf::st_make_grid(
-    sf::st_as_sfc(sf::st_bbox(c(xmin = 0, ymin = 0, xmax = 2, ymax = 2))),
-    n = c(2, 2),
-    square = TRUE
-  )
-  dat <- data.frame(
-    x = c(0.25, 1.25, 0.25, 1.25),
-    y = c(0.25, 0.25, 1.25, 1.25),
-    z = 1:4
-  )
-
-  out <- make_areal_grid(
-    data = dat,
-    xy_cols = c("x", "y"),
-    spatial_domain = grid,
-    space_column = "cell"
-  )
-
-  expect_true("cell" %in% names(out$data))
-  expect_s3_class(out$domain, "sdmTMBareal")
-  expect_s3_class(out$grid, "sf")
-  expect_equal(out$domain$n_s, 4L)
-  expect_equal(sort(unique(out$data$cell)), sort(out$domain$unit_names))
-  expect_equal(as.numeric(Matrix::rowSums(out$domain$W)), rep(1, 4))
-})
-
-test_that("make_areal_grid can create and clip a grid from an sf boundary", {
+test_that("make_areal_domain works with an sf grid and stable IDs", {
   skip_if_not_installed("sf")
 
   boundary <- sf::st_as_sf(sf::st_as_sfc(sf::st_bbox(c(xmin = 0, ymin = 0, xmax = 2, ymax = 2))))
-  dat <- data.frame(
-    x = c(0.25, 1.25, 0.25, 1.25),
-    y = c(0.25, 0.25, 1.25, 1.25)
-  )
-
-  out <- make_areal_grid(
-    data = dat,
-    xy_cols = c("x", "y"),
-    spatial_domain = boundary,
+  grid <- sf::st_make_grid(
+    boundary,
     n = c(2, 2),
     square = TRUE
   )
+  grid <- sf::st_sf(cell_id = sprintf("cell_%03d", seq_along(grid)), geometry = grid)
+  domain <- make_areal_domain(grid, id_column = "cell_id")
 
-  expect_s3_class(out$domain, "sdmTMBareal")
-  expect_equal(out$domain$n_s, 4L)
-  expect_equal(nrow(out$grid), 4L)
-  expect_true("grid_cell" %in% names(out$data))
+  expect_s3_class(domain, "sdmTMBareal")
+  expect_equal(domain$n_s, 4L)
+  expect_equal(domain$unit_names, grid$cell_id)
+  expect_equal(as.numeric(Matrix::rowSums(domain$W)), rep(1, 4))
 })
 
 test_that("prepare_spatial_domain validates data memberships", {
