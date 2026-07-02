@@ -65,7 +65,6 @@ reference:
   - add_utm_columns
   - get_crs
   - make_areal_domain
-  - make_areal_grid
   - make_mesh
   - add_barrier_mesh
 

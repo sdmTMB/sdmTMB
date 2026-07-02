@@ -401,7 +401,7 @@ With the current parameterization, `\mathrm{MSD} = 4/\kappa_S^2` and `\mathrm{RM
 ## Areal autoregressive models (SAR/CAR)
 
 In addition to continuous-space SPDE random fields, sdmTMB can fit areal spatial autoregressive models with `spatial_model = "sar"` or `spatial_model = "car"`.
-These require an areal domain supplied to `mesh` with the help of `make_areal_domain()` or `make_areal_grid()`.
+These require an areal domain supplied to `mesh` with the help of `make_areal_domain()`.
 
 For both areal options, the latent spatial and spatiotemporal effects are Gaussian Markov random fields with precision defined by the areal weight matrix $\mathbf{W}$:
 

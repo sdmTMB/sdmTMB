@@ -7,9 +7,9 @@ NULL
 #' with the TMB (Template Model Builder) R package. Spatial and spatiotemporal
 #' Gaussian random fields are approximated using the SPDE (stochastic partial differential
 #' equation) approach with Gaussian Markov random fields. This allows for
-#' efficient modeling of data that are correlated in space and/or time. 
+#' efficient modeling of data that are correlated in space and/or time.
 #' Areal spatial/spatiotemporal models (conditional or simultaneous
-#' autogressive models, CAR + SAR) are also possible. 
+#' autoregressive models, CAR + SAR) are also possible.
 #' See the
 #' [model description vignette](https://sdmTMB.github.io/sdmTMB/articles/model-description.html)
 #' for details.
@@ -22,7 +22,7 @@ NULL
 #'   examples and details below.
 #' @param data A data frame.
 #' @param mesh An object from [make_mesh()] for `spatial_model = "spde"` or
-#'   from [make_areal_domain()] / [make_areal_grid()] for `"sar"` or `"car"`.
+#'   from [make_areal_domain()] for `"sar"` or `"car"`.
 #' @param spatial_model Spatial process model. `"spde"` uses the default
 #'   continuous-space SPDE approximation. `"sar"` and `"car"` use areal spatial
 #'   autoregressive models with an areal domain supplied to `mesh`.
@@ -40,16 +40,20 @@ NULL
 #'   \code{\link[sdmTMB:families]{truncated_nbinom1()}},
 #'   \code{\link[sdmTMB:families]{censored_poisson()}},
 #'   \code{\link[sdmTMB:families]{gamma_mix()}},
+#'   \code{\link[sdmTMB:families]{lognormal()}},
 #'   \code{\link[sdmTMB:families]{lognormal_mix()}},
+#'   \code{\link[sdmTMB:families]{nbinom2_mix()}},
 #'   \code{\link[sdmTMB:families]{student()}},
 #'   \code{\link[sdmTMB:families]{tweedie()}}, and
 #'   \code{\link[sdmTMB:families]{gengamma()}}.
-#'   Delta/hurdle models (for zero-inflated data) include:
+#'   Delta/hurdle models (for data with zeros) include:
 #'   \code{\link[sdmTMB:families]{delta_beta()}},
 #'   \code{\link[sdmTMB:families]{delta_gamma()}},
 #'   \code{\link[sdmTMB:families]{delta_gamma_mix()}},
+#'   \code{\link[sdmTMB:families]{delta_gengamma()}},
 #'   \code{\link[sdmTMB:families]{delta_lognormal_mix()}},
-#'   \code{\link[sdmTMB:families]{delta_lognormal()}}, and
+#'   \code{\link[sdmTMB:families]{delta_lognormal()}},
+#'   \code{\link[sdmTMB:families]{delta_truncated_nbinom1()}}, and
 #'   \code{\link[sdmTMB:families]{delta_truncated_nbinom2()}}.
 #'   See the [delta-model
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html) for
@@ -82,9 +86,10 @@ NULL
 #' @param time_varying_type Type of time-varying process to apply to
 #'   `time_varying` formula. Options: `'rw'` (random walk, default), `'rw0'`
 #'   (random walk with mean-zero prior on first time step), or `'ar1'`
-#'   (autoregressive, for coefficients that fluctuate around a mean). For `'rw0'`
-#'   and `'ar1'`, the coefficient starts at zero in the first time step. For
-#'   `'rw'` (default), the first time step is estimated separately—in this case,
+#'   (autoregressive, for coefficients that fluctuate around a mean). For `'rw0'`,
+#'   the first time step has a mean-zero prior; for `'ar1'`, the coefficients
+#'   fluctuate around zero. For `'rw'` (default), the first time step is estimated
+#'   separately—in this case,
 #'   avoid including the same covariates in both `formula` and `time_varying` to
 #'   prevent non-identifiability (use `~ 0` or `~ -1` in at least one). Structure
 #'   shared in delta models.
@@ -106,9 +111,9 @@ NULL
 #'   models.
 #' @param nonlocal_formula An optional one-sided formula describing distributed
 #'   lag terms with `diffusion()` or `time_lag()` wrappers.
-#'   Example: `~ diffusion(x) + time_lag(x)`. Note that diffused spatial 
+#'   Example: `~ diffusion(x) + time_lag(x)`. Note that diffused spatial
 #'   covariates will be held constant across time slices unless the
-#'   `time` argument is specified. 
+#'   `time` argument is specified.
 #'   See the [non-local covariates vignette](https://sdmTMB.github.io/sdmTMB/articles/nonlocal-covariates.html).
 #' @param nonlocal_data An optional data frame supplying the
 #'   `nonlocal_formula` covariate(s) at a different resolution and/or
@@ -124,8 +129,9 @@ NULL
 #'   a name of the variable in the data frame. See the Details section below.
 #' @param offset A numeric vector representing the model offset *or* a character
 #'   value representing the column name of the offset. In delta/hurdle models,
-#'   this applies only to the positive component. Usually a log transformed
-#'   variable.
+#'   this applies only to the positive component except for Poisson-link delta
+#'   models, where it also enters the occurrence-probability calculation.
+#'   Usually a log transformed variable.
 #' @param extra_time Optional extra time slices (e.g., years) to include for
 #'   interpolation or forecasting with the predict function. See the Details
 #'   section below.
@@ -182,7 +188,7 @@ NULL
 #   predictor is included, a log-linear model is fit where the predictor is
 #   used to model effects on the standard deviation, e.g. `log(sd(i)) = B0 + B1
 #   * epsilon_predictor(i)`. The 'epsilon_model' argument may also be
-#   specified. This is the name of the model to use to modeling time-varying
+#   specified. This is the name of the model to use for modeling time-varying
 #   epsilon. This can be one of the following: "trend" (default, fits a linear
 #   model without random effects), "re" (fits a model with random effects in
 #   epsilon_st, but no trend), and "trend-re" (a model that includes both the
@@ -224,9 +230,9 @@ NULL
 #'
 #' Following the structure of [stats::glm()] and \pkg{glmmTMB}, a binomial
 #' family can be specified in one of 4 ways: (1) the response may be a factor
-#' (and the model classifies the first level versus all others), (2) the
-#' response may be binomial (0/1), (3) the response can be a matrix of form
-#' `cbind(success, failure)`, and (4) the response may be the observed
+#' (success is interpreted as any level other than the first level), (2) the
+#' response may be binary (0/1), (3) the response can be a matrix of form
+#' `cbind(success, failure)`, and (4) the response may be observed
 #' proportions, and the 'weights' argument is used to specify the Binomial size
 #' (N) parameter (`prob ~ ..., weights = N`).
 #'
@@ -242,7 +248,7 @@ NULL
 #' levels, `+ s(x, by = group)`; the basis function dimensions may be specified,
 #' e.g. `+ s(x, k = 4)`; and various types of splines may be constructed such as
 #' cyclic splines to model seasonality (perhaps with the `knots` argument also
-#' be supplied).
+#' supplied).
 #'
 #' **Threshold models**
 #'
@@ -273,7 +279,8 @@ NULL
 #' to determine if the model makes sense for forecasting or interpolation. The
 #' options `time_varying`, `spatiotemporal = "rw"`, `spatiotemporal = "ar1"`,
 #' or a smoother on the time column provide mechanisms to predict over missing
-#' time slices with process error.
+#' time slices; `time_varying` and spatiotemporal random-walk or AR(1) fields
+#' include process error.
 #'
 #' `extra_time` can also be used to fill in missing time steps for the purposes
 #' of a random walk or AR(1) process if the gaps between time steps are uneven.
@@ -297,7 +304,9 @@ NULL
 #' or at the same time by using an appropriate delta family. E.g.:
 #'   \code{\link[sdmTMB:families]{delta_gamma()}},
 #'   \code{\link[sdmTMB:families]{delta_beta()}},
-#'   \code{\link[sdmTMB:families]{delta_lognormal()}}, and
+#'   \code{\link[sdmTMB:families]{delta_gengamma()}},
+#'   \code{\link[sdmTMB:families]{delta_lognormal()}},
+#'   \code{\link[sdmTMB:families]{delta_truncated_nbinom1()}}, and
 #'   \code{\link[sdmTMB:families]{delta_truncated_nbinom2()}}.
 #' If fit with a delta family, by default the formula, spatial, and spatiotemporal
 #' components are shared. Some elements can be specified independently for the two models
@@ -306,9 +315,9 @@ NULL
 #' and the second element is for the positive component (e.g., Gamma).
 #' Other elements must be shared for now (e.g., spatially varying coefficients,
 #' time-varying coefficients). Furthermore, there are currently limitations if
-#' specifying two formulas as a list: the two formulas cannot have smoothers or
-#' threshold effects. For now, these must be specified
-#' through a single formula that is shared across the two models.
+#' specifying two formulas as a list: smoothers must be identical between the
+#' two formulas, and threshold effects must be specified through a single
+#' formula that is shared across the two models.
 #'
 #' The main advantage of specifying such models using a delta family (compared
 #' to fitting two separate models) is (1) coding simplicity and (2) calculation
@@ -330,7 +339,7 @@ NULL
 #'
 #' **Main reference introducing the package to cite when using sdmTMB:**
 #'
-#' Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett., J.T. Thorson. 2025.
+#' Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett, J.T. Thorson. 2025.
 #' sdmTMB: an R package for fast, flexible, and user-friendly generalized linear
 #' mixed effects models with spatial and spatiotemporal random fields.
 #' Journal of Statistical Software. 115(2):1--46. \doi{10.18637/jss.v115.i02}.
@@ -421,7 +430,7 @@ NULL
 #' # - 'cutoff' is the minimum distance between mesh vertices in units of the
 #' #   x and y coordinates
 #' # - 'cutoff = 10' might make more sense in applied situations for this dataset
-#' # - or build any mesh in 'fmesher' and pass it to the 'mesh' argument in make_mesh()`
+#' # - or build any mesh in 'fmesher' and pass it to the 'mesh' argument in make_mesh()
 #' # - the mesh is not needed if you will be turning off all
 #' #   spatial/spatiotemporal random fields
 #'
@@ -730,7 +739,7 @@ sdmTMB <- function(
     cli_abort("`spatial_model = \"spde\"` requires an SPDE mesh from `make_mesh()`. Use `spatial_model = \"sar\"` or `\"car\"` with an areal domain.")
   }
   if (!mesh_missing && spatial_model %in% c("sar", "car") && !is_areal_domain(spde)) {
-    cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain from `make_areal_domain()` or `make_areal_grid()`.")
+    cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain from `make_areal_domain()`.")
   }
   epsilon_model <- NULL
   epsilon_predictor <- NULL

@@ -47,7 +47,7 @@ examples and details below.}
 \item{data}{A data frame.}
 
 \item{mesh}{An object from \code{\link[=make_mesh]{make_mesh()}} for \code{spatial_model = "spde"} or
-from \code{\link[=make_areal_domain]{make_areal_domain()}} / \code{\link[=make_areal_grid]{make_areal_grid()}} for \code{"sar"} or \code{"car"}.}
+from \code{\link[=make_areal_domain]{make_areal_domain()}} for \code{"sar"} or \code{"car"}.}
 
 \item{time}{An optional time column name (as character). Can be left as
 \code{NULL} for a model with only spatial random fields; however, if the data
@@ -63,16 +63,20 @@ downstream (e.g., \code{\link[=get_index]{get_index()}} or \code{\link[=get_cog]
 \code{\link[sdmTMB:families]{truncated_nbinom1()}},
 \code{\link[sdmTMB:families]{censored_poisson()}},
 \code{\link[sdmTMB:families]{gamma_mix()}},
+\code{\link[sdmTMB:families]{lognormal()}},
 \code{\link[sdmTMB:families]{lognormal_mix()}},
+\code{\link[sdmTMB:families]{nbinom2_mix()}},
 \code{\link[sdmTMB:families]{student()}},
 \code{\link[sdmTMB:families]{tweedie()}}, and
 \code{\link[sdmTMB:families]{gengamma()}}.
-Delta/hurdle models (for zero-inflated data) include:
+Delta/hurdle models (for data with zeros) include:
 \code{\link[sdmTMB:families]{delta_beta()}},
 \code{\link[sdmTMB:families]{delta_gamma()}},
 \code{\link[sdmTMB:families]{delta_gamma_mix()}},
+\code{\link[sdmTMB:families]{delta_gengamma()}},
 \code{\link[sdmTMB:families]{delta_lognormal_mix()}},
-\code{\link[sdmTMB:families]{delta_lognormal()}}, and
+\code{\link[sdmTMB:families]{delta_lognormal()}},
+\code{\link[sdmTMB:families]{delta_truncated_nbinom1()}}, and
 \code{\link[sdmTMB:families]{delta_truncated_nbinom2()}}.
 See the \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-model vignette} for
 details. For binomial family options, see 'Binomial families' in the Details
@@ -113,9 +117,10 @@ delta models.}
 \item{time_varying_type}{Type of time-varying process to apply to
 \code{time_varying} formula. Options: \code{'rw'} (random walk, default), \code{'rw0'}
 (random walk with mean-zero prior on first time step), or \code{'ar1'}
-(autoregressive, for coefficients that fluctuate around a mean). For \code{'rw0'}
-and \code{'ar1'}, the coefficient starts at zero in the first time step. For
-\code{'rw'} (default), the first time step is estimated separately—in this case,
+(autoregressive, for coefficients that fluctuate around a mean). For \code{'rw0'},
+the first time step has a mean-zero prior; for \code{'ar1'}, the coefficients
+fluctuate around zero. For \code{'rw'} (default), the first time step is estimated
+separately—in this case,
 avoid including the same covariates in both \code{formula} and \code{time_varying} to
 prevent non-identifiability (use \code{~ 0} or \code{~ -1} in at least one). Structure
 shared in delta models.}
@@ -158,8 +163,9 @@ a name of the variable in the data frame. See the Details section below.}
 
 \item{offset}{A numeric vector representing the model offset \emph{or} a character
 value representing the column name of the offset. In delta/hurdle models,
-this applies only to the positive component. Usually a log transformed
-variable.}
+this applies only to the positive component except for Poisson-link delta
+models, where it also enters the occurrence-probability calculation.
+Usually a log transformed variable.}
 
 \item{extra_time}{Optional extra time slices (e.g., years) to include for
 interpolation or forecasting with the predict function. See the Details
@@ -243,7 +249,7 @@ Gaussian random fields are approximated using the SPDE (stochastic partial diffe
 equation) approach with Gaussian Markov random fields. This allows for
 efficient modeling of data that are correlated in space and/or time.
 Areal spatial/spatiotemporal models (conditional or simultaneous
-autogressive models, CAR + SAR) are also possible.
+autoregressive models, CAR + SAR) are also possible.
 See the
 \href{https://sdmTMB.github.io/sdmTMB/articles/model-description.html}{model description vignette}
 for details.
@@ -262,9 +268,9 @@ vignette for mathematical details and the paper: \doi{10.18637/jss.v115.i02}
 
 Following the structure of \code{\link[stats:glm]{stats::glm()}} and \pkg{glmmTMB}, a binomial
 family can be specified in one of 4 ways: (1) the response may be a factor
-(and the model classifies the first level versus all others), (2) the
-response may be binomial (0/1), (3) the response can be a matrix of form
-\code{cbind(success, failure)}, and (4) the response may be the observed
+(success is interpreted as any level other than the first level), (2) the
+response may be binary (0/1), (3) the response can be a matrix of form
+\code{cbind(success, failure)}, and (4) the response may be observed
 proportions, and the 'weights' argument is used to specify the Binomial size
 (N) parameter (\verb{prob ~ ..., weights = N}).
 
@@ -280,7 +286,7 @@ with \code{+ s(x, y)} or \code{+ t2(x, y)}; smooths can be specific to various f
 levels, \code{+ s(x, by = group)}; the basis function dimensions may be specified,
 e.g. \code{+ s(x, k = 4)}; and various types of splines may be constructed such as
 cyclic splines to model seasonality (perhaps with the \code{knots} argument also
-be supplied).
+supplied).
 
 \strong{Threshold models}
 
@@ -311,7 +317,8 @@ to inform the expected value in a missing year. \code{\link[=sdmTMB]{sdmTMB()}} 
 to determine if the model makes sense for forecasting or interpolation. The
 options \code{time_varying}, \code{spatiotemporal = "rw"}, \code{spatiotemporal = "ar1"},
 or a smoother on the time column provide mechanisms to predict over missing
-time slices with process error.
+time slices; \code{time_varying} and spatiotemporal random-walk or AR(1) fields
+include process error.
 
 \code{extra_time} can also be used to fill in missing time steps for the purposes
 of a random walk or AR(1) process if the gaps between time steps are uneven.
@@ -335,7 +342,9 @@ Delta models (also known as hurdle models) can be fit as two separate models
 or at the same time by using an appropriate delta family. E.g.:
 \code{\link[sdmTMB:families]{delta_gamma()}},
 \code{\link[sdmTMB:families]{delta_beta()}},
-\code{\link[sdmTMB:families]{delta_lognormal()}}, and
+\code{\link[sdmTMB:families]{delta_gengamma()}},
+\code{\link[sdmTMB:families]{delta_lognormal()}},
+\code{\link[sdmTMB:families]{delta_truncated_nbinom1()}}, and
 \code{\link[sdmTMB:families]{delta_truncated_nbinom2()}}.
 If fit with a delta family, by default the formula, spatial, and spatiotemporal
 components are shared. Some elements can be specified independently for the two models
@@ -344,9 +353,9 @@ and \code{share_range}. The first element of the list is for the binomial compon
 and the second element is for the positive component (e.g., Gamma).
 Other elements must be shared for now (e.g., spatially varying coefficients,
 time-varying coefficients). Furthermore, there are currently limitations if
-specifying two formulas as a list: the two formulas cannot have smoothers or
-threshold effects. For now, these must be specified
-through a single formula that is shared across the two models.
+specifying two formulas as a list: smoothers must be identical between the
+two formulas, and threshold effects must be specified through a single
+formula that is shared across the two models.
 
 The main advantage of specifying such models using a delta family (compared
 to fitting two separate models) is (1) coding simplicity and (2) calculation
@@ -375,7 +384,7 @@ mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
 # - 'cutoff' is the minimum distance between mesh vertices in units of the
 #   x and y coordinates
 # - 'cutoff = 10' might make more sense in applied situations for this dataset
-# - or build any mesh in 'fmesher' and pass it to the 'mesh' argument in make_mesh()`
+# - or build any mesh in 'fmesher' and pass it to the 'mesh' argument in make_mesh()
 # - the mesh is not needed if you will be turning off all
 #   spatial/spatiotemporal random fields
 
@@ -572,7 +581,7 @@ fit
 \references{
 \strong{Main reference introducing the package to cite when using sdmTMB:}
 
-Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett., J.T. Thorson. 2025.
+Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett, J.T. Thorson. 2025.
 sdmTMB: an R package for fast, flexible, and user-friendly generalized linear
 mixed effects models with spatial and spatiotemporal random fields.
 Journal of Statistical Software. 115(2):1--46. \doi{10.18637/jss.v115.i02}.

@@ -4,7 +4,7 @@
 
 #' Predict from an sdmTMB model
 #'
-#' Make predictions from an \pkg{sdmTMB} model; can predict on the original or
+#' Make predictions from an \pkg{sdmTMB} model. Predictions can be made on the original or
 #' new data.
 #'
 #' @param object A model fitted with [sdmTMB()].
@@ -12,24 +12,25 @@
 #'   frame with the same predictor columns as in the fitted data and a time
 #'   column (if this is a spatiotemporal model) with the same name as in the
 #'   fitted data.
-#' @param type Should the `est` column be in link (default) or response space?
+#' @param type Should predictions be returned in link space (default) or
+#'   response space?
 #' @param se_fit Should standard errors on predictions be calculated? Warning:
 #'   can be slow for large datasets or high-resolution projections when random
 #'   fields are included. For faster uncertainty estimation, either use
 #'   `re_form = NA` to exclude random fields or use the `nsim` argument to
 #'   simulate from the joint precision matrix.
-#' @param return_tmb_object Logical. If `TRUE`, will include the TMB object in a
-#'   list format output. Necessary for the [get_index()] or [get_cog()]
+#' @param return_tmb_object Logical. If `TRUE`, include the TMB object in a
+#'   list-format output. Necessary for the [get_index()] or [get_cog()]
 #'   functions.
 #' @param re_form `NULL` to include all spatial/spatiotemporal random fields in
 #'   predictions. `~0` or `NA` for population-level predictions (predictions
-#'   from fixed effects only, marginalizing over random fields). Often used with
+#'   excluding spatial/spatiotemporal random fields). Often used with
 #'   `se_fit = TRUE` to visualize marginal effects. Does not affect
 #'   [get_index()] calculations.
-#' @param re_form_iid `NULL` to specify including all random intercepts in the
+#' @param re_form_iid `NULL` to include all IID random intercepts/slopes in the
 #'   predictions. `~0` or `NA` for population-level predictions. No other
 #'   options (e.g., some but not all random intercepts) are implemented yet.
-#'   Only affects predictions with `newdata`. This *does* affects [get_index()].
+#'   Only affects predictions with `newdata`. This *does* affect [get_index()].
 #' @param allow_new_levels Logical or `NULL`. Similar to \pkg{glmmTMB}'s
 #'   `allow.new.levels`.
 #'   Allows predictions for previously unobserved levels in random effect
@@ -40,8 +41,9 @@
 #'   as population-level predictions for the IID random effects
 #'   (i.e., random effect value = 0).
 #' @param nsim If `> 0`, simulate from the joint precision matrix with `nsim`
-#'   draws. Returns a matrix of `nrow(newdata)` by `nsim` with each column
-#'   representing one draw of the linear predictor (in link space). Simulating
+#'   draws. Returns a matrix with one row per prediction location and one column
+#'   per draw. By default, each column represents one draw of the linear predictor
+#'   in link space; use `type = "response"` for response-space draws. Simulating
 #'   from the joint precision matrix accounts for uncertainty in both fixed and
 #'   random effects. Use this to derive uncertainty on predictions (e.g.,
 #'   `apply(x, 1, sd)`) or propagate uncertainty to derived quantities. This is
@@ -59,11 +61,11 @@
 #'   as if `nsim > 0` but representing Bayesian posterior samples from the Stan
 #'   model.
 #' @param nonlocal_newdata An optional data frame overriding the
-#'   `nonlocal_formula` covariate field used at prediction (e.g., for a
+#'   `nonlocal_formula` covariate field used for prediction (e.g., for a
 #'   counterfactual/scenario surface), with the same requirements as
 #'   `nonlocal_data` in [sdmTMB()]. `newdata`'s x/y and time columns
 #'   always determine *where* predictions are projected to; this argument only
-#'   controls where the underlying diffused covariate field comes from.
+#'   controls where the underlying diffused covariate values come from.
 #'   Defaults to `NULL`: if a grid was supplied at fit time, the fitted field
 #'   is reused as-is (so `newdata` need not contain the diffusion covariate
 #'   columns); otherwise the field is rebuilt from `newdata`'s own covariate
@@ -75,13 +77,16 @@
 #'   scale depending on `type`. For regular predictions (without simulation),
 #'   both components are returned. See the [delta-model
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html).
-#' @param offset A numeric vector of optional offset values. If left at default
-#'   `NULL`, the offset is implicitly left at 0.
+#' @param offset A numeric vector of optional offset values. When predictions
+#'   are made with `newdata` or with options that internally rebuild prediction
+#'   data (e.g., `type = "response"`, `se_fit = TRUE`, or `nsim > 0`), the
+#'   default `NULL` uses an offset of 0. The simplest `predict(object)` call on
+#'   the original data uses the offset from the fitted model.
 #' @param return_tmb_report Logical: return the output from the TMB
 #'   report? For regular prediction, this is all the reported variables
 #'   at the MLE parameter values. For `nsim > 0` or when `mcmc_samples`
-#'   is supplied, this is a list where each element is a sample and the
-#'   contents of each element is the output of the report for that sample.
+#'   is supplied, this is a list with one element per sample; each element
+#'   contains the report output for that sample.
 #' @param return_tmb_data Logical: return formatted data for TMB? Used
 #'   internally.
 #' @param ... Not implemented.
@@ -90,14 +95,19 @@
 #' If `return_tmb_object = FALSE` (and `nsim = 0` and `mcmc_samples = NULL`):
 #'
 #' A data frame:
-#' * `est`: Estimate in link space (everything included)
-#' * `est_non_rf`: Estimate from everything except random fields (fixed effects, random intercepts, time-varying effects, etc.)
+#' * `est`: Estimate in link or response space, depending on `type`
+#' * `est_non_rf`: Estimate from everything except spatial/spatiotemporal random fields (fixed effects, random intercepts, time-varying effects, etc.)
 #' * `est_rf`: Estimate from all random fields combined
 #' * `omega_s`: Spatial random field (models consistent spatial patterns)
 #' * `zeta_s`: Spatially varying coefficient field (models how effects vary across space)
 #' * `epsilon_st`: Spatiotemporal random field (models spatial patterns that vary over time)
 #' * `nl_*`: Nonlocal transformed covariate values (one column per
-#'   nonlocal term; available when `nonlocal_formula` were fitted)
+#'   nonlocal term; available when `nonlocal_formula` terms were fitted)
+#'
+#' Delta/hurdle models return component-specific columns with `1` and `2`
+#' suffixes for the binomial and positive components, respectively (e.g.,
+#' `est1`, `est2`, `omega_s1`, `omega_s2`). With `type = "response"`,
+#' `est` is the combined response-scale prediction.
 #'
 #' If `return_tmb_object = TRUE` (and `nsim = 0` and `mcmc_samples = NULL`):
 #'
@@ -139,15 +149,15 @@
 #' ggplot(predictions, aes(X, Y, col = resids)) + scale_colour_gradient2() +
 #'   geom_point() + facet_wrap(~year)
 #' hist(predictions$resids)
-#' qqnorm(predictions$resids);abline(a = 0, b = 1)
+#' qqnorm(predictions$resids); abline(a = 0, b = 1)
 #'
-#' # Predictions onto new data --------------------------------------------
+#' # Predictions on new data ----------------------------------------------
 #'
 #' qcs_grid_2011 <- replicate_df(qcs_grid, "year", unique(pcod_2011$year))
 #' predictions <- predict(m, newdata = qcs_grid_2011)
 #'
 #' \donttest{
-#' # A short function for plotting our predictions:
+#' # A short function for plotting predictions:
 #' plot_map <- function(dat, column = est) {
 #'   ggplot(dat, aes(X, Y, fill = {{ column }})) +
 #'     geom_raster() +
@@ -186,7 +196,8 @@
 #' nd$depth_scaled2 <- nd$depth_scaled^2
 #'
 #' # Because this is a spatiotemporal model, you'll need at least one time
-#' # element. If time isn't also a fixed effect then it doesn't matter what you pick:
+#' # value. For these population-level predictions, if time isn't also a fixed
+#' # effect, it doesn't matter what you pick:
 #' nd$year <- 2011L # L: integer to match original data
 #' p <- predict(m, newdata = nd, se_fit = TRUE, re_form = NA)
 #' ggplot(p, aes(depth_scaled, exp(est),
@@ -218,7 +229,7 @@
 #' unique(d$year)
 #' m <- sdmTMB(
 #'   data = d, formula = density ~ 1,
-#'   spatiotemporal = "AR1", # using an AR1 to have something to forecast with
+#'   spatiotemporal = "AR1", # using AR(1) to have something to forecast with
 #'   extra_time = 2019L, # `L` for integer to match our data
 #'   spatial = "off",
 #'   time = "year", mesh = mesh, family = tweedie(link = "log")
@@ -322,9 +333,9 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
   if (is.null(re_form) && isTRUE(se_fit)) {
     msg <- paste0("Prediction can be slow when `se_fit = TRUE` and random fields ",
-      "are included (i.e., `re_form = NA`). Consider using the `nsim` argument ",
+      "are included (i.e., `re_form = NULL`). Consider using the `nsim` argument ",
       "to take draws from the joint precision matrix and summarizing the standard ",
-      "devation of those draws.")
+      "deviation of those draws.")
     cli_inform(msg)
   }
 
@@ -377,7 +388,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
         min(x1) > max(x2) || max(x1) < min(x2)
       }
       if (all_outside(xy_orig[,1], xy_nd[,1]) || all_outside(xy_orig[,2], xy_nd[,2])) {
-        cli_warn(c("`newdata` prediction coordinates appear to be ouside the fitted coordinates.",
+        cli_warn(c("`newdata` prediction coordinates appear to be outside the fitted coordinates.",
           "This will likely cause all your random field values to be returned as 0.",
           "Check your coordinates including any conversions between projections.",
           "If working with UTMs, are both in km or m?"))
@@ -396,8 +407,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
     new_data_time <- unique(newdata[[object$time]])
 
     if (!all(new_data_time %in% original_time))
-      cli_abort(c("Some new time elements were found in `newdata`. ",
-        "If you would like to predict on new time elements,",
+      cli_abort(c("Some new time values were found in `newdata`. ",
+        "If you would like to predict on new time values,",
         "see the `extra_time` argument in `?sdmTMB`.")
       )
     if (has_nonlocal &&
