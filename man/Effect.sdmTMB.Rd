@@ -14,7 +14,7 @@ Effect.sdmTMB(focal.predictors, mod, ...)
 \item{...}{arguments to be passed down.}
 }
 \value{
-Output from \code{\link[effects:effect]{effects::effect()}}. Can then be plotted with with associated
+Output from \code{\link[effects:effect]{effects::effect()}}. It can then be plotted with the associated
 \code{plot()} method.
 }
 \description{

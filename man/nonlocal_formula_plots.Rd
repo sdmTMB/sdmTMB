@@ -51,7 +51,7 @@ either a modeled time value or a 1-based time index. Defaults to 1.}
 \item{n_steps}{Number of transformed slices to plot starting at
 \code{time_value}.}
 
-\item{common_scale}{Should plotted panels share a common color scale?
+\item{common_scale}{Should the plotted panels share a common color scale?
 Defaults to \code{TRUE} for \code{plot_nonlocal_covariate()} and \code{FALSE} for
 \code{plot_nonlocal_kernel()}. \code{component = "time_lag"} alone likely needs
 \code{common_scale = TRUE} to make sense.}
@@ -68,10 +68,10 @@ and plotted as points or a raster.
 }
 \details{
 \code{plot_nonlocal_covariate()} visualizes the original mesh-vertex covariate
-field and its fitted covariate-diffusion transform of one selected covariate
-time slice over one or more lagged output time slices.
+field and its fitted covariate-diffusion transform for one selected
+covariate time slice across one or more lagged output time slices.
 
-\code{plot_nonlocal_kernel()} visualizes an impulse covariate diffusing through
+\code{plot_nonlocal_kernel()} visualizes an impulse entering and diffusing through
 one covariate-diffusion component.
 }
 \examples{

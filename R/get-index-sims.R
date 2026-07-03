@@ -20,7 +20,7 @@
 #' @param level The confidence level.
 #' @param return_sims Logical. Return simulation draws? The default (`FALSE`) is
 #'   a quantile summary of those simulation draws.
-#' @param area A vector of grid cell/polyon areas for each year-grid cell (row
+#' @param area A vector of grid cell/polygon areas for each year-grid cell (row
 #'   of data) in `obj`. Adjust this if cells are not of unit area or not all
 #'   the same area (e.g., some cells are partially over land/water). Note that
 #'   the area vector is added as `log(area)` to the raw values in `obj`. In
@@ -28,10 +28,10 @@
 #' @param est_function Function to summarize the estimate (the expected value).
 #'   `mean()` would be an alternative to `median()`.
 #' @param area_function Function to apply area weighting.
-#'   Assuming a log link, the `function(x, area) x + log(area)` default makes sense.
+#'   Assuming a log link, the default `function(x, area) x + log(area)` makes sense.
 #'   If in natural space, `function(x, area) x * area` makes sense.
 #' @param agg_function Function to aggregate samples within each time slice.
-#'   Assuming a log link, the `function(x) sum(exp(x))` default makes sense.
+#'   Assuming a log link, the default `function(x) sum(exp(x))` makes sense.
 #'   If in natural space, `function(x) sum(x)` makes sense.
 #'
 #' @seealso [get_index()]
@@ -39,16 +39,16 @@
 #' @return
 #' A data frame. If `return_sims = FALSE`:
 #'
-#' * name of column (e.g. `year`) that was supplied to [sdmTMB()] time argument
+#' * the name of the time column supplied to [sdmTMB()] (e.g., `year`)
 #' * `est`: estimate
 #' * `lwr`: lower confidence interval value
 #' * `upr`: upper confidence interval value
 #' * `log_est`: log estimate
 #' * `se`: standard error on the log estimate
 #'
-#' If `return_sims = TRUE`, samples from the index values in a long-format data frame:
+#' If `return_sims = TRUE`, a long-format data frame of index draws:
 #'
-#' * name of column (e.g. `year`) that was supplied to [sdmTMB()] time argument
+#' * the name of the time column supplied to [sdmTMB()] (e.g., `year`)
 #' * `.value`: sample value
 #' * `.iteration`: sample number
 #'

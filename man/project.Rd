@@ -19,19 +19,19 @@ project(
 \arguments{
 \item{object}{A fitted model from \code{\link[=sdmTMB]{sdmTMB()}}.}
 
-\item{newdata}{A new data frame to predict on. Should contain both historical
-and any new time elements to predict on.}
+\item{newdata}{A new data frame to predict on. It should contain both the
+historical time elements and any new time elements to project to.}
 
-\item{nsim}{Number of simulations.}
+\item{nsim}{Number of projection simulations.}
 
 \item{uncertainty}{How to sample uncertainty for the fitted parameters:
 \code{"both"} for the joint fixed and random effect precision matrix,
 \code{"random"} for the random effect precision matrix (holding the fixed
 effects at their MLE), or \code{"none"} for neither.}
 
-\item{silent}{Silent?}
+\item{silent}{Logical. Suppress progress messages?}
 
-\item{sims_var}{Element to extract from the \pkg{TMB} report. Also see
+\item{sims_var}{Element to extract from the \pkg{TMB} report. See also
 \code{return_tmb_report}.}
 
 \item{sim_re}{A vector of \code{0}s and \code{1}s representing which random effects to
@@ -39,7 +39,7 @@ simulate in the projection. Generally, leave this untouched. Order is:
 spatial fields, spatiotemporal fields, spatially varying coefficient
 fields, random intercepts, time-varying coefficients, smoothers.
 The default is to simulate spatiotemporal fields and time-varying
-coefficients, if present.}
+coefficients, when present.}
 
 \item{return_tmb_report}{Return the \pkg{TMB} report from \code{simulate()}? This
 lets you parse out whatever elements you want from the simulation including
@@ -55,14 +55,14 @@ components are \code{est1}, \code{est2}, \code{epsilon_st}, and \code{epsilon_st
 and 2nd linear predictors. In all cases, these returned values are in \emph{link}
 space.
 
-If \code{return_tmb_report = TRUE}, a list of \pkg{TMB} reports from \code{simulate()}.
+If \code{return_tmb_report = TRUE}, a list of \pkg{TMB} reports returned by \code{simulate()}.
 Run \code{names()} on the output to see the options.
 }
 \description{
 \ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}}
 
-The function enables projecting forward in time from an
-\pkg{sdmTMB} model using a simulation approach for computational efficiency.
+Project forward in time from an \pkg{sdmTMB} model using a
+simulation approach for computational efficiency.
 This can be helpful for calculating predictive intervals for long
 projections where including those time elements in \code{extra_time} during model
 estimation can be slow.

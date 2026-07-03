@@ -82,8 +82,8 @@ setting limits.}
 \item{upper}{An optional named list of upper bounds within the optimization.}
 
 \item{censored_upper}{An optional vector of upper bounds for
-\code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}}. Values of \code{NA} indicate an unbounded right-censored to
-distribution, values greater that the observation indicate and upper bound,
+\code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}}. Values of \code{NA} indicate an unbounded right-censored
+distribution, values greater than the observation indicate an upper bound,
 and values equal to the observation indicate no censoring.}
 
 \item{multiphase}{Logical: estimate the fixed and random effects in phases?
@@ -97,7 +97,7 @@ experimental at this stage.}}
 
 \item{get_joint_precision}{Logical. Passed to \code{getJointPrecision} in
 \code{\link[TMB:sdreport]{TMB::sdreport()}}. Must be \code{TRUE} to use simulation-based methods in
-\code{\link[=predict.sdmTMB]{predict.sdmTMB()}} or \verb{[get_index_sims()]}. If not needed, setting this
+\code{\link[=predict.sdmTMB]{predict.sdmTMB()}} or \code{\link[=get_index_sims]{get_index_sims()}}. If not needed, setting this to
 \code{FALSE} will reduce object size.}
 
 \item{parallel}{Argument currently ignored. For parallel processing with 3
@@ -113,12 +113,12 @@ are then replaced with \code{Inf} and avoided during estimation?}
 random fields be automatically dropped if their estimated standard deviation
 is effectively zero (i.e., below \code{collapse_threshold})? This helps prevent
 overfitting and numerical instability when the data provide little evidence
-for spatial or spatiotemporal variation. I.e., when the variance parameter is
+for spatial or spatiotemporal variation, i.e., when the variance parameter is
 estimated on or near the boundary of zero. When enabled, the model will be
 automatically refitted via \code{\link[=update.sdmTMB]{update.sdmTMB()}} with the corresponding field(s)
 disabled. This adds a computational cost (a single model refit if
 collapsing occurs) but can yield a simpler, more stable model and more
-reliable inference. Default is \code{FALSE} for backwards compatibility.}
+reliable inference. Default is \code{FALSE} for backward compatibility.}
 
 \item{collapse_threshold}{Numeric: the standard deviation threshold below which random
 fields are considered to be collapsing to zero. Only used when
@@ -139,7 +139,7 @@ Diaz and Thorson (2025).}
 \code{\link[stats:nlminb]{stats::nlminb()}}.}
 }
 \value{
-A list of control arguments
+A list of control arguments.
 }
 \description{
 \code{\link[=sdmTMB]{sdmTMB()}} and \code{\link[stats:nlminb]{stats::nlminb()}} control options.

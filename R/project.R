@@ -2,8 +2,8 @@
 #'
 #' @description `r lifecycle::badge("experimental")`
 #'
-#' @description The function enables projecting forward in time from an
-#' \pkg{sdmTMB} model using a simulation approach for computational efficiency.
+#' @description Project forward in time from an \pkg{sdmTMB} model using a
+#' simulation approach for computational efficiency.
 #' This can be helpful for calculating predictive intervals for long
 #' projections where including those time elements in `extra_time` during model
 #' estimation can be slow.
@@ -12,22 +12,22 @@
 #' `project_model()`.
 #'
 #' @param object A fitted model from [sdmTMB()].
-#' @param newdata A new data frame to predict on. Should contain both historical
-#'   and any new time elements to predict on.
-#' @param nsim Number of simulations.
+#' @param newdata A new data frame to predict on. It should contain both the
+#'   historical time elements and any new time elements to project to.
+#' @param nsim Number of projection simulations.
 #' @param uncertainty How to sample uncertainty for the fitted parameters:
 #'   `"both"` for the joint fixed and random effect precision matrix,
 #'   `"random"` for the random effect precision matrix (holding the fixed
 #'   effects at their MLE), or `"none"` for neither.
-#' @param silent Silent?
-#' @param sims_var Element to extract from the \pkg{TMB} report. Also see
+#' @param silent Logical. Suppress progress messages?
+#' @param sims_var Element to extract from the \pkg{TMB} report. See also
 #'   `return_tmb_report`.
 #' @param sim_re A vector of `0`s and `1`s representing which random effects to
 #'   simulate in the projection. Generally, leave this untouched. Order is:
 #'   spatial fields, spatiotemporal fields, spatially varying coefficient
 #'   fields, random intercepts, time-varying coefficients, smoothers.
 #'   The default is to simulate spatiotemporal fields and time-varying
-#'   coefficients, if present.
+#'   coefficients, when present.
 #' @param return_tmb_report Return the \pkg{TMB} report from `simulate()`? This
 #'   lets you parse out whatever elements you want from the simulation including
 #'   grabbing multiple elements from one set of simulations. See examples.
@@ -48,7 +48,7 @@
 #' and 2nd linear predictors. In all cases, these returned values are in *link*
 #' space.
 #'
-#' If `return_tmb_report = TRUE`, a list of \pkg{TMB} reports from `simulate()`.
+#' If `return_tmb_report = TRUE`, a list of \pkg{TMB} reports returned by `simulate()`.
 #' Run `names()` on the output to see the options.
 #' @export
 #'

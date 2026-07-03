@@ -50,12 +50,12 @@
 #'   setting limits.
 #' @param upper An optional named list of upper bounds within the optimization.
 #' @param censored_upper An optional vector of upper bounds for
-#'   [sdmTMBcontrol()]. Values of `NA` indicate an unbounded right-censored to
-#'   distribution, values greater that the observation indicate and upper bound,
+#'   [sdmTMBcontrol()]. Values of `NA` indicate an unbounded right-censored
+#'   distribution, values greater than the observation indicate an upper bound,
 #'   and values equal to the observation indicate no censoring.
 #' @param get_joint_precision Logical. Passed to `getJointPrecision` in
 #'   [TMB::sdreport()]. Must be `TRUE` to use simulation-based methods in
-#'   [predict.sdmTMB()] or `[get_index_sims()]`. If not needed, setting this
+#'   [predict.sdmTMB()] or [get_index_sims()]. If not needed, setting this to
 #'   `FALSE` will reduce object size.
 #' @param parallel Argument currently ignored. For parallel processing with 3
 #'   cores, as an example, use `TMB::openmp(n = 3, DLL = "sdmTMB")`. But be
@@ -68,12 +68,12 @@
 #'   random fields be automatically dropped if their estimated standard deviation
 #'   is effectively zero (i.e., below `collapse_threshold`)? This helps prevent
 #'   overfitting and numerical instability when the data provide little evidence
-#'   for spatial or spatiotemporal variation. I.e., when the variance parameter is
+#'   for spatial or spatiotemporal variation, i.e., when the variance parameter is
 #'   estimated on or near the boundary of zero. When enabled, the model will be
 #'   automatically refitted via [update.sdmTMB()] with the corresponding field(s)
 #'   disabled. This adds a computational cost (a single model refit if
 #'   collapsing occurs) but can yield a simpler, more stable model and more
-#'   reliable inference. Default is `FALSE` for backwards compatibility.
+#'   reliable inference. Default is `FALSE` for backward compatibility.
 #' @param collapse_threshold Numeric: the standard deviation threshold below which random
 #'   fields are considered to be collapsing to zero. Only used when
 #'   `collapse_spatial_variance = TRUE`. Values are on the standard deviation
@@ -89,7 +89,7 @@
 #' @param ... Anything else. See the 'Control parameters' section of
 #'   [stats::nlminb()].
 #'
-#' @return A list of control arguments
+#' @return A list of control arguments.
 #' @export
 #' @details
 #' Usually used within [sdmTMB()]. For example:
@@ -374,9 +374,9 @@ has_no_random_effects <- function(obj) {
 
 #' Get TMB parameter list
 #'
-#' @param object Fit from [sdmTMB()]
+#' @param object Fit from [sdmTMB()].
 #'
-#' @return A named list of parameter values
+#' @return A named list of parameter values.
 #'
 #' @examples
 #' fit <- sdmTMB(present ~ 1, data = pcod_2011, family = binomial(), spatial = "off")

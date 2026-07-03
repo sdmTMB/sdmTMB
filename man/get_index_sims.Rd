@@ -22,7 +22,7 @@ get_index_sims(
 \item{return_sims}{Logical. Return simulation draws? The default (\code{FALSE}) is
 a quantile summary of those simulation draws.}
 
-\item{area}{A vector of grid cell/polyon areas for each year-grid cell (row
+\item{area}{A vector of grid cell/polygon areas for each year-grid cell (row
 of data) in \code{obj}. Adjust this if cells are not of unit area or not all
 the same area (e.g., some cells are partially over land/water). Note that
 the area vector is added as \code{log(area)} to the raw values in \code{obj}. In
@@ -32,17 +32,17 @@ other words, the function assumes a log link, which typically makes sense.}
 \code{mean()} would be an alternative to \code{median()}.}
 
 \item{area_function}{Function to apply area weighting.
-Assuming a log link, the \code{function(x, area) x + log(area)} default makes sense.
+Assuming a log link, the default \code{function(x, area) x + log(area)} makes sense.
 If in natural space, \code{function(x, area) x * area} makes sense.}
 
 \item{agg_function}{Function to aggregate samples within each time slice.
-Assuming a log link, the \code{function(x) sum(exp(x))} default makes sense.
+Assuming a log link, the default \code{function(x) sum(exp(x))} makes sense.
 If in natural space, \code{function(x) sum(x)} makes sense.}
 }
 \value{
 A data frame. If \code{return_sims = FALSE}:
 \itemize{
-\item name of column (e.g. \code{year}) that was supplied to \code{\link[=sdmTMB]{sdmTMB()}} time argument
+\item the name of the time column supplied to \code{\link[=sdmTMB]{sdmTMB()}} (e.g., \code{year})
 \item \code{est}: estimate
 \item \code{lwr}: lower confidence interval value
 \item \code{upr}: upper confidence interval value
@@ -50,9 +50,9 @@ A data frame. If \code{return_sims = FALSE}:
 \item \code{se}: standard error on the log estimate
 }
 
-If \code{return_sims = TRUE}, samples from the index values in a long-format data frame:
+If \code{return_sims = TRUE}, a long-format data frame of index draws:
 \itemize{
-\item name of column (e.g. \code{year}) that was supplied to \code{\link[=sdmTMB]{sdmTMB()}} time argument
+\item the name of the time column supplied to \code{\link[=sdmTMB]{sdmTMB()}} (e.g., \code{year})
 \item \code{.value}: sample value
 \item \code{.iteration}: sample number
 }

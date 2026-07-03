@@ -22,7 +22,7 @@ representing the spatial axis along which to calculate range edges
 the rows of the prediction matrix.}
 
 \item{quantiles}{Numeric vector of quantiles to calculate. Default is
-\code{c(0.025, 0.975)} for lower and upper 1\% range edges. Common alternatives
+\code{c(0.025, 0.975)} for lower and upper 2.5\% range edges. Common alternatives
 include \code{c(0.01, 0.99)} for 1\% edges or \code{c(0.05, 0.5, 0.95)} to
 include the median.}
 

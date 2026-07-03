@@ -27,10 +27,9 @@
 \arguments{
 \item{object}{A model fitted with \code{\link[=sdmTMB]{sdmTMB()}}.}
 
-\item{newdata}{A data frame to make predictions on. This should be a data
-frame with the same predictor columns as in the fitted data and a time
-column (if this is a spatiotemporal model) with the same name as in the
-fitted data.}
+\item{newdata}{A data frame to make predictions on. It should contain the
+same predictor columns as the fitted data and, for spatiotemporal models,
+a time column with the same name as in the fitted data.}
 
 \item{type}{Should predictions be returned in link space (default) or
 response space?}
@@ -49,7 +48,7 @@ excluding spatial/spatiotemporal random fields). Often used with
 
 \item{re_form_iid}{\code{NULL} to include all IID random intercepts/slopes in the
 predictions. \code{~0} or \code{NA} for population-level predictions. No other
-options (e.g., some but not all random intercepts) are implemented yet.
+options (e.g., some but not all random intercepts) are not yet implemented.
 Only affects predictions with \code{newdata}. This \emph{does} affect \code{\link[=get_index]{get_index()}}.}
 
 \item{allow_new_levels}{Logical or \code{NULL}. Similar to \pkg{glmmTMB}'s
@@ -121,7 +120,7 @@ contains the report output for that sample.}
 \item{return_tmb_data}{Logical: return formatted data for TMB? Used
 internally.}
 
-\item{...}{Not implemented.}
+\item{...}{Unused.}
 }
 \value{
 If \code{return_tmb_object = FALSE} (and \code{nsim = 0} and \code{mcmc_samples = NULL}):
@@ -161,12 +160,12 @@ If \code{nsim > 0} or \code{mcmc_samples} is not \code{NULL}:
 A matrix:
 \itemize{
 \item Columns represent samples
-\item Rows represent predictions with one row per row of \code{newdata}
+\item Rows represent predictions, with one row per row of \code{newdata}
 }
 }
 \description{
-Make predictions from an \pkg{sdmTMB} model. Predictions can be made on the original or
-new data.
+Make predictions from an \pkg{sdmTMB} model. Predictions can be made on the
+original data or on new data.
 }
 \examples{
 \dontshow{if (ggplot2_installed()) withAutoprint(\{ # examplesIf}

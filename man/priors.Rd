@@ -39,7 +39,7 @@ pc_matern(range_gt, sigma_lt, range_prob = 0.05, sigma_prob = 0.05)
 spatial random field Matérn parameters.}
 
 \item{matern_st}{Same as \code{matern_s} but for the spatiotemporal random field.
-Note that you will likely want to set \code{share_fields = FALSE} if you choose
+Note that you will likely want to set \code{share_range = FALSE} if you choose
 to set both a spatial and spatiotemporal Matérn PC prior since they both
 include a prior on the spatial range parameter.}
 
@@ -100,18 +100,18 @@ likelihood within TMB or can be used as priors if the model is passed to
 \pkg{tmbstan} (see the Bayesian vignette).
 
 \strong{Note that Jacobian adjustments are only made if \code{bayesian = TRUE}} when the
-\code{\link[=sdmTMB]{sdmTMB()}} model is fit. I.e., the final model will be fit with \pkg{tmbstan}
-and priors are specified then \code{bayesian} should be set to \code{TRUE}. Otherwise,
-leave \code{bayesian = FALSE}.
+\code{\link[=sdmTMB]{sdmTMB()}} model is fit. In other words, if the final model will be fit with
+\pkg{tmbstan} and priors are specified, then \code{bayesian} should be set to
+\code{TRUE}. Otherwise, leave \code{bayesian = FALSE}.
 
-\code{pc_matern()} is the Penalized Complexity prior for the Matern
+\code{pc_matern()} is the Penalized Complexity prior for the Matérn
 covariance function.
 }
 \details{
-Meant to be passed to the \code{priors} argument in \code{\link[=sdmTMB]{sdmTMB()}}.
+Pass these objects to the \code{priors} argument in \code{\link[=sdmTMB]{sdmTMB()}}.
 
-\code{normal()} and \code{halfnormal()} define normal and half-normal priors that, at
-this point, must have a location (mean) parameter of 0. \code{halfnormal()} is the
+\code{normal()} and \code{halfnormal()} define normal and half-normal priors that, for
+now, must have a location (mean) parameter of 0. \code{halfnormal()} is the
 same as \code{normal()} but can be used to make the syntax clearer. It is intended
 to be used for parameters that have support \verb{> 0}.
 

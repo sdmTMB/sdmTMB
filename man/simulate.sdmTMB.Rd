@@ -22,11 +22,11 @@
 )
 }
 \arguments{
-\item{object}{sdmTMB model}
+\item{object}{An \code{sdmTMB} model.}
 
 \item{nsim}{Number of response lists to simulate. Defaults to 1.}
 
-\item{seed}{Random number seed}
+\item{seed}{Random number seed.}
 
 \item{type}{How parameters should be treated. \code{"mle-eb"}: fixed effects
 are at their maximum likelihood (MLE) estimates  and random effects are at
@@ -36,13 +36,13 @@ This latter option is a suggested approach if these simulations will be
 used for goodness of fit testing (e.g., with the DHARMa package).}
 
 \item{model}{If a delta/hurdle model, which model to simulate from?
-\code{NA} = combined, \code{1} = first model, \code{2} = second mdoel.}
+\code{NA} = combined, \code{1} = first model, \code{2} = second model.}
 
 \item{newdata}{Optional new data frame from which to simulate.}
 
 \item{re_form}{\code{NULL} to specify a simulation conditional on fitted random
 effects (this only simulates observation error). \code{~0} or \code{NA} to simulate
-new random affects (smoothers, which internally are random effects, will
+new random effects (smoothers, which internally are random effects, will
 not be simulated as new).}
 
 \item{mle_mvn_samples}{Applies if \code{type = "mle-mvn"}. If \code{"single"}, take

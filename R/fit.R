@@ -229,11 +229,11 @@ NULL
 #' **Binomial families**
 #'
 #' Following the structure of [stats::glm()] and \pkg{glmmTMB}, a binomial
-#' family can be specified in one of 4 ways: (1) the response may be a factor
+#' family can be specified in one of four ways: (1) the response may be a factor
 #' (success is interpreted as any level other than the first level), (2) the
 #' response may be binary (0/1), (3) the response can be a matrix of form
 #' `cbind(success, failure)`, and (4) the response may be observed
-#' proportions, and the 'weights' argument is used to specify the Binomial size
+#' proportions, and the `weights` argument is used to specify the binomial size
 #' (N) parameter (`prob ~ ..., weights = N`).
 #'
 #' **Smooth terms**

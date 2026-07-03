@@ -2,7 +2,7 @@
 #' area occupied, or weighted average
 #'
 #' @param obj Output from [predict.sdmTMB()] with `return_tmb_object = TRUE`
-#'   (the usual case). Alternatively, if [sdmTMB()] was called with `do_index =
+#'   (the most common case). Alternatively, if [sdmTMB()] was called with `do_index =
 #'   TRUE`, or if using [get_index_split()], an object from [sdmTMB()].
 #' @param bias_correct Should bias correction be implemented via
 #'   [TMB::sdreport()]? Bias correction accounts for the non-linear
@@ -16,7 +16,7 @@
 #'   a single numeric value to apply to all grid cells, or (3) a character value
 #'   giving the column name in `newdata` containing areas. See Details for
 #'   non-spatial uses of `area` as an integration multiplier.
-#' @param silent Silent?
+#' @param silent Logical. Suppress progress messages?
 #' @param derived_link Optional override for the inverse link used when
 #'   calculating derived quantities such as the index. By default, the fitted
 #'   family link is used. Currently supported for non-delta `binomial()` and
@@ -71,7 +71,7 @@
 #' estimated abundance indices for West Coast groundfishes. ICES J. Mar. Sci.
 #' 72(5): 1297–1310. \doi{10.1093/icesjms/fsu243}
 #'
-#' Geostatistical model-based centre of gravity:
+#' Geostatistical model-based center of gravity:
 #'
 #' Thorson, J.T., Pinsky, M.L., and Ward, E.J. 2016. Model-based inference for
 #' estimating shifts in species distribution, area occupied and centre of

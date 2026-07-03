@@ -4,14 +4,13 @@
 
 #' Predict from an sdmTMB model
 #'
-#' Make predictions from an \pkg{sdmTMB} model. Predictions can be made on the original or
-#' new data.
+#' Make predictions from an \pkg{sdmTMB} model. Predictions can be made on the
+#' original data or on new data.
 #'
 #' @param object A model fitted with [sdmTMB()].
-#' @param newdata A data frame to make predictions on. This should be a data
-#'   frame with the same predictor columns as in the fitted data and a time
-#'   column (if this is a spatiotemporal model) with the same name as in the
-#'   fitted data.
+#' @param newdata A data frame to make predictions on. It should contain the
+#'   same predictor columns as the fitted data and, for spatiotemporal models,
+#'   a time column with the same name as in the fitted data.
 #' @param type Should predictions be returned in link space (default) or
 #'   response space?
 #' @param se_fit Should standard errors on predictions be calculated? Warning:
@@ -29,7 +28,7 @@
 #'   [get_index()] calculations.
 #' @param re_form_iid `NULL` to include all IID random intercepts/slopes in the
 #'   predictions. `~0` or `NA` for population-level predictions. No other
-#'   options (e.g., some but not all random intercepts) are implemented yet.
+#'   options (e.g., some but not all random intercepts) are not yet implemented.
 #'   Only affects predictions with `newdata`. This *does* affect [get_index()].
 #' @param allow_new_levels Logical or `NULL`. Similar to \pkg{glmmTMB}'s
 #'   `allow.new.levels`.
@@ -89,7 +88,7 @@
 #'   contains the report output for that sample.
 #' @param return_tmb_data Logical: return formatted data for TMB? Used
 #'   internally.
-#' @param ... Not implemented.
+#' @param ... Unused.
 #'
 #' @return
 #' If `return_tmb_object = FALSE` (and `nsim = 0` and `mcmc_samples = NULL`):
@@ -125,7 +124,7 @@
 #' A matrix:
 #'
 #' * Columns represent samples
-#' * Rows represent predictions with one row per row of `newdata`
+#' * Rows represent predictions, with one row per row of `newdata`
 #'
 #' @export
 #'

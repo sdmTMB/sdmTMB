@@ -154,7 +154,7 @@ logLik.sdmTMB <- function(object, ...) {
 #' Extract the AIC of a sdmTMB model
 #'
 #' @param fit The fitted sdmTMB model
-#' @param scale The scale (note used)
+#' @param scale The scale (not used).
 #' @param k Penalization parameter, defaults to 2
 #' @param ... Anything else
 #' @noRd
@@ -333,7 +333,7 @@ terms.sdmTMB <- function(x, ...) {
 #' @importFrom stats formula poisson
 #'
 #' @return
-#' Output from [effects::effect()]. Can then be plotted with with associated
+#' Output from [effects::effect()]. It can then be plotted with the associated
 #' `plot()` method.
 #'
 #' @rawNamespace if(getRversion() >= "3.6.0") {
@@ -405,18 +405,18 @@ model.frame.sdmTMB <- function(formula, ...) {
 
 #' Update an sdmTMB model
 #'
-#' This method updates an sdmTMB model with new arguments, automatically
-#' handling the mesh object to avoid environment issues when loading
-#' models from saved files.
+#' This method updates an sdmTMB model with new arguments while automatically
+#' handling the mesh object to avoid environment issues when loading models
+#' from saved files.
 #'
-#' @param object An sdmTMB model object
-#' @param formula. Optional updated formula
-#' @param ... Other arguments to update in the model call
+#' @param object An sdmTMB model object.
+#' @param formula. Optional updated formula.
+#' @param ... Other arguments to update in the model call.
 #' @param evaluate If `TRUE` (default), the updated call is evaluated;
-#'   if `FALSE`, the call is returned unevaluated
+#'   if `FALSE`, the call is returned unevaluated.
 #'
 #' @return An updated sdmTMB model object (if `evaluate = TRUE`) or
-#'   an unevaluated call (if `evaluate = FALSE`)
+#'   an unevaluated call (if `evaluate = FALSE`).
 #'
 #' @examples
 #' mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)

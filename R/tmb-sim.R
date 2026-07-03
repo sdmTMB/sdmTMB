@@ -3,8 +3,8 @@
 #' `simulate_new()` uses TMB to simulate *new* data given specified parameter
 #' values. [simulate.sdmTMB()], on the other hand, takes an *existing* model fit
 #' and simulates new observations and optionally new random effects.
-#' **Note:** `sdmTMB_simulate()` is retained as a synonym for backwards
-#' compatibility. We recommend using `simulate_new()` going forward as it more
+#' **Note:** `sdmTMB_simulate()` is retained as a synonym for backward
+#' compatibility. We recommend using `simulate_new()` because it more
 #' clearly conveys the function's purpose. `sdmTMB_simulate()` may
 #' eventually be deprecated.
 #'
@@ -46,11 +46,11 @@
 #'   function is 95% of the maximum, and the maximum. See the model description
 #'   vignette for details.
 #' @param fixed_re A list of optional random effects to fix at specified
-#'    (e.g., previously estimated) values. Values of `NULL` will result
-#'    in the random effects being simulated.
+#'   (e.g., previously estimated) values. `NULL` values indicate that the
+#'   corresponding random effects should be simulated.
 #' @param previous_fit (**Deprecated**; please use [simulate.sdmTMB()]).
 #'   An optional previous [sdmTMB()] fit to pull parameter values.
-#'   Will be over-ruled by any non-NULL specified parameter arguments.
+#'   Will be overridden by any non-`NULL` parameter arguments supplied directly.
 #' @param seed Seed number.
 #' @param rho_time Autoregressive correlation(s) for time-varying parameters
 #'   when `time_varying_type = "ar1"`. Values must lie between -1 and 1 and may
@@ -67,12 +67,12 @@
 #' @param ... Any other arguments to pass to [sdmTMB()].
 #'
 #' @return A data frame where:
-#' * The 1st column is the time variable (if present).
-#' * The 2nd and 3rd columns are the spatial coordinates.
+#' * The first column is the time variable (if present).
+#' * The second and third columns are the spatial coordinates.
 #' * `omega_s` represents the simulated spatial random effects (only if present).
-#' * `zeta_s` represents the simulated spatial varying covariate field (only if present).
+#' * `zeta_s` represents the simulated spatially varying covariate field (only if present).
 #' * `epsilon_st` represents the simulated spatiotemporal random effects (only if present).
-#' * `eta` is the true value in link space
+#' * `eta` is the true value in link space.
 #' * `mu` is the true value in inverse link space.
 #' * `observed` represents the simulated process with observation error.
 #' * The remaining columns are the fixed-effect model matrix.
@@ -501,9 +501,9 @@ sdmTMB_simulate <- simulate_new
 #' among other uses.
 #'
 #' @method simulate sdmTMB
-#' @param object sdmTMB model
+#' @param object An `sdmTMB` model.
 #' @param nsim Number of response lists to simulate. Defaults to 1.
-#' @param seed Random number seed
+#' @param seed Random number seed.
 #' @param type How parameters should be treated. `"mle-eb"`: fixed effects
 #'   are at their maximum likelihood (MLE) estimates  and random effects are at
 #'   their empirical Bayes (EB) estimates. `"mle-mvn"`: fixed effects are at
@@ -512,13 +512,13 @@ sdmTMB_simulate <- simulate_new
 #'   used for goodness of fit testing (e.g., with the DHARMa package).
 #' @param re_form `NULL` to specify a simulation conditional on fitted random
 #'   effects (this only simulates observation error). `~0` or `NA` to simulate
-#'   new random affects (smoothers, which internally are random effects, will
+#'   new random effects (smoothers, which internally are random effects, will
 #'   not be simulated as new).
 #' @param mle_mvn_samples Applies if `type = "mle-mvn"`. If `"single"`, take
 #'   a single MVN draw from the random effects. If `"multiple"`, take an MVN
 #'   draw from the random effects for each of the `nsim`.
 #' @param model If a delta/hurdle model, which model to simulate from?
-#'   `NA` = combined, `1` = first model, `2` = second mdoel.
+#'   `NA` = combined, `1` = first model, `2` = second model.
 #' @param newdata Optional new data frame from which to simulate.
 #' @param mcmc_samples An optional matrix of MCMC samples. See `extract_mcmc()`
 #'   in the \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra}

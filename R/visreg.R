@@ -5,18 +5,18 @@
 #' below. Delta models can use the helper functions `visreg_delta()` or
 #' `visreg2d_delta()` described here.
 #'
-#' @param object Fit from [sdmTMB()]
-#' @param model 1st or 2nd delta model
-#' @param ... Any arguments passed to [visreg::visreg()] or
-#'   [visreg::visreg2d()]
+#' @param object Fit from [sdmTMB()].
+#' @param model First or second delta-model component.
+#' @param ... Arguments passed to [visreg::visreg()] or
+#'   [visreg::visreg2d()].
 #'
 #' @details
-#' Note the residuals are currently randomized quantile residuals,
-#' *not* deviance residuals as is usual for GLMs with \pkg{visreg}.
+#' Note that the residuals are currently randomized quantile residuals,
+#' *not* the deviance residuals usually used for GLMs with \pkg{visreg}.
 #'
 #' @return
-#' A plot from the visreg package. Optionally, the data plotted invisibly if
-#' `plot = FALSE`. This is useful if you want to make your own plot after.
+#' A plot from the visreg package. If `plot = FALSE`, the plotted data are
+#' returned invisibly. This is useful if you want to make your own plot.
 #'
 #' @export
 #' @rdname visreg_delta

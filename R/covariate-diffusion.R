@@ -885,7 +885,7 @@
 #'   either a modeled time value or a 1-based time index. Defaults to 1.
 #' @param n_steps Number of transformed slices to plot starting at
 #'   `time_value`.
-#' @param common_scale Should plotted panels share a common color scale?
+#' @param common_scale Should the plotted panels share a common color scale?
 #'   Defaults to `TRUE` for `plot_nonlocal_covariate()` and `FALSE` for
 #'   `plot_nonlocal_kernel()`. `component = "time_lag"` alone likely needs
 #'   `common_scale = TRUE` to make sense.
@@ -897,10 +897,10 @@
 #'
 #' @details
 #' `plot_nonlocal_covariate()` visualizes the original mesh-vertex covariate
-#' field and its fitted covariate-diffusion transform of one selected covariate
-#' time slice over one or more lagged output time slices.
+#' field and its fitted covariate-diffusion transform for one selected
+#' covariate time slice across one or more lagged output time slices.
 #'
-#' `plot_nonlocal_kernel()` visualizes an impulse covariate diffusing through
+#' `plot_nonlocal_kernel()` visualizes an impulse entering and diffusing through
 #' one covariate-diffusion component.
 #'
 #' @return A `ggplot` object.

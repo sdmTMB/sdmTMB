@@ -1,14 +1,14 @@
-#' DHARMa residuals
+#' DHARMa residual diagnostics
 #'
-#' Plot (and possibly return) \pkg{DHARMa} residuals. This is a wrapper function
-#' around [DHARMa::createDHARMa()] to facilitate its use with [sdmTMB()] models.
-#' **Note:** It is recommended to set `type = "mle-mvn"` in
-#' [sdmTMB::simulate.sdmTMB()] for the resulting residuals to have the
-#' expected distribution. This is *not* the default.
+#' Plot (and optionally return) \pkg{DHARMa} residual diagnostics. This is a
+#' wrapper around [DHARMa::createDHARMa()] for use with [sdmTMB()] models.
+#' **Note:** We recommend setting `type = "mle-mvn"` in
+#' [sdmTMB::simulate.sdmTMB()] so the resulting residuals have the expected
+#' distribution. This is *not* the default.
 #'
-#' @param simulated_response Output from [simulate.sdmTMB()]. It is recommended
-#'   to set `type = "mle-mvn"` in the call to [simulate.sdmTMB()] for the
-#'   residuals to have the expected distribution.
+#' @param simulated_response Output from [simulate.sdmTMB()]. We recommend
+#'   setting `type = "mle-mvn"` in the call to [simulate.sdmTMB()] so the
+#'   residuals have the expected distribution.
 #' @param object Output from [sdmTMB()].
 #' @param return_DHARMa Logical. Return object from [DHARMa::createDHARMa()]?
 #' @param test_uniformity Passed to `testUniformity` in [DHARMa::plotQQunif()].
@@ -29,10 +29,10 @@
 #'
 #' See the [residuals vignette](https://sdmTMB.github.io/sdmTMB/articles/residual-checking.html).
 #'
-#' Advantages to these residuals over the ones from the [residuals.sdmTMB()]
+#' Advantages of these residuals relative to the [residuals.sdmTMB()]
 #' method are (1) they work with delta/hurdle models for the combined
-#' predictions, not the just the two parts separately, (2) they should work for
-#' all families, not the just the families where we have worked out the
+#' predictions, not just the two parts separately, (2) they should work for
+#' all families, not just the families where we have worked out the
 #' analytical quantile function, and (3) they can be used with the various
 #' diagnostic tools and plots from the \pkg{DHARMa} package.
 #'
@@ -51,9 +51,9 @@
 # a normal(0, 1) expectation.
 #'
 #' @return
-#' A data frame of observed and expected values is invisibly returned
-#' so you can assign the output to an object and
-#' plot the residuals yourself. See the examples.
+#' A data frame of observed and expected values is invisibly returned so you can
+#' assign the output to an object and plot the residuals yourself. See the
+#' examples.
 #'
 #' If `return_DHARMa = TRUE`, the object from `DHARMa::createDHARMa()`
 #' is returned and any subsequent \pkg{DHARMa} functions can be applied.
@@ -190,4 +190,3 @@ dharma_residuals <- function(simulated_response, object, plot = TRUE,
     return(data.frame(observed = z$y, expected = z$x))
   }
 }
-

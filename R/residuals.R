@@ -302,16 +302,15 @@ qres_gengamma <- function(object, y, mu, ...) {
 
 #' Residuals method for sdmTMB models
 #'
-#' See the residual-checking vignette: `browseVignettes("sdmTMB")` or [on the
-#' documentation
-#' site](https://sdmTMB.github.io/sdmTMB/articles/residual-checking.html).
-#' See notes about types of residuals in 'Details' section below.
+#' See the residual-checking vignette: `browseVignettes("sdmTMB")` or the
+#' [documentation site](https://sdmTMB.github.io/sdmTMB/articles/residual-checking.html).
+#' See the Details section below for notes on residual types.
 #'
 #' @param object An [sdmTMB()] model.
 #' @param type Residual type. See details.
 #' @param model Which delta/hurdle model component?
-#' @param mcmc_samples A vector of MCMC samples of the linear predictor in link
-#'   space. See the `predict_mle_mcmc()` function in the
+#' @param mcmc_samples A vector or matrix of MCMC samples of the linear
+#'   predictor in link space. See the `predict_mle_mcmc()` function in the
 #'   \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra} package.
 #' @param qres_func A custom quantile residuals function. Function should take
 #'   the arguments `object, y, mu, ...` and return a vector of length
@@ -359,9 +358,9 @@ qres_gengamma <- function(object, y, mu, ...) {
 #' quantile residuals as described above.
 #'
 #' **`mle-eb`**: Fixed effects are held at their MLEs and random effects are
-#' taken as their EB estimates. These used to be the default residuals in
+#' taken as their EB estimates. These used to be the default residual type in
 #' \pkg{sdmTMB} (and were called `mle-laplace`). They are available for
-#' backwards compatibility and for research purposes but they are *not*
+#' backward compatibility and for research purposes but are *not*
 #' recommended for checking goodness of fit. Residuals are converted to
 #' randomized quantile residuals as described above.
 #'
@@ -428,7 +427,7 @@ qres_gengamma <- function(object, y, mu, ...) {
 #' qqnorm(r)
 #' abline(0, 1)
 #'
-#' # response residuals will be not be normally distributed unless
+#' # response residuals will not be normally distributed unless
 #' # the family is Gaussian:
 #' r <- residuals(fit, type = "response")
 #' qqnorm(r)

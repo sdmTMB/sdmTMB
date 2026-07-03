@@ -66,7 +66,7 @@ get_eao(
 }
 \arguments{
 \item{obj}{Output from \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} with \code{return_tmb_object = TRUE}
-(the usual case). Alternatively, if \code{\link[=sdmTMB]{sdmTMB()}} was called with \code{do_index = TRUE}, or if using \code{\link[=get_index_split]{get_index_split()}}, an object from \code{\link[=sdmTMB]{sdmTMB()}}.}
+(the most common case). Alternatively, if \code{\link[=sdmTMB]{sdmTMB()}} was called with \code{do_index = TRUE}, or if using \code{\link[=get_index_split]{get_index_split()}}, an object from \code{\link[=sdmTMB]{sdmTMB()}}.}
 
 \item{bias_correct}{Should bias correction be implemented via
 \code{\link[TMB:sdreport]{TMB::sdreport()}}? Bias correction accounts for the non-linear
@@ -83,7 +83,7 @@ a single numeric value to apply to all grid cells, or (3) a character value
 giving the column name in \code{newdata} containing areas. See Details for
 non-spatial uses of \code{area} as an integration multiplier.}
 
-\item{silent}{Silent?}
+\item{silent}{Logical. Suppress progress messages?}
 
 \item{derived_link}{Optional override for the inverse link used when
 calculating derived quantities such as the index. By default, the fitted
@@ -217,7 +217,7 @@ Geostatistical delta-generalized linear mixed models improve precision for
 estimated abundance indices for West Coast groundfishes. ICES J. Mar. Sci.
 72(5): 1297–1310. \doi{10.1093/icesjms/fsu243}
 
-Geostatistical model-based centre of gravity:
+Geostatistical model-based center of gravity:
 
 Thorson, J.T., Pinsky, M.L., and Ward, E.J. 2016. Model-based inference for
 estimating shifts in species distribution, area occupied and centre of

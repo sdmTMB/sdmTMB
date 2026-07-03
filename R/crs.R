@@ -1,16 +1,16 @@
 #' Add UTM coordinates to a data frame
 #'
 #' Add UTM (Universal Transverse Mercator) coordinates to a data frame. This is
-#' useful since geostatistical modeling should generally be performed in an
-#' equal-distance projection. You can do this yourself separately with the
-#' [sf::st_as_sf()], [sf::st_transform()], and [sf::st_coordinates()] functions
-#' in the \pkg{sf} package.
+#' useful since geostatistical modeling should generally be performed in a
+#' projected coordinate reference system with distance-based units. You can do
+#' this yourself with the [sf::st_as_sf()], [sf::st_transform()], and
+#' [sf::st_coordinates()] functions in the \pkg{sf} package.
 #'
 #' @param dat Data frame that contains longitude and latitude columns.
 #' @param ll_names Longitude and latitude column names. **Note the order.**
 #' @param ll_crs Input CRS value for `ll_names`.
 #' @param utm_names Output column names for the UTM columns.
-#' @param utm_crs Output CRS value for the UTM zone; tries to detect with
+#' @param utm_crs Output CRS value for the UTM zone; tries to detect it with
 #'   [get_crs()] but can be specified manually.
 #' @param units UTM units.
 #'
@@ -18,9 +18,9 @@
 #' **Note that longitudes west of the prime meridian should be encoded
 #' as running from -180 to 0 degrees.**
 #'
-#' You may wish to work in km's rather than the standard UTM meters so that the
+#' You may wish to work in km rather than the standard UTM meters so that the
 #' range parameter estimate is not too small, which can cause computational
-#' issues. This depends on the the scale of your data.
+#' issues. This depends on the scale of your data.
 #'
 #' @return
 #' A copy of the input data frame with new columns for UTM coordinates.

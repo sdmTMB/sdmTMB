@@ -107,8 +107,9 @@ elements \code{delta} (logical) and \code{type} (standard vs. Poisson-link).
 Additional families compatible with \code{\link[=sdmTMB]{sdmTMB()}}.
 }
 \details{
-The default \code{link1} for delta models of \code{type = "standard"} is \code{"logit"}.
-The default \code{link1} for delta models of \code{type = "poisson-link"} is \code{"log"}.
+The default first-component link (\code{link1}) for delta models of
+\code{type = "standard"} is \code{"logit"}. For \code{type = "poisson-link"}, the
+default \code{link1} is \code{"log"}.
 
 \code{delta_poisson_link_gamma()} and \code{delta_poisson_link_lognormal()} have been
 deprecated in favour of \code{delta_gamma(type = "poisson-link")} and
@@ -121,7 +122,7 @@ parameter \code{gengamma_Q} (reported in \code{print()} or \code{summary()} as
 should be the gamma.
 
 The families ending in \verb{_mix()} are 2-component mixtures where each
-distribution has its own mean but a shared scale parameter.
+distribution has its own mean but they share a scale parameter.
 (Thorson et al. 2011). See the model-description vignette for details.
 The parameter \code{p_extreme = plogis(logit_p_extreme)} is the probability of the extreme (larger)
 mean and \code{exp(log_ratio_mix) + 1} is the ratio of the larger extreme
