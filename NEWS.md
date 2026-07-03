@@ -36,6 +36,8 @@
 
 ## Minor improvements and fixes
 
+* Fix compatibility with next RcppEigen #538
+
 * The correctly transformed correlation between a random slope and intercept is
   now displayed by `print()` and `tidy()`.
 
