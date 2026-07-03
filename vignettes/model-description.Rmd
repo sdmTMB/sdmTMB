@@ -67,13 +67,13 @@ div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
 
 # Notation conventions
 
-This appendix uses the following notation conventions, which generally follow the guidance in @edwards2019:
+This vignette uses the following notation conventions, which generally follow the guidance in @edwards2019:
 
 -   Greek symbols for parameters,
 
 -   the Latin/Roman alphabet for data except for cases where another symbol is used by convention,
 
--   bold symbols for vectors or matrices (e.g., $\bomega$ is a vector and $\omega_{\s}$ is the value of $\bomega$ at point in space $\s$), with Latin/Roman symbols in non-italics (e.g., $\mathbf{X}$, $\mathbf{Q}$),
+-   bold symbols for vectors or matrices (e.g., $\bomega$ is a vector and $\omega_{\s}$ is the value of $\bomega$ at a point in space $\s$), with Latin/Roman symbols in non-italics (e.g., $\mathbf{X}$, $\mathbf{Q}$),
 
 -   $\phi$ for all distribution dispersion parameters for consistency with the code,
 
@@ -109,12 +109,12 @@ $$
 where
 
 -   $y_{\s,t}$ represents the response data at point $\s$ and time $t$;
--   $\eta$ represents the linear predictor (i.e., in link space)
+-   $\eta$ represents the linear predictor (i.e., in link space);
 -   $\mu$ represents the conditional mean on the response/data scale (after applying the inverse link);
 -   $f$ represents a link function (e.g., log or logit) and $f^{-1}$ represents its inverse, and $\eta$ represents the linear predictor before applying $f^{-1}$;
--   $\bX^{\RM{main}}$, $\bX^{\RM{tvc}}$, and $\bX^{\RM{svc}}$ represent design matrices (the superscript identifiers 'main' = main effects, 'tvc' = time varying coefficients, and 'svc' = spatially varying coefficients);
+-   $\bX^{\RM{main}}$, $\bX^{\RM{tvc}}$, and $\bX^{\RM{svc}}$ represent design matrices (the superscript identifiers 'main' = main effects, 'tvc' = time-varying coefficients, and 'svc' = spatially varying coefficients);
 -   $\bbeta$ represents a vector of fixed-effect coefficients;
--   $O_{\s,t}$ represents an offset: a covariate (usually log transformed) with a coefficient fixed at one that enters on the linear predictor scale (before the inverse link);
+-   $O_{\s,t}$ represents an offset: a covariate (usually log-transformed) with a coefficient fixed at one that enters on the linear predictor scale (before the inverse link);
 -   $\bZ_{g}$ represents the random-effect design row(s) for group $g$ (a subset of the matrix $\bZ$) corresponding to $\mathbf{b}_{g}$; these random effects enter on the linear predictor scale; the scalar special case is a random intercept $\alpha_{g}\sim \RM{N}(0,\sigma_\alpha^2)$, and more generally random slopes and intercepts are vector-valued with full covariance as described below;
 -   $\bgam_{t}$ represents a vector of time-varying coefficients, where each coefficient $\gamma_{p,t}$ can follow a random walk or AR(1) process;
 -   $\bzeta_{\s}$ represents a vector of spatially varying coefficients (random fields), where each coefficient $\zeta_{l,\s} \sim \RM{MVN}(\bs{0},\bSigma_{\zeta,l})$;
@@ -164,7 +164,7 @@ s(x)=\tau + \psi\ { \left[ 1+{ e }^{ -\ln \left(19\right) \cdot \left( x-s50 \ri
      / \left(s95 - s50 \right) } \right] }^{-1},
 $$
 
-where $s$ represents the logistic function, $\psi$ is a scaling parameter (controlling the height of the y-axis for the response; unconstrained), $\tau$ is an intercept, $s50$ is a parameter controlling the point at which the function reaches 50% of the maximum ($\psi$), and $s95$ is a parameter controlling the point at which the function reaches 95% of the maximum.
+where $s(x)$ denotes the threshold function, $\psi$ is a scaling parameter (controlling the height of the response curve; unconstrained), $\tau$ is an intercept, $s50$ is a parameter controlling the point at which the function reaches 50% of the maximum ($\psi$), and $s95$ is a parameter controlling the point at which the function reaches 95% of the maximum.
 The parameter $s50$ is unconstrained but $s95$ is constrained to be larger than $s50$.
 
 These models can be fit by including `+ logistic(x)` in the model formula, where `x` is a covariate.
@@ -209,7 +209,7 @@ $$
 \end{aligned}
 $$
 
-where $\epsilon_{\s,t}$ represent random field deviations at point $\s$ and time $t$.
+where $\epsilon_{\s,t}$ represents random field deviations at point $\s$ and time $t$.
 The random fields are assumed independent across time steps.
 
 Similarly to the spatial random fields, these spatiotemporal random fields (including all versions described below) are parameterized internally with a sparse precision matrix ($\bQ_\epsilon$)
@@ -220,7 +220,7 @@ $$
 
 ### AR(1) spatiotemporal random fields
 
-First-order auto regressive, AR(1), spatiotemporal random fields (`spatiotemporal = 'ar1'`) add a parameter defining the correlation between random field deviations from one time step to the next.
+First-order autoregressive, AR(1), spatiotemporal random fields (`spatiotemporal = 'ar1'`) add a parameter defining the correlation between random field deviations from one time step to the next.
 They are defined as
 
 $$
@@ -280,9 +280,9 @@ $$
 \end{aligned}
 $$
 
-In this case, the first time-step value is given an implicit uniform prior.
-I.e., the same variable should not appear in the fixed effect formula since the initial value is estimated as part of the time-varying formula.
-The formula `time_varying = ~ 1` implicitly represents a time-varying intercept (assuming the `time` argument has been supplied) and, this case, the intercept should be omitted from the main effects (`formula ~ + 0 + ...` or `formula ~ -1 + ...`).
+In this case, the first time-step value is treated as an unconstrained parameter (equivalent to an improper flat prior).
+That is, the same variable should not appear in the fixed-effects formula since the initial value is estimated as part of the time-varying formula.
+The formula `time_varying = ~ 1` implicitly represents a time-varying intercept (assuming the `time` argument has been supplied) and, in this case, the intercept should be omitted from the main-effects formula (e.g., `formula = y ~ 0 + ...` or `formula = y ~ -1 + ...`).
 
 For `time_varying_type = 'rw0'`, the first time step is estimated from a mean-zero prior:
 
@@ -318,7 +318,7 @@ $$
 
 where $\zeta_{l,\s}$ represents the $l$-th spatially varying coefficient field at location $\s$.
 When multiple spatially varying coefficients are specified, each is estimated as an independent spatial random field with its own marginal variance $\sigma_{\zeta,l}^2$.
-Usually, $\bX^{\RM{svc}}_{\s, t}$ would represent a prediction matrix that is constant spatially for a given time $t$ as defined by a one-sided formula supplied to `spatial_varying`.
+Usually, $\bX^{\RM{svc}}_{\s, t}$ represents the corresponding design matrix for the spatially varying coefficient terms, as defined by a one-sided formula supplied to `spatial_varying`.
 For example `spatial_varying = ~ 0 + x`, where `0` omits the intercept.
 
 The random fields are parameterized internally with a sparse precision matrix ($\bQ_\zeta$)
@@ -357,7 +357,7 @@ $$
 \end{aligned}
 $$
 
-where $O_{\s,t}$ is an offset term---a **log transformed** variable without a coefficient (assuming a log link).
+where $O_{\s,t}$ is an offset term---a **log-transformed** variable without a coefficient (assuming a log link).
 The offset is *not* included in the prediction.
 Therefore, if `offset` represents a measure of effort, for example, the prediction is for one unit of effort (`log(1) = 0`).
 
@@ -459,7 +459,7 @@ Example: `family = binomial(link = "logit")`
 
 $$
 \operatorname{BetaBinomial} \left(N, \mu, \phi \right)
-$$ where $N$ is the number of trials, $\mu$ is the mean success probability, and $\phi$ is a precision parameter that controls overdispersion relative to a Binomial.
+$$ where $N$ is the number of trials, $\mu$ is the mean success probability, and $\phi$ is a precision parameter that controls overdispersion relative to a Binomial distribution.
 The implied Beta parameters are $\alpha = \mu \phi$ and $\beta = (1 - \mu)\phi$, and the variance is
 $
 \mathrm{Var}[y] = N \mu (1 - \mu)\, \frac{\phi + N}{\phi + 1},
@@ -661,14 +661,14 @@ $$
 \operatorname{Student-t} \left( \mu, \phi, \nu \right)
 $$
 
-where $\nu$, the degrees of freedom (`df`), is a user-supplied fixed parameter.
+where $\nu$, the degrees of freedom (`df`), is estimated by default and can optionally be fixed by the user.
 Lower values of $\nu$ result in heavier tails compared to the Gaussian distribution.
 Above approximately `df = 20`, the distribution becomes very similar to the Gaussian.
 The Student-t distribution with a low degrees of freedom (e.g., $\nu \le 7$) can be helpful for modelling data that would otherwise be suitable for Gaussian but needs an approach that is robust to outliers [e.g., @anderson2017c].
 
 Code defined [within sdmTMB](https://github.com/sdmTMB/sdmTMB/blob/18a39eabc111e2179fa589f942c8820d87ad10df/src/utils.h#L37-L45) based on the `dt()` distribution in TMB.
 
-Example: `family = student(link = "log", df = 7)`
+Example: `family = student(link = "identity", df = 7)`
 
 ## Zero-inflated and hurdle structures
 
@@ -698,7 +698,7 @@ sdmTMB(
 )
 ```
 
-Or for we may want separate main-effects formulas. For example:
+Or we may want separate main-effects formulas. For example:
 
 ```r
 sdmTMB(
@@ -734,14 +734,14 @@ The spatially varying coefficient field always shares $\kappa$ with the spatial 
 
 ## Projection $\bA$ matrix
 
-The values of the spatial variables at the knots are multiplied by a projection matrix $\bA$ that bilinearly interpolates from the knot locations to the values at the locations of the observed or predicted data [@lindgren2015]
+The values of the spatial variables at the knots are multiplied by a projection matrix $\bA$ that linearly interpolates within mesh triangles from the knot locations to the locations of the observed or predicted data [@lindgren2015]
 
 $$
 \bomega^* = \bA \bomega,
 $$ where $\bomega^*$ represents the values of the spatial random fields at the observed locations or predicted data locations.
 The matrix $\bA$ has a row for each data point or prediction point and a column for each knot.
-Three non-zero elements on each row define the weight of the neighbouring 3 knot locations for location $\s$.
-The same bilinear interpolation happens for any spatiotemporal random fields
+Three non-zero elements on each row define the weights of the three neighbouring knot locations for location $\s$.
+The same interpolation happens for any spatiotemporal random fields
 
 $$
 \beps_t^* = \bA \beps_t.
@@ -749,7 +749,7 @@ $$
 
 ## Anisotropy
 
-TMB allows for anisotropy, where spatial covariance may be asymmetric with respect to latitude and longitude ([full details](https://kaskr.github.io/adcomp/namespaceR__inla.html)).
+TMB allows for anisotropy, where spatial covariance may depend on direction ([full details](https://kaskr.github.io/adcomp/namespaceR__inla.html)).
 Anisotropy can be turned on or off with the logical `anisotropy` argument to `sdmTMB()`.
 There are a number of ways to implement anisotropic covariance [@fuglstad2015a], and we adopt a 2-parameter rotation matrix $\bH$.
 The elements of $\bH$ are defined by the parameter vector $\boldsymbol{x}$ so that $H_{1,1} = x_{1}$, $H_{1,2} = H_{2,1} = x_{2}$ and $H_{2,2} = (1 + x_{2}^2) / x_{1}$.
@@ -761,7 +761,7 @@ If a barrier mesh is used, anisotropy is disabled.
 
 In some cases the spatial domain of interest may be complex and bounded by some barrier such as by land or water (e.g., coastlines, islands, lakes).
 SPDE models allow for physical barriers to be incorporated into the modelling [@bakka2019].
-With `sdmTMB()` models, the mesh construction occurs in two steps: the user (1) constructs a mesh with a call to `sdmTMBextra::make_mesh()`, and (2) passes the mesh to `sdmTMBextra::add_barrier_mesh()`.
+With `sdmTMB()` models, the mesh construction occurs in two steps: the user (1) constructs a mesh with a call to `sdmTMB::make_mesh()`, and (2) passes the mesh to `sdmTMBextra::add_barrier_mesh()`.
 The barriers must be constructed as `sf` objects [@pebesma2018] with polygons defining the barriers.
 See `?sdmTMBextra::add_barrier_mesh` for an example.
 
@@ -771,7 +771,7 @@ That makes correlation decay much faster through the barrier than around it, whi
 From experimentation, values around 0.1 or 0.2 seem to work well but values much lower than 0.1 can result in convergence issues.
 
 [This website](https://haakonbakkagit.github.io/btopic128.html) by Francesco Serafini and Haakon Bakka provides an illustration with INLA.
-The implementation within TMB was borrowed from code written by Olav Nikolai Breivik and Hans Skaug at the [TMB Case Studies](https://github.com/skaug/tmb-case-studies) Github site.
+The implementation within TMB was borrowed from code written by Olav Nikolai Breivik and Hans Skaug at the [TMB Case Studies](https://github.com/skaug/tmb-case-studies) GitHub site.
 
 # Optimization
 
@@ -787,7 +787,7 @@ In sdmTMB, phased estimation proceeds by first estimating all fixed-effect param
 In the second phase, the random-effect parameters (and their variances) are also estimated.
 Fixed-effect parameters are also estimated in the second phase and are initialized at their estimates from the first phase.
 
-In some cases, a single call to `stats::nlminb()` may not be result in convergence (e.g., the maximum gradient of the marginal likelihood with respect to fixed-effect parameters is not small enough yet), and the algorithm may need to be run multiple times.
+In some cases, a single call to `stats::nlminb()` may not result in convergence (e.g., the maximum gradient of the marginal likelihood with respect to fixed-effect parameters is not small enough yet), and the algorithm may need to be run multiple times.
 In the `sdmTMB::sdmTMBcontrol()` function, we include an argument `nlminb_loops` that will restart the optimization at the previous best values.
 The number of `nlminb_loops` should generally be small (e.g., 2 or 3), and defaults to 1.
 For some sdmTMB models, the Hessian may also be unstable and need to be re-evaluated.
@@ -803,7 +803,7 @@ Much of the guidance around diagnostics and glmmTMB also applies to sdmTMB, e.g.
 Optimization with `stats::nlminb()` involves specifying the number of iterations and evaluations (`eval.max` and `iter.max`) and the tolerances (`abs.tol`, `rel.tol`, `x.tol`, `xf.tol`)---a greater number of iterations and smaller tolerance thresholds increase the chance that the optimal solution is found, but more evaluations translates into longer computation time.
 Warnings of non-positive-definite Hessian matrices (accompanied by parameters with `NA`s for standard errors) often mean models are improperly specified given the data.
 Standard errors can be observed in the output of `print.sdmTMB()` or by checking `fit$sd_report`.
-The maximum gradient of the marginal likelihood with respect to fixed-effect parameters can be checked by inspecting (`fit$gradients`).
+The maximum gradient of the marginal likelihood with respect to fixed-effect parameters can be checked by inspecting `fit$gradients`.
 Guidance varies, but gradients should be very close to zero (e.g., on the order of $10^{-3}$ or smaller after reasonable parameter scaling) before assuming the fitting routine is consistent with convergence.
 If maximum gradients are already relatively small, they can sometimes be reduced further with additional optimization calls beginning at the previous best parameter vector as described above with `sdmTMB::run_extra_optimization()`.
 

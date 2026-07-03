@@ -11,5 +11,3 @@ This version adds minor functionality and fixes minor bugs.
 * Ubuntu 24.04.4 LTS (on github-actions), R-release
 * Windows (on github-actions), R-release
 * Windows (winbuilder), R-devel
-* Windows (winbuilder), R-release
-* Windows (winbuilder), R-oldrelease
