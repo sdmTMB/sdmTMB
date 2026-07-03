@@ -32,9 +32,9 @@ library(dplyr)
 library(sdmTMB)
 ```
 
-In this vignette, we describe the basic steps to fitting a spatial or spatiotemporal GLMM with sdmTMB. The goal is to show how to (i) build a mesh that captures spatial structure, (ii) fit increasingly rich models (GLM → spatial → spatiotemporal), (iii) interpret coefficients and random fields, and (iv) check predictions/uncertainty. These models are useful for (dynamic, i.e. changing through time) species distribution models and relative abundance index standardization among many other uses. See the [model description](https://sdmTMB.github.io/sdmTMB/articles/model-description.html) for full model structure and equations.
+In this vignette, we describe the basic steps to fitting a spatial or spatiotemporal GLMM with sdmTMB. The goal is to show how to (i) build a mesh that captures spatial structure, (ii) fit increasingly rich models (GLM → spatial → spatiotemporal), (iii) interpret coefficients and random fields, and (iv) check predictions and uncertainty. These models are useful for dynamic species distribution models, relative abundance index standardization, and many other applications. See the [model description](https://sdmTMB.github.io/sdmTMB/articles/model-description.html) for the full model structure and equations.
 
-We will use built-in package data for Pacific Cod from a fisheries independent trawl survey (kg caught, swept area, and tow time).
+We will use built-in package data for Pacific Cod from a fisheries-independent trawl survey (kg caught, swept area, and tow time).
 
 - Density is in kg/km^2^ (biomass standardization using swept area and tow duration).
 - X and Y are coordinates in UTM zone 9. We could add these to a new dataset with `sdmTMB::add_utm_columns()`.
@@ -57,13 +57,13 @@ glimpse(pcod)
 
 The most basic model structure possible in sdmTMB replicates a GLM as can be fit with `glm()` or a GLMM as can be fit with lme4 or glmmTMB, for example.
 The spatial components in sdmTMB are included as random fields using a triangulated ("finite element") mesh with vertices (knots) that approximate spatial variability.
-A Gaussian Markov random field (GMRF) is a set of spatial random effects with a sparse precision matrix; the SPDE approach (Lindgren et al., 2011) links a Gaussian random field with Matérn covariance to this discrete GMRF.
+A Gaussian Markov random field (GMRF) is a set of spatial random effects with a sparse precision matrix; the SPDE approach (Lindgren et al., 2011) links a Gaussian random field with Matern covariance to this discrete GMRF.
 Bilinear interpolation is used to approximate a continuous spatial field (Rue et al., 2009; Lindgren et al., 2011) from the estimated values of the spatial surface at these knot locations to other locations including those of actual observations.
 
 There are different options for creating the spatial mesh (see `sdmTMB::make_mesh()`).
-We will start with a relatively coarse mesh for a balance between speed and accuracy (`cutoff = 10`, where cutoff is in the units of X and Y (km here) and represents the minimum distance between knots before a new mesh vertex is added). 
-Smaller values create meshes with more knots (finer spatial detail, slower fitting). 
-Larger values create fewer knots (faster, but coarser). 
+We will start with a relatively coarse mesh as a balance between speed and accuracy (`cutoff = 10`, where cutoff is in the units of X and Y (km here) and represents the minimum distance between knots before a new mesh vertex is added).
+Smaller values create meshes with more knots (finer spatial detail, slower fitting).
+Larger values create fewer knots (faster, but coarser).
 In applied scenarios, start coarse, then check whether a finer mesh changes conclusions.
 The circles represent observations and the vertices are the knot locations.
 
@@ -96,11 +96,11 @@ m0 <- glm(
 summary(m0)
 ```
 
-Notice that the AIC, log likelihood, parameter estimates, and standard errors are all identical. 
+Notice that the AIC, log likelihood, parameter estimates, and standard errors are all identical.
 Interpreting these coefficients: a negative linear depth term with a positive quadratic suggests peak presence at intermediate depths; the logit link means these are log-odds changes per SD of depth.
 
 Next, we can incorporate spatial random effects into the above model by changing `spatial` to `"on"` and adding our `mesh`.
-These spatial random fields absorb spatial structure not explained by depth and typically reduce residual spatial autocorrelation. 
+These spatial random fields absorb spatial structure not explained by depth and typically reduce residual spatial autocorrelation.
 Expect coefficient estimates and their standard errors to shift once spatial structure is accounted for:
 
 ```{r spatial-logistic}
@@ -115,7 +115,7 @@ m1
 AIC(m1)
 ```
 
-To add spatiotemporal random fields to this model, we need to include both the time argument that indicates what column of your data frame contains the time slices at which spatial random fields should be estimated (e.g., `time = "year"`) and we need to choose whether these fields are independent and identically distributed (`spatiotemporal = "IID"`), first-order autoregressive (`spatiotemporal = "AR1"`, each year correlated with the previous), or a random walk (`spatiotemporal = "RW"`, cumulative drift). We will stick with IID for these examples.
+To add spatiotemporal random fields to this model, we need to include the `time` argument indicating what column of the data frame contains the time slices at which spatiotemporal random fields should be estimated (e.g., `time = "year"`). We also need to choose whether these fields are independent and identically distributed (`spatiotemporal = "IID"`), first-order autoregressive (`spatiotemporal = "AR1"`, each year correlated with the previous), or a random walk (`spatiotemporal = "RW"`, cumulative drift). We will stick with IID for these examples.
 
 ```{r spatiotemporal-logistic}
 m2 <- sdmTMB(
@@ -130,7 +130,7 @@ m2 <- sdmTMB(
 m2
 ```
 
-We can also model biomass density using a Tweedie distribution (handles zero-inflated continuous biomass). 
+We can also model biomass density using a Tweedie distribution (useful for semi-continuous data with exact zeros).
 We'll switch to `poly()` notation to make some of the plotting easier.
 
 ```{r tweedie}
@@ -148,7 +148,7 @@ m3
 
 ## Parameter estimates
 
-We can view the confidence intervals on the fixed effects by using the tidy function.
+We can view confidence intervals for the fixed effects using the `tidy()` function.
 For interpretation, think of a 1-unit increase in a standardized covariate as 1 SD in the original units; exponentiate log-linked effects to get multiplicative changes in biomass density:
 
 ```{r tweedie-fe}
@@ -163,7 +163,7 @@ tidy(m3, "ran_pars", conf.int = TRUE)
 
 These parameters are defined as follows:
 
-* `range`: A derived parameter that defines the distance at which 2 points are effectively independent (actually about 13% correlated). If the `share_range` argument is changed to `FALSE` then the spatial and spatiotemporal ranges will be unique, otherwise the default is for both to share the same range.
+* `range`: A derived parameter that defines the distance at which 2 points are effectively independent (more precisely, about 13% correlated). If the `share_range` argument is changed to `FALSE` then the spatial and spatiotemporal ranges will be unique; otherwise, by default, they share the same range.
 
 * `phi`: Observation error scale parameter (e.g., SD in Gaussian).
 
@@ -192,7 +192,7 @@ ggplot(pcod, aes(X, Y, col = resids)) +
   coord_fixed()
 ```
 
-Look for straight QQ lines and no large spatial patches of residuals; strong spatial patterns suggest missing covariates or a too-coarse mesh.
+Look for an approximately straight QQ plot and no large spatial patches of residuals; strong spatial patterns suggest missing covariates, misspecified structure, or a mesh that is too coarse.
 
 We can also use simulation-based randomized quantile residuals.
 
@@ -206,10 +206,10 @@ See `?residuals.sdmTMB()` and the [residuals vignette](https://sdmtmb.github.io/
 
 ## Spatial predictions
 
-Now, for the purposes of this example (e.g., visualization), we want to predict on a fine-scale grid on the entire survey domain. 
-There is a grid built into the package for Queen Charlotte Sound named `qcs_grid`. 
+Now, for the purposes of this example (e.g., visualization), we want to predict on a fine-scale grid over the entire survey domain.
+There is a grid built into the package for Queen Charlotte Sound named `qcs_grid`.
 See [this discussion](https://github.com/sdmTMB/sdmTMB/discussions/151) thread if you're looking for some suggestions for how to form your own grid.
-Our prediction grid also needs to have all the covariates that we used in the model above. 
+Our prediction grid also needs to have all the covariates that we used in the model above.
 We replicate the grid across years so that spatiotemporal fields can be projected to every time slice.
 
 ```{r glimpse-grid}
@@ -240,13 +240,13 @@ plot_map <- function(dat, column) {
 
 The `{{ }}` syntax is just a "[tidy-eval helper](https://ggplot2.tidyverse.org/reference/tidyeval.html)" that lets us supply the unquoted column name and pass it on to ggplot.
 
-There are four kinds of predictions that we get out of the model. Use cases:
+There are four kinds of predictions that we get out of the model. Typical use cases are:
 - `est`: fixed + spatial + spatiotemporal; use for maps and indices.
 - `est_non_rf`: fixed effects only; use to understand covariate-driven signal.
 - `omega_s`: spatial random effects; use to see persistent spatial deviations.
 - `epsilon_st`: spatiotemporal random effects; use to see year-specific anomalies.
 
-First, we will show the predictions that incorporate all fixed effects and random effects:
+First, we will show the predictions that incorporate all fixed and random effects:
 
 ```{r plot-all-effects, fig.width = 8}
 plot_map(predictions, exp(est)) +
@@ -261,7 +261,7 @@ plot_map(predictions, exp(est)) +
   )
 ```
 
-We can also look at just the fixed effects, here only a quadratic effect of depth:
+We can also look at just the fixed effects, here a quadratic effect of depth:
 
 ```{r plot-fix-defects, fig.width = 6}
 plot_map(predictions, exp(est_non_rf)) +
@@ -269,8 +269,8 @@ plot_map(predictions, exp(est_non_rf)) +
   ggtitle("Prediction (fixed effects only)")
 ```
 
-We can look at the spatial random effects that represent consistent deviations in space through time that are not accounted for by our fixed effects.
-In other words, these deviations represent consistent spatially structured biotic and abiotic factors that are affecting biomass density but are not accounted for in the model.
+We can look at the spatial random effects that represent persistent deviations in space through time that are not accounted for by our fixed effects.
+In other words, these deviations represent persistent spatially structured biotic and abiotic factors affecting biomass density that are not accounted for in the model.
 
 ```{r plot-spatial-effects, fig.width = 6}
 plot_map(predictions, omega_s) +
@@ -278,8 +278,8 @@ plot_map(predictions, omega_s) +
   ggtitle("Spatial random effects only")
 ```
 
-And finally we can look at the spatiotemporal random effects that represent deviation from the fixed effect predictions and the spatial random effect deviations.
-These represent spatially structured biotic and abiotic factors that are changing through time and are not accounted for in the model.
+And finally we can look at the spatiotemporal random effects that represent deviations from the fixed-effect predictions and the spatial random-effect deviations.
+These represent spatially structured biotic and abiotic factors that change through time and are not accounted for in the model.
 
 ```{r plot-spatiotemporal-effects, fig.width = 8}
 plot_map(predictions, epsilon_st) +
@@ -288,7 +288,7 @@ plot_map(predictions, epsilon_st) +
   ggtitle("Spatiotemporal random effects only")
 ```
 
-We can also estimate the uncertainty in our spatiotemporal density predictions using simulations from the joint precision matrix by setting `nsim > 0` in the predict function.
+We can also estimate the uncertainty in our spatiotemporal density predictions using simulations from the joint precision matrix by setting `nsim > 0` in the `predict()` function.
 Here we generate 100 estimates and use `apply()` to calculate upper and lower confidence intervals, a standard deviation, and a coefficient of variation (CV).
 
 ```{r sim-cv}
@@ -311,7 +311,7 @@ ggplot(pred_last, aes(X, Y, fill = cv)) +
 
 ## Conditional effects
 
-We can visualize the conditional effect of any covariates by feeding simplified data frames to the predict function that fix covariate values we want fixed (e.g., at means) and vary parameters we want to visualize (across a range of values):
+We can visualize the conditional effect of covariates by feeding simplified data frames to the `predict()` function that fix covariate values we want held constant (e.g., at their means) and vary the values we want to visualize across a range:
 
 ```{r depth-eff, fig.width = 6}
 nd <- data.frame(
@@ -334,7 +334,7 @@ ggplot(p, aes(depth, exp(est),
   labs(x = "Depth (m)", y = "Biomass density (kg/km2)")
 ```
 
-We could also do this with the visreg package. This version is in link space and the residuals are partial randomized quantile residuals. See the `scale` argument in visreg for response scale plots.
+We could also do this with the visreg package. This version is in link space, and the residuals are partial randomized quantile residuals. See the `scale` argument in visreg for response-scale plots.
 
 ```{r visreg}
 visreg::visreg(m3, "depth")
@@ -350,7 +350,7 @@ ggeffects::ggeffect(m3, "depth [0:500 by=1]") |> plot()
 
 We could also let the effect of depth vary through time.
 We set up the time-varying coefficients to follow an AR1 process by setting `time_varying_type = "ar1"` (each year's coefficient is correlated with the previous year's). With `"ar1"` or `"rw0"`, the fixed effects represent the starting point of the time series and the time-varying process represents deviations from this over time.
-If, instead, we had used `time_varying_type = "rw"`, the first time step of the random effect process would represent the initial year values and we would want to omit the matching effects in the main formula. For example:
+If, instead, we had used `time_varying_type = "rw"`, the first time step of the random-effect process would represent the initial-year values and we would want to omit the matching effects in the main formula. For example:
 
 ```r
 formula = density ~ 0,
@@ -358,7 +358,7 @@ time_varying = ~ 1 + depth_scaled + depth_scaled2,
 time_varying_type = "rw"
 ```
 
-We include a full length of time increments with `extra_time` to ensure we estimate time-varying coefficient values for each year, including any years that are missing from our data.
+We include the full sequence of time increments with `extra_time` to ensure that we estimate time-varying coefficient values for each year, including any years that are missing from our data.
 For this example, we turn off the spatiotemporal random effects because we were having convergence issues with them turned on.
 
 ```{r tv-effect}
@@ -405,4 +405,3 @@ ggplot(p, aes(depth_scaled, exp(est),
   coord_cartesian(expand = F) +
   labs(x = "Depth (m)", y = "Biomass density (kg/km2)")
 ```
-
