@@ -61,8 +61,8 @@ test_that("get_index_sims works", {
 
   # library(dplyr)
   # a <- reshape2::melt(p)
-  # a <- group_by(a, Var1, Var2) %>% summarize(est = sum(exp(value)))
-  # a <- group_by(a, Var1) %>% summarise(est = median(est))
+  # a <- group_by(a, Var1, Var2) |> summarize(est = sum(exp(value)))
+  # a <- group_by(a, Var1) |> summarise(est = median(est))
 
   x <- get_index_sims(p)
   expect_equal(nrow(x), length(unique(qcs_grid_2011$year)))

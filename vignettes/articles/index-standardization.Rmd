@@ -147,8 +147,8 @@ ggplot(index, aes(year, est)) + geom_line() +
 These are our biomass estimates:
 
 ```{r index-table, results='asis'}
-mutate(index, cv = sqrt(exp(se^2) - 1)) %>% 
-  select(-log_est, -se) %>%
+mutate(index, cv = sqrt(exp(se^2) - 1)) |> 
+  select(-log_est, -se) |>
   knitr::kable(format = "pandoc", digits = c(0, 0, 0, 0, 2))
 ```
 
@@ -165,8 +165,8 @@ head(index_south)
 We can visually compare the two indices:
 
 ```{r south-index-plot}
-mutate(index, region = "all") %>% 
-  bind_rows(mutate(index_south, region = "south")) %>% 
+mutate(index, region = "all") |> 
+  bind_rows(mutate(index_south, region = "south")) |> 
   ggplot(aes(year, est)) + 
   geom_line(aes(colour = region)) +
   geom_ribbon(aes(ymin = lwr, ymax = upr, fill = region), alpha = 0.4)

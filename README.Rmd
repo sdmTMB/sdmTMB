@@ -122,7 +122,7 @@ library(dplyr)
 library(ggplot2)
 library(sdmTMB)
 theme_set(theme_light())
-dplyr::select(pcod, year, density, present, depth, X, Y) %>%
+dplyr::select(pcod, year, density, present, depth, X, Y) |>
   head(n = 3)
 ```
 
@@ -189,7 +189,7 @@ head(p)
 ```
 
 ```{r, eval=TRUE, echo=FALSE}
-select(p, X, Y, depth, est, est_non_rf, est_rf, omega_s) %>%
+select(p, X, Y, depth, est, est_non_rf, est_rf, omega_s) |>
   head(n = 3)
 ```
 
@@ -326,7 +326,7 @@ See `zeta_s` in the output, which represents spatial variation in the coefficien
 ```{r plot-zeta}
 grid_yrs <- replicate_df(qcs_grid, "year", unique(pcod$year))
 grid_yrs$year_scaled <- (grid_yrs$year - mean(pcod$year)) / sd(pcod$year)
-p <- predict(fit, newdata = grid_yrs) %>%
+p <- predict(fit, newdata = grid_yrs) |>
   subset(year == 2011) # any year
 ggplot(p, aes(X, Y, fill = zeta_s_year_scaled)) + geom_raster() +
   scale_fill_gradient2()

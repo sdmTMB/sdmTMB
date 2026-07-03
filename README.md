@@ -515,7 +515,7 @@ the average effect.
 ``` r
 grid_yrs <- replicate_df(qcs_grid, "year", unique(pcod$year))
 grid_yrs$year_scaled <- (grid_yrs$year - mean(pcod$year)) / sd(pcod$year)
-p <- predict(fit, newdata = grid_yrs) %>%
+p <- predict(fit, newdata = grid_yrs) |>
   subset(year == 2011) # any year
 ggplot(p, aes(X, Y, fill = zeta_s_year_scaled)) + geom_raster() +
   scale_fill_gradient2()

@@ -56,8 +56,8 @@ test_that("A time-varying model fits and predicts appropriately", {
     spatiotemporal = "off")
   expect_equal(exp(m$model$par["ln_tau_V"])[[1]], 0.5971512, tolerance = 0.001)
   tidy(m, effects = "ran_par")
-  # b_t <- dplyr::group_by(s, time) %>%
-  #   dplyr::summarize(b_t = unique(b), .groups = "drop") %>%
+  # b_t <- dplyr::group_by(s, time) |>
+  #   dplyr::summarize(b_t = unique(b), .groups = "drop") |>
   #   dplyr::pull(b_t)
   # r <- m$tmb_obj$report()
   # b_t_fit <- r$b_rw_t[,,1]
