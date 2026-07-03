@@ -37,24 +37,24 @@ library(sdmTMB)
 
 # Overview
 
-Cross-validation is one of the best approaches that can be used to quantify model performance and compare sdmTMB models with different structures (unlike AIC, this approach will also factor in uncertainty in random effects).
-Arguably the most challenging decision in implementing cross-validation is how to specify the folds (each fold representing a subset of data that is in turn held out and used as a test set).
+Cross-validation is one of the best approaches for quantifying model performance and comparing sdmTMB models with different structures (unlike AIC, this approach also accounts for uncertainty in random effects).
+Arguably the most challenging decision when implementing cross-validation is how to specify the folds (each fold representing a subset of data that is, in turn, held out and used as a test set).
 Folds may vary in number and how data are partitioned, and will likely be slightly different for each application.
 
-The goals of some sdmTMB applications may be focused on spatial prediction; these include making prediction to new spatial regions (e.g. unsampled areas or areas not sampled in every year).
+The goals of some sdmTMB applications may be focused on spatial prediction; these include predicting to new spatial regions (e.g. unsampled areas or areas not sampled in every year).
 For these types of models we recommend exploring folds using the `blockCV` or `spatialsample` packages [@silge_2021; @valavi_2019].
 In general, these spatial sampling approaches assign observations that are spatially autocorrelated to the same fold.
 Accounting for the spatial correlation can lead to better estimates of covariate effects, as well as prediction errors.
 
-Alternatively, the goals of an analysis with sdmTMB may be to evaluate the predictive accuracy of a model in time (e.g. a missing survey year, or prediction to future years).
+Alternatively, the goal of an analysis with sdmTMB may be to evaluate the predictive accuracy of a model through time (e.g. for a missing survey year, or for prediction to future years).
 For retrospective analyses, all points within a year may be assigned to a fold (or groups of years to the same fold).
 In contrast, models that are forward looking would use Leave Future Out Cross-Validation (LFOCV).
 In LFOCV, data up to year $t$ are used to predict observations at $t+1$, etc.
 
 # Cross validation in sdmTMB
 
-Cross validation in sdmTMB is implemented using the `sdmTMB_cv()` function, with the `k_folds` argument specifying the number of folds (defaults to 8).
-The function uses parallelization by default a `future::plan()` is set, but this can be turned off with the `parallel` argument.
+Cross-validation in sdmTMB is implemented using the `sdmTMB_cv()` function, with the `k_folds` argument specifying the number of folds (defaulting to 8).
+The function uses parallelization by default if a `future::plan()` is set, but this can be turned off with the `parallel` argument.
 
 ```{r ex0, eval=TRUE}
 data(pcod)
@@ -76,8 +76,8 @@ m_cv <- sdmTMB::sdmTMB_cv(
 )
 ```
 
-In the above example, folds are assigned randomly---but these can be modified to specific spatial or temporal applications.
-Without getting into the complexities of the `blockCV` or `spatialsample` packages, we could simply use `kmeans` to generate spatial clusters, e.g.
+In the above example, folds are assigned randomly, but these can be modified for specific spatial or temporal applications.
+Without getting into the complexities of the `blockCV` or `spatialsample` packages, we could simply use `kmeans()` to generate spatial clusters, e.g.
 
 ```{r ex2, eval=TRUE}
 clust <- kmeans(pcod[, c("X", "Y")], 20)$cluster
@@ -91,7 +91,7 @@ m_cv <- sdmTMB::sdmTMB_cv(
 )
 ```
 
-Or similarly, these clusters could be assigned in time---here, each year to a unique fold. Note that year is not included as a factor and spatiotemporal fields are turned off because they cannot be estimated in missing years.
+Or similarly, these clusters could be assigned in time, here with each year assigned to a unique fold. Note that year is not included as a factor and spatiotemporal fields are turned off because they cannot be estimated in missing years.
 
 ```{r ex3, eval=TRUE}
 clust <- as.numeric(as.factor(pcod$year))
@@ -108,8 +108,8 @@ m_cv <- sdmTMB::sdmTMB_cv(
 
 # Measuring model performance
 
-Lots of measures of predictive accuracy can be used to evaluate model performance.
-By default, `sdmTMB_cv()` returns a list that contains the sum of the log likelihoods for each left-out fold and the total summed across the left-out folds. This is roughly equivalent to the expected log predictive density (ELPD) in the Bayesian literature and can be interpreted as the predictive ability of the model for new observations.
+Many measures of predictive accuracy can be used to evaluate model performance.
+By default, `sdmTMB_cv()` returns a list that contains the sum of the log-likelihood values for each left-out fold and the total summed across the left-out folds. This is analogous to the expected log predictive density (ELPD) in the Bayesian literature and can be interpreted as a measure of predictive ability for new observations.
 These can be accessed as below, and inspecting the quantities across folds may help elucidate whether there are particular folds that are difficult to predict.
 
 ```{r ex4, eval=TRUE}
@@ -125,7 +125,7 @@ m_cv$fold_loglik # fold log-likelihood
 m_cv$sum_loglik # total log-likelihood
 ```
 
-The `fold_loglik` values represent the sum of predictive log-likelihood values across observations for each fold, and the `sum_loglik` value represents the sum of `fold_loglik` values, representing the sum for the entire dataset. We can also calculate derived statistics based on the predictive values -- here, using examples with Root Mean Square Error (RMSE) and Mean Absolute Error (MAE).
+The `fold_loglik` values represent the sum of predictive log-likelihood values across observations for each fold, and the `sum_loglik` value represents the sum of `fold_loglik` across the entire dataset. We can also calculate derived statistics based on the predictions, here using Root Mean Square Error (RMSE) and Mean Absolute Error (MAE) as examples.
 
 ```{r ex5, eval=TRUE}
 m <- sdmTMB_cv(
@@ -140,7 +140,7 @@ sqrt(mean((m$data$density - m$data$cv_predicted)^2))
 mean(abs(m$data$density - m$data$cv_predicted))
 ```
 
-Alternatively, we might be interested in calculating RMSE and MAE by fold,
+Alternatively, we might be interested in calculating RMSE and MAE by fold:
 
 ```{r ex5b, eval=TRUE}
 # RMSE and MAE by fold:
@@ -153,7 +153,7 @@ group_by(m$data, cv_fold) |>
 
 # Single splits
 
-In cases where only a single test set is evaluated (e.g., 10% of the data), using the `sdmTMB_cv()` function may be overkill because two `sdmTMB()` models will be fit, but using this function may be worthwhile to reduce coding errors (in the log-likelihood calculations).
+In cases where only a single test set is evaluated (e.g., 10% of the data), using the `sdmTMB_cv()` function may be overkill because two `sdmTMB()` models will be fit, but using this function may still be worthwhile to reduce coding errors in the log-likelihood calculations.
 For example, here we assign two folds, randomly holding out 10% of the observations as a test set (the test set is given ID = 1, and the training set is given ID = 2).
 
 ```{r ex6, warning=FALSE, message=FALSE}
@@ -169,7 +169,7 @@ m_cv <- sdmTMB_cv(
 )
 ```
 
-We can ignore the total log-likelihood, and just focus on the first element of list list:
+We can ignore the total log-likelihood, and just focus on the first element of the list:
 
 ```{r}
 m_cv$fold_loglik[[1]]
@@ -203,7 +203,7 @@ table(example_data$cv_fold, example_data$year)
 # Comparing two or more models
 
 We can use the output of `sdmTMB_cv()` to compare two or more models.
-For example, if we wanted to evaluate the support for a depth effect or not, we could do 10-fold cross validation (it's important that the folds be the same across the two models).
+For example, if we wanted to evaluate support for a depth effect, we could do 10-fold cross-validation (it is important that the folds be the same across the two models).
 In this example, using either the predictive log-likelihood or ELPD would lead one to conclude that including depth improves the predictive accuracy of the model.
 
 ```{r ex7, eval=TRUE}
@@ -232,7 +232,7 @@ m2$sum_loglik
 
 # Model ensembling
 
-Finally, instead of identifying single "best" models, we may be interested in doing model averaging.
+Finally, instead of identifying a single "best" model, we may be interested in model averaging.
 In the sdmTMB package, we've implemented the model stacking procedure described by [@yao_2018] in the `sdmTMB_stacking()` function.
 This procedure uses optimization to find the normalized weights that maximize the total log-likelihood across models (other metrics may also be used).
 Inputs to the function are a list of models (a fictitious `model_list`), where each list element is the output of a call to `sdmTMB_cv()`:
@@ -242,7 +242,7 @@ weights <- sdmTMB_stacking(model_list)
 ```
 
 By default this calculation uses data from each fold.
-If instead, we had split the data into the 10/90 split (as in the example above), we wouldn't want to use the 2nd model fit to generate these weights.
+If instead we had split the data into a 10/90 split (as in the example above), we would not want to use the second model fit to generate these weights.
 If we had just wanted to use the predictions from the first fold onto the 10% test set, we could specify that using the `include_folds` argument.
 
 ```{r ex9, eval=FALSE}
@@ -252,11 +252,11 @@ weights <- sdmTMB_stacking(model_list, include_folds = 1)
 # Calculating measures of predictive skill for binary data
 
 For delta models, or models of presence-absence data, several measures of predictive ability are available.
-These are applicable to cross validation, although we demonstrate them here first in a non-cross validation context for simplicity.
+These are applicable to cross-validation, although we demonstrate them here first in a non-cross-validation context for simplicity.
 
-A first commonly used diagnostic is the AUC (Area Under the Curve), which quantifies the ability of a model to discriminate between the two classes; this is done from the Receiver Operating Characteristic (ROC) curve, which plots the true positive rate vs. false positive rate.
+A commonly used diagnostic is the AUC (area under the curve), which quantifies the ability of a model to discriminate between the two classes; this is computed from the Receiver Operating Characteristic (ROC) curve, which plots the true positive rate versus the false positive rate.
 There are several packages to calculate AUC in R, but this can be done with the `pROC` package, where inputs are a vector of 0s and 1s (or factor equivalents) in the raw data, and a vector of estimated probabilities (generated from a call to `predict()`, as shown below).
-The `plogis()` function is needed to convert estimated values in logit space to probabilities in natural (zero to one) space. 
+The `plogis()` function is needed to convert estimated values in logit space to probabilities in natural (zero-to-one) space.
 
 ```{r roc}
 mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 10)
@@ -292,7 +292,7 @@ auc <- pROC::auc(roc)
 auc
 ```
 
-AUC may be sensitive to imbalances in the data, however, and alternative metrics may better approximate skill.
+AUC may be sensitive to class imbalance, however, and alternative metrics may better reflect predictive skill.
 Here we highlight an example of using true skill score (implemented in packages such as SDMtune):
 
 ```{r}
@@ -309,7 +309,7 @@ pred$p <- plogis(pred$est)
 pred$pred_01 <- ifelse(pred$p < 0.5, 0, 1)
 ```
 
-Next we create a confusion matrix and calculate the true skill score:
+Next, we create a confusion matrix and calculate the true skill score:
 
 ```{r}
 conmat <- table(pred$pred_01, pred$present)
@@ -329,9 +329,9 @@ In some cases, reporting the true negative or true positive rate might be of int
 
 # Multi-scale spatial assessment with waywiser
 
-The waywiser package [@mahoney_2023] provides tools for assessing spatial models, including methods to evaluate model performance at multiple spatial scales.
+The waywiser package [@mahoney_2023] provides tools for assessing spatial models, including methods for evaluating model performance at multiple spatial scales.
 A common pattern with spatial models is that predictions for individual observation units (e.g., points, pixels) may be aggregated to arbitrary scales (e.g., management units, grid cells of varying sizes).
-Because prediction errors can be spatially distributed and may compound or counteract each other when aggregated, it's useful to assess model performance across multiple scales.
+Because prediction errors can be spatially distributed and may compound or counteract each other when aggregated, it is useful to assess model performance across multiple scales.
 
 The `cv_to_waywiser()` function converts `sdmTMB_cv` objects to sf (simple features) format, which can then be passed to waywiser functions like `ww_multi_scale()`.
 
