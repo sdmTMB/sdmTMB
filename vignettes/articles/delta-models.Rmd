@@ -32,8 +32,8 @@ library(dplyr)
 library(sdmTMB)
 ```
 
-sdmTMB has the capability for built-in hurdle models (also called delta models).
-These are models with one model for zero vs. non-zero data and another component for the positive component.
+sdmTMB has built-in hurdle models (also called delta models).
+These models include one component for zero versus non-zero data and another component for the positive observations.
 Hurdle models could also be implemented by fitting the two components separately and combining the predictions.
 
 Hurdle models are more appropriate than something like a Tweedie when there are differences in the processes controlling presence vs. abundance, or when greater flexibility to account for dispersion is required.
@@ -45,26 +45,39 @@ This fits a binomial presence-absence model (i.e., `binomial(link = "logit")`) a
 Here and with other delta models, the `link1` and `link2` can be omitted and left at their default values.
 
 2. Delta-lognormal: `family = delta_lognormal()`.
-This fits a binomial presence-absence model (i.e., `binomial(link = "logit")`) and then a model for the positive catches only with a lognormal observation distribution and a log link (i.e., `lognormal(link = "log")`
+This fits a binomial presence-absence model (i.e., `binomial(link = "logit")`) and then a model for the positive catches only with a lognormal observation distribution and a log link (i.e., `lognormal(link = "log")`).
 
-3. Poisson-link delta-Gamma or delta-lognormal. See the [Poisson-link delta model vignette](https://sdmTMB.github.io/sdmTMB/articles/poisson-link.html).
+3. Delta-generalized-gamma: `family = delta_gengamma()`.
+This fits a binomial presence-absence model and then a model for the positive catches with a generalized gamma observation distribution and a log link (i.e., `gengamma(link = "log")`).
 
-4. Delta-truncated-negative-binomial: `family = delta_truncated_nbinom1()` or `family = delta_truncated_nbinom2()`.
-This fits a binomial presence-absence model (`binomial(link = "logit")`) and a `truncated_nbinom1(link = "log")` or `truncated_nbinom1(link = "log")` distribution for positive catches.
+4. Poisson-link delta-Gamma, delta-lognormal, or delta-generalized-gamma. These are specified with `delta_gamma(type = "poisson-link")`, `delta_lognormal(type = "poisson-link")`, or `delta_gengamma(type = "poisson-link")`. See the [Poisson-link delta model vignette](https://sdmTMB.github.io/sdmTMB/articles/poisson-link.html).
+
+5. Delta-mixture families: `family = delta_gamma_mix()` or `family = delta_lognormal_mix()`.
+These fit a binomial presence-absence model and then a positive-catch model using either a gamma-mixture or lognormal-mixture distribution.
+
+6. Delta-truncated-negative-binomial: `family = delta_truncated_nbinom1()` or `family = delta_truncated_nbinom2()`.
+This fits a binomial presence-absence model (`binomial(link = "logit")`) and a `truncated_nbinom1(link = "log")` or `truncated_nbinom2(link = "log")` distribution for positive catches.
+
+7. Delta-beta: `family = delta_beta()`.
+This is intended for continuous proportions with exact zeros, combining a binomial presence-absence model with a beta model for the positive component.
 
 To summarize the built-in delta models and the separate components:
 
-Model Type         |Built-in delta function              | Presence-absence model            | Positive catch model                    |
--------------------|-------------------------------------|-----------------------------------|-----------------------------------------|
-Delta-gamma        |`delta_gamma()`             |`binomial(link = "logit")`| `Gamma(link = "log")`          |
-Delta-lognormal    |`delta_lognormal()`         |`binomial(link = "logit")`| `lognormal(link = "log")`      |
-Delta-NB1           |`delta_truncated_nbinom1()` |`binomial(link = "logit")`|`truncated_nbinom1(link = "log")`|
-Delta-NB2           |`delta_truncated_nbinom2()` |`binomial(link = "logit")`|`truncated_nbinom2(link = "log")`|
+Model Type               |Built-in delta function         | Presence-absence model            | Positive-component model               |
+-------------------------|--------------------------------|-----------------------------------|----------------------------------------|
+Delta-gamma              |`delta_gamma()`                 |`binomial(link = "logit")`         |`Gamma(link = "log")`                   |
+Delta-lognormal          |`delta_lognormal()`             |`binomial(link = "logit")`         |`lognormal(link = "log")`               |
+Delta-generalized-gamma  |`delta_gengamma()`              |`binomial(link = "logit")`         |`gengamma(link = "log")`                |
+Delta-gamma-mixture      |`delta_gamma_mix()`             |`binomial(link = "logit")`         |`gamma_mix(link = "log")`               |
+Delta-lognormal-mixture  |`delta_lognormal_mix()`         |`binomial(link = "logit")`         |`lognormal_mix(link = "log")`           |
+Delta-NB1                |`delta_truncated_nbinom1()`     |`binomial(link = "logit")`         |`truncated_nbinom1(link = "log")`       |
+Delta-NB2                |`delta_truncated_nbinom2()`     |`binomial(link = "logit")`         |`truncated_nbinom2(link = "log")`       |
+Delta-beta               |`delta_beta()`                  |`binomial(link = "logit")`         |`Beta(link = "logit")`                  |
 
 
 # Example with built-in delta model
 
-Here, we will show an example of fitting using the built-in delta functionality, as well as how to build each model component separately and then combine.
+Here, we will show an example of fitting using the built-in delta functionality, as well as how to build each model component separately and then combine them.
 The built-in approach is convenient, allows for parameters to be shared across components, and allows for calculation of derived quantities such as standardized indexes (`get_index()`) with internally calculated standard errors.
 
 We will use a dataset built into the sdmTMB package: trawl survey data for Pacific Cod in Queen Charlotte Sound, British Columbia, Canada. The density units are kg/km^2^. Here, X and Y are coordinates in UTM zone 9.
@@ -142,7 +155,7 @@ fit_dg4 <- sdmTMB(density ~ 1 + s(depth),
 )
 ```
 
-Lastly, whether or not anisotropy is included in the model is determined with the logical argument `anisotropy` (i.e., `TRUE` or `FALSE`), and cannot be separately specified for each model. If anisotropy is included, it is by default shared across the two model components. However it can be made unique in each model component by using `sdmTMBcontrol(map = ...)` and adding the argument `control` when fitting the model. This 'maps' the anisotropy parameters be unique across model components.
+Lastly, whether anisotropy is included in the model is determined with the logical argument `anisotropy` (i.e., `TRUE` or `FALSE`) and cannot be separately specified for each model. If anisotropy is included, it is by default shared across the two model components. However, it can be made unique in each model component by using `sdmTMBcontrol(map = ...)` and adding the argument `control` when fitting the model. This "maps" the anisotropy parameters to be unique across model components.
 
 ```{r, warning=FALSE, message=FALSE, echo=FALSE, results='hide', eval=FALSE}
 fit_dg5 <- sdmTMB(density ~ 1 + s(depth),
@@ -162,7 +175,7 @@ The printed model output will show estimates and standard errors of parameters f
 print(fit_dg)
 ```
 
-Using the `tidy()` function will turn the sdmTMB model output into a data frame, with the argument `model=1` or `model=2` to specify which model component to extract as a dataframe. See `tidy.sdmTMB()` for additional arguments and options.
+Using the `tidy()` function will turn the sdmTMB model output into a data frame, with the argument `model = 1` or `model = 2` specifying which model component to extract. See `tidy.sdmTMB()` for additional arguments and options.
 
 ```{r}
 tidy(fit_dg) # model = 1 is default
@@ -174,7 +187,7 @@ tidy(fit_dg, model = 2, "ran_pars", conf.int = TRUE)
 
 <!-- We can use `predict()` to predict density in either log space (the default) or transformed into the response scale (`type = "response"`). -->
 
-For built-in delta models, the default function will return estimated response and parameters for each grid cell for each model separately, notated with a 1 (for the presence/absence model) or 2 (for the positive catch model) in the column name. See `predict.sdmTMB()` for a description of values in the data frame.
+For built-in delta models, the default `predict()` call returns estimated values for each grid cell for each model component separately, denoted with a `1` (for the presence-absence model) or `2` (for the positive-catch model) in the column name. See `predict.sdmTMB()` for a description of the values in the returned data frame.
 
 ```{r, error=FALSE, message=FALSE}
 grid_yrs <- replicate_df(qcs_grid, "year", unique(pcod$year))
@@ -199,8 +212,8 @@ str(p)
 # p_combined <- predict(fit_dg, newdata = grid_yrs, model = NA, type = "response")
 ```
 
-We can use predictions from the built-in delta model (making sure that `return_tmb_object=TRUE`) to get the index values using the `get_index()` function.
-This can be used with predictions that include both the first and second models (i.e., using the default and specifying no `model` argument) or with predictions generated using `model=NA`.
+We can use predictions from the built-in delta model (making sure that `return_tmb_object = TRUE`) to get the index values using the `get_index()` function.
+This can be used with predictions that include both the first and second models (i.e., using the default and specifying no `model` argument) or with predictions generated using `model = NA`.
 The `get_index()` function will automatically combine predictions from the first and second model in calculating the index values.
 For more on modelling for the purposes of creating an index see the vignette on [Index standardization with sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/index-standardization.html).
 
@@ -209,7 +222,7 @@ p2 <- predict(fit_dg, newdata = grid_yrs, return_tmb_object = TRUE)
 ind_dg <- get_index(p2, bias_correct = FALSE)
 ```
 
-We can plot conditional effects of covariates (such as depth in the example model) using the package `visreg` by specifying each model component with `model=1` for the presence-absence model or `model=2` for the positive catch model. Currently, plotting effects of built-in delta models with `ggeffects` is not supported. See the vignette on using [visreg](https://sdmTMB.github.io/sdmTMB/articles/visreg.html) with sdmTMB for more information.
+We can plot conditional effects of covariates (such as depth in the example model) using the package `visreg` by specifying each model component with `model = 1` for the presence-absence model or `model = 2` for the positive-catch model. Currently, plotting effects of built-in delta models with `ggeffects` is not supported. See the vignette on using [visreg](https://sdmTMB.github.io/sdmTMB/articles/visreg.html) with sdmTMB for more information.
 
 ```{r}
 visreg_delta(fit_dg, xvar = "depth", model = 1, gg = TRUE)
@@ -219,8 +232,8 @@ visreg_delta(fit_dg, xvar = "depth", model = 1, gg = TRUE)
 visreg_delta(fit_dg, xvar = "depth", model = 2, gg = TRUE)
 ```
 
-The built-in delta models can also be evaluated with the `residuals()` functions in sdmTMB.
-Similarly to generating predictions, we can specify which of the model components we want to return residuals for using the `model` argument and specifying `=1` or `=2`.
+The built-in delta models can also be evaluated with the `residuals()` function in sdmTMB.
+Similarly to generating predictions, we can specify which model component we want to return residuals for using the `model` argument and specifying `1` or `2`.
 See `residuals.sdmTMB()` for additional options for evaluating residuals in sdmTMB models.
 
 ```{r, echo=FALSE, message=FALSE, results='hide', warning=FALSE, eval=FALSE}
@@ -228,7 +241,7 @@ residuals_1 <- residuals(fit_dg, type = "response", model = 1)
 residuals_2 <- residuals(fit_dg, type = "response", model = 2)
 ```
 
-We can also simulate new observations from a fitted delta model. As in other functions, we can specify which model to simulate from using the argument `model=1` for only presence/absence, `model=2` for only positive catches, or `model=NA` for combined predictions. See `simulate.sdmTMB()` for more details on simulation options.
+We can also simulate new observations from a fitted delta model. As in other functions, we can specify which model to simulate from using the argument `model = 1` for presence-absence only, `model = 2` for positive catches only, or `model = NA` for combined predictions. See `simulate.sdmTMB()` for more details on simulation options.
 
 ```{r, message=FALSE, warning=FALSE, eval=FALSE}
 simulations <- simulate(fit_dg, nsim = 5, seed = 5090, model = NA)
@@ -236,8 +249,8 @@ simulations <- simulate(fit_dg, nsim = 5, seed = 5090, model = NA)
 
 # Delta models by fitting two components separately and combining predictions
 
-Next, we will show an example of how to implement a delta-gamma model in sdmTMB, but with each component fit separately and then combined.
-This approach gives maximum flexibility for each model and lets you develop them on at a time.
+Next, we will show an example of how to implement a delta-gamma model in sdmTMB with each component fit separately and then combined.
+This approach gives maximum flexibility for each model and lets you develop them one at a time.
 It has limitations if you are calculating an index of abundance or if you want to share some parameters.
 
 ```{r glimpse-pcod}

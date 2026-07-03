@@ -31,7 +31,7 @@ library(dplyr)
 library(sdmTMB)
 ```
 
-Let's perform index standardization with the built-in data for Pacific cod. 
+Let's perform index standardization with the built-in data for Pacific Cod.
 
 - The density units should be kg/km^2^.
 - Here, X and Y are coordinates in UTM zone 9.
@@ -40,14 +40,14 @@ Let's perform index standardization with the built-in data for Pacific cod.
 glimpse(pcod)
 ```
 
-First we will create our SPDE mesh. We will use a relatively course mesh for a balance between speed and accuracy in this vignette (`cutoff = 10` where cutoff is in the units of X and Y (km here) and represents the minimum distance between points before a new mesh vertex is added). You will likely want to use a higher resolution mesh for applied scenarios. You will want to make sure that increasing the number of knots does not change the conclusions.
+First we will create our SPDE mesh. We will use a relatively coarse mesh as a balance between speed and accuracy in this vignette (`cutoff = 10`, where cutoff is in the units of X and Y (km here) and represents the minimum distance between points before a new mesh vertex is added). In applied scenarios, you will likely want to use a finer mesh and check that increasing the number of knots does not change the conclusions.
 
 ```{r spde, fig.asp=0.8}
 pcod_spde <- make_mesh(pcod, c("X", "Y"), cutoff = 10)
 plot(pcod_spde)
 ```
 
-Let's fit a GLMM. Note that if you want to use this model for index standardization then you will likely want to include `0 + as.factor(year)` or `-1 + as.factor(year)` so that there is a factor predictor that represents the mean estimate for each time slice.
+Let's fit a GLMM. Note that if you want to use this model for index standardization, then you will likely want to include `0 + as.factor(year)` or `-1 + as.factor(year)` so that there is a factor predictor representing the mean estimate for each time slice.
 
 ```{r model}
 m <- sdmTMB(
@@ -68,7 +68,7 @@ ggplot(pcod, aes(X, Y, col = resids)) + scale_colour_gradient2() +
   geom_point() + facet_wrap(~year) + coord_fixed()
 ```
 
-Now we want to predict on a fine-scale grid on the entire survey domain. There is a grid built into the package for Queen Charlotte Sound named `qcs_grid`. Our prediction grid also needs to have all the covariates that we used in the model above.
+Now we want to predict on a fine-scale grid over the entire survey domain. There is a grid built into the package for Queen Charlotte Sound named `qcs_grid`. Our prediction grid also needs to have all the covariates that we used in the model above.
 
 ```{r glimpse-grid}
 glimpse(qcs_grid)
@@ -87,7 +87,7 @@ Now make the predictions on new data.
 predictions <- predict(m, newdata = grid_yrs, return_tmb_object = TRUE)
 ```
 
-Let's make a small function to make maps.
+Let's make a small function to help make maps.
 
 ```{r plot-map}
 plot_map <- function(dat, column) {
@@ -98,7 +98,7 @@ plot_map <- function(dat, column) {
 }
 ```
 
-There are four kinds of predictions that we get out of the model. First we will show the predictions that incorporate all fixed effects and random effects:
+There are four kinds of predictions that we get out of the model. First, we will show the predictions that incorporate all fixed and random effects:
 
 ```{r plot-all-effects, fig.width = 8}
 plot_map(predictions$data, exp(est)) +
@@ -114,7 +114,7 @@ plot_map(predictions$data, exp(est_non_rf)) +
   scale_fill_viridis_c(trans = "sqrt")
 ```
 
-We can look at the spatial random effects that represent consistent deviations in space through time that are not accounted for by our fixed effects. In other words, these deviations represent consistent biotic and abiotic factors that are affecting biomass density but are not accounted for in the model.
+We can look at the spatial random effects that represent persistent deviations in space through time that are not accounted for by our fixed effects. In other words, these deviations represent persistent biotic and abiotic factors affecting biomass density that are not accounted for in the model.
 
 ```{r plot-spatial-effects, fig.width = 8}
 plot_map(predictions$data, omega_s) +
@@ -122,7 +122,7 @@ plot_map(predictions$data, omega_s) +
   scale_fill_gradient2()
 ```
 
-And finally we can look at the spatiotemporal random effects that represent deviation from the fixed effect predictions and the spatial random effect deviations. These represent biotic and abiotic factors that are changing through time and are not accounted for in the model.
+And finally we can look at the spatiotemporal random effects that represent deviations from the fixed-effect predictions and the spatial random-effect deviations. These represent biotic and abiotic factors that change through time and are not accounted for in the model.
 
 ```{r plot-spatiotemporal-effects, fig.width = 8}
 plot_map(predictions$data, epsilon_st) +
@@ -130,9 +130,9 @@ plot_map(predictions$data, epsilon_st) +
   scale_fill_gradient2()
 ```
 
-When we ran our `predict.sdmTBM()` function, it also returned a report from TMB in the output because we included `return_tmb_object = TRUE`. We can then run our `get_index()` function to extract the total biomass calculations and standard errors.
+When we ran our `predict.sdmTMB()` function, it also returned a report from TMB in the output because we included `return_tmb_object = TRUE`. We can then run our `get_index()` function to extract the total biomass estimates and standard errors.
 
-We will need to set the `area` argument to 4 km^2^ since our grid cells are 2 km x 2 km. If some grid cells were not fully in the survey domain (or were on land), we could feed a vector of grid areas to the `area` argument that matched the number of grid cells.
+We will need to set the `area` argument to 4 km^2^ since our grid cells are 2 km x 2 km. If some grid cells were not fully in the survey domain (or were on land), we could instead pass a vector of grid-cell areas to the `area` argument matching the number of grid cells.
 
 ```{r get-index}
 index <- get_index(predictions, area = 4, bias_correct = TRUE)
@@ -152,7 +152,7 @@ mutate(index, cv = sqrt(exp(se^2) - 1)) %>%
   knitr::kable(format = "pandoc", digits = c(0, 0, 0, 0, 2))
 ```
 
-We can also calculate an index for part of the survey domain. We'll make an index for everything south of UTM 5700 by subsetting our prediction grid. For more complicated spatial polygons you could intersect the polygon on the prediction grid using something like `sf::st_intersects()`.
+We can also calculate an index for part of the survey domain. We'll make an index for everything south of UTM 5700 by subsetting our prediction grid. For more complicated spatial polygons, you could intersect the polygon with the prediction grid using something like `sf::st_intersects()`.
 
 ```{r index-subset}
 qcs_grid_south <- grid_yrs[grid_yrs$Y < 5700, ]
@@ -162,7 +162,7 @@ index_south <- get_index(predictions_south, area = 4, bias_correct = TRUE)
 head(index_south)
 ```
 
-We can visually compare the two indexes:
+We can visually compare the two indices:
 
 ```{r south-index-plot}
 mutate(index, region = "all") %>% 
