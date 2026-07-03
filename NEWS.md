@@ -1,74 +1,73 @@
-# sdmTMB (development version)
+# sdmTMB 1.1.0
 
 ## New features
 
-* Add experimental support for CAR/SAR areal models instead of the SPDE.
-  See the relevant vignette at https://sdmtmb.github.io/sdmTMB/articles/index.html
-
-* Add non-local covariates functionality including spatial diffusion and
-  time lags. See the relevant vignette at
+* `sdmTMB()` gains experimental support for CAR/SAR areal models as an
+  alternative to the SPDE. See the relevant vignette at
   https://sdmtmb.github.io/sdmTMB/articles/index.html
-  New arguments include `nonlocal_formula` and `nonlocal_data` in `sdmTMB()`
-  as well as `plot_nonlocal_kernel()` and `plot_nonlocal_covariate()`. #507
 
-* Allow for fitting uncorrelated random slopes and intercepts with the form
-  `(1 + slope_var || group)`, making sure that results are displayed correctly.
+* `sdmTMB()` gains non-local covariate support, including spatial diffusion and
+  time lags, with new `nonlocal_formula` and `nonlocal_data` arguments.
+  `plot_nonlocal_kernel()` and `plot_nonlocal_covariate()` support visualizing
+  the resulting kernels and covariates (#507). See the relevant vignette at
+  https://sdmtmb.github.io/sdmTMB/articles/index.html
 
-* Add `allow_new_levels` in `predict.sdmTMB()` for predicting with new levels
-  in random intercepts or slopes. New levels get the population value. #196 #480
+* `sdmTMB()` now supports uncorrelated random slopes and intercepts with the
+  form `(1 + slope_var || group)`, and reports the results correctly.
+  (@Joseph-Barss, #536).
 
-* Update `get_index()` so index totals are reported on a log-total scale after
-  integrating response-scale predictions. This preserves existing behaviour for
-  log-link abundance models and allows binomial/beta-binomial proportion models,
+* `predict.sdmTMB()` gains `allow_new_levels` for prediction with new random
+  intercept or slope levels; new levels use the population value (#196, #480).
+
+* `get_index()` now reports index totals on a log-total scale after integrating
+  response-scale predictions. This preserves existing behaviour for log-link
+  abundance models and allows binomial and beta-binomial proportion models,
   including `logit` and `cloglog` links, to use `area` as an explicit
-  standardization multiplier (e.g., hooks per longline set) for expected-count
-  indices.
+  standardization multiplier for expected-count indices.
 
-* Add `derived_link` in `get_index()` to allow override of inverse link.
-  Useful for fitting Bernoulli data with a cloglog link but then predicting
-  as an expectation from a count from a thinned count process. #339
+* `get_index()` gains `derived_link` to override the inverse link, which is
+  useful when fitting Bernoulli data with a cloglog link and predicting an
+  expected count from a thinned count process (#339).
 
-* Add experimental Restricted Spatial Regression (RSR) fixed-effect
-  coefficients adjusted for spatial confounding with the random fields
-  (Hanks et al. 2015, Diaz and Thorson 2025). Opt in
-  via `control = sdmTMBcontrol(get_rsr = TRUE)` and access via
+* `sdmTMB()` gains experimental Restricted Spatial Regression (RSR) fixed
+  effects adjusted for spatial confounding with the random fields (Hanks et al.
+  2015; Diaz and Thorson 2025). Use
+  `control = sdmTMBcontrol(get_rsr = TRUE)` and
   `tidy(fit, effects = "rsr")`.
 
 ## Minor improvements and fixes
 
-* Fix compatibility with next RcppEigen #538
+* Fix compatibility with next RcppEigen (#538).
 
-* The correctly transformed correlation between a random slope and intercept is
-  now displayed by `print()` and `tidy()`.
+* `print()` and `tidy()` now display the correctly transformed correlation
+  between a random slope and intercept.
 
-* Use `tryCatch()` on Newton loops in optimization to abort those steps
-  instead of producing an error.
+* `sdmTMB()` now uses `tryCatch()` around Newton loops in optimization so those
+  steps abort cleanly instead of producing an error.
 
-* Allow for missing factor levels when predicting with time-varying factor
-  predictors. #533
+* `predict.sdmTMB()` now allows missing factor levels when predicting with
+  time-varying factor predictors (#533).
 
-* Add more useful indicators in `sanity()` by identifying the fixed effects. #506
+* `sanity()` now identifies the fixed effects, providing more useful
+  diagnostics (#506).
 
-* Advance `delta_poisson_link_gamma()` and
-  `delta_poisson_link_lognormal()` from deprecation warnings to hard
-  deprecation errors. Use `delta_gamma(type = "poisson-link")` and
+* `delta_poisson_link_gamma()` and `delta_poisson_link_lognormal()` now raise
+  deprecation errors instead of warnings. Use
+  `delta_gamma(type = "poisson-link")` and
   `delta_lognormal(type = "poisson-link")` instead.
 
-* The interaction between `spatial`, `spatial_varying`, and the intercept of
-  the `spatial_varying` design matrix has been clarified. See the vignette/article
-  "svc-factor-models."
+* `spatial_varying` now respects its own model matrix. The `(Intercept)` column
+  is only dropped when `spatial = "on"`, in which case the ordinary spatial
+  field `omega_s` is used as the SVC intercept or reference-level field.
 
-  `spatial_varying` now respects its own model matrix. The `(Intercept)`
-  column is only dropped when `spatial = "on"`, in which case the ordinary
-  spatial field `omega_s` is used as the SVC intercept/reference-level field
-  (a single informational message is issued at fit time, suppressible via
-  `silent = TRUE`).
+  A single informational message is issued at fit time, suppressible via
+  `silent = TRUE`.
 
-  The only material change in fitted-model structure versus published
-  releases is for `spatial = "off", spatial_varying = ~ 1 + factor`: this
-  previously stripped the intercept *and* zeroed `omega_s`, leaving only
-  `K - 1` deviation fields with no reference field. It now fits a genuine
-  SVC intercept field plus `K - 1` deviation fields. A warning is
+  The only material change in fitted-model structure versus published releases
+  is for `spatial = "off", spatial_varying = ~ 1 + factor`: this previously
+  stripped the intercept and zeroed `omega_s`, leaving only `K - 1` deviation
+  fields with no reference field. It now fits a genuine SVC intercept field
+  plus `K - 1` deviation fields. A warning is
   emitted for this specification for now.
 
   The previous message suggesting `spatial = "off"` when using
@@ -76,19 +75,19 @@
   is a valid model specification (global spatial field plus per-level SVC
   deviations) although it can be more challenging to estimate.
 
-* Fix `se_natural` column in `get_index()` output. #523
-  Thanks to @CataRoman and @gavinfay.
+* `get_index()` now returns the correct `se_natural` column
+  (@CataRoman, @gavinfay, #523).
 
-* Fix `residuals()` for Poisson-link delta models so residuals use the
-  correct inverse link for encounter and positive-component
-  mechanism(including offsets), avoiding spurious `NaN`/`Inf` values in
-  the first linear predictor residuals. For most scenarios, using
-  simulation-based residuals from `dharma_residuals()` for delta models
-  for the combined residuals is still most straight forward. #512
+* `residuals()` now uses the correct inverse link for encounter and
+  positive-component mechanisms, including offsets, in Poisson-link delta
+  models, avoiding spurious `NaN` and `Inf` values in the first linear
+  predictor residuals. For most scenarios, simulation-based residuals from
+  `dharma_residuals()` remain the most straightforward choice for combined
+  residuals in delta models (#512).
 
-* Fix `predict()` with `newdata` containing `NA` in the response column for
-  models with random effects. Predictions now work as expected when the response
-  column is present but unused for prediction. #508
+* `predict.sdmTMB()` now works when `newdata` contains `NA` in the response
+  column for models with random effects and the response column is present but
+  unused for prediction (#508).
 
 # sdmTMB 1.0.0
 
