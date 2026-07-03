@@ -43,10 +43,10 @@ All sampling is then done using Stan [@standev_2021], and output is returned as 
 
 Why might you want to pass an sdmTMB model to Stan?
 
-* to obtain probabilistic inference on parameters
+* to obtain full posterior inference on parameters
 * to avoid the Laplace approximation on the random effects
-* to robustly quantify uncertainty on derived quantities not already calculated in the model
-* in some cases, models that struggle to converge with maximum likelihood can be adequately sampled with MCMC given carefully chosen priors [e.g., @monnahan_2021]
+* to quantify uncertainty in derived quantities that are not already calculated in the model
+* in some cases, models that struggle to converge with maximum likelihood can be sampled adequately with MCMC given carefully chosen priors [e.g., @monnahan_2021]
 
 # Simulating data
 
@@ -99,11 +99,11 @@ fit
 
 # Adding priors
 
-In that first model fit we did not use any priors (with maximum likelihood estimation, these also can be thought of as penalties on the likelihood).
+In that first model fit we did not use any priors (with maximum likelihood estimation, these can also be thought of as penalties on the likelihood).
 For this first model, the priors are implied as uniform on the internal parameter space.
 However, sdmTMB provides the option of applying additional priors.
-Here we will show an example of applying a Normal(0, 5) (mean, SD) prior on the intercept and a Normal(0, 1) prior on the slope parameter.
-We could guess at the model matrix structure based on our formula, but we can verify it by looking at the internal model matrix from the previous fit (using `do_fit = FALSE` would save time if you didn't want to fit it the first time).
+Here we will show an example of applying a Normal(0, 5) prior (mean, SD) on the intercept and a Normal(0, 2) prior on the slope parameter.
+We could guess the model-matrix structure from our formula, but we can verify it by looking at the internal model matrix from the previous fit (`do_fit = FALSE` would save time if you did not want to fit it the first time).
 
 ```{r}
 head(fit$tmb_data$X_ij[[1]])
@@ -161,17 +161,17 @@ fit_mle <- update(
 
 # Jacobian adjustments
 
-Adding priors / penalties and fixing spatial parameters represent strategies to help successful convergence for maximum likelihood estimation. If we want to do true Bayesian sampling we need to make one more adjustment to our function call: accounting for non-linear transformations of parameters with Jacobian adjustments. 
+Adding priors/penalties and fixing spatial parameters are strategies that can help with successful maximum likelihood estimation. If we want to do Bayesian sampling, we need to make one more adjustment to our function call: accounting for non-linear parameter transformations with Jacobian adjustments.
 
-What are Jacobian adjustments and why do we need them? Jacobian adjustments are necessary when the parameters of a model are transformed in a way that changes their scale or distribution. 
-A good example of this is the estimation of variance parameters. 
-Whether we're interested in spatial, spatiotemporal, or residual variation, the quantity of interest is usually the variance or standard deviation $\sigma$. 
-These quantities are constrained to be greater than 0, so a widely used estimation strategy is to estimate them in log space, which is not constrained. 
-With 'ln_sigma' estimated, 'sigma = exp(ln_sigma)' can be calculated internal to a model and used to calculate the likelihood. 
-There are a number of helpful references detailing the math behind this in greater detail including the [Stan manual](https://mc-stan.org/docs/stan-users-guide/reparameterization.html#changes-of-variables). 
-Without equations, the Jacobian adjustment can be thought of as properly stretching the posterior distribution of parameters to account for the transformation of variables. 
+What are Jacobian adjustments and why do we need them? Jacobian adjustments are necessary when model parameters are transformed in a way that changes their scale or implied distribution.
+A good example is the estimation of variance parameters.
+Whether we are interested in spatial, spatiotemporal, or residual variation, the quantity of interest is usually the variance or standard deviation $\sigma$.
+These quantities are constrained to be greater than 0, so a widely used estimation strategy is to estimate them in log space, which is unconstrained.
+With `ln_sigma` estimated, `sigma = exp(ln_sigma)` can be calculated internally and used to calculate the likelihood.
+There are a number of helpful references detailing the mathematics behind this, including the [Stan manual](https://mc-stan.org/docs/stan-users-guide/reparameterization.html#changes-of-variables).
+Without equations, the Jacobian adjustment can be thought of as properly stretching the posterior distribution to account for the change of variables.
 
-In `sdmTMB`, we can turn these Jacobian adjustments on with the flag `bayesian = TRUE`. Applying this to our `fit_mle` object, 
+In `sdmTMB`, we can turn these Jacobian adjustments on with the flag `bayesian = TRUE`. Applying this to our `fit_mle` object,
 
 ```{r}
 fit_bayes <- update(fit_mle,
@@ -179,7 +179,7 @@ fit_bayes <- update(fit_mle,
 )
 ```
 
-It is important to emphasize that this `bayesian` flag needs to be enabled to any model passed to Stan; MCMC estimation without it will lead to biased parameter estimates.
+It is important to emphasize that this `bayesian` flag needs to be enabled for any model passed to Stan; MCMC estimation without it will generally lead to biased parameter estimates on the transformed scale.
 
 # Passing the model to tmbstan
 
@@ -215,7 +215,7 @@ fit_stan
 ```
 
 The `Rhat` values look reasonable (< 1.05).
-The `n_eff` (number of effective samples) values mostly look reasonable (> 100) for inference about the mean for all parameters except the intercept (`b_j[1]`).
+The `n_eff` (number of effective samples) values also mostly look reasonable (> 100) for inference about the mean for all parameters except the intercept (`b_j[1]`).
 Furthermore, we can see correlation in the MCMC samples for `b_j[1]`.
 We could try running for more iterations and chains and/or placing priors on this and other parameters as described below (highly recommended).
 
@@ -231,7 +231,7 @@ bayesplot::mcmc_pairs(fit_stan, pars = pars_plot)
 
 # Posterior predictive checks
 
-We can perform posterior predictive checks to assess whether our model can generate predictive data that are consistent with the observations.
+We can perform posterior predictive checks to assess whether our model can generate data that are consistent with the observations.
 For this, we can make use of `simulate.sdmTMB()` while passing in our Stan model.
 `simulate.sdmTMB()` will take draws from the joint parameter posterior and add observation error.
 We need to ensure `nsim` is less than or equal to the total number of post-warmup samples.
@@ -248,7 +248,7 @@ bayesplot::pp_check(
 ```
 
 See `?bayesplot::pp_check`.
-The solid line represents the density of the observed data and the light blue lines represent the density of 50 posterior predictive simulations.
+The solid line represents the density of the observed data, and the light blue lines represent the density of 50 posterior predictive simulations.
 In this case, the simulated data seem consistent with the observed data.
 
 # Plotting predictions
@@ -259,7 +259,7 @@ We can make predictions with our Bayesian model by supplying the posterior sampl
 pred <- predict(fit_mle, mcmc_samples = samps)
 ```
 
-The output is a matrix where each row corresponds to a row of predicted data and each column corresponds to a sample.
+The output is a matrix where each row corresponds to a predicted data point and each column corresponds to a posterior sample.
 
 ```{r}
 dim(pred)
@@ -306,7 +306,7 @@ ggplot(nd, aes(X, Y, fill = post_sd)) +
 
 # Extracting parameter posterior samples
 
-We can extract posterior samples with `rstan::extract()`,
+We can extract posterior samples with `rstan::extract()`:
 
 ```{r post-extract}
 post <- rstan::extract(fit_stan)
@@ -319,7 +319,7 @@ names(post)
 hist(post$b_j[, 1])
 ```
 
-As an example of calculating a derived parameter, here we will calculate the marginal spatial random field standard deviation:
+As an example of calculating a derived parameter, here we will calculate the marginal spatial random-field standard deviation:
 
 ```{r}
 ln_kappa <- get_pars(fit_mle)$ln_kappa[1] # 2 elements since 2nd would be for spatiotemporal
@@ -330,7 +330,7 @@ hist(sigma_O)
 
 # Extracting the posterior of other predicted elements
 
-By default `predict.sdmTMB()` returns the overall prediction in link space when a tmbstan model is passed in.
+By default, `predict.sdmTMB()` returns the overall prediction in link space when a tmbstan model is passed in.
 If instead we want some other element that we might find in the usual data frame returned by `predict.sdmTMB()` when applied to a regular sdmTMB model, we can specify that through the `sims_var` argument.
 
 For example, let's extract the spatial random field values `"omega_s"`. Other options are documented in `?predict.sdmTMB()`.
