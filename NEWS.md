@@ -49,6 +49,11 @@
 
 * Add more useful indicators in `sanity()` by identifying the fixed effects. #506
 
+* Advance `delta_poisson_link_gamma()` and
+  `delta_poisson_link_lognormal()` from deprecation warnings to hard
+  deprecation errors. Use `delta_gamma(type = "poisson-link")` and
+  `delta_lognormal(type = "poisson-link")` instead.
+
 * The interaction between `spatial`, `spatial_varying`, and the intercept of
   the `spatial_varying` design matrix has been clarified. See the vignette/article
   "svc-factor-models."

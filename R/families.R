@@ -568,7 +568,7 @@ delta_truncated_nbinom1 <- function(link1 = "logit", link2 = "log") {
 delta_poisson_link_gamma <- function(link1 = "log", link2 = "log") {
   assert_that(link1 == "log")
   assert_that(link2 == "log")
-  lifecycle::deprecate_warn("0.4.2.9000", "delta_poisson_link_gamma()", "delta_gamma(type)")
+  lifecycle::deprecate_stop("1.0.0.9019", "delta_poisson_link_gamma()", "delta_gamma(type)")
   delta_gamma(link1 = "logit", link2 = "log", type = "poisson-link")
 }
 
@@ -578,7 +578,7 @@ delta_poisson_link_gamma <- function(link1 = "log", link2 = "log") {
 delta_poisson_link_lognormal <- function(link1 = "log", link2 = "log") {
   assert_that(link1 == "log")
   assert_that(link2 == "log")
-  lifecycle::deprecate_warn("0.4.2.9000", "delta_poisson_link_lognormal()", "delta_lognormal(type)")
+  lifecycle::deprecate_stop("1.0.0.9019", "delta_poisson_link_lognormal()", "delta_lognormal(type)")
   delta_lognormal(link1 = "logit", link2 = "log", type = "poisson-link")
 }
 

@@ -69,3 +69,8 @@ test_that("spde/mesh args work", {
   )
   m2 <- sdmTMB(density ~ 1, data = pcod_2011, mesh = pcod_mesh_2011, do_fit = FALSE)
 })
+
+test_that("deprecated Poisson-link delta family aliases error", {
+  expect_error(delta_poisson_link_gamma(), "delta_gamma")
+  expect_error(delta_poisson_link_lognormal(), "delta_lognormal")
+})
