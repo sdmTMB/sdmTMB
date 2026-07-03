@@ -35,7 +35,7 @@ knitr::opts_chunk$set(
 library(sdmTMB)
 ```
 
-We will start with some data simulated from scratch. We will simulate from an NB2 negative binomial observation model, a spatial random field, an intercept, and one predictor named 'a1' that will have a linear effect on the observed data.
+We will start with some data simulated from scratch. We will simulate from an NB2 negative binomial observation model with a spatial random field, an intercept, and one predictor named `a1` that has a linear effect on the observed data.
 
 ```{r}
 set.seed(1)
@@ -56,7 +56,7 @@ dat <- sdmTMB_simulate(
 
 Next, we will fit model configurations with various families and predictors.
 The first model will use the Poisson instead of the NB2.
-The 2nd model will match the simulated data.
+The second model will match the simulated data.
 The third model is missing the 'a1' predictor.
 We'll use a penalized complexity (PC) prior on the Matérn parameters to aid in estimation.
 
@@ -74,12 +74,12 @@ fit_nb2_miss <- update(fit_nb2, formula. = observed ~ 1)
 fit_nb2_miss
 ```
 
-We can see just by looking at these fits that the Poisson model inflates the spatial random field standard deviation (SD) compared to the truth.
-The model missing the 'a1' predictor does so to a lesser degree.
+We can see just by looking at these fits that the Poisson model inflates the spatial random-field standard deviation (SD) relative to the truth.
+The model missing the `a1` predictor does so to a lesser degree.
 
 ## Analytical randomized-quantile residuals
 
-Here are randomized quantile residuals with fixed effect at their MLEs (Maximum Likelihood Estimates) and random effects taken from a single sample of their approximate distribution (more details below):
+Here are randomized quantile residuals with fixed effects fixed at their MLEs (maximum likelihood estimates) and random effects taken from a single sample of their approximate distribution (more details below):
 
 ```{r}
 set.seed(123)
@@ -94,14 +94,14 @@ qqnorm(rq_res);abline(0, 1)
 
 These use the randomized quantile approach from Dunn and Smyth (1996).
 They are also known as PIT (probability-integral-transform) residuals.
-They apply randomization to integer response values, transform the residuals using the distribution function (e.g., `pnorm()`) to reflect a uniform(0, 1) distribution, and transform those values such that they would be normal(0, 1) if consistent with the model.
+They apply randomization to integer response values, transform the residuals with the relevant distribution function so that they should follow a uniform(0, 1) distribution under the model, and then optionally transform those values so that they should follow a normal(0, 1) distribution.
 You can see the source code at <https://github.com/sdmTMB/sdmTMB/blob/master/R/residuals.R>
 
-We can see here that there are likely issues with the Poisson model in the tails.
+We can see here that the Poisson model likely has problems in the tails.
 
 ## MCMC-based randomized-quantile residuals
 
-The above approach assumes an observation of the random effects can be approximated by a multivariate normal distribution. If we want to relax that assumption, we can sample the random effects with MCMC with the fixed effects held at their MLEs.
+The above approach assumes that a draw of the random effects can be approximated by a multivariate normal distribution. If we want to relax that assumption, we can sample the random effects with MCMC while holding the fixed effects at their MLEs.
 We do this with the `sdmTMBextra::predict_mle_mcmc()` function in the [sdmTMBextra](https://github.com/sdmTMB/sdmTMBextra).
 
 ```{r}
@@ -122,7 +122,7 @@ s_nb2_miss <- simulate(fit_nb2_miss, nsim = 500, type = "mle-mvn")
 s_nb2 <- simulate(fit_nb2, nsim = 500, type = "mle-mvn")
 ```
 
-These return a matrix where each row represents a row of data and each column is a simulation draw:
+These return a matrix where each row represents an observation and each column is a simulation draw:
 
 ```{r}
 dim(s_pois)
@@ -136,7 +136,7 @@ sum(s_pois == 0)/length(s_pois)
 sum(s_nb2 == 0)/length(s_nb2)
 ```
 
-There are obviously too few zeros in the data simulated from the Poisson model but the NB2 model seems reasonable.
+There are clearly too few zeros in the data simulated from the Poisson model, whereas the NB2 model seems reasonable.
 
 Plot DHARMa residuals:
 
@@ -154,11 +154,11 @@ DHARMa::testSpatialAutocorrelation(r_pois, x = dat$X, y = dat$Y)
 DHARMa::testZeroInflation(r_pois)
 ```
 
-In the QQ residual plots we clearly see evidence of overdispersion compared to the Poisson.
+In the QQ residual plots we clearly see evidence of overdispersion relative to the Poisson model.
 Note the values clumping near 1.0 on the observed axis and deviating downwards towards 0.0 observed.
-This is indicative of too many zeros and the variance scaling too rapidly with the mean (resulting in some large outlying value) for the Poisson distribution.
+This is indicative of too many zeros and variance increasing too rapidly with the mean for the Poisson distribution, resulting in some large outlying values.
 
-Lets try with the correct model:
+Let's try the correct model:
 
 ```{r}
 r_nb2 <- dharma_residuals(s_nb2, fit_nb2, return_DHARMa = TRUE)
@@ -176,13 +176,13 @@ plot(r_nb2_miss)
 ```
 
 The plot on the right represents simulated residuals against the prediction without the random effects, which here is just an intercept.
-Lets try plotting the residuals against the missing predictor:
+Let's try plotting the residuals against the missing predictor:
 
 ```{r}
 DHARMa::plotResiduals(r_nb2_miss, form = dat$a1)
 ```
 
-We can see a trend in the residuals against 'a1' since we have missed including it in the model.
+We can see a trend in the residuals against `a1` because we omitted it from the model.
 
 We can also see the difference in the log likelihood or the AIC:
 
@@ -190,13 +190,13 @@ We can also see the difference in the log likelihood or the AIC:
 AIC(fit_nb2_miss, fit_nb2)
 ```
 
-AIC also supports including the 'a1' predictor.
+AIC also supports including the `a1` predictor.
 
 For help interpreting the DHARMa residual plots, see `vignette("DHARMa", package="DHARMa")`.
 
 # Extracting DHARMa residuals
 
-We can extract the DHARMa residuals if we want to plot them ourselves. E.g., let's extract the DHARMa residuals from a model and make a QQ plot for each year:
+We can extract the DHARMa residuals if we want to plot them ourselves. For example, let's extract the DHARMa residuals from a model and make a QQ plot for each year:
 
 ```{r}
 pcod_dat <- pcod_2011
@@ -240,7 +240,7 @@ ggplot(out, aes(x, y)) +
 
 The above used random effects drawn as if they were observed once.
 
-The approach is described in Waagepetersen (2006) and is [summarized nicely](https://github.com/kaskr/adcomp/blob/c62bab02d60138d7a480b7c8bc30533efc7f2ce0/TMB/R/validation.R#L628-L640) in an unexported function oneSamplePosterior within TMB. Thygesen et al. (2017) also describes them in the context of one-sample MCMC residuals.
+The approach is described in Waagepetersen (2006) and is [summarized nicely](https://github.com/kaskr/adcomp/blob/c62bab02d60138d7a480b7c8bc30533efc7f2ce0/TMB/R/validation.R#L628-L640) in an unexported function, `oneSamplePosterior()`, within TMB. Thygesen et al. (2017) also describe it in the context of one-sample MCMC residuals.
 
 Here we will show why this is necessary.
 
@@ -269,7 +269,7 @@ sim_dat <- sdmTMB_simulate(
 fit <- sdmTMB(observed ~ 1, data = sim_dat, time = "year", mesh = mesh)
 ```
 
-If we use the empirical Bayes (EB) random effect values (the values of the random effects that maximize the log likelihood conditional on the estimated fixed effects), our residuals look off even though our model is perfectly matched to our simulated data:
+If we use the empirical Bayes (EB) random-effect values (the values of the random effects that maximize the log likelihood conditional on the estimated fixed effects), our residuals look off even though our model is perfectly matched to our simulated data:
 
 ```{r}
 set.seed(1)
@@ -278,9 +278,9 @@ qqnorm(r1);abline(0, 1)
 ks.test(r1, pnorm)
 ```
 
-Indeed, our test (incorrectly) rejects the null hypothesis that $r_1 \sim \operatorname{N}(0, 1)$, when if calculated correctly we know they do come from $\operatorname{N}(0, 1)$
+Indeed, our test (incorrectly) rejects the null hypothesis that $r_1 \sim \operatorname{N}(0, 1)$, even though if the residuals are calculated correctly we know they do come from $\operatorname{N}(0, 1)$.
 
-If instead we returned to our single sample from the assumed MVN random effect distribution, we get the 'correct' residuals:
+If instead we return to a single sample from the assumed MVN random-effect distribution, we get the "correct" residuals:
 
 ```{r}
 set.seed(1)
@@ -291,7 +291,7 @@ ks.test(r2, pnorm)
 
 Here, we would (correctly) fail to reject the hypothesis that $r_2 \sim \operatorname{N}(0, 1)$.
 
-We could also sample that observation of random effects using MCMC (with the fixed effects still held at their MLEs), which relaxes our assumptions, but is much more time intensive for large models.
+We could also sample that draw of random effects using MCMC (with the fixed effects still held at their MLEs), which relaxes our assumptions, but is much more time-intensive for large models.
 
 ```{r}
 samp <- sdmTMBextra::predict_mle_mcmc(fit, mcmc_iter = 400, mcmc_warmup = 200)
@@ -300,7 +300,7 @@ qqnorm(r3);abline(0, 1)
 ks.test(r3, pnorm)
 ```
 
-Here that gets us something similar and we would (correctly) fail to reject the hypothesis that $r_3 \sim \operatorname{N}(0, 1)$.
+Here that gets us something similar, and we would (correctly) fail to reject the hypothesis that $r_3 \sim \operatorname{N}(0, 1)$.
 
 A similar issue applies to simulation-based quantile residuals, as implemented in the DHARMa package.
 
@@ -310,7 +310,7 @@ simulate(fit, nsim = 500, type = "mle-eb") |>
   dharma_residuals(fit)
 ```
 
-Instead we can use a draw from the random effects 'posterior' assuming an MVN distribution.
+Instead we can use a draw from the random-effects "posterior" assuming an MVN distribution.
 
 ```{r}
 set.seed(1)
@@ -329,12 +329,12 @@ attr(s, "type") <- "mle-mvn"
 dharma_residuals(s, fit)
 ```
 
-We get back to something with the incorrect distribution for comparison!
+We get back to something with the wrong reference distribution for comparison.
 So, we need a single random effects sample per set of simulations.
 
 # How much this matters depends on the ratio of observation error variance vs. random effect variance
 
-Lets simulate data again but with large observation error (`phi` here, which is the Gaussian error SD in this case) and with smaller levels of random field variance (`sigma_E` and `sigma_O`):
+Let's simulate data again, but with large observation error (`phi` here, which is the Gaussian error SD in this case) and smaller random-field variances (`sigma_E` and `sigma_O`):
 
 ```{r}
 set.seed(123)
@@ -368,14 +368,14 @@ qqnorm(r2);abline(0, 1)
 ks.test(r2, pnorm)
 ```
 
-Now, it doesn't really matter since the 'incorrect' random effect distribution is swamped by the observation error effect on the distribution.
-Technically, the first set is 'wrong' and the second set is 'right', but functionally we'd come to a similar conclusion in this case.
+Now, it does not really matter because the "incorrect" random-effect distribution is swamped by the observation-error contribution to the distribution.
+Technically, the first set is "wrong" and the second set is "right", but functionally we would come to a similar conclusion in this case.
 
 # Notes on uniform vs. normal quantile residuals
 
 The randomized quantile residuals in `residuals.sdmTMB()` are returned such that they will be normal(0, 1) if the model is consistent with the data.
 DHARMa residuals, however, are returned as uniform(0, 1) under those same circumstances.
-Both are valid, and which to use is preference, but it's important to appreciate how this changes the appearance of the expected residuals.
+Both are valid, and which to use is largely a matter of preference, but it is important to appreciate how this changes the appearance of the expected residuals.
 
 ```{r}
 r2 <- residuals(fit2, type = "mle-mvn")
@@ -433,11 +433,11 @@ Conclusions:
 
 The normal(0, 1) residuals are probably more familiar to most people.
 
-The normal(0, 1) residuals put more emphasis on the tails. This is good and bad: it's easier to examine tail behaviour, but these can often look 'off' even when the model is fine (as in this example) because observations in the tails of the distribution are by definition rarely observed.
+The normal(0, 1) residuals put more emphasis on the tails. This is both good and bad: it is easier to examine tail behaviour, but these residuals can often look "off" even when the model is fine (as in this example) because observations in the tails of the distribution are, by definition, rarely observed.
 
 Uniform(0, 1) residuals give all data points equal visual weight and emphasize consistency of the overall distribution rather than the tails.
 
-Either is valid, but you do need to switch your mindset about what you expect to see accordingly. For example, poor tail behaviour may look like a minor issue with uniform residuals; conversely the tails of normal(0, 1) residuals are unlikely to ever look 'perfect' without large sample sizes.
+Either is valid, but you do need to adjust your expectations accordingly. For example, poor tail behaviour may look like a minor issue with uniform residuals; conversely, the tails of normal(0, 1) residuals are unlikely ever to look "perfect" without large sample sizes.
 
 # How do those randomized-quantile residuals work?
 
@@ -459,7 +459,7 @@ r <- qnorm(u)
 hist(r)
 ```
 
-This works for any distribution if we can define the quantile function.
+This works for any distribution as long as we can define the distribution function.
 
 If we have integer values, we need to add randomization in an additional step.
 Let's work with a Poisson sample:
@@ -470,10 +470,10 @@ mu <- rep(2, 500)
 y <- rpois(length(mu), mu)
 ```
 
-The gamma example above illustrated how we can use the distribution function (there `pgamma()`) to take a gamma-distributed variable and turn it into a uniform-distributed variable.
+The gamma example above illustrated how we can use the distribution function (there `pgamma()`) to take a gamma-distributed variable and turn it into a uniformly distributed variable.
 
 Now we need to do the same with the Poisson equivalent: `ppois()`.
-The `ppois(y)` function gives us the cumulative probability density up to value `y`.
+The `ppois(y)` function gives us the cumulative probability up to value `y`.
 Say we have a Poisson variable with a mean (lambda) of 5 and we have an observation with a value of 3.
 We can calculate the density up to the value of 3 as:
 
@@ -482,20 +482,20 @@ lambda <- 5
 ppois(3, lambda)
 ```
 
-I.e., that is the same as:
+That is the same as:
 
 ```{r}
 dpois(0, lambda) + dpois(1, lambda) + dpois(2, lambda) + dpois(3, lambda)
 ```
 
-But, if we naively apply `ppois()` to the observed values we'll end up with discrete cumulative probabilities that aren't very useful for comparing against the continuous uniform.
+But if we naively apply `ppois()` to the observed values, we end up with discrete cumulative probabilities that are not very useful for comparing against a continuous uniform distribution.
 
 ```{r}
 hist(ppois(y, mu))
 ```
 
-Instead, we need to get the probability density up the value below the one we observed and "fill in" the values up to the observed value with the desired uniformly distributed samples.
-First, get the density up to the value below and the observed value:
+Instead, we need to get the cumulative probability up to the value below the one we observed and "fill in" the values up to the observed value with the desired uniformly distributed samples.
+First, get the cumulative probability up to the value below and up to the observed value:
 
 ```{r}
 a <- ppois(y - 1, mu)
