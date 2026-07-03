@@ -23,11 +23,12 @@ sdmTMB is an R package that fits spatial and spatiotemporal GLMMs (Generalized L
 - [Citation](#citation)
 - [Basic use](#basic-use)
 - [Advanced functionality](#advanced-functionality)
-  - [Areal and non-local models](#areal-and-non-local-models)
+  - [Areal models](#areal-models)
+  - [Non-local covariates](#non-local-covariates)
   - [Time-varying coefficients](#time-varying-coefficients)
   - [Spatially varying coefficients
     (SVC)](#spatially-varying-coefficients-svc)
-  - [Random intercepts](#random-intercepts)
+  - [Random intercepts and slopes](#random-intercepts-and-slopes)
   - [Breakpoint and threshold
     effects](#breakpoint-and-threshold-effects)
   - [Simulating data](#simulating-data)
@@ -118,11 +119,13 @@ spatiotemporal models. We extend common generalized linear mixed models
 - spatially varying coefficient models (SVCs)
 - non-local covariate effects via spatial diffusion and temporal lags
 - interpolation or forecasting over missing or future time slices
-- a wide range of families: many common R families plus `tweedie()`,
+- a wide range of families: many common R families, plus `tweedie()`,
   `nbinom1()`, `nbinom2()`, `lognormal()`, `student()`, `gengamma()`,
   plus some truncated and censored families
 - delta/hurdle models including `delta_gamma()`, `delta_lognormal()`,
   and `delta_truncated_nbinom2()`
+- non-local [diffusion and time-lag covariate
+  effects](https://sdmtmb.github.io/sdmTMB/articles/nonlocal-covariates.html)
 
 Estimation is via maximum marginal likelihood, with the objective
 function calculated in [TMB](https://cran.r-project.org/package=TMB),
@@ -137,7 +140,8 @@ and
 [`?predict.sdmTMB`](https://sdmTMB.github.io/sdmTMB/reference/predict.sdmTMB.html)
 for the most complete examples. Also see the vignettes (‘Articles’) on
 the [documentation site](https://sdmTMB.github.io/sdmTMB/index.html) and
-the [preprint](https://doi.org/10.1101/2022.03.24.485545) listed below.
+the [published paper](https://doi.org/10.18637/jss.v115.i02) listed
+below.
 
 ## Getting help
 
@@ -155,8 +159,8 @@ tracker](https://github.com/sdmTMB/sdmTMB/issues).
 
 There have been several [past sdmTMB
 workshops](https://github.com/sdmTMB/sdmTMB-teaching). Slides and
-exercises from the TESA 2025 workshop are available
-[here](https://github.com/sdmTMB/sdmTMB-TESA-2025).
+exercises from the latest workshop
+[here](https://github.com/sdmTMB/sdmTMB-DSAF-2026).
 [Recordings](https://www.youtube.com/channel/UCYoFG51RjJVx7m9mZGaj-Ng/videos)
 from an older workshop are also available.
 
@@ -174,8 +178,6 @@ generalized linear mixed effects models with spatial and spatiotemporal
 random fields. Journal of Statistical Software. 115(2):1–46.
 <https://doi.org/10.18637/jss.v115.i02>.
 
-bioRxiv preprint: <https://doi.org/10.1101/2022.03.24.485545>.
-
 A list of known publications that use sdmTMB can be found
 [here](https://github.com/sdmTMB/sdmTMB/tree/main/scratch/citations).
 Please use the above citation so we can track publications.
@@ -188,14 +190,14 @@ usually makes sense to convert the spatial coordinates to an equidistant
 projection such as UTMs such that 1 km remains the same distance
 throughout the study region (unlike latitude/longitude) \[e.g., using
 `sf::st_transform()`\]. Here, we illustrate a spatial model fit to
-Pacific cod (*Gadus macrocephalus*) trawl survey data from Queen
-Charlotte Sound, BC, Canada. Our model contains a main effect of depth
-as a penalized smoother, a spatial random field, and Tweedie observation
-error. Our data frame `pcod` (built into the package) has a column
-`year` for the year of the survey, `density` for density of Pacific cod
-in a given survey tow, `present` for whether `density > 0`, `depth` for
-depth in meters of that tow, and spatial coordinates `X` and `Y`, which
-are UTM coordinates in kilometres.
+Pacific Cod (*Gadus macrocephalus*) trawl survey data from Queen
+Charlotte Sound, British Columbia, Canada. Our model contains a main
+effect of depth as a penalized smoother, a spatial random field, and
+Tweedie observation error. Our data frame `pcod` (built into the
+package) has a column `year` for the year of the survey, `density` for
+density of Pacific cod in a given survey tow, `present` for whether
+`density > 0`, `depth` for depth in meters of that tow, and spatial
+coordinates `X` and `Y`, which are UTM coordinates in kilometres.
 
 ``` r
 library(dplyr)
@@ -221,9 +223,9 @@ mesh <- make_mesh(pcod, xy_cols = c("X", "Y"), cutoff = 10)
 Here, `cutoff` defines the minimum allowed distance between mesh
 vertices in the units of `X` and `Y` (km). Smaller values create finer
 meshes but increase computation time. Alternatively, we could have
-created a mesh via the fmesher or INLA packages and supplied it to
-`make_mesh()`. We can inspect our mesh object with the associated
-plotting method `plot(mesh)`.
+created a mesh via the fmesher package and supplied it to `make_mesh()`.
+We can inspect our mesh object with the associated plotting method
+`plot(mesh)`.
 
 Fit a spatial model with a smoother for depth:
 
@@ -431,7 +433,7 @@ sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/index-standardization.html).
 
 ## Advanced functionality
 
-### Areal and non-local models
+### Areal models
 
 Areal models can be fit with `spatial_model = "car"` or `"sar"` and an
 areal domain created by `make_areal_domain()`. These models use
@@ -440,6 +442,8 @@ or gridded data. See the CAR/SAR articles for [polygon areal
 models](https://sdmTMB.github.io/sdmTMB/articles/areal-sar-car-spde.html)
 and [grid areal
 models](https://sdmTMB.github.io/sdmTMB/articles/areal-grid-sar-car-spde.html).
+
+### Non-local covariates
 
 Non-local covariate models can estimate the spatial or temporal scale
 over which covariates affect the response. For example,
@@ -527,10 +531,10 @@ See the vignette on [Fitting spatial trend models with
 sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/spatial-trend-models.html)
 for more details.
 
-### Random intercepts
+### Random intercepts and slopes
 
-We can use the same syntax (`1 | group`) as lme4 or glmmTMB to fit
-random intercepts:
+We can use the same syntax (`1 + x | group`) as lme4 or glmmTMB to fit
+random intercepts and slopes:
 
 ``` r
 pcod$year_factor <- as.factor(pcod$year)
@@ -573,7 +577,7 @@ predictor_dat <- expand.grid(
   X = seq(0, 1, length.out = 100), Y = seq(0, 1, length.out = 100)
 )
 mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.05)
-sim_dat <- sdmTMB_simulate(
+sim_dat <- simulate_new(
   formula = ~ 1,
   data = predictor_dat,
   mesh = mesh,
@@ -623,12 +627,13 @@ fit <- sdmTMB(
 ```
 
 See
-[`?sdmTMB_simulate`](https://sdmTMB.github.io/sdmTMB/reference/sdmTMB_simulate.html)
+[`?simulate_new`](https://sdmtmb.github.io/sdmTMB/reference/simulate_new.html)
 for more details.
 
 #### Simulating from an existing fit
 
 ``` r
+set.seed(1)
 s <- simulate(fit, nsim = 500)
 dim(s)
 #> [1] 969 500
@@ -684,8 +689,8 @@ ggplot(predictor_dat, aes(X, Y, fill = se)) +
 
 ### Cross validation
 
-sdmTMB has built-in functionality for cross-validation. If we were to
-set a `future::plan()`, the folds would be fit in parallel:
+sdmTMB has built-in support for cross-validation. If we were to set a
+`future::plan()`, the folds would be fit in parallel:
 
 ``` r
 mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 10)
@@ -795,7 +800,7 @@ mesh <- make_mesh(pcod, c("X", "Y"), mesh = mesh_fmesher)
 plot(mesh)
 ```
 
-<img src="man/figures/README-inla-mesh-1.png" alt="" width="30%" />
+<img src="man/figures/README-fmesher-mesh-1.png" alt="" width="30%" />
 
 ``` r
 fit <- sdmTMB(
@@ -833,8 +838,7 @@ SPDE-based Gaussian Markov random field models with code included in
 [Miller et al. (2019)](https://doi.org/10.1007/s13253-019-00377-z), but
 this will be slower for large spatial datasets.
 
-A table in the [sdmTMB
-preprint](https://doi.org/10.1101/2022.03.24.485545) describes
-functionality and timing comparisons between sdmTMB, VAST, INLA/inlabru,
-and mgcv and the discussion makes suggestions about when you might
-choose one package over another.
+A table in the [sdmTMB paper](https://doi.org/10.18637/jss.v115.i02)
+describes functionality and timing comparisons between sdmTMB, VAST,
+INLA/inlabru, and mgcv and the discussion makes suggestions about when
+you might choose one package over another.
