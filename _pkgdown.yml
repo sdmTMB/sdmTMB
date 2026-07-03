@@ -136,7 +136,7 @@ reference:
     Functions for plotting.
   contents:
   - plot_anisotropy
-  - plot_diffused_covariate
+  - plot_nonlocal_covariate
   - plot_smooth
   - plot_pc_matern
   - visreg_delta

@@ -19,7 +19,7 @@ make_nl_plot_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
-test_that("plot_diffusion_kernel returns a ggplot on mesh vertices by default", {
+test_that("plot_nonlocal_kernel returns a ggplot on mesh vertices by default", {
   skip_if_not_installed("ggplot2")
 
   dat <- make_nl_plot_data()
@@ -37,7 +37,7 @@ test_that("plot_diffusion_kernel returns a ggplot on mesh vertices by default", 
     do_fit = FALSE
   )
 
-  out <- plot_diffusion_kernel(
+  out <- plot_nonlocal_kernel(
     fit,
     component = "diffusion",
     time_value = 1L,
@@ -57,7 +57,7 @@ test_that("plot_diffusion_kernel returns a ggplot on mesh vertices by default", 
   expect_equal(sum(original$value == 0), fit$spde$mesh$n - 1L)
 })
 
-test_that("plot_diffusion_kernel projects to newdata locations", {
+test_that("plot_nonlocal_kernel projects to newdata locations", {
   skip_if_not_installed("ggplot2")
 
   dat <- make_nl_plot_data()
@@ -77,7 +77,7 @@ test_that("plot_diffusion_kernel projects to newdata locations", {
 
   newdata <- unique(dat[dat$year %in% 1:2, c("X", "Y")])
   newdata <- newdata[seq_len(4L), , drop = FALSE]
-  out <- plot_diffusion_kernel(
+  out <- plot_nonlocal_kernel(
     fit,
     component = "time_lag",
     newdata = newdata,
@@ -95,7 +95,7 @@ test_that("plot_diffusion_kernel projects to newdata locations", {
   )
 })
 
-test_that("plot_diffusion_kernel can use raster output with newdata", {
+test_that("plot_nonlocal_kernel can use raster output with newdata", {
   skip_if_not_installed("ggplot2")
 
   dat <- make_nl_plot_data()
@@ -114,7 +114,7 @@ test_that("plot_diffusion_kernel can use raster output with newdata", {
   )
 
   grid <- expand.grid(X = seq(1, 6, length.out = 4), Y = seq(1, 2, length.out = 3))
-  out <- plot_diffusion_kernel(
+  out <- plot_nonlocal_kernel(
     fit,
     component = "time_lag",
     newdata = grid,
@@ -127,12 +127,12 @@ test_that("plot_diffusion_kernel can use raster output with newdata", {
   expect_s3_class(out$layers[[1L]]$geom, "GeomRaster")
   expect_equal(nrow(out$data[out$data$panel == levels(out$data$panel)[[1L]], ]), nrow(grid))
   expect_error(
-    plot_diffusion_kernel(fit, component = "time_lag", type = "raster", covariate = "x1"),
+    plot_nonlocal_kernel(fit, component = "time_lag", type = "raster", covariate = "x1"),
     regexp = '`type = "raster"` requires `newdata`'
   )
 })
 
-test_that("plot_diffusion_kernel plots raw colour values with common_scale", {
+test_that("plot_nonlocal_kernel plots raw colour values with common_scale", {
   skip_if_not_installed("ggplot2")
 
   dat <- make_nl_plot_data()
@@ -150,7 +150,7 @@ test_that("plot_diffusion_kernel plots raw colour values with common_scale", {
     do_fit = FALSE
   )
 
-  out <- plot_diffusion_kernel(
+  out <- plot_nonlocal_kernel(
     fit,
     component = "time_lag",
     covariate = "x1",
@@ -162,7 +162,7 @@ test_that("plot_diffusion_kernel plots raw colour values with common_scale", {
   expect_equal(out$data$value_plot, out$data$value, tolerance = 1e-12)
 })
 
-test_that("plot_diffusion_kernel does not require time_value for space-only covariate diffusions", {
+test_that("plot_nonlocal_kernel does not require time_value for space-only covariate diffusions", {
   skip_if_not_installed("ggplot2")
 
   dat <- make_nl_plot_data()
@@ -179,7 +179,7 @@ test_that("plot_diffusion_kernel does not require time_value for space-only cova
     do_fit = FALSE
   )
 
-  out <- plot_diffusion_kernel(
+  out <- plot_nonlocal_kernel(
     fit,
     component = "diffusion",
     covariate = "x1",
@@ -189,7 +189,7 @@ test_that("plot_diffusion_kernel does not require time_value for space-only cova
   expect_equal(levels(out$data$panel), c("original (t=0)", "diffused (t=0)"))
 })
 
-test_that("plot_diffusion_kernel defaults to the first time index for temporal covariate diffusions", {
+test_that("plot_nonlocal_kernel defaults to the first time index for temporal covariate diffusions", {
   skip_if_not_installed("ggplot2")
 
   dat <- make_nl_plot_data()
@@ -207,7 +207,7 @@ test_that("plot_diffusion_kernel defaults to the first time index for temporal c
     do_fit = FALSE
   )
 
-  out <- plot_diffusion_kernel(
+  out <- plot_nonlocal_kernel(
     fit,
     component = "time_lag",
     covariate = "x1",
@@ -217,7 +217,7 @@ test_that("plot_diffusion_kernel defaults to the first time index for temporal c
   expect_equal(levels(out$data$panel), c("original (t=1)", "diffused (t=1)", "lag+1 (t=2)"))
 })
 
-test_that("plot_diffused_covariate returns a ggplot on mesh vertices by default", {
+test_that("plot_nonlocal_covariate returns a ggplot on mesh vertices by default", {
   skip_if_not_installed("ggplot2")
 
   dat <- make_nl_plot_data()
@@ -234,7 +234,7 @@ test_that("plot_diffused_covariate returns a ggplot on mesh vertices by default"
     do_fit = FALSE
   )
 
-  out <- plot_diffused_covariate(
+  out <- plot_nonlocal_covariate(
     fit,
     component = "diffusion",
     covariate = "x1"
@@ -247,7 +247,7 @@ test_that("plot_diffused_covariate returns a ggplot on mesh vertices by default"
   expect_equal(nrow(out$data[out$data$panel == "original (t=0)", ]), fit$spde$mesh$n)
 })
 
-test_that("plot_diffused_covariate projects to newdata locations and raster output", {
+test_that("plot_nonlocal_covariate projects to newdata locations and raster output", {
   skip_if_not_installed("ggplot2")
 
   dat <- make_nl_plot_data()
@@ -266,13 +266,13 @@ test_that("plot_diffused_covariate projects to newdata locations and raster outp
   )
 
   newdata <- unique(dat[dat$year == 1L, c("X", "Y")])
-  point_plot <- plot_diffused_covariate(
+  point_plot <- plot_nonlocal_covariate(
     fit,
     component = "diffusion",
     newdata = newdata,
     covariate = "x1"
   )
-  raster_plot <- plot_diffused_covariate(
+  raster_plot <- plot_nonlocal_covariate(
     fit,
     component = "diffusion",
     newdata = newdata,
@@ -284,12 +284,12 @@ test_that("plot_diffused_covariate projects to newdata locations and raster outp
   expect_s3_class(raster_plot$layers[[1L]]$geom, "GeomRaster")
   expect_equal(nrow(point_plot$data[point_plot$data$panel == levels(point_plot$data$panel)[[1L]], ]), nrow(newdata))
   expect_error(
-    plot_diffused_covariate(fit, component = "diffusion", type = "raster", covariate = "x1"),
+    plot_nonlocal_covariate(fit, component = "diffusion", type = "raster", covariate = "x1"),
     regexp = '`type = "raster"` requires `newdata`'
   )
 })
 
-test_that("plot_diffused_covariate selects requested time slices", {
+test_that("plot_nonlocal_covariate selects requested time slices", {
   skip_if_not_installed("ggplot2")
 
   dat <- make_nl_plot_data()
@@ -307,7 +307,7 @@ test_that("plot_diffused_covariate selects requested time slices", {
     do_fit = FALSE
   )
 
-  out <- plot_diffused_covariate(
+  out <- plot_nonlocal_covariate(
     fit,
     component = "time_lag",
     covariate = "x1",
@@ -317,7 +317,7 @@ test_that("plot_diffused_covariate selects requested time slices", {
   expect_equal(levels(out$data$panel), c("original (t=3)", "diffused (t=3)"))
 })
 
-test_that("plot_diffused_covariate plots lagged contributions from one time slice", {
+test_that("plot_nonlocal_covariate plots lagged contributions from one time slice", {
   skip_if_not_installed("ggplot2")
 
   dat <- make_nl_plot_data()
@@ -335,7 +335,7 @@ test_that("plot_diffused_covariate plots lagged contributions from one time slic
     do_fit = FALSE
   )
 
-  out <- plot_diffused_covariate(
+  out <- plot_nonlocal_covariate(
     fit,
     component = "time_lag",
     covariate = "x1",
@@ -354,7 +354,7 @@ test_that("plot_diffused_covariate plots lagged contributions from one time slic
   )
 })
 
-test_that("plot_diffused_covariate can plot combined fitted transforms", {
+test_that("plot_nonlocal_covariate can plot combined fitted transforms", {
   skip_if_not_installed("ggplot2")
 
   dat <- make_nl_plot_data()
@@ -375,14 +375,14 @@ test_that("plot_diffused_covariate can plot combined fitted transforms", {
     do_fit = FALSE
   )
 
-  out_combined <- plot_diffused_covariate(
+  out_combined <- plot_nonlocal_covariate(
     fit,
     component = "combined",
     covariate = "x1",
     time_value = 2L,
     n_steps = 2L
   )
-  out_space <- plot_diffused_covariate(
+  out_space <- plot_nonlocal_covariate(
     fit,
     component = "diffusion",
     covariate = "x1",
@@ -400,7 +400,7 @@ test_that("plot_diffused_covariate can plot combined fitted transforms", {
   )))
 })
 
-test_that("plot_diffused_covariate errors cleanly for invalid inputs", {
+test_that("plot_nonlocal_covariate errors cleanly for invalid inputs", {
   skip_if_not_installed("ggplot2")
 
   dat <- make_nl_plot_data()
@@ -420,15 +420,15 @@ test_that("plot_diffused_covariate errors cleanly for invalid inputs", {
   )
 
   expect_error(
-    plot_diffused_covariate(fit_multi, component = "diffusion"),
+    plot_nonlocal_covariate(fit_multi, component = "diffusion"),
     regexp = "Multiple covariate-diffusion covariates"
   )
   expect_error(
-    plot_diffused_covariate(fit_multi, covariate = "x1", component = "time_lag"),
+    plot_nonlocal_covariate(fit_multi, covariate = "x1", component = "time_lag"),
     regexp = "No term `time_lag\\(x1\\)`"
   )
   expect_error(
-    plot_diffused_covariate(fit_multi, covariate = "x1", component = "diffusion", time_value = 99L),
+    plot_nonlocal_covariate(fit_multi, covariate = "x1", component = "diffusion", time_value = 99L),
     regexp = "Could not match `time_value`"
   )
 })

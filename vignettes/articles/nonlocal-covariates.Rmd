@@ -142,8 +142,8 @@ print(g3)
 We can visualize the diffusion operator and the original and smoothed covariate on the mesh:
 
 ```{r}
-plot_diffusion_kernel(fit, component = "diffusion")
-plot_diffused_covariate(fit, component = "diffusion")
+plot_nonlocal_kernel(fit, component = "diffusion")
+plot_nonlocal_covariate(fit, component = "diffusion")
 ```
 
 ## Space-time example with additive terms
@@ -260,17 +260,17 @@ We can separately visualize the spatial diffusion, time diffusion, or their comb
 By default, the diffusion kernel is shown at the mesh vertices:
 
 ```{r plot-diffusion}
-plot_diffusion_kernel(fit_st, component = "diffusion")
-plot_diffusion_kernel(fit_st, component = "time_lag", common_scale = TRUE)
-plot_diffusion_kernel(fit_st, component = "combined")
-plot_diffusion_kernel(fit_st, component = "combined", common_scale = TRUE)
+plot_nonlocal_kernel(fit_st, component = "diffusion")
+plot_nonlocal_kernel(fit_st, component = "time_lag", common_scale = TRUE)
+plot_nonlocal_kernel(fit_st, component = "combined")
+plot_nonlocal_kernel(fit_st, component = "combined", common_scale = TRUE)
 ```
 
 In the last case, the colour scale makes it hard to see the variation.
 We could add our own ggplot colour scale transformation:
 
 ```{r plot-diffusion-scale}
-plot_diffusion_kernel(fit_st, component = "combined", common_scale = TRUE) +
+plot_nonlocal_kernel(fit_st, component = "combined", common_scale = TRUE) +
   scale_colour_distiller(trans = "log10", palette = "Blues", direction = 1)
 ```
 
@@ -279,7 +279,7 @@ All the knots except one in the "original" panel were zero, so they become -Inf 
 If we have a grid available, we can evaluate the same kernel at those grid coordinates and plot it as a raster:
 
 ```{r plot-diffusion-grid}
-plot_diffusion_kernel(
+plot_nonlocal_kernel(
   fit_st_grid,
   component = "diffusion",
   newdata = grid_st,
@@ -292,15 +292,15 @@ This is because that single covariate value is actually represented on the mesh 
 As a result, we're seeing the piecewise-linear basis expansion from the mesh vertex to the grid, which creates a bit of smoothing.
 
 ```{r}
-plot_diffused_covariate(fit_st, component = "diffusion")
-plot_diffused_covariate(fit_st, component = "time_lag", n_steps = 2)
-plot_diffused_covariate(fit_st, component = "combined", n_steps = 2)
+plot_nonlocal_covariate(fit_st, component = "diffusion")
+plot_nonlocal_covariate(fit_st, component = "time_lag", n_steps = 2)
+plot_nonlocal_covariate(fit_st, component = "combined", n_steps = 2)
 ```
 
 The same plotting interface can show the covariate field on the supplied grid:
 
 ```{r}
-plot_diffused_covariate(
+plot_nonlocal_covariate(
   fit_st_grid,
   component = "diffusion",
   newdata = grid_st,
@@ -319,5 +319,24 @@ ggplot(pred, aes(X, Y, colour = x1)) + geom_point() +
 ggplot(pred, aes(X, Y, colour = nl_diffusion_x1)) + geom_point() +
   scale_colour_gradient2()
 ```
+
+## `predict()` vs. the non-local plotting functions
+
+These two paths answer different questions, so pick based on what you need:
+
+- Use `predict()` and the `nl_*` columns for the modeled effect.
+  Columns such as `nl_diffusion_x1` and `nl_time_lag_x1` are the transformed covariate values that enter the linear predictor at your data or `newdata` locations.
+  For `time_lag()` these accumulate the response across all prior time slices, and for `diffusion()` they give the smoothed field integrated over space.
+  This is what you want for reporting, mapping the estimated effect, correlating against a known truth, or any downstream calculation.
+  One column is returned per fitted `nonlocal_formula` term.
+
+- Use `plot_nonlocal_kernel()` and `plot_nonlocal_covariate()` for diagnostics.
+  These visualize how the estimated operator behaves.
+  `plot_nonlocal_kernel()` shows the impulse response (how a point input spreads in space and/or decays through time) and cannot be reconstructed from the `nl_*` columns.
+  `plot_nonlocal_covariate()` isolates a single input time slice and shows how it propagates forward over `n_steps`; it also offers `component = "combined"` (the joint space-and-time response), which is not returned as a `predict()` column.
+  Both plot on the mesh vertices by default, or at supplied `newdata` coordinates as points or a raster.
+
+For the pure spatial `diffusion()` case at a single time slice, `plot_nonlocal_covariate()` and mapping `nl_diffusion_x1` from `predict()` show the same field, so either is fine.
+The plotting functions become most useful for temporal (`time_lag()`) and `combined` terms, and whenever you want to inspect the operator on the mesh itself.
 
 # References

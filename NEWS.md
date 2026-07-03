@@ -9,7 +9,7 @@
   time lags. See the relevant vignette at
   https://sdmtmb.github.io/sdmTMB/articles/index.html
   New arguments include `nonlocal_formula` and `nonlocal_data` in `sdmTMB()`
-  as well as `plot_diffusion_kernel()` and `plot_diffused_covariate()`. #507
+  as well as `plot_nonlocal_kernel()` and `plot_nonlocal_covariate()`. #507
 
 * Allow for fitting uncorrelated random slopes and intercepts with the form
   `(1 + slope_var || group)`, making sure that results are displayed correctly.

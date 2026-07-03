@@ -886,8 +886,8 @@
 #' @param n_steps Number of transformed slices to plot starting at
 #'   `time_value`.
 #' @param common_scale Should plotted panels share a common color scale?
-#'   Defaults to `TRUE` for `plot_diffused_covariate()` and `FALSE` for
-#'   `plot_diffusion_kernel()`. `component = "time_lag"` alone likely needs
+#'   Defaults to `TRUE` for `plot_nonlocal_covariate()` and `FALSE` for
+#'   `plot_nonlocal_kernel()`. `component = "time_lag"` alone likely needs
 #'   `common_scale = TRUE` to make sense.
 #' @param newdata Optional data frame with x/y coordinate columns matching the
 #'   fitted mesh. If supplied, values are evaluated at the unique `newdata`
@@ -896,11 +896,11 @@
 #'   `newdata`.
 #'
 #' @details
-#' `plot_diffused_covariate()` visualizes the original mesh-vertex covariate
+#' `plot_nonlocal_covariate()` visualizes the original mesh-vertex covariate
 #' field and its fitted covariate-diffusion transform of one selected covariate
 #' time slice over one or more lagged output time slices.
 #'
-#' `plot_diffusion_kernel()` visualizes an impulse covariate diffusing through
+#' `plot_nonlocal_kernel()` visualizes an impulse covariate diffusing through
 #' one covariate-diffusion component.
 #'
 #' @return A `ggplot` object.
@@ -956,31 +956,31 @@
 #'   nonlocal_formula = ~ diffusion(x1) + time_lag(x1) #<
 #' )
 #'
-#' plot_diffused_covariate(
+#' plot_nonlocal_covariate(
 #'   fit,
 #'   covariate = "x1",
 #'   component = "diffusion"
 #' )
-#' plot_diffused_covariate(
+#' plot_nonlocal_covariate(
 #'   fit,
 #'   covariate = "x1",
 #'   component = "time_lag",
 #'   time_value = 1,
 #'   n_steps = 2
 #' )
-#' plot_diffused_covariate(
+#' plot_nonlocal_covariate(
 #'   fit,
 #'   covariate = "x1",
 #'   component = "combined",
 #'   time_value = 1,
 #'   n_steps = 2
 #' )
-#' plot_diffusion_kernel(
+#' plot_nonlocal_kernel(
 #'   fit,
 #'   covariate = "x1",
 #'   component = "diffusion"
 #' )
-#' plot_diffusion_kernel(
+#' plot_nonlocal_kernel(
 #'   fit,
 #'   covariate = "x1",
 #'   component = "time_lag",
@@ -988,7 +988,7 @@
 #'   n_steps = 2,
 #'   common_scale = TRUE #<
 #' )
-#' plot_diffusion_kernel(
+#' plot_nonlocal_kernel(
 #'   fit,
 #'   covariate = "x1",
 #'   component = "combined",
@@ -997,7 +997,7 @@
 #' )
 #' @rdname nonlocal_formula_plots
 #' @export
-plot_diffused_covariate <- function(object,
+plot_nonlocal_covariate <- function(object,
                                     component,
                                     newdata = NULL,
                                     type = c("point", "raster"),
@@ -1013,7 +1013,7 @@ plot_diffused_covariate <- function(object,
     component_missing = missing(component),
     time_value = time_value,
     n_steps = n_steps,
-    function_name = "plot_diffused_covariate"
+    function_name = "plot_nonlocal_covariate"
   )
   plot_locations <- .nl_plot_locations(object, newdata, type)
 
@@ -1072,7 +1072,7 @@ plot_diffused_covariate <- function(object,
 
 #' @rdname nonlocal_formula_plots
 #' @export
-plot_diffusion_kernel <- function(object,
+plot_nonlocal_kernel <- function(object,
                                   component,
                                   newdata = NULL,
                                   type = c("point", "raster"),
@@ -1088,7 +1088,7 @@ plot_diffusion_kernel <- function(object,
     component_missing = missing(component),
     time_value = time_value,
     n_steps = n_steps,
-    function_name = "plot_diffusion_kernel"
+    function_name = "plot_nonlocal_kernel"
   )
   plot_locations <- .nl_plot_locations(object, newdata, type)
 
