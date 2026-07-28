@@ -1,5 +1,11 @@
 # sdmTMB (development version)
 
+## Minor improvements and fixes
+
+* Improved non-local covariate handling by distinguishing time-indexed
+  formulas, supporting external grids during prediction and cross-validation,
+  and reporting clear errors when grid coverage is insufficient.
+
 # sdmTMB 1.1.0
 
 ## New features

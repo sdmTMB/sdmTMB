@@ -403,8 +403,7 @@ sdmTMB_cv <- function(
       cv_data <- data[data$cv_fold == k, , drop = FALSE]
     }
 
-    time_indexed_nonlocal <- !is.null(object$nonlocal_formula_parsed) &&
-      !is.null(object$time)
+    time_indexed_nonlocal <- .nonlocal_time_indexed_from_object(object)
 
     # FIXME: only use TMB report() below to be faster!
     # predict for withheld data:

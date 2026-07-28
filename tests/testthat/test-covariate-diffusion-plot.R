@@ -19,11 +19,20 @@ make_nl_plot_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
+make_nl_plot_grid <- function(mesh, years = NULL, include_x2 = FALSE) {
+  grid <- make_nl_covariate_grid(mesh, years, "x1")
+  if (isTRUE(include_x2)) {
+    grid$x2 <- rev(grid$x1)
+  }
+  grid
+}
+
 test_that("plot_nonlocal_kernel returns a ggplot on mesh vertices by default", {
   skip_if_not_installed("ggplot2")
 
   dat <- make_nl_plot_data()
   mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -34,6 +43,7 @@ test_that("plot_nonlocal_kernel returns a ggplot on mesh vertices by default", {
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x1),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -62,6 +72,7 @@ test_that("plot_nonlocal_kernel projects to newdata locations", {
 
   dat <- make_nl_plot_data()
   mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -72,6 +83,7 @@ test_that("plot_nonlocal_kernel projects to newdata locations", {
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -100,6 +112,7 @@ test_that("plot_nonlocal_kernel can use raster output with newdata", {
 
   dat <- make_nl_plot_data()
   mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -110,6 +123,7 @@ test_that("plot_nonlocal_kernel can use raster output with newdata", {
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -137,6 +151,7 @@ test_that("plot_nonlocal_kernel plots raw colour values with common_scale", {
 
   dat <- make_nl_plot_data()
   mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -147,6 +162,7 @@ test_that("plot_nonlocal_kernel plots raw colour values with common_scale", {
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -167,6 +183,7 @@ test_that("plot_nonlocal_kernel does not require time_value for space-only covar
 
   dat <- make_nl_plot_data()
   mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh)
 
   fit <- sdmTMB(
     y ~ 1,
@@ -176,6 +193,7 @@ test_that("plot_nonlocal_kernel does not require time_value for space-only covar
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x1),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -194,6 +212,7 @@ test_that("plot_nonlocal_kernel defaults to the first time index for temporal co
 
   dat <- make_nl_plot_data()
   mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -204,6 +223,7 @@ test_that("plot_nonlocal_kernel defaults to the first time index for temporal co
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -222,6 +242,7 @@ test_that("plot_nonlocal_covariate returns a ggplot on mesh vertices by default"
 
   dat <- make_nl_plot_data()
   mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh)
 
   fit <- sdmTMB(
     y ~ 1,
@@ -231,6 +252,7 @@ test_that("plot_nonlocal_covariate returns a ggplot on mesh vertices by default"
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x1),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -252,6 +274,7 @@ test_that("plot_nonlocal_covariate projects to newdata locations and raster outp
 
   dat <- make_nl_plot_data()
   mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -262,6 +285,7 @@ test_that("plot_nonlocal_covariate projects to newdata locations and raster outp
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x1),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -294,6 +318,7 @@ test_that("plot_nonlocal_covariate selects requested time slices", {
 
   dat <- make_nl_plot_data()
   mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -304,6 +329,7 @@ test_that("plot_nonlocal_covariate selects requested time slices", {
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -322,6 +348,7 @@ test_that("plot_nonlocal_covariate plots lagged contributions from one time slic
 
   dat <- make_nl_plot_data()
   mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -332,6 +359,7 @@ test_that("plot_nonlocal_covariate plots lagged contributions from one time slic
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -359,6 +387,7 @@ test_that("plot_nonlocal_covariate can plot combined fitted transforms", {
 
   dat <- make_nl_plot_data()
   mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -369,6 +398,7 @@ test_that("plot_nonlocal_covariate can plot combined fitted transforms", {
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(
       start = list(kappaT_nl_raw = 0.25)
     ),
@@ -406,6 +436,7 @@ test_that("plot_nonlocal_covariate errors cleanly for invalid inputs", {
   dat <- make_nl_plot_data()
   dat$x2 <- rev(dat$x1)
   mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)), include_x2 = TRUE)
 
   fit_multi <- sdmTMB(
     y ~ 1,
@@ -416,6 +447,7 @@ test_that("plot_nonlocal_covariate errors cleanly for invalid inputs", {
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 

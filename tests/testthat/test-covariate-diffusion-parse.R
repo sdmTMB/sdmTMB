@@ -2,6 +2,10 @@ make_nl_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
+make_nl_parse_grid <- function(mesh, covariates, years = NULL) {
+  make_nl_covariate_grid(mesh, years, covariates)
+}
+
 test_that("nonlocal_formula parses valid terms", {
   dat <- data.frame(
     y = rnorm(8),
@@ -12,6 +16,7 @@ test_that("nonlocal_formula parses valid terms", {
     Y = rep(c(0, 1), 4)
   )
   mesh <- make_nl_mesh(dat)
+  grid <- make_nl_parse_grid(mesh, c("x_num", "x_lag"), sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -21,6 +26,7 @@ test_that("nonlocal_formula parses valid terms", {
     spatial = "off",
     spatiotemporal = "off",
     nonlocal_formula = ~ diffusion(x_num) + time_lag(x_lag),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -46,6 +52,7 @@ test_that("nonlocal_formula covariates do not need to be in the main formula", {
     Y = rep(c(0, 1), 4)
   )
   mesh <- make_nl_mesh(dat)
+  grid <- make_nl_parse_grid(mesh, "x_only_lag")
 
   fit <- sdmTMB(
     y ~ 1,
@@ -54,6 +61,7 @@ test_that("nonlocal_formula covariates do not need to be in the main formula", {
     spatial = "off",
     spatiotemporal = "off",
     nonlocal_formula = ~ diffusion(x_only_lag),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -182,6 +190,7 @@ test_that("nonlocal_formula supports single-family delta", {
     Y = rep(c(0, 1), 3)
   )
   mesh <- make_nl_mesh(dat)
+  grid <- make_nl_parse_grid(mesh, "x_num")
 
   fit_delta <- sdmTMB(
     y ~ 1,
@@ -191,6 +200,7 @@ test_that("nonlocal_formula supports single-family delta", {
     spatiotemporal = "off",
     family = delta_gamma(),
     nonlocal_formula = ~ diffusion(x_num),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
   expect_true(all(c("nl_diffusion_x_num") %in% colnames(fit_delta$tmb_data$X_ij[[1]])))

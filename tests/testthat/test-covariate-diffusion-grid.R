@@ -20,17 +20,8 @@ make_nl_grid_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
-make_nl_dense_grid <- function(years) {
-  set.seed(404)
-  n_grid <- 40L
-  X <- runif(n_grid, 1, 6)
-  Y <- runif(n_grid, 1, 2)
-  grid <- expand.grid(grid_id = seq_len(n_grid), year = years)
-  grid$X <- X[grid$grid_id]
-  grid$Y <- Y[grid$grid_id]
-  grid$x1 <- as.numeric(scale(sin(grid$year / 2) + grid$X / max(grid$X)))
-  grid$grid_id <- NULL
-  grid
+make_nl_dense_grid <- function(years, mesh) {
+  make_nl_covariate_grid(mesh, years, "x1")
 }
 
 test_that("nonlocal_data can supply missing temporal slices", {
@@ -40,7 +31,7 @@ test_that("nonlocal_data can supply missing temporal slices", {
   dat <- make_nl_grid_data()
   mesh <- make_nl_grid_mesh(dat)
   dat_irregular <- dat[dat$year != 3, , drop = FALSE]
-  grid <- make_nl_dense_grid(sort(unique(dat$year)))
+  grid <- make_nl_dense_grid(sort(unique(dat$year)), mesh)
 
   expect_error(
     sdmTMB(
@@ -52,6 +43,22 @@ test_that("nonlocal_data can supply missing temporal slices", {
       spatiotemporal = "off",
       family = gaussian(),
       nonlocal_formula = ~ time_lag(x1),
+      extra_time = 3,
+      control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+    ),
+    regexp = "irregular"
+  )
+
+  expect_error(
+    sdmTMB(
+      y ~ x1,
+      data = dat_irregular,
+      mesh = mesh,
+      time = "year",
+      spatial = "off",
+      spatiotemporal = "off",
+      family = gaussian(),
+      nonlocal_formula = ~ diffusion(x1),
       extra_time = 3,
       control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
     ),
@@ -82,7 +89,7 @@ test_that("nonlocal_data validates the new grid requirements", {
 
   dat <- make_nl_grid_data()
   mesh <- make_nl_grid_mesh(dat)
-  grid <- make_nl_dense_grid(sort(unique(dat$year)))
+  grid <- make_nl_dense_grid(sort(unique(dat$year)), mesh)
 
   fit_args <- function(grid_data) {
     sdmTMB(
@@ -101,6 +108,29 @@ test_that("nonlocal_data validates the new grid requirements", {
 
   expect_error(
     fit_args(subset(grid, year != min(year))),
+    regexp = "does not cover all"
+  )
+
+  fit_diffusion_args <- function(grid_data) {
+    sdmTMB(
+      y ~ x1,
+      data = dat,
+      mesh = mesh,
+      time = "year",
+      spatial = "off",
+      spatiotemporal = "off",
+      family = gaussian(),
+      nonlocal_formula = ~ diffusion(x1),
+      nonlocal_data = grid_data,
+      control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+    )
+  }
+
+  grid_no_time <- grid
+  grid_no_time$year <- NULL
+  expect_error(fit_diffusion_args(grid_no_time), regexp = "missing the time column")
+  expect_error(
+    fit_diffusion_args(subset(grid, year != min(year))),
     regexp = "does not cover all"
   )
 
@@ -130,7 +160,7 @@ test_that("predict() reuses or overrides the stored covariate diffusion grid", {
 
   dat <- make_nl_grid_data()
   mesh <- make_nl_grid_mesh(dat)
-  grid <- make_nl_dense_grid(sort(unique(dat$year)))
+  grid <- make_nl_dense_grid(sort(unique(dat$year)), mesh)
 
   fit_grid <- sdmTMB(
     y ~ 1,

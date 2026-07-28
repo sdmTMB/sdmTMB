@@ -370,8 +370,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
   tmb_data$do_predict <- 1L
   no_spatial <- as.logical(object$tmb_data$no_spatial)
   has_nonlocal <- !is.null(object$nonlocal_parsed)
-  nonlocal_uses_external_grid <-
-    !is.null(nonlocal_newdata) || isTRUE(object$nonlocal_grid_supplied)
+  nonlocal_uses_external_grid <- .nonlocal_uses_external_grid(object, nonlocal_newdata)
 
   if (!is.null(newdata)) {
     needs_xy <- if (has_nonlocal) TRUE else isFALSE(pop_pred) && !no_spatial && !is_areal
@@ -410,10 +409,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
         "If you would like to predict on new time values,",
         "see the `extra_time` argument in `?sdmTMB`.")
       )
-    if (has_nonlocal &&
-      !is.null(object$nonlocal_formula_parsed) &&
-      isTRUE(object$nonlocal_formula_parsed$needs_time) &&
-      !nonlocal_uses_external_grid &&
+    nonlocal_time_indexed <- .nonlocal_time_indexed_from_object(object)
+    if (.nonlocal_prediction_requires_full_time(object, nonlocal_newdata) &&
       !setequal(new_data_time, original_time)) {
       cli_abort(c(
         "Temporal nonlocal prediction currently requires full time coverage in `newdata`.",
@@ -701,7 +698,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
           xy_cols = object$spde$xy_cols,
           time = object$time,
           time_df = object$time_lu,
-          full_time_vec = object$time_lu$time_from_data
+          full_time_vec = object$time_lu$time_from_data,
+          time_indexed = nonlocal_time_indexed
         )
         proj_nonlocal_data <- .build_nonlocal_tmb_data(
           nonlocal_formula = object$nonlocal_formula_parsed,
@@ -709,7 +707,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
           A_st = override_grid_inputs$A_st,
           A_spatial_index = override_grid_inputs$A_spatial_index,
           year_i = override_grid_inputs$year_i,
-          n_t = tmb_data$n_t
+          n_t = tmb_data$n_t,
+          time_values = object$time_lu$time_from_data
         )
         tmb_data$covariate_diffusion$proj_covariate_vertex_time <- proj_nonlocal_data$covariate_vertex_time
       } else if (nonlocal_uses_external_grid) {
@@ -724,7 +723,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
           A_st = proj_mesh,
           A_spatial_index = nd$sdm_spatial_id,
           year_i = tmb_data$proj_year,
-          n_t = tmb_data$n_t
+          n_t = tmb_data$n_t,
+          time_values = object$time_lu$time_from_data
         )
         tmb_data$covariate_diffusion$proj_covariate_vertex_time <- proj_nonlocal_data$covariate_vertex_time
       }

@@ -118,10 +118,11 @@ NULL
 #' @param nonlocal_data An optional data frame supplying the
 #'   `nonlocal_formula` covariate(s) at a different resolution and/or
 #'   coverage than `data` (e.g., a finer grid, or one spanning `extra_time`
-#'   slices). Must contain the mesh `xy_cols`, the `time` column (if time-lag
-#'   `nonlocal_formula` terms are used), and the diffusion covariate
-#'   columns; must cover every fitted (+ `extra_time`) time slice. Defaults to
-#'   `NULL`, in which case `data` is used.
+#'   slices). Must contain the mesh `xy_cols`, the diffusion covariate
+#'   columns, and the `time` column if `nonlocal_formula` is time-indexed
+#'   (`time_lag()` terms, or `diffusion()` terms with `time` specified). In
+#'   that case, it must cover every fitted (+ `extra_time`) time slice.
+#'   Defaults to `NULL`, in which case `data` is used.
 #' @param weights A numeric vector representing optional likelihood weights for
 #'   the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
 #'   to sum to one and are not internally modified. Can also be used for trials
@@ -833,6 +834,7 @@ sdmTMB <- function(
     }
   }
 
+  user_time_supplied <- !is.null(time)
   nonlocal_formula_parsed <- .parse_nonlocal_formula(nonlocal_formula)
   nonlocal_formula_parsed <- .validate_nonlocal_terms(
     nonlocal_formula_parsed,
@@ -845,6 +847,13 @@ sdmTMB <- function(
   }
   if (!is.null(nonlocal_data_arg) && is.null(nonlocal_formula_parsed)) {
     cli_abort("`nonlocal_data` was supplied but `nonlocal_formula` was not.")
+  }
+  nonlocal_time_indexed <- .nonlocal_time_indexed(
+    nonlocal_formula_parsed,
+    time_supplied = user_time_supplied
+  )
+  if (!is.null(nonlocal_formula_parsed)) {
+    nonlocal_formula_parsed$time_indexed <- nonlocal_time_indexed
   }
 
   if (is.null(time)) {
@@ -877,7 +886,8 @@ sdmTMB <- function(
       xy_cols = spde$xy_cols,
       time = time,
       time_df = time_df,
-      full_time_vec = time_df$time_from_data
+      full_time_vec = time_df$time_from_data,
+      time_indexed = nonlocal_time_indexed
     )
   }
 
@@ -946,7 +956,7 @@ sdmTMB <- function(
     time_varying,
     extra_time = extra_time,
     nonlocal_temporal = !is.null(nonlocal_formula_parsed) &&
-      isTRUE(nonlocal_formula_parsed$needs_time) &&
+      isTRUE(nonlocal_formula_parsed$time_indexed) &&
       !nonlocal_grid_supplied
   )
 
@@ -1298,7 +1308,8 @@ sdmTMB <- function(
     A_st = if (nonlocal_grid_supplied) nonlocal_grid_inputs$A_st else A_st,
     A_spatial_index = if (nonlocal_grid_supplied) nonlocal_grid_inputs$A_spatial_index else A_spatial_index,
     year_i = if (nonlocal_grid_supplied) nonlocal_grid_inputs$year_i else year_i_data,
-    n_t = n_t
+    n_t = n_t,
+    time_values = time_df$time_from_data
   )
 
   if (!is.null(nonlocal_parsed)) {
@@ -2232,14 +2243,14 @@ check_irregalar_time <- function(data, time, spatiotemporal, time_varying, extra
   if (irregular_fit || irregular_nl) {
     missed <- find_missing_time(data[[time]])
     msg <- c(
-      "Detected irregular time spacing with an AR(1), random walk, or temporal nonlocal process.",
+      "Detected irregular time spacing with an AR(1), random walk, or time-indexed nonlocal process.",
       if (has_ar1_rw) {
         "Consider filling in the missing time slices with `extra_time`."
       },
       if (irregular_nl) {
         c(
-          "For temporal `nonlocal_formula` terms, include rows in `data` for missing time slices so lag covariates are defined.",
-          "Using `extra_time` alone is not sufficient for temporal nonlocal terms."
+          "For time-indexed `nonlocal_formula` terms, include rows in `data` for missing time slices so nonlocal covariates are defined.",
+          "Using `extra_time` alone is not sufficient for time-indexed nonlocal terms."
         )
       },
       if (length(missed)) {

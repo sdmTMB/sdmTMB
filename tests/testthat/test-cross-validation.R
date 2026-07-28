@@ -699,6 +699,7 @@ test_that("Cross validation handles covariate diffusion under year-based folds",
 
   dat <- make_cv_nonlocal_data()
   mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.2)
+  nonlocal_grid <- make_nl_covariate_grid(mesh, sort(unique(dat$year)), "x1")
   fold_ids <- as.integer(factor(dat$year))
 
   fit_base <- sdmTMB_cv(
@@ -724,6 +725,7 @@ test_that("Cross validation handles covariate diffusion under year-based folds",
     spatiotemporal = "off",
     parallel = FALSE,
     nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = nonlocal_grid,
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 
@@ -739,6 +741,7 @@ test_that("Cross validation handles covariate diffusion under year-based folds",
     spatiotemporal = "off",
     parallel = FALSE,
     nonlocal_formula = ~ diffusion(x1),
+    nonlocal_data = nonlocal_grid,
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 

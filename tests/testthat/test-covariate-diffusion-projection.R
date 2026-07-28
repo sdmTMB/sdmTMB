@@ -9,16 +9,16 @@ test_that(".build_vertex_time_covariates matches hand-computed normalization", {
   )
 
   dat <- data.frame(
-    x1 = c(2, 4, 6, NA),
-    x2 = c(1, 3, 5, 7)
+    x1 = c(2, 4, 6, 8, 10, NA),
+    x2 = c(1, 3, 5, 7, 9, 11)
   )
 
   out <- .build_vertex_time_covariates(
     covariate_data = dat,
     covariates = c("x1", "x2"),
     A_st = A_st,
-    year_i = c(0L, 0L, 1L, 1L),
-    A_spatial_index = c(0L, 1L, 2L, 1L),
+    year_i = c(0L, 0L, 0L, 1L, 1L, 1L),
+    A_spatial_index = c(0L, 1L, 2L, 0L, 1L, 2L),
     n_t = 2L
   )
 
@@ -27,8 +27,8 @@ test_that(".build_vertex_time_covariates matches hand-computed normalization", {
   expect_equal(
     out$covariate_vertex_time[, , 1],
     matrix(c(
-      8 / 3, 0,
-      4, 6
+      8 / 3, 26 / 3,
+      16 / 3, 10
     ), nrow = 2, byrow = TRUE),
     tolerance = 1e-8
   )
@@ -36,10 +36,58 @@ test_that(".build_vertex_time_covariates matches hand-computed normalization", {
   expect_equal(
     out$covariate_vertex_time[, , 2],
     matrix(c(
-      5 / 3, 7,
-      3, 17 / 3
+      5 / 3, 23 / 3,
+      13 / 3, 31 / 3
     ), nrow = 2, byrow = TRUE),
     tolerance = 1e-8
+  )
+})
+
+test_that(".build_vertex_time_covariates errors for zero-support vertices", {
+  A_st <- Matrix::Matrix(
+    rbind(
+      c(1, 0),
+      c(0.5, 0.5),
+      c(0, 1)
+    ),
+    sparse = TRUE
+  )
+
+  expect_error(
+    .build_vertex_time_covariates(
+      covariate_data = data.frame(x1 = c(2, 4)),
+      covariates = "x1",
+      A_st = A_st,
+      year_i = c(0L, 1L),
+      A_spatial_index = c(0L, 0L),
+      n_t = 2L
+    ),
+    regexp = "zero mesh-vertex support"
+  )
+
+  expect_error(
+    .build_vertex_time_covariates(
+      covariate_data = data.frame(x1 = c(2, 4, 6, NA, NA, NA)),
+      covariates = "x1",
+      A_st = A_st,
+      year_i = c(0L, 0L, 0L, 1L, 1L, 1L),
+      A_spatial_index = c(0L, 1L, 2L, 0L, 1L, 2L),
+      n_t = 2L
+    ),
+    regexp = "only `NA` values"
+  )
+
+  sparse_grid_A <- Matrix::Matrix(rbind(c(0.5, 0.5, 0)), sparse = TRUE)
+  expect_error(
+    .build_vertex_time_covariates(
+      covariate_data = data.frame(x1 = 1),
+      covariates = "x1",
+      A_st = sparse_grid_A,
+      year_i = 0L,
+      A_spatial_index = 0L,
+      n_t = 1L
+    ),
+    regexp = "1 of 3 mesh vertices"
   )
 })
 
@@ -178,6 +226,12 @@ test_that("sdmTMB builds nonlocal_parsed in fit path", {
   )
 
   mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
+  grid <- merge(
+    data.frame(year = sort(unique(dat$year))),
+    setNames(as.data.frame(mesh$mesh$loc[, 1:2, drop = FALSE]), c("X", "Y"))
+  )
+  grid$x1 <- as.numeric(scale(grid$year + grid$X))
+  grid$x2 <- as.numeric(scale(grid$year + grid$Y))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -187,6 +241,7 @@ test_that("sdmTMB builds nonlocal_parsed in fit path", {
     spatial = "off",
     spatiotemporal = "off",
     nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 

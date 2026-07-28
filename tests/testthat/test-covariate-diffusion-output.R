@@ -22,10 +22,15 @@ make_nl_output_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
+make_nl_output_grid <- function(mesh, years) {
+  make_nl_covariate_grid(mesh, years, c("x1", "x2"))
+}
+
 test_that("covariate diffusion fixed effects are named consistently in tidy/coef/vcov", {
   skip_on_cran()
   dat <- make_nl_output_data()
   mesh <- make_nl_output_mesh(dat)
+  grid <- make_nl_output_grid(mesh, sort(unique(dat$year)))
 
   fit <- suppressWarnings(sdmTMB(
     y ~ x1 + x2,
@@ -36,6 +41,7 @@ test_that("covariate diffusion fixed effects are named consistently in tidy/coef
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 
@@ -56,6 +62,7 @@ test_that("covariate diffusion ran_pars include lag scales and derived diagnosti
   skip_on_cran()
   dat <- make_nl_output_data()
   mesh <- make_nl_output_mesh(dat)
+  grid <- make_nl_output_grid(mesh, sort(unique(dat$year)))
 
   fit <- suppressWarnings(sdmTMB(
     y ~ x1 + x2,
@@ -66,6 +73,7 @@ test_that("covariate diffusion ran_pars include lag scales and derived diagnosti
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 
@@ -97,6 +105,7 @@ test_that("print output reports covariate diffusion structure and diagnostics", 
   skip_on_cran()
   dat <- make_nl_output_data()
   mesh <- make_nl_output_mesh(dat)
+  grid <- make_nl_output_grid(mesh, sort(unique(dat$year)))
 
   fit <- suppressWarnings(sdmTMB(
     y ~ x1 + x2,
@@ -107,6 +116,7 @@ test_that("print output reports covariate diffusion structure and diagnostics", 
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 

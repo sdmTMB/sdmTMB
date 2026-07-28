@@ -150,10 +150,11 @@ See the \href{https://sdmTMB.github.io/sdmTMB/articles/nonlocal-covariates.html}
 \item{nonlocal_data}{An optional data frame supplying the
 \code{nonlocal_formula} covariate(s) at a different resolution and/or
 coverage than \code{data} (e.g., a finer grid, or one spanning \code{extra_time}
-slices). Must contain the mesh \code{xy_cols}, the \code{time} column (if time-lag
-\code{nonlocal_formula} terms are used), and the diffusion covariate
-columns; must cover every fitted (+ \code{extra_time}) time slice. Defaults to
-\code{NULL}, in which case \code{data} is used.}
+slices). Must contain the mesh \code{xy_cols}, the diffusion covariate
+columns, and the \code{time} column if \code{nonlocal_formula} is time-indexed
+(\code{time_lag()} terms, or \code{diffusion()} terms with \code{time} specified). In
+that case, it must cover every fitted (+ \code{extra_time}) time slice.
+Defaults to \code{NULL}, in which case \code{data} is used.}
 
 \item{weights}{A numeric vector representing optional likelihood weights for
 the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have

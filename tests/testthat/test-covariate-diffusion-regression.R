@@ -44,11 +44,32 @@ simulate_nonlocal_regression_data <- function(
   dat$x_time <- as.numeric(scale(sin(dat$year) + 0.3 * dat$year + rnorm(n_obs, sd = 0.3)))
   dat$x_st <- as.numeric(scale(hotspot_field * t_scaled + rnorm(n_obs, sd = 0.25)))
 
+  vertex_grid <- expand.grid(
+    vertex_id = seq_len(ncol(A_st)),
+    year = seq_len(n_t)
+  )
+  loc <- as.data.frame(mesh$mesh$loc[, 1:2, drop = FALSE])
+  names(loc) <- c("X", "Y")
+  vertex_grid$X <- loc$X[vertex_grid$vertex_id]
+  vertex_grid$Y <- loc$Y[vertex_grid$vertex_id]
+  vertex_grid$x_space <- x_vertex[vertex_grid$vertex_id]
+  x_time_vertex <- matrix(0, nrow = ncol(A_st), ncol = n_t)
+  for (tt in seq_len(n_t)) {
+    obs_t <- which(dat$year == tt)
+    A_t <- A_st[obs_t, , drop = FALSE]
+    numerator_t <- as.vector(Matrix::crossprod(A_t, dat$x_time[obs_t]))
+    denominator_t <- as.vector(Matrix::crossprod(A_t, rep(1, length(obs_t))))
+    keep_t <- denominator_t > 0
+    x_time_vertex[keep_t, tt] <- numerator_t[keep_t] / denominator_t[keep_t]
+  }
+  vertex_grid$x_time <- x_time_vertex[cbind(vertex_grid$vertex_id, vertex_grid$year)]
+  vertex_grid$vertex_id <- NULL
+
   dat$y_space <- 0.5 + 0.8 * x_diffused + rnorm(n_obs, sd = 0.2)
   dat$y_time <- -0.2 + 0.7 * dat$x_time + rnorm(n_obs, sd = 0.2)
   dat$y_st <- 0.1 + 0.6 * dat$x_st + rnorm(n_obs, sd = 0.2)
 
-  list(data = dat, mesh = mesh)
+  list(data = dat, mesh = mesh, nonlocal_data = vertex_grid)
 }
 
 test_that("covariate diffusion regression estimates and logLik stay stable", {
@@ -58,6 +79,7 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
   sim <- simulate_nonlocal_regression_data()
   dat <- sim$data
   mesh <- sim$mesh
+  grid <- sim$nonlocal_data
 
   ctrl <- sdmTMBcontrol(newton_loops = 2L, getsd = FALSE)
 
@@ -70,6 +92,7 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x_space),
+    nonlocal_data = grid,
     control = ctrl
   )
 
@@ -82,10 +105,11 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ time_lag(x_time),
+    nonlocal_data = grid,
     control = ctrl
   )
 
-  expect_equal(as.numeric(logLik(fit_space)), 92.0763, tolerance = 1e-4)
+  expect_equal(as.numeric(logLik(fit_space)), 154.3423, tolerance = 1e-4)
   expect_equal(as.numeric(logLik(fit_time)), -240.2167, tolerance = 1e-4)
 
   get_beta <- function(fit) {
@@ -96,8 +120,8 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
   beta_space <- get_beta(fit_space)
   beta_time <- get_beta(fit_time)
 
-  expect_equal(beta_space[["(Intercept)"]], 0.4815081, tolerance = 1e-4)
-  expect_equal(beta_space[["nl_diffusion_x_space"]], 0.3733943, tolerance = 1e-4)
+  expect_equal(beta_space[["(Intercept)"]], 0.4901745, tolerance = 1e-4)
+  expect_equal(beta_space[["nl_diffusion_x_space"]], 0.6815684, tolerance = 1e-4)
 
   expect_equal(beta_time[["(Intercept)"]], -0.1992140, tolerance = 1e-4)
   expect_equal(beta_time[["nl_time_lag_x_time"]], 0.7224500, tolerance = 1e-4)
@@ -105,7 +129,7 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
   rep_space <- fit_space$tmb_obj$report()
   rep_time <- fit_time$tmb_obj$report()
 
-  expect_equal(rep_space$kappaS_nl[1], 10.206683946, tolerance = 1e-3)
-  expect_equal(rep_time$kappaT_nl[1], 0.001683076, tolerance = 1e-3)
-  expect_equal(rep_time$rhoT[1], 0.001680248, tolerance = 1e-3)
+  expect_equal(rep_space$kappaS_nl[1], 7.894961005, tolerance = 1e-3)
+  expect_equal(rep_time$kappaT_nl[1], 0.001682999, tolerance = 1e-3)
+  expect_equal(rep_time$rhoT[1], 0.001680172, tolerance = 1e-3)
 })

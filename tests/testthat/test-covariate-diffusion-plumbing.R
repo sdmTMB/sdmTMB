@@ -13,6 +13,10 @@ make_nl_plumbing_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
+make_nl_plumbing_grid <- function(mesh, years) {
+  make_nl_covariate_grid(mesh, years, c("x1", "x2"))
+}
+
 test_that("covariate diffusion tmb_data includes safe defaults when feature is off", {
   dat <- make_nl_plumbing_data()
   mesh <- make_nl_plumbing_mesh(dat)
@@ -44,6 +48,7 @@ test_that("covariate diffusion tmb_data includes safe defaults when feature is o
 test_that("covariate diffusion coefficient slots are appended and lag parameters are length-aware", {
   dat <- make_nl_plumbing_data()
   mesh <- make_nl_plumbing_mesh(dat)
+  grid <- make_nl_plumbing_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -53,6 +58,7 @@ test_that("covariate diffusion coefficient slots are appended and lag parameters
     spatial = "off",
     spatiotemporal = "off",
     nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -92,6 +98,7 @@ test_that("covariate diffusion coefficient slots are appended to both delta comp
     Y = rep(c(0, 1), 4)
   )
   mesh <- make_nl_plumbing_mesh(dat)
+  grid <- make_nl_plumbing_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -102,6 +109,7 @@ test_that("covariate diffusion coefficient slots are appended to both delta comp
     spatiotemporal = "off",
     family = delta_gamma(),
     nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -133,6 +141,7 @@ test_that("unsupported spacetime wrapper errors clearly", {
 test_that("covariate diffusion control names set start and map values", {
   dat <- make_nl_plumbing_data()
   mesh <- make_nl_plumbing_mesh(dat)
+  grid <- make_nl_plumbing_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -142,6 +151,7 @@ test_that("covariate diffusion control names set start and map values", {
     spatial = "off",
     spatiotemporal = "off",
     nonlocal_formula = ~ diffusion(x2) + time_lag(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(
       start = list(log_kappaS_nl = c(0, 0.4), kappaT_nl_raw = c(0.2, 0.3)),
       map = list(log_kappaS_nl = factor(c(NA, 1L)), kappaT_nl_raw = factor(c(1L, NA)))
@@ -192,6 +202,7 @@ test_that("predict tmb_data keeps covariate diffusion columns aligned with b_j",
   set.seed(1)
   dat <- make_nl_plumbing_data()
   mesh <- make_nl_plumbing_mesh(dat)
+  grid <- make_nl_plumbing_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ x1,
@@ -202,6 +213,7 @@ test_that("predict tmb_data keeps covariate diffusion columns aligned with b_j",
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 
@@ -228,6 +240,7 @@ test_that("predict tmb_data keeps covariate diffusion columns aligned with b_j2 
     Y = rep(c(0, 1, 2), 4)
   )
   mesh <- make_nl_plumbing_mesh(dat)
+  grid <- make_nl_plumbing_grid(mesh, sort(unique(dat$year)))
 
   fit <- suppressWarnings(sdmTMB(
     y ~ x1,
@@ -238,6 +251,7 @@ test_that("predict tmb_data keeps covariate diffusion columns aligned with b_j2 
     spatiotemporal = "off",
     family = delta_gamma(),
     nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   ))
 

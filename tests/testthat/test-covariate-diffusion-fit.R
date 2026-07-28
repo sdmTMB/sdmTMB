@@ -22,10 +22,15 @@ make_nl_fit_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
+make_nl_fit_grid <- function(mesh, years = NULL) {
+  make_nl_covariate_grid(mesh, years, c("x1", "x2"))
+}
+
 test_that("covariate diffusion fits run for each wrapper and combined terms", {
   skip_on_cran()
   dat <- make_nl_fit_data()
   mesh <- make_nl_fit_mesh(dat)
+  grid <- make_nl_fit_grid(mesh, sort(unique(dat$year)))
 
   lag_forms <- list(
     spatial = ~ diffusion(x1),
@@ -43,6 +48,7 @@ test_that("covariate diffusion fits run for each wrapper and combined terms", {
       spatiotemporal = "off",
       family = gaussian(),
       nonlocal_formula = lag_forms[[nm]],
+      nonlocal_data = grid,
       control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
     )
     expect_true(is.finite(fit$model$objective), info = nm)
@@ -53,6 +59,7 @@ test_that("covariate diffusion model matches no-lag model when lag coefficients 
   skip_on_cran()
   dat <- make_nl_fit_data()
   mesh <- make_nl_fit_mesh(dat)
+  grid <- make_nl_fit_grid(mesh, sort(unique(dat$year)))
 
   fit_base <- sdmTMB(
     y ~ x1 + x2,
@@ -75,6 +82,7 @@ test_that("covariate diffusion model matches no-lag model when lag coefficients 
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = nl_formula,
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
@@ -94,6 +102,7 @@ test_that("covariate diffusion model matches no-lag model when lag coefficients 
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = nl_formula,
+    nonlocal_data = grid,
     control = sdmTMBcontrol(
       start = list(b_j = b_start),
       map = list(
@@ -113,6 +122,7 @@ test_that("covariate diffusion derived quantities are conditionally reported", {
   skip_on_cran()
   dat <- make_nl_fit_data()
   mesh <- make_nl_fit_mesh(dat)
+  grid <- make_nl_fit_grid(mesh, sort(unique(dat$year)))
 
   fit_time <- sdmTMB(
     y ~ x1 + x2,
@@ -123,6 +133,7 @@ test_that("covariate diffusion derived quantities are conditionally reported", {
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
   rep_time <- fit_time$tmb_obj$report()
@@ -140,6 +151,7 @@ test_that("covariate diffusion derived quantities are conditionally reported", {
     spatiotemporal = "off",
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
   rep_space <- fit_space$tmb_obj$report()

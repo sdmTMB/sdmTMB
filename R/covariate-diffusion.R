@@ -119,8 +119,37 @@
     formula = nonlocal_formula,
     terms = terms_df,
     covariates = unique_covariates,
+    has_diffusion = any(terms_df$component == "diffusion"),
     needs_time = any(terms_df$component == "time_lag")
   )
+}
+
+.nonlocal_time_indexed <- function(nonlocal_formula, time_supplied) {
+  if (is.null(nonlocal_formula)) {
+    return(FALSE)
+  }
+  isTRUE(nonlocal_formula$needs_time) ||
+    (isTRUE(nonlocal_formula$has_diffusion) && isTRUE(time_supplied))
+}
+
+.nonlocal_time_indexed_from_object <- function(object) {
+  nonlocal_formula <- object$nonlocal_formula_parsed
+  if (is.null(nonlocal_formula)) {
+    return(FALSE)
+  }
+  if (!is.null(nonlocal_formula$time_indexed)) {
+    return(isTRUE(nonlocal_formula$time_indexed))
+  }
+  isTRUE(nonlocal_formula$needs_time)
+}
+
+.nonlocal_uses_external_grid <- function(object, nonlocal_newdata = NULL) {
+  !is.null(nonlocal_newdata) || isTRUE(object$nonlocal_grid_supplied)
+}
+
+.nonlocal_prediction_requires_full_time <- function(object, nonlocal_newdata = NULL) {
+  .nonlocal_time_indexed_from_object(object) &&
+    !.nonlocal_uses_external_grid(object, nonlocal_newdata)
 }
 
 .validate_nonlocal_terms <- function(nonlocal_formula, data, time, multi_family) {
@@ -165,7 +194,8 @@
                                           A_st,
                                           year_i,
                                           A_spatial_index = NULL,
-                                          n_t = NULL) {
+                                          n_t = NULL,
+                                          time_values = NULL) {
   # This is the single vertex-aggregation entry point for covariate diffusion.
   # A future raster-like covariate input can reuse it by supplying its own
   # projection matrix and index vectors.
@@ -228,6 +258,9 @@
       cli_abort("`year_i` contains a time index >= `n_t`.")
     }
   }
+  if (!is.null(time_values) && length(time_values) != n_t) {
+    cli_abort("`time_values` length must equal `n_t`.")
+  }
 
   A_spatial_index <- as.integer(A_spatial_index) + 1L
   if (any(A_spatial_index < 1L | A_spatial_index > nrow(A_st))) {
@@ -249,23 +282,43 @@
       cli_abort("Covariate `{cov_name}` contains Inf/-Inf values.")
     }
     for (t_i in seq_len(n_t)) {
+      time_label <- if (is.null(time_values)) {
+        paste0("index ", t_i - 1L)
+      } else {
+        as.character(time_values[[t_i]])
+      }
       obs_this_time <- which(year_i == (t_i - 1L))
       if (!length(obs_this_time)) {
-        next
+        cli_abort(c(
+          "Nonlocal covariate has zero mesh-vertex support.",
+          "x" = "Covariate {.code {cov_name}} has no rows for time {time_label}.",
+          "i" = "All {n_vertices} mesh vertices are unsupported for this covariate/time slice."
+        ))
       }
       x_t <- x[obs_this_time]
       keep <- !is.na(x_t)
       if (!any(keep)) {
-        next
+        cli_abort(c(
+          "Nonlocal covariate has zero mesh-vertex support.",
+          "x" = "Covariate {.code {cov_name}} has only `NA` values for time {time_label}.",
+          "i" = "All {n_vertices} mesh vertices are unsupported for this covariate/time slice."
+        ))
       }
       A_t <- A_st[A_spatial_index[obs_this_time[keep]], , drop = FALSE]
       x_t <- x_t[keep]
       numerator <- as.vector(Matrix::crossprod(A_t, x_t))
       denominator <- as.vector(Matrix::crossprod(A_t, rep(1, length(x_t))))
       good <- denominator > 0
-      if (any(good)) {
-        out[good, t_i, cov_idx] <- numerator[good] / denominator[good]
+      if (any(!good)) {
+        n_bad <- sum(!good)
+        pct_bad <- sprintf("%.1f%%", 100 * n_bad / n_vertices)
+        cli_abort(c(
+          "Nonlocal covariate has zero mesh-vertex support.",
+          "x" = "{n_bad} of {n_vertices} mesh vertices ({pct_bad}) have no contributing rows for covariate {.code {cov_name}} at time {time_label}.",
+          "i" = "Supply denser covariate coverage with `nonlocal_data`/`nonlocal_newdata`, coarsen the mesh, or trim the mesh domain."
+        ))
       }
+      out[, t_i, cov_idx] <- numerator / denominator
     }
   }
 
@@ -283,7 +336,8 @@
                                                      xy_cols,
                                                      time,
                                                      time_df,
-                                                     full_time_vec) {
+                                                     full_time_vec,
+                                                     time_indexed = FALSE) {
   if (!inherits(grid, "data.frame")) {
     cli_abort("The nonlocal grid data must be `NULL` or a data frame.")
   }
@@ -330,7 +384,7 @@
     ))
   }
 
-  if (isTRUE(nonlocal_formula$needs_time)) {
+  if (isTRUE(time_indexed)) {
     if (!time %in% names(grid)) {
       cli_abort("The nonlocal grid data is missing the time column {.code {time}}.")
     }
@@ -363,7 +417,8 @@
                                                 A_st,
                                                 A_spatial_index,
                                                 year_i,
-                                                n_t) {
+                                                n_t,
+                                                time_values = NULL) {
   if (is.null(nonlocal_formula)) {
     return(NULL)
   }
@@ -374,7 +429,8 @@
     A_st = A_st,
     year_i = year_i,
     A_spatial_index = A_spatial_index,
-    n_t = n_t
+    n_t = n_t,
+    time_values = time_values
   )
   covariate_vertex_time <- vertex_cov$covariate_vertex_time
 

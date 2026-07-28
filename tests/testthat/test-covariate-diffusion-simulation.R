@@ -14,11 +14,22 @@ make_nl_sim_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.6)
 }
 
+make_nl_sim_grid <- function(mesh, years) {
+  loc <- as.data.frame(mesh$mesh$loc[, 1:2, drop = FALSE])
+  names(loc) <- c("X", "Y")
+  grid <- merge(data.frame(year = years), loc)
+  grid$x_s <- sin(grid$X * pi) + cos(grid$Y * pi)
+  grid$x_t <- grid$year
+  grid$x_st <- grid$x_s + grid$year / 10
+  grid
+}
+
 test_that("simulate_new supports space covariate diffusion", {
   skip_on_cran()
 
   dat <- make_nl_sim_data()
   mesh <- make_nl_sim_mesh(dat)
+  grid <- make_nl_sim_grid(mesh, sort(unique(dat$year)))
 
   sim <- simulate_new(
     formula = ~ 1,
@@ -33,6 +44,7 @@ test_that("simulate_new supports space covariate diffusion", {
     phi = 0.1,
     B = c(0.2, 0.7),
     nonlocal_formula = ~ diffusion(x_s),
+    nonlocal_data = grid,
     lags_kappaS = 1.3,
     seed = 1
   )
@@ -49,6 +61,7 @@ test_that("simulate_new supports time covariate diffusion", {
 
   dat <- make_nl_sim_data()
   mesh <- make_nl_sim_mesh(dat)
+  grid <- make_nl_sim_grid(mesh, sort(unique(dat$year)))
 
   sim <- simulate_new(
     formula = ~ 1,
@@ -63,6 +76,7 @@ test_that("simulate_new supports time covariate diffusion", {
     phi = 0.1,
     B = c(0.2, 0.7),
     nonlocal_formula = ~ time_lag(x_t),
+    nonlocal_data = grid,
     lags_rhoT = 0.4,
     seed = 2
   )
@@ -79,6 +93,7 @@ test_that("simulate_new supports combined covariate diffusion terms", {
 
   dat <- make_nl_sim_data()
   mesh <- make_nl_sim_mesh(dat)
+  grid <- make_nl_sim_grid(mesh, sort(unique(dat$year)))
 
   sim <- simulate_new(
     formula = ~ 1,
@@ -93,6 +108,7 @@ test_that("simulate_new supports combined covariate diffusion terms", {
     phi = 0.1,
     B = c(0.2, 0.5, -0.3),
     nonlocal_formula = ~ diffusion(x_s) + time_lag(x_t),
+    nonlocal_data = grid,
     lags_kappaS = 1.3,
     lags_rhoT = 0.4,
     seed = 3
@@ -109,6 +125,7 @@ test_that("simulate_new supports combined covariate diffusion terms", {
 test_that("simulate_new errors for missing covariate diffusion parameters", {
   dat <- make_nl_sim_data()
   mesh <- make_nl_sim_mesh(dat)
+  grid <- make_nl_sim_grid(mesh, sort(unique(dat$year)))
 
   expect_error(
     simulate_new(
@@ -123,7 +140,8 @@ test_that("simulate_new errors for missing covariate diffusion parameters", {
       sigma_O = 0,
       phi = 0.1,
       B = c(0.2, 0.7),
-      nonlocal_formula = ~ diffusion(x_s)
+      nonlocal_formula = ~ diffusion(x_s),
+      nonlocal_data = grid
     ),
     "lags_kappaS"
   )
@@ -141,7 +159,8 @@ test_that("simulate_new errors for missing covariate diffusion parameters", {
       sigma_O = 0,
       phi = 0.1,
       B = c(0.2, 0.7),
-      nonlocal_formula = ~ time_lag(x_t)
+      nonlocal_formula = ~ time_lag(x_t),
+      nonlocal_data = grid
     ),
     "lags_rhoT"
   )
@@ -160,6 +179,7 @@ test_that("simulate_new errors for missing covariate diffusion parameters", {
       phi = 0.1,
       B = c(0.2, 0.7),
       nonlocal_formula = ~ spacetime(x_st),
+      nonlocal_data = grid,
       lags_kappaS = 1.3
     ),
     "Unsupported wrapper"
@@ -169,6 +189,7 @@ test_that("simulate_new errors for missing covariate diffusion parameters", {
 test_that("simulate_new B length validation includes diffusion coefficient columns", {
   dat <- make_nl_sim_data()
   mesh <- make_nl_sim_mesh(dat)
+  grid <- make_nl_sim_grid(mesh, sort(unique(dat$year)))
 
   expect_error(
     simulate_new(
@@ -184,6 +205,7 @@ test_that("simulate_new B length validation includes diffusion coefficient colum
       phi = 0.1,
       B = 0.2,
       nonlocal_formula = ~ diffusion(x_s),
+      nonlocal_data = grid,
       lags_kappaS = 1.3
     ),
     "nonlocal_formula"
@@ -202,6 +224,7 @@ test_that("simulated spatial diffusion recovers kappaS reasonably well", {
     sin(dat$X * 2 * pi) + cos(dat$Y * 2 * pi) + rnorm(nrow(dat), sd = 0.15)
   ))
   mesh <- make_nl_sim_mesh(dat)
+  grid <- make_nl_sim_grid(mesh, sort(unique(dat$year)))
 
   true_kappa <- 1.3
   sim <- simulate_new(
@@ -217,6 +240,7 @@ test_that("simulated spatial diffusion recovers kappaS reasonably well", {
     phi = 0.02,
     B = c(0.3, 1.1),
     nonlocal_formula = ~ diffusion(x_s),
+    nonlocal_data = grid,
     lags_kappaS = true_kappa,
     seed = 123
   )
@@ -231,6 +255,7 @@ test_that("simulated spatial diffusion recovers kappaS reasonably well", {
     spatial = "off",
     spatiotemporal = "off",
     nonlocal_formula = ~ diffusion(x_s),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 
@@ -250,6 +275,7 @@ test_that("simulated time diffusion recovers kappaT reasonably well", {
     sin(dat$year / 2) + 0.2 * dat$year + rnorm(nrow(dat), sd = 0.2)
   ))
   mesh <- make_nl_sim_mesh(dat)
+  grid <- make_nl_sim_grid(mesh, sort(unique(dat$year)))
 
   true_kappa <- 0.45
   sim <- simulate_new(
@@ -265,6 +291,7 @@ test_that("simulated time diffusion recovers kappaT reasonably well", {
     phi = 0.02,
     B = c(0.3, 1.1),
     nonlocal_formula = ~ time_lag(x_t),
+    nonlocal_data = grid,
     lags_rhoT = true_kappa,
     seed = 124
   )
@@ -279,6 +306,7 @@ test_that("simulated time diffusion recovers kappaT reasonably well", {
     spatial = "off",
     spatiotemporal = "off",
     nonlocal_formula = ~ time_lag(x_t),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 
