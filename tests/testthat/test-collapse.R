@@ -115,12 +115,21 @@ test_that("custom collapse threshold works", {
   )
 
   # With higher threshold (0.3), should collapse
-  fit_collapse <- sdmTMB(observed ~ a1,
-    data = sim_dat, mesh = mesh, time = "year",
-    spatial = "off",
-    control = sdmTMBcontrol(collapse_spatial_variance = TRUE, collapse_threshold = 0.3)
-
-  )
+  # Original call arguments can be objects in the caller's environment.
+  fit_collapse <- local({
+    form <- observed ~ a1
+    family_obj <- gaussian()
+    data_obj <- sim_dat
+    mesh_obj <- mesh
+    ctrl <- sdmTMBcontrol(
+      collapse_spatial_variance = TRUE,
+      collapse_threshold = 0.3
+    )
+    sdmTMB(form,
+      data = data_obj, mesh = mesh_obj, time = "year",
+      family = family_obj, spatial = "off", control = ctrl
+    )
+  })
 
   expect_true(all(fit_default$spatiotemporal == "iid"))
   expect_true(all(fit_collapse$spatiotemporal == "off"))
@@ -145,4 +154,3 @@ test_that("collapse validation works", {
   ctrl <- sdmTMBcontrol(collapse_threshold = 0.1)
   expect_equal(ctrl$collapse_threshold, 0.1)
 })
-

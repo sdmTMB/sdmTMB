@@ -1981,14 +1981,15 @@ sdmTMB <- function(
 
       # Now refit with collapsed fields disabled
       # The rest of this sdmTMB() function call was just executed with update()
-      updated_fit <- update(
+      updated_call <- update(
         out_structure,
         spatial = collapse_result$spatial_arg,
         spatiotemporal = collapse_result$spatiotemporal_arg,
         do_fit = TRUE,
-        silent = silent
+        silent = silent,
+        evaluate = FALSE
       )
-      return(updated_fit)
+      return(eval(updated_call, envir = parent.frame()))
     }
   }
 
