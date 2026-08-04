@@ -11,16 +11,22 @@ test_that("visreg works", {
     data = pcod_2011,
     family = binomial("logit")
   )
-  v1 <- visreg::visreg(fit_glm, xvar = "depth_scaled", nn = 10)
-  v1r <- visreg::visreg(fit_glm, xvar = "depth_scaled", nn = 10, scale = "response")
+  v1 <- visreg::visreg(fit_glm, xvar = "depth_scaled", nn = 10, plot = FALSE)
+  v1r <- visreg::visreg(
+    fit_glm, xvar = "depth_scaled", nn = 10,
+    scale = "response", plot = FALSE
+  )
 
   fit_sdm <- sdmTMB(
     present ~ poly(depth_scaled, 2) + fyear,
     data = pcod_2011, spatial = "off",
     family = binomial("logit")
   )
-  v2 <- visreg::visreg(fit_sdm, xvar = "depth_scaled", nn = 10)
-  v2r <- visreg::visreg(fit_sdm, xvar = "depth_scaled", nn = 10, scale = "response")
+  v2 <- visreg::visreg(fit_sdm, xvar = "depth_scaled", nn = 10, plot = FALSE)
+  v2r <- visreg::visreg(
+    fit_sdm, xvar = "depth_scaled", nn = 10,
+    scale = "response", plot = FALSE
+  )
 
   # check that these models are matching
   expect_equal(AIC(fit_glm), AIC(fit_sdm), tolerance = 1e-6)
@@ -31,10 +37,7 @@ test_that("visreg works", {
   expect_equal(v2r$fit, v1r$fit, tolerance = 1e-6)
   # residuals are calculated for all original data
   expect_identical(nrow(v2r$res), nrow(v1r$res))
-  # # the residuals are calculated differently, and are larger for sdmTMB
-  # expect_equal(v2$res$visregRes, v1$res$visregRes, tolerance = 1e-6)
- mean(abs(v2$res$visregRes))
- mean(abs(v1$res$visregRes))
+  # The residuals are calculated differently and are larger for sdmTMB.
 
   # for gamma
   pcod_pos <- dplyr::filter(pcod_2011, present > 0)
@@ -44,23 +47,27 @@ test_that("visreg works", {
     data = pcod_pos,
     family = Gamma("log")
   )
-  v1 <- visreg::visreg(fit_glm, xvar = "depth_scaled", nn = 10)
-  v1r <- visreg::visreg(fit_glm, xvar = "depth_scaled", nn = 10, scale = "response")
-  ## requires ggplot
+  v1 <- visreg::visreg(fit_glm, xvar = "depth_scaled", nn = 10, plot = FALSE)
+  v1r <- visreg::visreg(
+    fit_glm, xvar = "depth_scaled", nn = 10,
+    scale = "response", plot = FALSE
+  )
+  ## Plot customization requires ggplot2.
   # (g1 <- visreg::visreg(fit_glm, xvar = "depth_scaled", nn = 10,
-  #                       scale = "response",  rug = FALSE ,
-  #                       gg=TRUE))
+  #                       scale = "response", rug = FALSE))
 
   fit_sdm <- sdmTMB(
     density ~ poly(depth_scaled, 2) + fyear,
     data = pcod_pos, spatial = "off",
     family = Gamma("log")
   )
-  v2 <- visreg::visreg(fit_sdm, xvar = "depth_scaled", nn = 10)
-  v2r <- visreg::visreg(fit_sdm, xvar = "depth_scaled", nn = 10, scale = "response")
+  v2 <- visreg::visreg(fit_sdm, xvar = "depth_scaled", nn = 10, plot = FALSE)
+  v2r <- visreg::visreg(
+    fit_sdm, xvar = "depth_scaled", nn = 10,
+    scale = "response", plot = FALSE
+  )
   # (g2 <- visreg::visreg(fit_sdm, xvar = "depth_scaled", nn = 10,
-  #                       scale = "response", rug = FALSE,
-  #                       gg=TRUE))
+  #                       scale = "response", rug = FALSE))
   # check that these models are matching
   expect_equal(AIC(fit_glm), AIC(fit_sdm), tolerance = 1e-6)
   # check that output is visreg
@@ -69,10 +76,7 @@ test_that("visreg works", {
   expect_equal(v2r$fit, v1r$fit, tolerance = 1e-6)
   # residuals are calculated for all original data
   expect_identical(nrow(v2r$res), nrow(v1r$res))
-  # # the residuals are calculated differently, and this time they are much larger for glmmTMB
-  # expect_equal(v2$res$visregRes, v1$res$visregRes, tolerance = 1e-6)
-  mean(abs(v2$res$visregRes))
-  mean(abs(v1$res$visregRes))
+  # The residuals are calculated differently and are much larger for glmmTMB.
 
   # with smoother, tweedie, and reml
   fit <- sdmTMB(
@@ -85,8 +89,10 @@ test_that("visreg works", {
   visreg::visreg(fit, xvar = "depth_scaled", nn = 10)
   visreg::visreg(fit, xvar = "fyear", nn = 10)
   visreg::visreg(fit, xvar = "depth_scaled", scale = "response", nn = 10)
-  visreg::visreg2d(fit, xvar = "fyear", yvar = "depth_scaled", nn = 10)
-  v <- visreg::visreg(fit, xvar = "depth_scaled", nn = 10)
+  visreg::visreg2d(
+    fit, xvar = "fyear", yvar = "depth_scaled", nn = 10, plot = FALSE
+  )
+  v <- visreg::visreg(fit, xvar = "depth_scaled", nn = 10, plot = FALSE)
   expect_identical(class(v), "visreg")
 
 
@@ -102,11 +108,13 @@ test_that("visreg works", {
     family = tweedie()
   )
 
-  v <- visreg::visreg(fit, xvar = "depth_scaled", nn = 10)
+  v <- visreg::visreg(fit, xvar = "depth_scaled", nn = 10, plot = FALSE)
   expect_identical(class(v), "visreg")
   #visreg::visreg(fit, xvar = "fyear", nn = 10)
   visreg::visreg(fit, xvar = "depth_scaled", scale = "response", nn = 10)
-  visreg::visreg2d(fit, xvar = "fyear", yvar = "depth_scaled")
+  visreg::visreg2d(
+    fit, xvar = "fyear", yvar = "depth_scaled", plot = FALSE
+  )
 
   # works with RW models
   fit_rw <- sdmTMB(
@@ -142,7 +150,7 @@ test_that("visreg works", {
   visreg_delta(fit_dg, xvar = "depth_scaled", model = 2, nn = 10)
   v3 <- visreg_delta(fit_dg,
     xvar = "depth_scaled", model = 1,
-    scale = "response", nn = 10
+    scale = "response", nn = 10, plot = FALSE
   )
 
   fit_bin <- sdmTMB(
@@ -154,14 +162,16 @@ test_that("visreg works", {
 
   v4 <- visreg::visreg(fit_bin,
     xvar = "depth_scaled",
-    scale = "response", nn = 10
+    scale = "response", nn = 10, plot = FALSE
   )
 
   # outputs differ because response is still called density even for model 1 of a delta model
   # expect_equal(v3$fit, v4$fit, tolerance = 1e-6)
 
   # check that fit values match between binomial and model 1 of the delta
-  expect_equal(v3$fit$visregFit, v4$fit$visregFit, tolerance = 1e-6)
+  fit_col <- grep("^visreg_?[Ff]it$", names(v3$fit), value = TRUE)
+  expect_length(fit_col, 1L)
+  expect_equal(v3$fit[[fit_col]], v4$fit[[fit_col]], tolerance = 1e-6)
 
   visreg_delta(fit_dg,
     xvar = "depth_scaled", model = 2,
@@ -178,10 +188,15 @@ test_that("visreg works", {
   visreg2d_delta(fit_dg, xvar = "depth_scaled", yvar = "year", model = 1, nn = 10)
   visreg2d_delta(fit_dg, xvar = "depth_scaled", yvar = "year", model = 2, nn = 10)
 
-  v <- visreg_delta(fit_dg, xvar = "depth_scaled", model = 1, nn = 10)
+  v <- visreg_delta(
+    fit_dg, xvar = "depth_scaled", model = 1, nn = 10, plot = FALSE
+  )
   expect_identical(class(v), "visreg")
 
-  v <- visreg2d_delta(fit_dg, xvar = "depth_scaled", yvar = "year", model = 2, nn = 10)
+  v <- visreg2d_delta(
+    fit_dg, xvar = "depth_scaled", yvar = "year",
+    model = 2, nn = 10, plot = FALSE
+  )
   expect_identical(class(v), "visreg2d")
 })
 
@@ -199,6 +214,6 @@ test_that("visreg works with extra time #330", {
     extra_time = c(2012, 2014, 2016)
   )
   set.seed(1)
-  v <- visreg::visreg(fit, "depth_scaled")
+  v <- visreg::visreg(fit, "depth_scaled", plot = FALSE)
   expect_s3_class(v, 'visreg')
 })

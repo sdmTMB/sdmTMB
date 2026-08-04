@@ -46,11 +46,11 @@
 #'     spatial = "off",
 #'     family = delta_gamma()
 #'   )
-#'   visreg_delta(fit_dg, xvar = "depth_scaled", model = 1, gg = TRUE)
-#'   visreg_delta(fit_dg, xvar = "depth_scaled", model = 2, gg = TRUE)
+#'   visreg_delta(fit_dg, xvar = "depth_scaled", model = 1)
+#'   visreg_delta(fit_dg, xvar = "depth_scaled", model = 2)
 #'   visreg_delta(fit_dg,
 #'     xvar = "depth_scaled", model = 1,
-#'     scale = "response", gg = TRUE
+#'     scale = "response"
 #'   )
 #'   visreg_delta(fit_dg,
 #'     xvar = "depth_scaled", model = 2,
@@ -58,19 +58,22 @@
 #'   )
 #'   visreg_delta(fit_dg,
 #'     xvar = "depth_scaled", model = 2,
-#'     scale = "response", gg = TRUE, rug = FALSE
+#'     scale = "response", rug = FALSE
 #'   )
 #'   visreg2d_delta(fit_dg,
 #'     xvar = "depth_scaled", yvar = "year",
 #'     model = 2, scale = "response"
 #'   )
-#'   visreg2d_delta(fit_dg,
+#'   v2d <- visreg2d_delta(fit_dg,
 #'     xvar = "depth_scaled", yvar = "year",
-#'     model = 1, scale = "response", plot.type = "persp"
+#'     model = 1, scale = "response", plot = FALSE
 #'   )
+#'   if (!is.null(utils::getS3method("persp", "visreg2d", optional = TRUE))) {
+#'     persp(v2d)
+#'   }
 #'   visreg2d_delta(fit_dg,
 #'     xvar = "depth_scaled", yvar = "year",
-#'     model = 2, scale = "response", plot.type = "gg"
+#'     model = 2, scale = "response"
 #'   )
 #'   }
 #' }

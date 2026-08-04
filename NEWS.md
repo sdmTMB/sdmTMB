@@ -1,5 +1,8 @@
 # sdmTMB (development version)
 
+* Make sdmTMB compatible with the new visreg 3.0.0, which now defaults to
+  ggplot output.
+
 * `sdmTMB()` when used with `collapse_spatial_variance` in `sdmTMBcontrol()`
   now evaluates the internal `update()` call in the parent environment.
   This means that arguments to `sdmTMB()` can be objects within another

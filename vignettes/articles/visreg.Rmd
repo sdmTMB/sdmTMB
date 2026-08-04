@@ -62,11 +62,10 @@ Note that by default, randomized quantile residuals are included.
 These should be normally distributed in link space if the model is consistent with the data.
 These can be turned off with `partial = FALSE`
 
-The default, a visreg plot uses base graphics.
-We can set `gg = TRUE` to get a ggplot version:
+visreg plots use ggplot2, so we can customize them with ggplot2 functions:
 
 ```{r}
-g <- visreg(fit, xvar = "depth_scaled", gg = TRUE)
+g <- visreg(fit, xvar = "depth_scaled")
 g + xlab("Depth scaled")
 ```
 
@@ -75,21 +74,21 @@ We can also grab the underlying data it creates and make our own plot:
 ```{r}
 d <- visreg(fit, xvar = "depth_scaled", plot = FALSE)
 head(d$fit)
-g <- ggplot(d$fit, aes(x = depth_scaled, y = visregFit)) +
+g <- ggplot(d$fit, aes(x = depth_scaled, y = visreg_fit)) +
   geom_line() +
-  geom_ribbon(aes(ymin = visregLwr, ymax = visregUpr), alpha = 0.5)
+  geom_ribbon(aes(ymin = visreg_lwr, ymax = visreg_upr), alpha = 0.5)
 
 # residuals are in d$res
 head(d$res)
 
-g + geom_point(aes(y = visregRes), data = d$res, size = 1, alpha = 0.4)
+g + geom_point(aes(y = visreg_res), data = d$res, size = 1, alpha = 0.4)
 ```
 
 We can look at the effect of depth in each year separately, either in separate plots or overlaid on the same plot.
 
 ```{r}
-visreg(fit, xvar = "depth_scaled", by = "fyear", gg = TRUE)
-visreg(fit, xvar = "depth_scaled", by = "fyear", overlay = TRUE, gg = TRUE)
+visreg(fit, xvar = "depth_scaled", by = "fyear")
+visreg(fit, xvar = "depth_scaled", by = "fyear", overlay = TRUE)
 ```
 
 And at the effect of depth on the response scale, rather than link (log) scale.
@@ -112,16 +111,12 @@ We can also simultaneously compare both depth and year with a two-dimensional co
 visreg2d(fit, xvar = "fyear", yvar = "depth_scaled")
 ```
 
-`visreg2d()` is different from `visreg()` in that it doesn't take a `gg` argument.
-Instead, it takes `plot.type = c("image", "persp", "rgl", "gg")`.
-For example:
+By default, `visreg2d()` produces a ggplot2 raster and contour plot.
+To produce a static 3D perspective plot, save the calculations and pass them to `persp()`:
 
 ```{r}
-visreg2d(fit, xvar = "fyear", yvar = "depth_scaled", plot.type = "gg")
-```
-
-```{r}
-visreg2d(fit, xvar = "fyear", yvar = "depth_scaled", plot.type = "persp")
+v2d <- visreg2d(fit, xvar = "fyear", yvar = "depth_scaled", plot = FALSE)
+persp(v2d)
 ```
 
 ## Delta models
@@ -138,8 +133,8 @@ fit_dg <- sdmTMB(
   family = delta_gamma()
 )
 
-visreg_delta(fit_dg, xvar = "depth_scaled", model = 1, gg = TRUE)
-visreg_delta(fit_dg, xvar = "depth_scaled", model = 2, gg = TRUE)
+visreg_delta(fit_dg, xvar = "depth_scaled", model = 1)
+visreg_delta(fit_dg, xvar = "depth_scaled", model = 2)
 ```
 
 Note that for plotting with `visreg_delta()`, categorical variables like year need to be designated as a factor in the data frame, as in the example above with `fyear`, rather than in the model formula (e.g., `+ as.factor(year)`).

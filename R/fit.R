@@ -467,7 +467,7 @@ NULL
 #' # Visualize depth effect with visreg: (see ?visreg_delta)
 #' visreg::visreg(fit, xvar = "depth") # link space; randomized quantile residuals
 #' visreg::visreg(fit, xvar = "depth", scale = "response")
-#' visreg::visreg(fit, xvar = "depth", scale = "response", gg = TRUE, rug = FALSE)
+#' visreg::visreg(fit, xvar = "depth", scale = "response", rug = FALSE)
 #'
 #' # Add spatiotemporal random fields:
 #' fit <- sdmTMB(

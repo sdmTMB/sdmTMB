@@ -291,6 +291,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
   return_tmb_data = FALSE,
   ...) {
 
+  dots <- list(...)
   if ("version" %in% names(object)) {
     check_sdmTMB_version(object$version)
   } else {
@@ -351,7 +352,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
   visreg_df <- vr$visreg_df
   if (visreg_df) {
     re_form <- vr$re_form
-    se_fit <- vr$se_fit
+    se_fit <- vr$se_fit || isTRUE(dots$se.fit)
   }
 
   # from glmmTMB:
@@ -1185,7 +1186,11 @@ check_visreg <- function(sys_calls) {
   visreg_df <- FALSE
   re_form <- NULL
   se_fit <- FALSE
-  if (any(grepl("setupV", substr(sys_calls, 1, 7)))) {
+  visreg_call <- grepl(
+    "setupV|visregPred|build_visreg|build_visreg2d|visreg_pred",
+    sys_calls
+  )
+  if (any(visreg_call)) {
     visreg_df <- TRUE
     re_form <- NA
     if (any(sys_calls == "residuals(fit)")) visreg_df <- FALSE
