@@ -1,6 +1,9 @@
 # sdmTMB (development version)
 
-## Minor improvements and fixes
+* `sdmTMB()` when used with `collapse_spatial_variance` in `sdmTMBcontrol()`
+  now evaluates the internal `update()` call in the parent environment.
+  This means that arguments to `sdmTMB()` can be objects within another
+  function.
 
 * Improved non-local covariate handling by distinguishing time-indexed
   formulas, supporting external grids during prediction and cross-validation,
