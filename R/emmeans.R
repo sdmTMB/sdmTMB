@@ -62,6 +62,7 @@
 
 NULL # don't document functions below
 
+#' @exportS3Method NULL
 recover_data.sdmTMB <- function(object, ...) {
   fcall <- stats::getCall(object)
   if (!requireNamespace("emmeans", quietly = TRUE)) {
@@ -75,6 +76,7 @@ recover_data.sdmTMB <- function(object, ...) {
 }
 
 # with help from emm_basis.glmmTMB
+#' @exportS3Method NULL
 emm_basis.sdmTMB <- function(object, trms, xlev, grid, ...) {
   # Extract model argument if present (defaults to 1)
   dots <- list(...)

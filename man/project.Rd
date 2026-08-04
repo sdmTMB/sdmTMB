@@ -71,8 +71,8 @@ Inspiration for this approach comes from the \pkg{VAST} function
 \code{project_model()}.
 }
 \examples{
-\dontshow{if (ggplot2_installed()) withAutoprint(\{ # examplesIf}
 \donttest{
+if (ggplot2_installed()) {
 library(ggplot2)
 
 mesh <- make_mesh(dogfish, c("X", "Y"), cutoff = 25)
@@ -147,7 +147,7 @@ ggplot(subset(proj_grid, year > 2021), aes(X, Y, fill = eps_se)) +
   coord_fixed() +
   ggtitle("Projection simulation\n(spatiotemporal fields standard error)")
 }
-\dontshow{\}) # examplesIf}
+}
 }
 \references{
 \code{project_model()} in the \pkg{VAST} package.

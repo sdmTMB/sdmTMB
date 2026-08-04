@@ -146,8 +146,8 @@ standardization; supply the desired standardization multiplier through
 \code{area}.
 }
 \examples{
-\dontshow{if (ggplot2_installed()) withAutoprint(\{ # examplesIf}
 \donttest{
+if (ggplot2_installed()) {
 library(ggplot2)
 
 # use a small number of knots for this example to make it fast:
@@ -201,7 +201,7 @@ wa
 ggplot(wa, aes(year, est)) + geom_line() +
   geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.4)
 }
-\dontshow{\}) # examplesIf}
+}
 }
 \references{
 Geostatistical model-based indices of abundance

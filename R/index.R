@@ -92,8 +92,9 @@
 #' population dynamics examples. Fisheries Research 175: 66–74.
 #' \doi{10.1016/j.fishres.2015.11.016}
 #'
-#' @examplesIf ggplot2_installed()
+#' @examples
 #' \donttest{
+#' if (ggplot2_installed()) {
 #' library(ggplot2)
 #'
 #' # use a small number of knots for this example to make it fast:
@@ -146,6 +147,7 @@
 #' wa
 #' ggplot(wa, aes(year, est)) + geom_line() +
 #'   geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.4)
+#' }
 #' }
 #' @export
 get_index <- function(obj, bias_correct = TRUE, level = 0.95, area = 1, silent = TRUE,
