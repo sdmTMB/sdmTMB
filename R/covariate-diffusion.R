@@ -980,6 +980,15 @@
 #'     rnorm(nrow(dat), sd = 0.15)
 #' ))
 #' mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.12)
+#' nonlocal_data <- merge(
+#'   data.frame(year = seq_len(n_t)),
+#'   setNames(as.data.frame(mesh$mesh$loc[, 1:2]), c("X", "Y"))
+#' )
+#' nonlocal_data$x1 <- as.numeric(scale(
+#'   sin(2 * pi * (nonlocal_data$X + nonlocal_data$year / 6)) +
+#'     cos(2 * pi * (nonlocal_data$Y - nonlocal_data$year / 8)) +
+#'     0.4 * sin(4 * pi * nonlocal_data$X) * cos(nonlocal_data$year / 2)
+#' ))
 #' sim <- simulate_new(
 #'   formula = ~ 1,
 #'   data = dat,
@@ -994,6 +1003,7 @@
 #'   phi = 0.1,
 #'   B = c(0, 0.7, 0.6),
 #'   nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
+#'   nonlocal_data = nonlocal_data,
 #'   lags_kappaS = 4.4,
 #'   lags_rhoT = 0.3,
 #'   seed = 123
@@ -1009,7 +1019,8 @@
 #'   spatial = "off", # keeping example simple
 #'   spatiotemporal = "off", # keeping example simple
 #'   family = gaussian(),
-#'   nonlocal_formula = ~ diffusion(x1) + time_lag(x1) #<
+#'   nonlocal_formula = ~ diffusion(x1) + time_lag(x1), #<
+#'   nonlocal_data = nonlocal_data
 #' )
 #'
 #' plot_nonlocal_covariate(
