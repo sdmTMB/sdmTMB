@@ -52,9 +52,7 @@ fitted.sdmTMB <- function(object, ...) {
 #' @export
 coef.sdmTMB <- function(object, complete = FALSE, model = 1, ...) {
   if (is_delta(object)) {
-    assert_that(length(model) == 1L)
-    model <- as.integer(model)
-    assert_that(model %in% c(1L, 2L))
+    model <- .get_delta_model(object, model, use_attribute = missing(model))
     msg <- paste0("Returning coefficients from linear predictor ", model, " based on the `model` argument.")
     cli_inform(msg)
   }
@@ -76,9 +74,7 @@ coef.sdmTMB <- function(object, complete = FALSE, model = 1, ...) {
 #' @noRd
 vcov.sdmTMB <- function(object, complete = FALSE, model = 1, ...) {
   if (is_delta(object)) {
-    assert_that(length(model) == 1L)
-    model <- as.integer(model)
-    assert_that(model %in% c(1L, 2L))
+    model <- .get_delta_model(object, model, use_attribute = missing(model))
   }
 
   sdr <- object$sd_report
@@ -185,6 +181,9 @@ family.sdmTMB <- function (object, ...) {
 #' @method fixef sdmTMB
 #' @export
 fixef.sdmTMB <- function(object, model = 1, ...) {
+  if (is_delta(object)) {
+    model <- .get_delta_model(object, model, use_attribute = missing(model))
+  }
   .t <- tidy(object, model = model, silent = TRUE)
   bhat <- .t$estimate
   names(bhat) <- .t$term
@@ -266,6 +265,17 @@ df.residual.sdmTMB <- function(object, ...) {
   "delta_model_predict" %in% names(attributes(x))
 }
 
+.get_delta_model <- function(x, model, use_attribute = FALSE) {
+  if (use_attribute && .has_delta_attr(x)) {
+    selected_model <- attr(x, "delta_model_predict")
+    if (!is.na(selected_model)) model <- selected_model
+  }
+  assert_that(length(model) == 1L)
+  model <- as.integer(model)
+  assert_that(model %in% c(1L, 2L))
+  model
+}
+
 #' @export
 formula.sdmTMB <- function (x, ...) {
   if (.has_delta_attr(x)) {
@@ -289,12 +299,12 @@ formula.sdmTMB <- function (x, ...) {
 
 #' @importFrom stats terms
 #' @export
-terms.sdmTMB <- function(x, ...) {
-  # DELTA FIXME: hardcoded to model 1!
+terms.sdmTMB <- function(x, model = 1, ...) {
+  if (is_delta(x)) {
+    model <- .get_delta_model(x, model, use_attribute = missing(model))
+  }
   # Get the base terms object (without smoothers)
-  class(x) <- "glm" # fake
-  out <- stats::terms(x)
-  out <- out[[1]]
+  out <- x$terms[[model]]
 
   # If model has smoothers, add the underlying variables to term.labels
   # This ensures ggeffects can properly create prediction grids
@@ -324,6 +334,19 @@ terms.sdmTMB <- function(x, ...) {
   out
 }
 
+#' @importFrom stats model.matrix
+#' @export
+model.matrix.sdmTMB <- function(object, model = 1, data = NULL, ...) {
+  if (is_delta(object)) {
+    model <- .get_delta_model(object, model, use_attribute = missing(model))
+  }
+  if (is.null(data)) data <- object$data
+  stats::model.matrix(
+    object$terms[[model]], data = data,
+    contrasts.arg = object$contrasts[[model]], ...
+  )
+}
+
 #' Calculate effects
 #'
 #' Used by effects package
@@ -341,6 +364,7 @@ terms.sdmTMB <- function(x, ...) {
 #' } else {
 #'   export(Effect.sdmTMB)
 #' }
+#' @exportS3Method NULL
 #' @examplesIf require("effects", quietly = TRUE)
 #' fit <- sdmTMB(present ~ depth_scaled, data = pcod_2011, family = binomial(),
 #'   spatial = "off")
