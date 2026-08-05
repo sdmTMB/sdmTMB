@@ -300,36 +300,10 @@ plot_nonlocal_kernel(fit_st, component = "combined", common_scale = TRUE) +
 
 All the knots except one in the "original" panel were zero, so they become -Inf when log transformed, but now we can see the space and time nonlocal effects.
 
-If we have a grid available, we can evaluate the same kernel at those grid coordinates and plot it as a raster:
-
-```{r plot-diffusion-grid}
-plot_nonlocal_kernel(
-  fit_st_grid,
-  component = "diffusion",
-  newdata = grid_st,
-  type = "raster"
-)
-```
-
-You'll note that the "original" panel is not just a single coloured grid cell.
-This is because that single covariate value is actually represented on the mesh vertices and then visualized here after projecting from the mesh vertex (knot) to the grid.
-As a result, we're seeing the piecewise-linear basis expansion from the mesh vertex to the grid, which creates a bit of smoothing.
-
 ```{r}
 plot_nonlocal_covariate(fit_st, component = "diffusion")
 plot_nonlocal_covariate(fit_st, component = "time_lag", n_steps = 2)
 plot_nonlocal_covariate(fit_st, component = "combined", n_steps = 2)
-```
-
-The same plotting interface can show the covariate field on the supplied grid:
-
-```{r}
-plot_nonlocal_covariate(
-  fit_st_grid,
-  component = "diffusion",
-  newdata = grid_st,
-  type = "raster"
-)
 ```
 
 We could also have plotted the spatially diffused covariate at the original locations from the predictions.
