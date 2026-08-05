@@ -1,5 +1,11 @@
 # sdmTMB (development version)
 
+* `project()` now separates estimated parameter uncertainty, historical latent
+  state uncertainty, and future process variation with the
+  `sample_parameters`, `sample_historical_re`, and `sample_future_re`
+  arguments. Its random-effect simulation controls are now a named logical
+  `simulate_re` vector.
+
 * Make sdmTMB compatible with the new visreg 3.0.0, which now defaults to
   ggplot output.
 

@@ -23,6 +23,193 @@ test_that("projection helpers preserve parameter order", {
   expect_error(insert_pars(x, "missing", 2), "not found")
 })
 
+test_that("project simulation controls validate and reorder names", {
+  controls <- c(
+    smoothers = TRUE, iid = FALSE, spatial = TRUE,
+    time_varying = FALSE, spatial_varying = TRUE, spatiotemporal = FALSE
+  )
+  expect_identical(
+    validate_project_simulate_re(controls),
+    c(
+      spatial = TRUE, spatiotemporal = FALSE, spatial_varying = TRUE,
+      iid = FALSE, time_varying = FALSE, smoothers = TRUE
+    )
+  )
+  expect_error(validate_project_simulate_re(unname(controls)), "names")
+  expect_error(
+    validate_project_simulate_re(
+      c(controls[names(controls) != "smoothers"], spatial = FALSE)
+    ),
+    "unique"
+  )
+  expect_error(
+    validate_project_simulate_re(
+      c(controls[names(controls) != "smoothers"], unknown = FALSE)
+    ),
+    "expected names"
+  )
+  expect_error(
+    validate_project_simulate_re({
+      controls_na <- controls
+      controls_na["iid"] <- NA
+      controls_na
+    }),
+    "non-missing"
+  )
+})
+
+test_that("project supports all independent sampling combinations", {
+  skip_on_cran()
+
+  mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
+  historical_years <- sort(unique(pcod_2011$year))
+  grid <- replicate_df(
+    pcod_2011[seq(1, nrow(pcod_2011), by = 100), , drop = FALSE],
+    "year", c(historical_years, max(historical_years) + 2)
+  )
+  fit <- sdmTMB(
+    density ~ 1,
+    data = pcod_2011,
+    mesh = mesh,
+    time = "year",
+    extra_time = historical_years,
+    spatial = "off",
+    spatiotemporal = "ar1",
+    family = tweedie()
+  )
+
+  controls <- expand.grid(
+    sample_parameters = c(FALSE, TRUE),
+    sample_historical_re = c(FALSE, TRUE),
+    sample_future_re = c(FALSE, TRUE)
+  )
+  reports <- lapply(seq_len(nrow(controls)), function(i) {
+    project(
+      fit,
+      grid,
+      nsim = 2,
+      sample_parameters = controls$sample_parameters[[i]],
+      sample_historical_re = controls$sample_historical_re[[i]],
+      sample_future_re = controls$sample_future_re[[i]],
+      return_tmb_report = TRUE,
+      silent = TRUE
+    )
+  })
+  expect_length(reports, 8L)
+  expect_true(all(vapply(reports, length, integer(1L)) == 2L))
+
+  n_historical <- nrow(fit$time_lu)
+  for (i in which(!controls$sample_future_re)) {
+    for (report in reports[[i]]) {
+      rho <- report$rho[[1L]]
+      expect_equal(
+        report$epsilon_st[, n_historical + 1L, 1L],
+        rho * report$epsilon_st[, n_historical, 1L]
+      )
+    }
+  }
+  for (i in which(!controls$sample_historical_re)) {
+    expect_equal(
+      reports[[i]][[1]]$epsilon_st[, seq_len(n_historical), 1L],
+      reports[[i]][[2]]$epsilon_st[, seq_len(n_historical), 1L]
+    )
+  }
+})
+
+test_that("project treats REML regression coefficients as parameters", {
+  skip_on_cran()
+
+  data <- pcod_2011
+  data$year_f <- factor(data$year)
+  mesh <- make_mesh(data, c("X", "Y"), cutoff = 20)
+  historical_years <- sort(unique(data$year))
+  future_year <- max(historical_years) + 2
+  grid <- replicate_df(
+    data[seq(1, nrow(data), by = 100), , drop = FALSE],
+    "year", c(historical_years, future_year)
+  )
+  grid$year_f <- factor(grid$year, levels = c(historical_years, future_year))
+  fit <- sdmTMB(
+    log1p(density) ~ 1 + (1 | year_f),
+    data = data,
+    mesh = mesh,
+    time = "year",
+    extra_time = historical_years,
+    spatial = "off",
+    spatiotemporal = "off",
+    reml = TRUE,
+    family = gaussian()
+  )
+
+  parameter_only <- project(
+    fit, grid, nsim = 2, sample_parameters = TRUE,
+    sample_historical_re = FALSE, sample_future_re = FALSE,
+    return_tmb_report = TRUE, allow_new_levels = TRUE, silent = TRUE
+  )
+  historical_only <- project(
+    fit, grid, nsim = 2, sample_parameters = FALSE,
+    sample_historical_re = TRUE, sample_future_re = FALSE,
+    return_tmb_report = TRUE, allow_new_levels = TRUE, silent = TRUE
+  )
+
+  expect_false(isTRUE(all.equal(
+    parameter_only[[1]]$eta_fixed_i, parameter_only[[2]]$eta_fixed_i
+  )))
+  expect_equal(
+    historical_only[[1]]$eta_fixed_i, historical_only[[2]]$eta_fixed_i
+  )
+  expect_equal(parameter_only[[1]]$re_b_pars, parameter_only[[2]]$re_b_pars)
+  expect_false(isTRUE(all.equal(
+    historical_only[[1]]$re_b_pars, historical_only[[2]]$re_b_pars
+  )))
+})
+
+test_that("project propagates conditional means for future process effects", {
+  skip_on_cran()
+
+  mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
+  historical_years <- sort(unique(pcod_2011$year))
+  grid <- replicate_df(
+    pcod_2011[seq(1, nrow(pcod_2011), by = 100), , drop = FALSE],
+    "year", c(historical_years, max(historical_years) + 2)
+  )
+  for (spatiotemporal in c("ar1", "rw", "iid")) {
+    fit <- sdmTMB(
+      density ~ 1,
+      data = pcod_2011,
+      mesh = mesh,
+      time = "year",
+      extra_time = historical_years,
+      spatial = "off",
+      spatiotemporal = spatiotemporal,
+      family = tweedie()
+    )
+    report <- project(
+      fit, grid, nsim = 1, sample_parameters = FALSE,
+      sample_historical_re = FALSE, sample_future_re = FALSE,
+      return_tmb_report = TRUE, silent = TRUE
+    )[[1L]]
+    n_historical <- nrow(fit$time_lu)
+    if (spatiotemporal == "ar1") {
+      rho <- report$rho[[1L]]
+      expect_equal(
+        report$epsilon_st[, n_historical + 1L, 1L],
+        rho * report$epsilon_st[, n_historical, 1L]
+      )
+    } else if (spatiotemporal == "rw") {
+      expect_equal(
+        report$epsilon_st[, n_historical + 1L, 1L],
+        report$epsilon_st[, n_historical, 1L]
+      )
+    } else {
+      expect_equal(
+        as.numeric(report$epsilon_st[, n_historical + 1L, 1L]),
+        rep(0, nrow(report$epsilon_st))
+      )
+    }
+  }
+})
+
 test_that("projection time extensions use the fitted cadence", {
   annual <- data.frame(time_from_data = 2020:2022)
   expect_equal(
@@ -108,7 +295,10 @@ test_that("project() handles decimal time cadence and preserves rows", {
   newdata <- rbind(newdata, future)
   newdata <- newdata[c(nrow(newdata), seq_len(nrow(newdata) - 1L)), , drop = FALSE]
 
-  out <- project(fit, newdata, nsim = 2, uncertainty = "none", silent = TRUE)
+  out <- project(
+    fit, newdata, nsim = 2, sample_parameters = FALSE,
+    sample_historical_re = FALSE, silent = TRUE
+  )
   expect_identical(names(out), "est")
   expect_equal(dim(out$est), c(nrow(newdata), 2L))
 })
@@ -151,7 +341,10 @@ test_that("project() works with delta models", {
     family = delta_gamma()
   )
   set.seed(1)
-  out <- project(fit2, newdata = proj_grid, nsim = 25, uncertainty = "none")
+  out <- project(
+    fit2, newdata = proj_grid, nsim = 25, sample_parameters = FALSE,
+    sample_historical_re = FALSE
+  )
   none <- out
   expect_identical(names(out), c("est1", "est2", "epsilon_st1", "epsilon_st2"))
 
@@ -183,7 +376,8 @@ test_that("project() works with delta models", {
     fit2,
     newdata = proj_grid,
     nsim = 25,
-    uncertainty = "none",
+    sample_parameters = FALSE,
+    sample_historical_re = FALSE,
     return_tmb_report = TRUE #< difference from above example
   )
 
@@ -199,10 +393,13 @@ test_that("project() works with delta models", {
 
   # test the types of uncertainty
   set.seed(1)
-  both <- project(fit2, newdata = proj_grid, nsim = 20, uncertainty = "both")
+  both <- project(fit2, newdata = proj_grid, nsim = 20)
   set.seed(1)
   suppressWarnings({
-    random <- project(fit2, newdata = proj_grid, nsim = 20, uncertainty = "random")
+    random <- project(
+      fit2, newdata = proj_grid, nsim = 20,
+      sample_parameters = FALSE, sample_historical_re = TRUE
+    )
   })
 
   sd_both <- mean(apply(both$est1, 1, sd)[i])
@@ -235,7 +432,10 @@ test_that("project() pads delta spatiotemporal fields by active component", {
       family = delta_gamma(),
       control = sdmTMBcontrol(newton_loops = 0)
     )
-    out <- project(fit, grid, nsim = 1, uncertainty = "none", silent = TRUE)
+    out <- project(
+      fit, grid, nsim = 1, sample_parameters = FALSE,
+      sample_historical_re = FALSE, silent = TRUE
+    )
     fitted <- predict(fit, grid[historical, , drop = FALSE])
     expect_equal(out$est1[historical, 1], fitted$est1)
     expect_equal(out$est2[historical, 1], fitted$est2)
@@ -276,7 +476,10 @@ test_that("project() works with non-delta models", {
     family = tweedie()
   )
   set.seed(1)
-  out <- project(fit2, newdata = proj_grid, nsim = 25, uncertainty = "none")
+  out <- project(
+    fit2, newdata = proj_grid, nsim = 25, sample_parameters = FALSE,
+    sample_historical_re = FALSE
+  )
   expect_identical(names(out), c("est", "epsilon_st"))
 
   i <- p$year == 2023
@@ -286,13 +489,15 @@ test_that("project() works with non-delta models", {
   expect_gt(cor(p$epsilon_st[i], proj_grid$eps_mean[i]), 0.98)
 
   eta <- project(
-    fit2, newdata = proj_grid, nsim = 2, uncertainty = "none",
+    fit2, newdata = proj_grid, nsim = 2, sample_parameters = FALSE,
+    sample_historical_re = FALSE,
     sims_var = "eta_i", silent = TRUE
   )
   expect_equal(dim(eta), c(nrow(proj_grid), 1L, 2L))
   expect_error(
     project(
-      fit2, newdata = proj_grid, nsim = 1, uncertainty = "none",
+      fit2, newdata = proj_grid, nsim = 1, sample_parameters = FALSE,
+      sample_historical_re = FALSE,
       sims_var = "not_a_report_element", silent = TRUE
     ),
     "not found"
@@ -336,7 +541,10 @@ test_that("project() works with time-varying effects", {
     family = tweedie()
   )
   set.seed(1)
-  out <- project(fit2, newdata = proj_grid, nsim = 25, uncertainty = "none")
+  out <- project(
+    fit2, newdata = proj_grid, nsim = 25, sample_parameters = FALSE,
+    sample_historical_re = FALSE
+  )
   expect_identical(names(out), c("est"))
   i <- p$year == 2023
   expect_equal(mean(p$est[i]), 5.983172, tolerance = 1e-3)
@@ -355,7 +563,8 @@ test_that("project() works with time-varying effects", {
     family = tweedie()
   )
   raw <- project(
-    fit3, newdata = proj_grid, nsim = 2, uncertainty = "none",
+    fit3, newdata = proj_grid, nsim = 2, sample_parameters = FALSE,
+    sample_historical_re = FALSE,
     return_tmb_report = TRUE, silent = TRUE
   )
   expect_equal(dim(raw[[1]]$b_rw_t), c(length(all_years), 2L, 1L))
@@ -363,6 +572,17 @@ test_that("project() works with time-varying effects", {
     raw[[1]]$b_rw_t[seq_along(historical_years), , , drop = FALSE],
     get_pars(fit3)$b_rw_t,
     tolerance = 1e-3
+  )
+  raw_mean <- project(
+    fit3, newdata = proj_grid, nsim = 1, sample_parameters = FALSE,
+    sample_historical_re = FALSE, sample_future_re = FALSE,
+    return_tmb_report = TRUE, silent = TRUE
+  )[[1L]]
+  rho_time <- 2 * plogis(get_pars(fit3)$rho_time_unscaled[1, 1]) - 1
+  n_historical <- nrow(fit3$time_lu)
+  expect_equal(
+    raw_mean$b_rw_t[n_historical + 1L, 1L, 1L],
+    rho_time * raw_mean$b_rw_t[n_historical, 1L, 1L]
   )
 })
 
@@ -391,10 +611,21 @@ test_that("project() works/fails as expected in some less obvious situations", {
   )
 
   set.seed(1)
-  expect_message(out <- project(fit, newdata = proj_grid, nsim = 2, uncertainty = "none"), "structures")
+  expect_message(
+    out <- project(
+      fit, newdata = proj_grid, nsim = 2, sample_parameters = FALSE,
+      sample_historical_re = FALSE
+    ),
+    "structures"
+  )
   expect_equal(unique(as.numeric(out$est1)), 0.8032636, tolerance = 1e-3)
-  expect_message(out <- project(fit, newdata = proj_grid, nsim = 1, uncertainty = "both"), regexp = "random")
-  expect_error(out <- project(fit, newdata = proj_grid, nsim = 1, uncertainty = "random"), regexp = "random")
+  expect_message(out <- project(fit, newdata = proj_grid, nsim = 1, silent = TRUE), "structures")
+  expect_message(
+    out <- project(
+      fit, newdata = proj_grid, nsim = 1,
+      sample_parameters = FALSE, sample_historical_re = TRUE, silent = TRUE
+    )
+  )
 
   # no time argument specified errors:
   fit <- sdmTMB(
@@ -443,10 +674,24 @@ test_that("project() works/fails as expected in some less obvious situations", {
   expect_error(project(fit, proj_grid, nsim = 1.5), "whole number")
   expect_error(project(fit, proj_grid, nsim = Inf), "finite")
   expect_error(project(fit, proj_grid, nsim = .Machine$integer.max + 1), "integer.max")
+  expect_error(project(fit, proj_grid, sample_parameters = NA), "sample_parameters")
+  expect_error(project(fit, proj_grid, sample_historical_re = c(TRUE, FALSE)), "sample_historical_re")
+  expect_error(project(fit, proj_grid, sample_future_re = NA), "sample_future_re")
   expect_error(project(fit, proj_grid, silent = NA), "silent")
   expect_error(project(fit, proj_grid, return_tmb_report = c(TRUE, FALSE)), "return_tmb_report")
-  expect_error(project(fit, proj_grid, sim_re = c(0, 1)), "six")
-  expect_error(project(fit, proj_grid, sim_re = c(0, 1, 0, 0, 0.5, 0)), "0 or 1")
+  expect_error(project(fit, proj_grid, uncertainty = "none"), "uncertainty")
+  expect_error(project(fit, proj_grid, sim_re = c(FALSE, TRUE)), "sim_re")
+  expect_error(project(fit, proj_grid, simulate_re = c(FALSE, TRUE)), "six")
+  expect_error(
+    project(
+      fit, proj_grid,
+      simulate_re = c(
+        spatial = FALSE, spatiotemporal = TRUE, spatial_varying = FALSE,
+        iid = 1, time_varying = TRUE, smoothers = FALSE
+      )
+    ),
+    "logical"
+  )
   expect_error(project(fit, proj_grid, sims_var = character()), "sims_var")
   expect_error(project(fit, transform(proj_grid, year = NULL)), "missing")
 })
@@ -476,16 +721,24 @@ test_that("project() separates SVC and IID simulation flags", {
 
   set.seed(1)
   svc <- project(
-    fit, newdata, nsim = 2, uncertainty = "none",
-    sim_re = c(0, 0, 1, 0, 0, 0), return_tmb_report = TRUE, silent = TRUE
+    fit, newdata, nsim = 2, sample_parameters = FALSE,
+    sample_historical_re = FALSE,
+    simulate_re = c(
+      spatial = FALSE, spatiotemporal = FALSE, spatial_varying = TRUE,
+      iid = FALSE, time_varying = FALSE, smoothers = FALSE
+    ), return_tmb_report = TRUE, silent = TRUE
   )
   expect_false(isTRUE(all.equal(svc[[1]]$zeta_s_A, svc[[2]]$zeta_s_A)))
   expect_equal(svc[[1]]$re_b_pars, svc[[2]]$re_b_pars)
 
   set.seed(1)
   iid <- project(
-    fit, newdata, nsim = 2, uncertainty = "none",
-    sim_re = c(0, 0, 0, 1, 0, 0), return_tmb_report = TRUE, silent = TRUE
+    fit, newdata, nsim = 2, sample_parameters = FALSE,
+    sample_historical_re = FALSE,
+    simulate_re = c(
+      spatial = FALSE, spatiotemporal = FALSE, spatial_varying = FALSE,
+      iid = TRUE, time_varying = FALSE, smoothers = FALSE
+    ), return_tmb_report = TRUE, silent = TRUE
   )
   expect_equal(iid[[1]]$zeta_s_A, iid[[2]]$zeta_s_A)
   expect_false(isTRUE(all.equal(iid[[1]]$re_b_pars, iid[[2]]$re_b_pars)))
@@ -517,8 +770,12 @@ test_that("delta SVC simulation uses component-specific ranges", {
 
   set.seed(1)
   reports <- project(
-    fit, grid, nsim = 2, uncertainty = "none",
-    sim_re = c(0, 0, 1, 0, 0, 0),
+    fit, grid, nsim = 2, sample_parameters = FALSE,
+    sample_historical_re = FALSE,
+    simulate_re = c(
+      spatial = FALSE, spatiotemporal = FALSE, spatial_varying = TRUE,
+      iid = FALSE, time_varying = FALSE, smoothers = FALSE
+    ),
     return_tmb_report = TRUE, silent = TRUE
   )
   expect_false(isTRUE(all.equal(

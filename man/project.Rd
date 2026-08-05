@@ -8,10 +8,13 @@ project(
   object,
   newdata,
   nsim = 1,
-  uncertainty = c("both", "random", "none"),
+  sample_parameters = TRUE,
+  sample_historical_re = TRUE,
+  sample_future_re = TRUE,
   silent = FALSE,
   sims_var = NULL,
-  sim_re = c(0, 1, 0, 0, 1, 0),
+  simulate_re = c(spatial = FALSE, spatiotemporal = TRUE, spatial_varying = FALSE, iid =
+    FALSE, time_varying = TRUE, smoothers = FALSE),
   return_tmb_report = FALSE,
   ...
 )
@@ -26,10 +29,16 @@ model. Missing intermediate future time elements are simulated.}
 
 \item{nsim}{Number of projection simulations.}
 
-\item{uncertainty}{How to sample uncertainty for the fitted parameters:
-\code{"both"} for the joint fixed and random effect precision matrix,
-\code{"random"} for the random effect precision matrix (holding the fixed
-effects at their MLE), or \code{"none"} for neither.}
+\item{sample_parameters}{Logical. Sample uncertainty in the estimated model
+parameters, including regression coefficients, covariance parameters, and
+dispersion parameters.}
+
+\item{sample_historical_re}{Logical. Sample uncertainty in random effects
+associated with the fitted historical period.}
+
+\item{sample_future_re}{Logical. Simulate random effects in the projection
+period. When \code{FALSE}, dynamic effects are propagated at their conditional
+means.}
 
 \item{silent}{Logical. Suppress progress messages?}
 
@@ -38,12 +47,12 @@ simulation report. If \code{NULL}, the default, the usual named projection list
 is returned. If supplied, the simulation dimension is last. See also
 \code{return_tmb_report}.}
 
-\item{sim_re}{A vector of \code{0}s and \code{1}s representing which random effects to
-simulate in the projection. Generally, leave this untouched. Order is:
-spatial fields, spatiotemporal fields, spatially varying coefficient
-fields, random intercepts, time-varying coefficients, smoothers.
-The default is to simulate spatiotemporal fields and time-varying
-coefficients, when present.}
+\item{simulate_re}{Named logical vector specifying which random effects to
+simulate in the projection. The required names are \code{spatial},
+\code{spatiotemporal}, \code{spatial_varying}, \code{iid}, \code{time_varying}, and \code{smoothers};
+their order may vary. The default simulates spatiotemporal fields and
+time-varying coefficients, when present. Spatial fields default to \code{FALSE}
+because they are time invariant.}
 
 \item{return_tmb_report}{Return the \pkg{TMB} report from \code{simulate()}? This
 lets you parse out whatever elements you want from the simulation including
@@ -126,6 +135,12 @@ out <- project(fit2, newdata = proj_grid, nsim = 20)
 names(out)
 est_mean <- apply(out$est, 1, mean) # summarize however you'd like
 est_se <- apply(out$est, 1, sd)
+
+# Keep parameter and historical-state uncertainty, while propagating future
+# dynamic effects at their conditional means:
+out_mean_future <- project(
+  fit2, newdata = proj_grid, nsim = 20, sample_future_re = FALSE
+)
 
 # visualize:
 proj_grid$est_mean <- est_mean

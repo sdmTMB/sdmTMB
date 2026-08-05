@@ -210,6 +210,18 @@ set.seed(1)
 out <- project(fit, newdata = proj_grid, nsim = 20)
 ```
 
+By default, `project()` samples estimated parameter uncertainty and the
+historical latent states, then simulates future spatiotemporal and
+time-varying effects. To keep those uncertainty sources while propagating
+dynamic future effects at their conditional means, use
+`sample_future_re = FALSE`:
+
+```{r}
+out_mean_future <- project(
+  fit, newdata = proj_grid, nsim = 20, sample_future_re = FALSE
+)
+```
+
 The `out` object now contains two objects: `out$est` and `out$epsilon_est`, each with dimensions of the number of rows in the prediction data (`proj_grid`) (rows) and number of draws for this example (n = 20) (columns).
 The first (`est`) are the predictions (in link space) and the second (`epsilon_est`) is the spatiotemporal random effects.
 These can be summarized and visualized in several ways to show trends in both the mean, as well as the confidence intervals.

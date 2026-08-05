@@ -17,21 +17,25 @@
 #'   values must be numeric and align with the constant cadence in the fitted
 #'   model. Missing intermediate future time elements are simulated.
 #' @param nsim Number of projection simulations.
-#' @param uncertainty How to sample uncertainty for the fitted parameters:
-#'   `"both"` for the joint fixed and random effect precision matrix,
-#'   `"random"` for the random effect precision matrix (holding the fixed
-#'   effects at their MLE), or `"none"` for neither.
+#' @param sample_parameters Logical. Sample uncertainty in the estimated model
+#'   parameters, including regression coefficients, covariance parameters, and
+#'   dispersion parameters.
+#' @param sample_historical_re Logical. Sample uncertainty in random effects
+#'   associated with the fitted historical period.
+#' @param sample_future_re Logical. Simulate random effects in the projection
+#'   period. When `FALSE`, dynamic effects are propagated at their conditional
+#'   means.
 #' @param silent Logical. Suppress progress messages?
 #' @param sims_var Optional single element to extract from the \pkg{TMB}
 #'   simulation report. If `NULL`, the default, the usual named projection list
 #'   is returned. If supplied, the simulation dimension is last. See also
 #'   `return_tmb_report`.
-#' @param sim_re A vector of `0`s and `1`s representing which random effects to
-#'   simulate in the projection. Generally, leave this untouched. Order is:
-#'   spatial fields, spatiotemporal fields, spatially varying coefficient
-#'   fields, random intercepts, time-varying coefficients, smoothers.
-#'   The default is to simulate spatiotemporal fields and time-varying
-#'   coefficients, when present.
+#' @param simulate_re Named logical vector specifying which random effects to
+#'   simulate in the projection. The required names are `spatial`,
+#'   `spatiotemporal`, `spatial_varying`, `iid`, `time_varying`, and `smoothers`;
+#'   their order may vary. The default simulates spatiotemporal fields and
+#'   time-varying coefficients, when present. Spatial fields default to `FALSE`
+#'   because they are time invariant.
 #' @param return_tmb_report Return the \pkg{TMB} report from `simulate()`? This
 #'   lets you parse out whatever elements you want from the simulation including
 #'   grabbing multiple elements from one set of simulations. See examples.
@@ -109,6 +113,12 @@
 #' est_mean <- apply(out$est, 1, mean) # summarize however you'd like
 #' est_se <- apply(out$est, 1, sd)
 #'
+#' # Keep parameter and historical-state uncertainty, while propagating future
+#' # dynamic effects at their conditional means:
+#' out_mean_future <- project(
+#'   fit2, newdata = proj_grid, nsim = 20, sample_future_re = FALSE
+#' )
+#'
 #' # visualize:
 #' proj_grid$est_mean <- est_mean
 #' ggplot(subset(proj_grid, year > 2021), aes(X, Y, fill = est_mean)) +
@@ -140,10 +150,19 @@ project <- function(
     object,
     newdata,
     nsim = 1,
-    uncertainty = c("both", "random", "none"),
+    sample_parameters = TRUE,
+    sample_historical_re = TRUE,
+    sample_future_re = TRUE,
     silent = FALSE,
     sims_var = NULL,
-    sim_re = c(0, 1, 0, 0, 1, 0),
+    simulate_re = c(
+      spatial = FALSE,
+      spatiotemporal = TRUE,
+      spatial_varying = FALSE,
+      iid = FALSE,
+      time_varying = TRUE,
+      smoothers = FALSE
+    ),
     return_tmb_report = FALSE,
     ...) {
   assert_that(inherits(object, "sdmTMB"))
@@ -156,7 +175,10 @@ project <- function(
     cli_abort("`nsim` must be less than or equal to `.Machine$integer.max`.")
   }
   nsim <- as.integer(nsim)
-  for (x in c("return_tmb_report", "silent")) {
+  for (x in c(
+    "sample_parameters", "sample_historical_re", "sample_future_re",
+    "return_tmb_report", "silent"
+  )) {
     value <- get(x)
     if (!is.logical(value) || length(value) != 1L || is.na(value)) {
       cli_abort("`{x}` must be one non-missing logical value.")
@@ -167,11 +189,11 @@ project <- function(
         is.na(sims_var) || !nzchar(sims_var))) {
     cli_abort("`sims_var` must be `NULL` or one non-empty character value.")
   }
-  if ((!is.numeric(sim_re) && !is.logical(sim_re)) || length(sim_re) != 6L ||
-      anyNA(sim_re) || !all(sim_re %in% c(0, 1))) {
-    cli_abort("`sim_re` must contain exactly six non-missing 0 or 1 values.")
+  simulate_re <- validate_project_simulate_re(simulate_re)
+  old_arguments <- intersect(names(list(...)), c("uncertainty", "sim_re"))
+  if (length(old_arguments)) {
+    cli_abort("`{paste(old_arguments, collapse = '`, `')}` is no longer supported by `project()`.")
   }
-  sim_re <- as.integer(sim_re)
 
   reinitialize(object)
 
@@ -189,33 +211,19 @@ project <- function(
     cli_inform("No spatiotemporal or time-varying structures found. Proceeding with projection anyways.")
   }
 
-  uncertainty <- match.arg(uncertainty)
   ee <- object$tmb_obj$env
   lpb <- ee$last.par.best
-
-  if (uncertainty == "both") {
-    if (has_no_random_effects(object)) {
-      msg <- c("This model has no random effects.",
-        "Sampling only from the fixed effects.")
-      cli_inform(msg)
-      lp <- t(mvtnorm::rmvnorm(n = nsim, mean = lpb, sigma = object$sd_report$cov.fixed))
-    } else {
-      lp <- rmvnorm_prec(lpb, object$sd_report, nsim)
-    }
-  } else if (uncertainty == "random") {
-    if (has_no_random_effects(object)) {
-      msg <- c("This model has no random effects.",
-        "Choose a different type of uncertainty.")
-      cli_abort(msg)
-    }
-    lp <- lpb %o% rep(1, nsim)
-    mc <- ee$MC(keep = TRUE, n = nsim, antithetic = FALSE)
-    lp[ee$random, ] <- attr(mc, "samples")
-  } else { ## 'none'
-    lp <- lpb %o% rep(1, nsim)
-  }
+  sd_report <- project_sd_report(object)
+  lp <- project_historical_draws(
+    lpb = lpb,
+    sd_report = sd_report,
+    nsim = nsim,
+    sample_parameters = sample_parameters,
+    sample_historical_re = sample_historical_re
+  )
 
   ## extend time keeping elements of sdmTMB object
+  historical_n_t <- nrow(object$time_lu)
   max_year_i <- max(object$time_lu$year_i)
   new_year_i <- max_year_i + seq_len(nproj)
   new_time_from_data <- time_extension$time_from_data
@@ -238,8 +246,12 @@ project <- function(
   ## extend time
   p$n_t <- nrow(object$time_lu)
   p$simulate_t <- as.integer(object$time_lu$sim_projected)
-  ## sim random effects? order: omega, epsilon, zeta, IID, RW, smoothers
-  p$sim_re <- sim_re
+  ## Convert the named R controls to TMB's fixed six-entry contract here.
+  tmb_simulate_re <- simulate_re
+  if (!sample_future_re) {
+    tmb_simulate_re[c("spatiotemporal", "time_varying")] <- FALSE
+  }
+  p$sim_re <- as.integer(tmb_simulate_re)
 
   ## parameters: add zeros as needed to all time-based parameters
   pars <- get_pars(object)
@@ -251,6 +263,10 @@ project <- function(
   new_b_rw_t <- array(0, c(nproj, n_time_varying, n_m))
   pars$epsilon_st <- abind::abind(pars$epsilon_st, new_eps, along = 2)
   pars$b_rw_t <- abind::abind(pars$b_rw_t, new_b_rw_t, along = 1)
+  new_epsilon_re <- matrix(0, nrow = nproj, ncol = n_m)
+  if (length(pars$epsilon_re)) {
+    pars$epsilon_re <- rbind(pars$epsilon_re, new_epsilon_re)
+  }
 
   map <- object$tmb_map
   if ("b_rw_t" %in% names(map)) {
@@ -259,19 +275,26 @@ project <- function(
     }
     map$b_rw_t <- factor(rep(NA, length(as.numeric(pars$b_rw_t))))
   }
+  if ("epsilon_re" %in% names(map) && length(pars$epsilon_re)) {
+    if (any(!is.na(map$epsilon_re))) {
+      cli_abort("Function not set up yet for non-NA mapping of `epsilon_re`.")
+    }
+    map$epsilon_re <- factor(rep(NA, length(as.numeric(pars$epsilon_re))))
+  }
 
   delta <- is_delta(object)
   n_active_st <- sum(object$spatiotemporal != "off")
-    map$epsilon_st <- array(
-      seq_len(length(pars$epsilon_st)),
-      dim = dim(pars$epsilon_st)
-    )
-    for (i in which(object$spatiotemporal == "off")) {
-      map$epsilon_st[, , i] <- NA
-      new_eps[, , i] <- NA
-    }
-    map$epsilon_st <- as.factor(map$epsilon_st)
-    new_eps <- rep(0, length(new_eps[!is.na(new_eps)]))
+  map$epsilon_st <- array(
+    seq_len(length(pars$epsilon_st)),
+    dim = dim(pars$epsilon_st)
+  )
+  for (i in which(object$spatiotemporal == "off")) {
+    map$epsilon_st[, , i] <- NA
+    new_eps[, , i] <- NA
+  }
+  epsilon_future_active <- !is.na(as.vector(new_eps))
+  epsilon_active <- !is.na(as.vector(map$epsilon_st))
+  map$epsilon_st <- as.factor(map$epsilon_st)
 
   ## rebuild TMB object
   if (!silent) cli::cli_inform("Rebuilding TMB object with TMB::MakeADFun()")
@@ -294,13 +317,34 @@ project <- function(
     if (!is.null(object$time_varying)) { ## pad time-varying random effects
       lpx <- insert_pars(
         lpx, "b_rw_t", .n = length(as.vector(new_b_rw_t)),
-        n_groups = n_time_varying * n_m
+        n_groups = n_time_varying * n_m,
+        fill = as.vector(new_b_rw_t)
       )
     }
-    if (length(as.vector(new_eps))) { ## pad spatiotemporal random effects
+    if (n_active_st > 0L) { ## pad spatiotemporal random effects
       lpx <- insert_pars(
-        lpx, "epsilon_st", .n = length(as.vector(new_eps)),
-        n_groups = n_active_st
+        lpx, "epsilon_st", .n = sum(epsilon_future_active),
+        n_groups = n_active_st,
+        fill = as.vector(new_eps)[epsilon_future_active]
+      )
+    }
+    if ("epsilon_re" %in% names(lpx)) {
+      lpx <- insert_pars(
+        lpx, "epsilon_re", .n = length(as.vector(new_epsilon_re)),
+        n_groups = n_m, fill = as.vector(new_epsilon_re)
+      )
+    }
+    if (!sample_future_re || !simulate_re[["spatiotemporal"]] ||
+        !simulate_re[["time_varying"]]) {
+      lpx <- project_future_conditional_means(
+        lpx = lpx,
+        tmb_obj = obj,
+        object = object,
+        historical_n_t = historical_n_t,
+        nproj = nproj,
+        simulate_re = simulate_re,
+        sample_future_re = sample_future_re,
+        epsilon_active = epsilon_active
       )
     }
     ret[[i]] <- obj$simulate(par = lpx)
@@ -334,7 +378,175 @@ project <- function(
   out
 }
 
-insert_pars <- function(par, nm, .n, n_groups = 1L) {
+validate_project_simulate_re <- function(x) {
+  expected <- c(
+    "spatial", "spatiotemporal", "spatial_varying", "iid",
+    "time_varying", "smoothers"
+  )
+  if (!is.logical(x) || length(x) != length(expected)) {
+    cli_abort("`simulate_re` must be a logical vector with six named values.")
+  }
+  if (is.null(names(x)) || length(names(x)) != length(x)) {
+    cli_abort("`simulate_re` must have the names: {paste(expected, collapse = ', ')}.")
+  }
+  if (anyDuplicated(names(x))) {
+    cli_abort("`simulate_re` names must be unique.")
+  }
+  unknown <- setdiff(names(x), expected)
+  missing <- setdiff(expected, names(x))
+  if (length(unknown) || length(missing)) {
+    cli_abort(c(
+      "`simulate_re` must use exactly the six expected names.",
+      "i" = "Unknown: {paste(unknown, collapse = ', ')}; missing: {paste(missing, collapse = ', ')}."
+    ))
+  }
+  if (anyNA(x)) {
+    cli_abort("`simulate_re` must contain non-missing logical values.")
+  }
+  x[expected]
+}
+
+project_sd_report <- function(object) {
+  sd_report <- object$sd_report
+  if (!"jointPrecision" %in% names(sd_report) && length(object$tmb_random)) {
+    sd_report <- TMB::sdreport(object$tmb_obj, getJointPrecision = TRUE)
+  }
+  sd_report
+}
+
+project_historical_re_indices <- function(lp) {
+  ## These are latent states in the statistical model. In particular, REML's
+  ## internal random block also contains b_j (and bs for smoothers), which are
+  ## still estimated model parameters for project()'s API.
+  historical_re <- c(
+    "omega_s", "epsilon_st", "zeta_s", "re_b_pars", "b_rw_t",
+    "epsilon_re", "b_smooth"
+  )
+  which(names(lp) %in% historical_re)
+}
+
+project_joint_draws <- function(mu, sd_report, nsim) {
+  if (!length(mu)) return(matrix(numeric(), nrow = 0L, ncol = nsim))
+  if ("jointPrecision" %in% names(sd_report)) {
+    return(rmvnorm_prec(mu, sd_report, nsim))
+  }
+  draws <- mvtnorm::rmvnorm(n = nsim, mean = mu, sigma = sd_report$cov.fixed)
+  draws <- t(draws)
+  rownames(draws) <- names(mu)
+  draws
+}
+
+project_conditional_draws <- function(mu, sd_report, indices, nsim) {
+  if (!length(indices)) return(matrix(numeric(), nrow = 0L, ncol = nsim))
+  if (!"jointPrecision" %in% names(sd_report)) {
+    cli_abort("A joint precision matrix is required to sample historical random effects.")
+  }
+  precision <- sd_report$jointPrecision[indices, indices, drop = FALSE]
+  rmvnorm_prec(
+    mu = mu[indices],
+    tmb_sd = list(jointPrecision = precision),
+    n_sims = nsim
+  )
+}
+
+project_historical_draws <- function(
+    lpb, sd_report, nsim, sample_parameters, sample_historical_re
+) {
+  re_index <- project_historical_re_indices(lpb)
+  lp <- lpb %o% rep(1, nsim)
+  if (sample_parameters) {
+    lp <- project_joint_draws(lpb, sd_report, nsim)
+    if (!sample_historical_re && length(re_index)) {
+      lp[re_index, ] <- lpb[re_index]
+    }
+  } else if (sample_historical_re && length(re_index)) {
+    lp[re_index, ] <- project_conditional_draws(
+      mu = lpb, sd_report = sd_report, indices = re_index, nsim = nsim
+    )
+  }
+  lp
+}
+
+project_replace_parameter <- function(lp, nm, value, active = NULL) {
+  index <- which(names(lp) == nm)
+  if (!length(index)) return(lp)
+  value <- as.vector(value)
+  if (!is.null(active)) value <- value[active]
+  if (length(index) != length(value)) {
+    cli_abort("Parameter `{nm}` and replacement values have incompatible lengths.")
+  }
+  lp[index] <- value
+  lp
+}
+
+project_future_conditional_means <- function(
+    lpx, tmb_obj, object, historical_n_t, nproj, simulate_re,
+    sample_future_re, epsilon_active
+) {
+  ## parList() takes the fixed part of a TMB parameter vector. Reconstruct the
+  ## two time-dependent random arrays from the full simulation vector below so
+  ## that sampled historical states, including REML fits, are retained.
+  pars <- tmb_obj$env$parList(lpx[tmb_obj$env$lfixed()])
+  n_m <- length(object$spatiotemporal)
+
+  if (length(pars$epsilon_st) &&
+      (!sample_future_re || !simulate_re[["spatiotemporal"]])) {
+    epsilon <- pars$epsilon_st
+    epsilon[] <- 0
+    epsilon_index <- which(names(lpx) == "epsilon_st")
+    if (length(epsilon_index)) epsilon[epsilon_active] <- lpx[epsilon_index]
+    for (m in seq_len(n_m)) {
+      type <- tolower(as.character(object$spatiotemporal[[m]]))
+      if (type == "ar1") {
+        ar1_phi <- as.numeric(pars$ar1_phi)
+        ar1_phi <- ar1_phi[min(m, length(ar1_phi))]
+        rho <- 2 * stats::plogis(ar1_phi) - 1
+        for (tt in seq_len(nproj)) {
+          epsilon[, historical_n_t + tt, m] <-
+            rho * epsilon[, historical_n_t + tt - 1L, m]
+        }
+      } else if (type == "rw") {
+        for (tt in seq_len(nproj)) {
+          epsilon[, historical_n_t + tt, m] <-
+            epsilon[, historical_n_t + tt - 1L, m]
+        }
+      } else if (type != "off") {
+        epsilon[, historical_n_t + seq_len(nproj), m] <- 0
+      }
+    }
+    lpx <- project_replace_parameter(lpx, "epsilon_st", epsilon, epsilon_active)
+  }
+
+  has_time_varying <- isTRUE(object$tmb_data$random_walk %in% c(1L, 2L)) ||
+    isTRUE(object$tmb_data$ar1_time == 1L)
+  if (length(pars$b_rw_t) && has_time_varying &&
+      (!sample_future_re || !simulate_re[["time_varying"]])) {
+    b_rw_t <- array(
+      lpx[names(lpx) == "b_rw_t"],
+      dim = dim(pars$b_rw_t)
+    )
+    if (isTRUE(object$tmb_data$ar1_time == 1L)) {
+      rho_time <- 2 * stats::plogis(pars$rho_time_unscaled) - 1
+      for (m in seq_len(dim(b_rw_t)[3])) {
+        for (k in seq_len(dim(b_rw_t)[2])) {
+          for (tt in seq_len(nproj)) {
+            b_rw_t[historical_n_t + tt, k, m] <-
+              rho_time[k, m] * b_rw_t[historical_n_t + tt - 1L, k, m]
+          }
+        }
+      }
+    } else {
+      for (tt in seq_len(nproj)) {
+        b_rw_t[historical_n_t + tt, , ] <-
+          b_rw_t[historical_n_t + tt - 1L, , ]
+      }
+    }
+    lpx <- project_replace_parameter(lpx, "b_rw_t", b_rw_t)
+  }
+  lpx
+}
+
+insert_pars <- function(par, nm, .n, n_groups = 1L, fill = 0) {
   rn <- names(par)
   index <- which(rn == nm)
   if (!length(index)) cli_abort("Parameter `{nm}` was not found.")
@@ -353,7 +565,11 @@ insert_pars <- function(par, nm, .n, n_groups = 1L) {
     cli_abort("`n_groups` must be one positive whole number.")
   }
   n_groups <- as.integer(n_groups)
-  fill <- rep(0, .n)
+  if (length(fill) == 1L) fill <- rep(fill, .n)
+  if (length(fill) != .n) {
+    cli_abort("`fill` must have length one or match the padding length.")
+  }
+  fill <- as.numeric(fill)
   names(fill) <- rep(nm, length(fill))
   if (length(target) %% n_groups || length(fill) %% n_groups) {
     cli_abort("Parameter and padding lengths must divide evenly among parameter groups.")
