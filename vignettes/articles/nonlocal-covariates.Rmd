@@ -55,13 +55,18 @@ We will start by simulating data with a fine-scale predictor (`x1`) and a spatia
 set.seed(1)
 n_sites <- 220
 site <- data.frame(X = runif(n_sites), Y = runif(n_sites))
-dat <- transform(
-  site,
-  x1 = as.numeric(scale(
-    sin(6 * pi * X) + cos(6 * pi * Y) + rnorm(n_sites, sd = 1)
-  ))
-)
+dat <- site
 mesh <- make_mesh(dat, c("X", "Y"), cutoff = 0.05)
+nonlocal_space <- data.frame(
+  X = mesh$mesh$loc[, 1],
+  Y = mesh$mesh$loc[, 2]
+)
+nonlocal_space$x1 <- as.numeric(scale(
+  sin(6 * pi * nonlocal_space$X) +
+    cos(6 * pi * nonlocal_space$Y) +
+    rnorm(nrow(nonlocal_space), sd = 1)
+))
+dat$x1 <- as.numeric(mesh$A_st %*% nonlocal_space$x1)
 
 sim_space <- simulate_new(
   formula = ~ 1,
@@ -75,6 +80,7 @@ sim_space <- simulate_new(
   phi = 0.1,
   B = c(0, 0.8),
   nonlocal_formula = ~ diffusion(x1),
+  nonlocal_data = nonlocal_space,
   lags_kappaS = 1.5,
   seed = 1
 )
@@ -91,6 +97,7 @@ fit <- sdmTMB(
   observed ~ 1,
   mesh = mesh,
   nonlocal_formula = ~ diffusion(x1), #<
+  nonlocal_data = nonlocal_space,
   spatial = "off",
   data = dat
 )
@@ -160,13 +167,26 @@ dat_st <- data.frame(
   Y = rep(site_st$Y, times = n_t),
   year = rep(seq_len(n_t), each = n_sites)
 )
-dat_st$x1 <- as.numeric(scale(
-  sin(2 * pi * (dat_st$X + dat_st$year / 8)) +
-    cos(2 * pi * (dat_st$Y - dat_st$year / 10)) +
-    0.6 * sin(4 * pi * dat_st$X) * cos(dat_st$year / 3) +
-    rnorm(nrow(dat_st), sd = 0.15)
-))
 mesh_st <- make_mesh(dat_st, c("X", "Y"), cutoff = 0.07)
+nonlocal_st <- expand.grid(
+  vertex = seq_len(nrow(mesh_st$mesh$loc)),
+  year = seq_len(n_t)
+)
+nonlocal_st$X <- mesh_st$mesh$loc[nonlocal_st$vertex, 1]
+nonlocal_st$Y <- mesh_st$mesh$loc[nonlocal_st$vertex, 2]
+nonlocal_st$x1 <- as.numeric(scale(
+  sin(2 * pi * (nonlocal_st$X + nonlocal_st$year / 8)) +
+    cos(2 * pi * (nonlocal_st$Y - nonlocal_st$year / 10)) +
+    0.6 * sin(4 * pi * nonlocal_st$X) * cos(nonlocal_st$year / 3) +
+    rnorm(nrow(nonlocal_st), sd = 0.15)
+))
+nonlocal_st$vertex <- NULL
+dat_st$x1 <- NA_real_
+for (tt in seq_len(n_t)) {
+  rows <- dat_st$year == tt
+  vertex_values <- nonlocal_st$x1[nonlocal_st$year == tt]
+  dat_st$x1[rows] <- as.numeric(mesh_st$A_st[rows, ] %*% vertex_values)
+}
 
 sim_st <- simulate_new(
   formula = ~ 1,
@@ -181,6 +201,7 @@ sim_st <- simulate_new(
   phi = 0.1,
   B = c(0, 0.7, 0.6),
   nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
+  nonlocal_data = nonlocal_st,
   lags_kappaS = 4.4,
   lags_rhoT = 0.3,
   seed = 123
@@ -195,6 +216,7 @@ fit_st <- sdmTMB(
   mesh = mesh_st,
   time = "year",
   nonlocal_formula = ~ diffusion(x1) + time_lag(x1), #<
+  nonlocal_data = nonlocal_st,
   spatial = "on",
   spatiotemporal = "off",
   data = dat_st
@@ -219,15 +241,17 @@ padding `data` with extra rows.
 ```{r fit-space-time-grid}
 extra_yr <- n_t + 1
 grid_st <- expand.grid(
-  X = seq(0, 1, length.out = 25),
-  Y = seq(0, 1, length.out = 25),
+  vertex = seq_len(nrow(mesh_st$mesh$loc)),
   year = seq_len(extra_yr)
 )
+grid_st$X <- mesh_st$mesh$loc[grid_st$vertex, 1]
+grid_st$Y <- mesh_st$mesh$loc[grid_st$vertex, 2]
 grid_st$x1 <- as.numeric(scale(
   sin(2 * pi * (grid_st$X + grid_st$year / 8)) +
     cos(2 * pi * (grid_st$Y - grid_st$year / 10)) +
     0.6 * sin(4 * pi * grid_st$X) * cos(grid_st$year / 3)
 ))
+grid_st$vertex <- NULL
 
 fit_st_grid <- sdmTMB(
   observed ~ 1,
@@ -249,7 +273,7 @@ We will plot the spatially diffused covariate on the non-local data grid locatio
 pred_grid <- predict(fit_st_grid, newdata = grid_st)
 
 ggplot(pred_grid, aes(X, Y, fill = nl_diffusion_x1)) +
-  geom_raster() +
+  geom_point(shape = 21) +
   facet_wrap(~year) +
   scale_fill_gradient2()
 ```
