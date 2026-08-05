@@ -1,14 +1,127 @@
+test_that("projection helpers preserve parameter order", {
+  x <- setNames(1:10, c("a", "a", rep("epsilon_st", 6), "z", "z"))
+  expect_equal(
+    unname(insert_pars(x, "epsilon_st", 2)),
+    c(1:8, 0, 0, 9:10)
+  )
+  expect_equal(
+    unname(insert_pars(x, "epsilon_st", 4, n_groups = 2)),
+    c(1:2, 3:5, 0, 0, 6:8, 0, 0, 9:10)
+  )
+
+  at_start <- setNames(1:4, c("epsilon_st", "epsilon_st", "z", "z"))
+  at_end <- setNames(1:4, c("a", "a", "epsilon_st", "epsilon_st"))
+  expect_equal(unname(insert_pars(at_start, "epsilon_st", 2)), c(1:2, 0, 0, 3:4))
+  expect_equal(unname(insert_pars(at_end, "epsilon_st", 2)), c(1:4, 0, 0))
+  expect_equal(
+    unname(insert_pars(x, "epsilon_st", 3, n_groups = 3)),
+    c(1:2, 3:4, 0, 5:6, 0, 7:8, 0, 9:10)
+  )
+  expect_error(insert_pars(x, "epsilon_st", 1, n_groups = 2), "divide evenly")
+  expect_error(insert_pars(x, "epsilon_st", 2, n_groups = 0), "positive")
+  expect_error(insert_pars(x, "epsilon_st", 1.5), "whole number")
+  expect_error(insert_pars(x, "missing", 2), "not found")
+})
+
+test_that("projection time extensions use the fitted cadence", {
+  annual <- data.frame(time_from_data = 2020:2022)
+  expect_equal(
+    project_time_extension(annual, c(2020:2023, 2025))$time_from_data,
+    2023:2025
+  )
+
+  five_year <- data.frame(time_from_data = seq(2000, 2010, by = 5))
+  expect_equal(project_time_extension(five_year, 2015)$time_from_data, 2015)
+
+  one_time <- data.frame(time_from_data = 2010)
+  expect_equal(
+    project_time_extension(one_time, c(2015, 2020))$time_from_data,
+    c(2015, 2020)
+  )
+  expect_error(project_time_extension(one_time, 2015), "at least two")
+  expect_error(project_time_extension(one_time, c(2015, 2025)), "align")
+
+  decimal <- project_time_extension(
+    data.frame(time_from_data = c(0, 0.1, 0.2)),
+    c(0, 0.1 + 0.2)
+  )
+  expect_equal(decimal$time_from_data, 0.3, tolerance = 1e-12)
+  expect_equal(decimal$canonical_time, c(0, 0.3), tolerance = 1e-12)
+
+  expect_error(
+    project_time_extension(data.frame(time_from_data = c(2000, 2001, 2003)), 2004),
+    "constant cadence"
+  )
+  expect_error(project_time_extension(five_year, 2012), "align")
+  expect_error(project_time_extension(annual, 2021), "No new time")
+  expect_error(project_time_extension(annual, c(2021.5, 2023)), "neither fitted nor future")
+  expect_error(project_time_extension(annual, NA_real_), "finite")
+  expect_error(project_time_extension(annual, Inf), "finite")
+  expect_error(project_time_extension(annual, "2023"), "numeric")
+})
+
+test_that("project simulation report extraction has stable dimensions", {
+  reports <- list(
+    list(vector = 1:3, matrix = matrix(1:6, 3, 2)),
+    list(vector = 4:6, matrix = matrix(7:12, 3, 2))
+  )
+  expect_equal(dim(extract_project_sims(reports, "vector")), c(3L, 2L))
+  expect_equal(dim(extract_project_sims(reports, "matrix")), c(3L, 2L, 2L))
+  expect_equal(extract_project_sims(reports, "vector")[, 2], 4:6)
+  delta_reports <- list(
+    list(delta = matrix(1:6, nrow = 3, ncol = 2)),
+    list(delta = matrix(7:12, nrow = 3, ncol = 2))
+  )
+  expect_equal(dim(extract_project_sims(delta_reports, "delta")), c(3L, 2L, 2L))
+  expect_error(
+    extract_project_sims(
+      c(delta_reports, list(list(delta = matrix(1:4, nrow = 2, ncol = 2)))),
+      "changed dimensions"
+    )
+  )
+  expect_error(extract_project_sims(reports, "missing"), "not found")
+})
+
+test_that("project() handles decimal time cadence and preserves rows", {
+  skip_on_cran()
+
+  decimal_data <- do.call(
+    rbind,
+    lapply(split(pcod_2011, pcod_2011$year), head, 30)
+  )
+  decimal_data <- decimal_data[decimal_data$year < 2017, , drop = FALSE]
+  decimal_data$time_decimal <- (decimal_data$year - 2011) / 20
+  mesh <- make_mesh(decimal_data, c("X", "Y"), cutoff = 20)
+  fit <- sdmTMB(
+    density ~ 1,
+    data = decimal_data,
+    time = "time_decimal",
+    mesh = mesh,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = tweedie()
+  )
+
+  newdata <- decimal_data[seq(1, nrow(decimal_data), by = 3), , drop = FALSE]
+  future <- newdata[seq_len(5), , drop = FALSE]
+  future$time_decimal <- 0.1 + 0.2
+  newdata <- rbind(newdata, future)
+  newdata <- newdata[c(nrow(newdata), seq_len(nrow(newdata) - 1L)), , drop = FALSE]
+
+  out <- project(fit, newdata, nsim = 2, uncertainty = "none", silent = TRUE)
+  expect_identical(names(out), "est")
+  expect_equal(dim(out$est), c(nrow(newdata), 2L))
+})
+
 test_that("project() works with delta models", {
   skip_on_cran()
-  skip_if_not_installed("ggplot2")
 
-  library(ggplot2)
   mesh <- make_mesh(dogfish, c("X", "Y"), cutoff = 35)
   historical_years <- 2004:2022
   to_project <- 1
   future_years <- seq(max(historical_years) + 1, max(historical_years) + to_project)
   all_years <- c(historical_years, future_years)
-  proj_grid <- replicate_df(wcvi_grid, "year", all_years)
+  proj_grid <- replicate_df(wcvi_grid[seq(1, nrow(wcvi_grid), by = 20), ], "year", all_years)
 
   # we could fit our model like this, but for long projections, this becomes slow:
   fit <- sdmTMB(
@@ -38,7 +151,7 @@ test_that("project() works with delta models", {
     family = delta_gamma()
   )
   set.seed(1)
-  out <- project(fit2, newdata = proj_grid, nsim = 100, uncertainty = "none")
+  out <- project(fit2, newdata = proj_grid, nsim = 25, uncertainty = "none")
   none <- out
   expect_identical(names(out), c("est1", "est2", "epsilon_st1", "epsilon_st2"))
 
@@ -47,36 +160,19 @@ test_that("project() works with delta models", {
   proj_grid$eps_mean1 <- apply(out$epsilon_st1, 1, mean)
   proj_grid$eps_mean2 <- apply(out$epsilon_st2, 1, mean)
 
-  # visualize:
-  ggplot(subset(proj_grid, year > 2021), aes(X, Y, fill = est_mean1)) +
-    geom_raster() +
-    facet_wrap(~year) +
-    coord_fixed() +
-    scale_fill_viridis_c(limits = c(-4, 4)) +
-    ggtitle("Projection simulation (mean)")
-
-  # or with predict() method:
-  ggplot(subset(p, year > 2021), aes(X, Y, fill = est1)) +
-    geom_raster() +
-    facet_wrap(~year) +
-    coord_fixed() +
-    scale_fill_viridis_c() +
-    labs(fill = "est_mean") +
-    scale_fill_viridis_c(limits = c(-4, 4)) +
-    ggtitle("Projection simulation (mean)")
-
   i <- p$year == 2023
-  plot(p$est1[i], proj_grid$est_mean1[i])
-  plot(p$est2[i], proj_grid$est_mean2[i])
-
-  plot(p$epsilon_st1[i], proj_grid$eps_mean1[i])
-  plot(p$epsilon_st2[i], proj_grid$eps_mean2[i])
 
   OK_COR <- 0.98
   expect_gt(cor(p$est1[i], proj_grid$est_mean1[i]), OK_COR)
   expect_gt(cor(p$est2[i], proj_grid$est_mean2[i]), OK_COR)
   expect_gt(cor(p$epsilon_st1[i], proj_grid$eps_mean1[i]), OK_COR)
   expect_gt(cor(p$epsilon_st2[i], proj_grid$eps_mean2[i]), OK_COR)
+
+  # Future simulation must not shift the fitted delta-component fields.
+  historical <- proj_grid$year %in% historical_years
+  p_historical <- predict(fit2, newdata = proj_grid[historical, ])
+  expect_equal(out$epsilon_st1[historical, 1], p_historical$epsilon_st1)
+  expect_equal(out$epsilon_st2[historical, 1], p_historical$epsilon_st2)
 
   # test return_tmb_report:
 
@@ -86,7 +182,7 @@ test_that("project() works with delta models", {
   out <- project(
     fit2,
     newdata = proj_grid,
-    nsim = 100,
+    nsim = 25,
     uncertainty = "none",
     return_tmb_report = TRUE #< difference from above example
   )
@@ -94,32 +190,56 @@ test_that("project() works with delta models", {
   eps <- lapply(out, \(x) x[["epsilon_st_A_vec"]][, 1])
   eps <- do.call(cbind, eps)
   eps_mean <- apply(eps, 1, mean)
-  plot(eps_mean, proj_grid$eps_mean1)
   expect_gt(cor(eps_mean, proj_grid$eps_mean1), OK_COR)
 
   eps <- lapply(out, \(x) x[["epsilon_st_A_vec"]][, 2])
   eps <- do.call(cbind, eps)
   eps_mean <- apply(eps, 1, mean)
-  plot(eps_mean, proj_grid$eps_mean2)
   expect_gt(cor(eps_mean, proj_grid$eps_mean2), OK_COR)
 
   # test the types of uncertainty
   set.seed(1)
-  both <- project(fit2, newdata = proj_grid, nsim = 50, uncertainty = "both")
+  both <- project(fit2, newdata = proj_grid, nsim = 20, uncertainty = "both")
   set.seed(1)
   suppressWarnings({
-    random <- project(fit2, newdata = proj_grid, nsim = 50, uncertainty = "random")
+    random <- project(fit2, newdata = proj_grid, nsim = 20, uncertainty = "random")
   })
 
   sd_both <- mean(apply(both$est1, 1, sd)[i])
   sd_none <- mean(apply(none$est1, 1, sd)[i])
   sd_random <- mean(apply(random$est1, 1, sd)[i], na.rm = TRUE)
-  sd_both
-  sd_none
-  sd_random
   # expect_gt(sd_both, sd_random) # !!?
   expect_gt(sd_both, sd_none)
   expect_gt(sd_random, sd_none)
+})
+
+test_that("project() pads delta spatiotemporal fields by active component", {
+  skip_on_cran()
+
+  mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
+  historical_years <- sort(unique(pcod_2011$year))
+  grid <- replicate_df(
+    pcod_2011[seq(1, nrow(pcod_2011), by = 50), , drop = FALSE],
+    "year", c(historical_years, max(historical_years) + 2)
+  )
+  historical <- grid$year %in% historical_years
+
+  for (spatiotemporal in list(list("ar1", "off"), list("off", "ar1"))) {
+    fit <- sdmTMB(
+      density ~ 1,
+      data = pcod_2011,
+      mesh = mesh,
+      spatial = "off",
+      time = "year",
+      spatiotemporal = spatiotemporal,
+      family = delta_gamma(),
+      control = sdmTMBcontrol(newton_loops = 0)
+    )
+    out <- project(fit, grid, nsim = 1, uncertainty = "none", silent = TRUE)
+    fitted <- predict(fit, grid[historical, , drop = FALSE])
+    expect_equal(out$est1[historical, 1], fitted$est1)
+    expect_equal(out$est2[historical, 1], fitted$est2)
+  }
 })
 
 test_that("project() works with non-delta models", {
@@ -130,7 +250,7 @@ test_that("project() works with non-delta models", {
   to_project <- 1
   future_years <- seq(max(historical_years) + 1, max(historical_years) + to_project)
   all_years <- c(historical_years, future_years)
-  proj_grid <- replicate_df(wcvi_grid, "year", all_years)
+  proj_grid <- replicate_df(wcvi_grid[seq(1, nrow(wcvi_grid), by = 20), ], "year", all_years)
 
   fit <- sdmTMB(
     catch_weight ~ 1,
@@ -156,16 +276,27 @@ test_that("project() works with non-delta models", {
     family = tweedie()
   )
   set.seed(1)
-  out <- project(fit2, newdata = proj_grid, nsim = 100, uncertainty = "none")
+  out <- project(fit2, newdata = proj_grid, nsim = 25, uncertainty = "none")
   expect_identical(names(out), c("est", "epsilon_st"))
 
   i <- p$year == 2023
   proj_grid$est_mean <- apply(out$est, 1, mean)
   proj_grid$eps_mean <- apply(out$epsilon_st, 1, mean)
-  plot(p$est[i], proj_grid$est_mean[i])
-  plot(p$epsilon_st[i], proj_grid$eps_mean[i])
   expect_gt(cor(p$est[i], proj_grid$est_mean[i]), 0.98)
-  expect_gt(cor(p$epsilon_st[i], proj_grid$est_mean[i]), 0.98)
+  expect_gt(cor(p$epsilon_st[i], proj_grid$eps_mean[i]), 0.98)
+
+  eta <- project(
+    fit2, newdata = proj_grid, nsim = 2, uncertainty = "none",
+    sims_var = "eta_i", silent = TRUE
+  )
+  expect_equal(dim(eta), c(nrow(proj_grid), 1L, 2L))
+  expect_error(
+    project(
+      fit2, newdata = proj_grid, nsim = 1, uncertainty = "none",
+      sims_var = "not_a_report_element", silent = TRUE
+    ),
+    "not found"
+  )
 })
 
 test_that("project() works with time-varying effects", {
@@ -175,7 +306,7 @@ test_that("project() works with time-varying effects", {
   to_project <- 1
   future_years <- seq(max(historical_years) + 1, max(historical_years) + to_project)
   all_years <- c(historical_years, future_years)
-  proj_grid <- replicate_df(wcvi_grid, "year", all_years)
+  proj_grid <- replicate_df(wcvi_grid[seq(1, nrow(wcvi_grid), by = 20), ], "year", all_years)
 
   fit <- sdmTMB(
     catch_weight ~ 1,
@@ -205,12 +336,34 @@ test_that("project() works with time-varying effects", {
     family = tweedie()
   )
   set.seed(1)
-  out <- project(fit2, newdata = proj_grid, nsim = 100, uncertainty = "none")
+  out <- project(fit2, newdata = proj_grid, nsim = 25, uncertainty = "none")
   expect_identical(names(out), c("est"))
   i <- p$year == 2023
-  hist(out$est[i, ])
-  abline(v = mean(p$est[i]))
   expect_equal(mean(p$est[i]), 5.983172, tolerance = 1e-3)
+
+  dogfish$depth_scaled <- as.numeric(scale(dogfish$depth))
+  proj_grid$depth_scaled <- (proj_grid$depth - mean(dogfish$depth)) / sd(dogfish$depth)
+  fit3 <- sdmTMB(
+    catch_weight ~ 0,
+    time = "year",
+    time_varying = ~ 0 + depth_scaled + I(depth_scaled^2),
+    time_varying_type = "ar1",
+    extra_time = historical_years,
+    spatial = "off",
+    spatiotemporal = "off",
+    data = dogfish,
+    family = tweedie()
+  )
+  raw <- project(
+    fit3, newdata = proj_grid, nsim = 2, uncertainty = "none",
+    return_tmb_report = TRUE, silent = TRUE
+  )
+  expect_equal(dim(raw[[1]]$b_rw_t), c(length(all_years), 2L, 1L))
+  expect_equal(
+    raw[[1]]$b_rw_t[seq_along(historical_years), , , drop = FALSE],
+    get_pars(fit3)$b_rw_t,
+    tolerance = 1e-3
+  )
 })
 
 
@@ -222,7 +375,7 @@ test_that("project() works/fails as expected in some less obvious situations", {
   to_project <- 1
   future_years <- seq(max(historical_years) + 1, max(historical_years) + to_project)
   all_years <- c(historical_years, future_years)
-  proj_grid <- replicate_df(wcvi_grid, "year", all_years)
+  proj_grid <- replicate_df(wcvi_grid[seq(1, nrow(wcvi_grid), by = 20), ], "year", all_years)
 
   # no time model:
   fit <- sdmTMB(
@@ -274,16 +427,104 @@ test_that("project() works/fails as expected in some less obvious situations", {
 
   # newdata is missing a time step; make sure that's fine and matches not missing the time step:
   all_years <- c(historical_years, 2023:2025)
-  proj_grid <- replicate_df(wcvi_grid, "year", all_years)
+  proj_grid <- replicate_df(wcvi_grid[seq(1, nrow(wcvi_grid), by = 20), ], "year", all_years)
   set.seed(1)
   out <- project(fit, newdata = proj_grid, nsim = 1)
 
   all_years <- c(historical_years, c(2023, 2025))
-  proj_grid2 <- replicate_df(wcvi_grid, "year", all_years)
+  proj_grid2 <- replicate_df(wcvi_grid[seq(1, nrow(wcvi_grid), by = 20), ], "year", all_years)
   set.seed(1)
   out2 <- project(fit, newdata = proj_grid2, nsim = 1)
 
   i <- proj_grid$year %in% c(2023, 2025)
   i2 <- proj_grid2$year %in% c(2023, 2025)
   expect_equal(out$est[i,], out2$est[i2,])
+
+  expect_error(project(fit, proj_grid, nsim = 1.5), "whole number")
+  expect_error(project(fit, proj_grid, nsim = Inf), "finite")
+  expect_error(project(fit, proj_grid, nsim = .Machine$integer.max + 1), "integer.max")
+  expect_error(project(fit, proj_grid, silent = NA), "silent")
+  expect_error(project(fit, proj_grid, return_tmb_report = c(TRUE, FALSE)), "return_tmb_report")
+  expect_error(project(fit, proj_grid, sim_re = c(0, 1)), "six")
+  expect_error(project(fit, proj_grid, sim_re = c(0, 1, 0, 0, 0.5, 0)), "0 or 1")
+  expect_error(project(fit, proj_grid, sims_var = character()), "sims_var")
+  expect_error(project(fit, transform(proj_grid, year = NULL)), "missing")
+})
+
+test_that("project() separates SVC and IID simulation flags", {
+  skip_on_cran()
+
+  dogfish$depth_scaled <- as.numeric(scale(dogfish$depth))
+  dogfish$group <- factor(dogfish$year %% 2)
+  mesh <- make_mesh(dogfish, c("X", "Y"), cutoff = 35)
+  historical_years <- 2004:2022
+  fit <- sdmTMB(
+    log1p(catch_weight) ~ 1 + (1 | group),
+    time = "year",
+    extra_time = historical_years,
+    spatial = "off",
+    spatiotemporal = "off",
+    spatial_varying = ~ 0 + depth_scaled,
+    data = dogfish,
+    mesh = mesh,
+    family = gaussian()
+  )
+  grid <- wcvi_grid[seq(1, nrow(wcvi_grid), by = 50), ]
+  grid$depth_scaled <- (grid$depth - mean(dogfish$depth)) / sd(dogfish$depth)
+  grid$group <- factor(0, levels = levels(dogfish$group))
+  newdata <- replicate_df(grid, "year", c(historical_years, 2023))
+
+  set.seed(1)
+  svc <- project(
+    fit, newdata, nsim = 2, uncertainty = "none",
+    sim_re = c(0, 0, 1, 0, 0, 0), return_tmb_report = TRUE, silent = TRUE
+  )
+  expect_false(isTRUE(all.equal(svc[[1]]$zeta_s_A, svc[[2]]$zeta_s_A)))
+  expect_equal(svc[[1]]$re_b_pars, svc[[2]]$re_b_pars)
+
+  set.seed(1)
+  iid <- project(
+    fit, newdata, nsim = 2, uncertainty = "none",
+    sim_re = c(0, 0, 0, 1, 0, 0), return_tmb_report = TRUE, silent = TRUE
+  )
+  expect_equal(iid[[1]]$zeta_s_A, iid[[2]]$zeta_s_A)
+  expect_false(isTRUE(all.equal(iid[[1]]$re_b_pars, iid[[2]]$re_b_pars)))
+})
+
+test_that("delta SVC simulation uses component-specific ranges", {
+  skip_on_cran()
+
+  mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
+  grid <- replicate_df(
+    pcod_2011[seq(1, nrow(pcod_2011), by = 50), , drop = FALSE],
+    "year", c(2011, 2013, 2015, 2017, 2019)
+  )
+  fit <- sdmTMB(
+    density ~ 1,
+    data = pcod_2011,
+    mesh = mesh,
+    time = "year",
+    spatial_varying = ~ 0 + depth_scaled,
+    spatiotemporal = list("off", "off"),
+    share_range = FALSE,
+    family = delta_gamma(),
+    control = sdmTMBcontrol(newton_loops = 0)
+  )
+  ranges <- fit$tmb_obj$env$last.par.best[
+    grep("^ln_kappa", names(fit$tmb_obj$env$last.par.best))
+  ]
+  expect_false(isTRUE(all.equal(ranges[[1]], ranges[[2]])))
+
+  set.seed(1)
+  reports <- project(
+    fit, grid, nsim = 2, uncertainty = "none",
+    sim_re = c(0, 0, 1, 0, 0, 0),
+    return_tmb_report = TRUE, silent = TRUE
+  )
+  expect_false(isTRUE(all.equal(
+    reports[[1]]$zeta_s_A[, , 1], reports[[1]]$zeta_s_A[, , 2]
+  )))
+  expect_false(isTRUE(all.equal(
+    reports[[1]]$zeta_s_A[, , 1], reports[[2]]$zeta_s_A[, , 1]
+  )))
 })

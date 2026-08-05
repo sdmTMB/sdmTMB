@@ -10,7 +10,7 @@ project(
   nsim = 1,
   uncertainty = c("both", "random", "none"),
   silent = FALSE,
-  sims_var = "eta_i",
+  sims_var = NULL,
   sim_re = c(0, 1, 0, 0, 1, 0),
   return_tmb_report = FALSE,
   ...
@@ -20,7 +20,9 @@ project(
 \item{object}{A fitted model from \code{\link[=sdmTMB]{sdmTMB()}}.}
 
 \item{newdata}{A new data frame to predict on. It should contain both the
-historical time elements and any new time elements to project to.}
+historical time elements and any new time elements to project to. Time
+values must be numeric and align with the constant cadence in the fitted
+model. Missing intermediate future time elements are simulated.}
 
 \item{nsim}{Number of projection simulations.}
 
@@ -31,7 +33,9 @@ effects at their MLE), or \code{"none"} for neither.}
 
 \item{silent}{Logical. Suppress progress messages?}
 
-\item{sims_var}{Element to extract from the \pkg{TMB} report. See also
+\item{sims_var}{Optional single element to extract from the \pkg{TMB}
+simulation report. If \code{NULL}, the default, the usual named projection list
+is returned. If supplied, the simulation dimension is last. See also
 \code{return_tmb_report}.}
 
 \item{sim_re}{A vector of \code{0}s and \code{1}s representing which random effects to
@@ -55,8 +59,10 @@ components are \code{est1}, \code{est2}, \code{epsilon_st}, and \code{epsilon_st
 and 2nd linear predictors. In all cases, these returned values are in \emph{link}
 space.
 
-If \code{return_tmb_report = TRUE}, a list of \pkg{TMB} reports returned by \code{simulate()}.
-Run \code{names()} on the output to see the options.
+If \code{sims_var} is supplied, an array containing that report element, with the
+simulation dimension last. If \code{return_tmb_report = TRUE}, a list of
+\pkg{TMB} reports returned by \code{simulate()}. Run \code{names()} on an element of the
+output to see the available \code{sims_var} options.
 }
 \description{
 \ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}}

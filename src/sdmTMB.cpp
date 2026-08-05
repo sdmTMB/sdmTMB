@@ -566,10 +566,10 @@ Type objective_function<Type>::operator()()
             sdmTMB::barrier_scaling_factor(ln_tau_Z(z,m), ln_kappa(0,m)) :
             1. / exp(ln_tau_Z(z,m));
           PARALLEL_REGION jnll += SCALE(GMRF(Q_temp, s), spatial_cov_scale)(zeta_s.col(m).col(z));
-          if (sim_re(3)) {
+          if (sim_re(2)) {
             vector<Type> zeta_s_tmp(zeta_s.col(m).rows());
             SIMULATE {
-              GMRF(Q_s, s).simulate(zeta_s_tmp);
+              GMRF(Q_temp, s).simulate(zeta_s_tmp);
               if (barrier) {
                 zeta_s.col(m).col(z) = zeta_s_tmp * sdmTMB::barrier_scaling_factor(ln_tau_Z(z,m), ln_kappa(0,m));
               } else {
