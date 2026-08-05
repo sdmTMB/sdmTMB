@@ -154,3 +154,55 @@ test_that("collapse validation works", {
   ctrl <- sdmTMBcontrol(collapse_threshold = 0.1)
   expect_equal(ctrl$collapse_threshold, 0.1)
 })
+
+test_that("collapse checks ignore disabled delta fields", {
+  args <- list(
+    report_vals = list(
+      sigma_O = matrix(c(0, 0.5), nrow = 1L),
+      sigma_E = matrix(c(rep(0.001, 3L), rep(0.5, 3L)), nrow = 3L)
+    ),
+    spatial = c("off", "on"),
+    spatiotemporal = c("off", "ar1"),
+    n_m = 2L,
+    n_t = 3L,
+    omit_spatial_intercept = FALSE,
+    collapse_threshold = 0.01,
+    delta = TRUE,
+    silent = TRUE
+  )
+
+  result <- do.call(check_and_collapse_random_fields, args)
+
+  expect_false(result$do_refit)
+  expect_equal(result$spatial_arg, list("off", "on"))
+  expect_equal(result$spatiotemporal_arg, list("off", "ar1"))
+})
+
+test_that("collapse checks can disable one delta field", {
+  args <- list(
+    report_vals = list(
+      sigma_O = matrix(c(0.001, 0.5), nrow = 1L),
+      sigma_E = matrix(c(rep(0.001, 3L), rep(0.5, 3L)), nrow = 3L)
+    ),
+    spatial = c("on", "on"),
+    spatiotemporal = c("ar1", "ar1"),
+    n_m = 2L,
+    n_t = 3L,
+    omit_spatial_intercept = FALSE,
+    collapse_threshold = 0.01,
+    delta = TRUE,
+    silent = TRUE
+  )
+
+  result <- do.call(check_and_collapse_random_fields, args)
+
+  expect_true(result$do_refit)
+  expect_equal(result$spatial_arg, list("off", "on"))
+  expect_equal(result$spatiotemporal_arg, list("off", "ar1"))
+
+  args$spatial <- unlist(result$spatial_arg)
+  args$spatiotemporal <- unlist(result$spatiotemporal_arg)
+  args$report_vals$sigma_O[1L] <- 0
+  result <- do.call(check_and_collapse_random_fields, args)
+  expect_false(result$do_refit)
+})

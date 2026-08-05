@@ -1961,7 +1961,6 @@ sdmTMB <- function(
   if (collapse_spatial_variance && length(tmb_obj$par) > 0) {
     report_vals <- tmb_obj$report()
     collapse_result <- check_and_collapse_random_fields(
-      tmb_obj = tmb_obj,
       report_vals = report_vals,
       spatial = spatial,
       spatiotemporal = spatiotemporal,
@@ -2055,7 +2054,6 @@ check_bounds <- function(.par, lower, upper) {
 }
 
 check_and_collapse_random_fields <- function(
-    tmb_obj,
     report_vals,
     spatial,
     spatiotemporal,
@@ -2072,11 +2070,13 @@ check_and_collapse_random_fields <- function(
 
   # Check spatial field
   if (any(spatial == "on") && !omit_spatial_intercept) {
-    est_sigma_O <- report_vals$sigma_O
+    est_sigma_O <- c(report_vals$sigma_O)
+    which_sigma <- which(
+      spatial == "on" & is.finite(est_sigma_O) &
+        est_sigma_O < collapse_threshold
+    )
 
-    if (length(est_sigma_O) > 0 && any(est_sigma_O < collapse_threshold)) {
-      which_sigma <- which(est_sigma_O < collapse_threshold)
-
+    if (length(which_sigma) > 0L) {
       if (!silent) {
         cli_inform(c(
           "!" = "Spatial variance below threshold ({collapse_threshold}) detected",
@@ -2097,7 +2097,7 @@ check_and_collapse_random_fields <- function(
     est_sigma_E <- report_vals$sigma_E
 
     if (length(est_sigma_E) > 0) {
-      est_sigma_E_by_model <- numeric(n_m)
+      est_sigma_E_by_model <- rep(NA_real_, n_m)
 
       for (m in seq_len(n_m)) {
         idx_start <- (m - 1) * n_t + 1
@@ -2107,9 +2107,12 @@ check_and_collapse_random_fields <- function(
         }
       }
 
-      if (any(est_sigma_E_by_model < collapse_threshold, na.rm = TRUE)) {
-        which_sigma <- which(est_sigma_E_by_model < collapse_threshold)
+      which_sigma <- which(
+        spatiotemporal != "off" & is.finite(est_sigma_E_by_model) &
+          est_sigma_E_by_model < collapse_threshold
+      )
 
+      if (length(which_sigma) > 0L) {
         if (!silent) {
           cli_inform(c(
             "!" = "Spatiotemporal variance below threshold ({collapse_threshold}) detected",

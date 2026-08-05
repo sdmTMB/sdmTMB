@@ -8,6 +8,11 @@
   This means that arguments to `sdmTMB()` can be objects within another
   function.
 
+* Fix `collapse_spatial_variance` with delta models so fields already disabled
+  in one linear predictor are not treated as newly collapsed, which could
+  cause repeated refits. Individual spatial or spatiotemporal fields can now
+  collapse independently.
+
 * Improved non-local covariate handling by distinguishing time-indexed
   formulas, supporting external grids during prediction and cross-validation,
   and reporting clear errors when grid coverage is insufficient.
