@@ -106,47 +106,59 @@ if(getRversion() >= "3.6.0") {
 }
 import(methods)
 importFrom(assertthat,assert_that)
-importFrom(cli,cli_abort)
-importFrom(cli,cli_inform)
-importFrom(cli,cli_warn)
+importFrom(cli,
+  cli_abort,
+  cli_inform,
+  cli_warn
+)
 importFrom(generics,tidy)
 importFrom(graphics,points)
-importFrom(lifecycle,deprecate_stop)
-importFrom(lifecycle,deprecate_warn)
-importFrom(lifecycle,deprecated)
-importFrom(lifecycle,is_present)
-importFrom(methods,as)
-importFrom(methods,is)
-importFrom(mgcv,s)
-importFrom(mgcv,t2)
-importFrom(nlme,fixef)
-importFrom(nlme,ranef)
+importFrom(lifecycle,
+  deprecate_stop,
+  deprecate_warn,
+  deprecated,
+  is_present
+)
+importFrom(methods,
+  as,
+  is
+)
+importFrom(mgcv,
+  s,
+  t2
+)
+importFrom(nlme,
+  fixef,
+  ranef
+)
 importFrom(rlang,.data)
-importFrom(stats,Gamma)
-importFrom(stats,as.formula)
-importFrom(stats,binomial)
-importFrom(stats,coef)
-importFrom(stats,confint)
-importFrom(stats,deviance)
-importFrom(stats,df.residual)
-importFrom(stats,family)
-importFrom(stats,formula)
-importFrom(stats,gaussian)
-importFrom(stats,logLik)
-importFrom(stats,model.frame)
-importFrom(stats,model.matrix)
-importFrom(stats,model.offset)
-importFrom(stats,model.response)
-importFrom(stats,nobs)
-importFrom(stats,optim)
-importFrom(stats,plogis)
-importFrom(stats,poisson)
-importFrom(stats,predict)
-importFrom(stats,residuals)
-importFrom(stats,runif)
-importFrom(stats,sigma)
-importFrom(stats,simulate)
-importFrom(stats,terms)
-importFrom(stats,update)
-importFrom(stats,vcov)
+importFrom(stats,
+  Gamma,
+  as.formula,
+  binomial,
+  coef,
+  confint,
+  deviance,
+  df.residual,
+  family,
+  formula,
+  gaussian,
+  logLik,
+  model.frame,
+  model.matrix,
+  model.offset,
+  model.response,
+  nobs,
+  optim,
+  plogis,
+  poisson,
+  predict,
+  residuals,
+  runif,
+  sigma,
+  simulate,
+  terms,
+  update,
+  vcov
+)
 useDynLib(sdmTMB, .registration = TRUE)

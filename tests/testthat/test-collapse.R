@@ -111,7 +111,10 @@ test_that("custom collapse threshold works", {
   fit_default <- sdmTMB(observed ~ a1,
     data = sim_dat, mesh = mesh, time = "year",
     spatial = "off",
-    control = sdmTMBcontrol(collapse_spatial_variance = TRUE, collapse_threshold = 0.001)
+    control = sdmTMBcontrol(
+      collapse_spatial_variance = TRUE,
+      collapse_spatial_variance_threshold = 0.001
+    )
   )
 
   # With higher threshold (0.3), should collapse
@@ -123,7 +126,7 @@ test_that("custom collapse threshold works", {
     mesh_obj <- mesh
     ctrl <- sdmTMBcontrol(
       collapse_spatial_variance = TRUE,
-      collapse_threshold = 0.3
+      collapse_spatial_variance_threshold = 0.3
     )
     sdmTMB(form,
       data = data_obj, mesh = mesh_obj, time = "year",
@@ -136,23 +139,58 @@ test_that("custom collapse threshold works", {
 })
 
 test_that("collapse validation works", {
-  # Test that collapse_threshold must be positive
+  ctrl <- sdmTMBcontrol()
+  expect_equal(ctrl$collapse_spatial_variance_threshold, 0.01)
+  expect_false("collapse_threshold" %in% names(ctrl))
+  expect_false(ctrl$collapse_spatiotemporal_ar1)
+  expect_equal(ctrl$collapse_ar1_threshold, 0.01)
+
+  # Test that collapse_spatial_variance_threshold must be positive
   expect_error(
-    sdmTMBcontrol(collapse_threshold = -0.01),
-    "collapse_threshold not greater than 0"
+    sdmTMBcontrol(collapse_spatial_variance_threshold = -0.01),
+    "collapse_spatial_variance_threshold not greater than 0"
   )
 
   expect_error(
-    sdmTMBcontrol(collapse_threshold = 0),
-    "collapse_threshold not greater than 0"
+    sdmTMBcontrol(collapse_spatial_variance_threshold = 0),
+    "collapse_spatial_variance_threshold not greater than 0"
   )
 
   # Valid thresholds should work
-  ctrl <- sdmTMBcontrol(collapse_threshold = 0.001)
-  expect_equal(ctrl$collapse_threshold, 0.001)
+  ctrl <- sdmTMBcontrol(collapse_spatial_variance_threshold = 0.001)
+  expect_equal(ctrl$collapse_spatial_variance_threshold, 0.001)
 
-  ctrl <- sdmTMBcontrol(collapse_threshold = 0.1)
-  expect_equal(ctrl$collapse_threshold, 0.1)
+  ctrl <- sdmTMBcontrol(collapse_spatial_variance_threshold = 0.1)
+  expect_equal(ctrl$collapse_spatial_variance_threshold, 0.1)
+
+  expect_warning(
+    ctrl <- sdmTMBcontrol(collapse_threshold = 0.1),
+    "deprecated"
+  )
+  expect_equal(ctrl$collapse_spatial_variance_threshold, 0.1)
+
+  expect_warning(
+    ctrl <- sdmTMBcontrol(
+      collapse_threshold = 0.1,
+      collapse_spatial_variance_threshold = 0.2
+    ),
+    "deprecated"
+  )
+  expect_equal(ctrl$collapse_spatial_variance_threshold, 0.2)
+
+  ctrl <- sdmTMBcontrol(
+    collapse_spatiotemporal_ar1 = TRUE,
+    collapse_ar1_threshold = 0.02
+  )
+  expect_true(ctrl$collapse_spatiotemporal_ar1)
+  expect_equal(ctrl$collapse_ar1_threshold, 0.02)
+
+  for (x in list(NA, c(TRUE, FALSE), 1)) {
+    expect_error(sdmTMBcontrol(collapse_spatiotemporal_ar1 = x))
+  }
+  for (x in list(NA_real_, Inf, numeric(0), c(0.01, 0.02), 0, -0.01, 0.5, 1)) {
+    expect_error(sdmTMBcontrol(collapse_ar1_threshold = x))
+  }
 })
 
 test_that("collapse checks ignore disabled delta fields", {
@@ -166,12 +204,15 @@ test_that("collapse checks ignore disabled delta fields", {
     n_m = 2L,
     n_t = 3L,
     omit_spatial_intercept = FALSE,
-    collapse_threshold = 0.01,
+    collapse_spatial_variance = TRUE,
+    collapse_spatial_variance_threshold = 0.01,
+    collapse_spatiotemporal_ar1 = FALSE,
+    collapse_ar1_threshold = 0.01,
     delta = TRUE,
     silent = TRUE
   )
 
-  result <- do.call(check_and_collapse_random_fields, args)
+  result <- do.call(check_and_collapse_spatial_fields, args)
 
   expect_false(result$do_refit)
   expect_equal(result$spatial_arg, list("off", "on"))
@@ -189,12 +230,15 @@ test_that("collapse checks can disable one delta field", {
     n_m = 2L,
     n_t = 3L,
     omit_spatial_intercept = FALSE,
-    collapse_threshold = 0.01,
+    collapse_spatial_variance = TRUE,
+    collapse_spatial_variance_threshold = 0.01,
+    collapse_spatiotemporal_ar1 = FALSE,
+    collapse_ar1_threshold = 0.01,
     delta = TRUE,
     silent = TRUE
   )
 
-  result <- do.call(check_and_collapse_random_fields, args)
+  result <- do.call(check_and_collapse_spatial_fields, args)
 
   expect_true(result$do_refit)
   expect_equal(result$spatial_arg, list("off", "on"))
@@ -203,6 +247,174 @@ test_that("collapse checks can disable one delta field", {
   args$spatial <- unlist(result$spatial_arg)
   args$spatiotemporal <- unlist(result$spatiotemporal_arg)
   args$report_vals$sigma_O[1L] <- 0
-  result <- do.call(check_and_collapse_random_fields, args)
+  result <- do.call(check_and_collapse_spatial_fields, args)
   expect_false(result$do_refit)
+})
+
+test_that("spatiotemporal AR1 collapse respects rho boundaries", {
+  args <- list(
+    report_vals = list(
+      sigma_O = 1,
+      sigma_E = matrix(rep(1, 3L), nrow = 3L),
+      rho = 0
+    ),
+    spatial = "off",
+    spatiotemporal = "ar1",
+    n_m = 1L,
+    n_t = 3L,
+    omit_spatial_intercept = FALSE,
+    collapse_spatial_variance = FALSE,
+    collapse_spatial_variance_threshold = 0.01,
+    collapse_spatiotemporal_ar1 = TRUE,
+    collapse_ar1_threshold = 0.01,
+    delta = FALSE,
+    silent = TRUE
+  )
+
+  result <- do.call(check_and_collapse_spatial_fields, args)
+  expect_true(result$do_refit)
+  expect_identical(result$spatiotemporal_arg, "iid")
+
+  args$report_vals$rho <- -0.01
+  result <- do.call(check_and_collapse_spatial_fields, args)
+  expect_identical(result$spatiotemporal_arg, "iid")
+
+  args$report_vals$rho <- 0.99
+  result <- do.call(check_and_collapse_spatial_fields, args)
+  expect_identical(result$spatiotemporal_arg, "rw")
+
+  for (rho in c(-0.0101, 0.0101, 0.9899, -0.999)) {
+    args$report_vals$rho <- rho
+    result <- do.call(check_and_collapse_spatial_fields, args)
+    expect_false(result$do_refit)
+    expect_identical(result$spatiotemporal_arg, "ar1")
+  }
+
+  args$collapse_spatiotemporal_ar1 <- FALSE
+  args$report_vals$rho <- 0
+  result <- do.call(check_and_collapse_spatial_fields, args)
+  expect_false(result$do_refit)
+  expect_identical(result$spatiotemporal_arg, "ar1")
+})
+
+test_that("spatiotemporal AR1 collapse handles delta components", {
+  args <- list(
+    report_vals = list(
+      sigma_O = c(1, 1),
+      sigma_E = matrix(rep(1, 6L), nrow = 3L),
+      rho = c(0, 0.5)
+    ),
+    spatial = c("off", "off"),
+    spatiotemporal = c("ar1", "ar1"),
+    n_m = 2L,
+    n_t = 3L,
+    omit_spatial_intercept = FALSE,
+    collapse_spatial_variance = FALSE,
+    collapse_spatial_variance_threshold = 0.01,
+    collapse_spatiotemporal_ar1 = TRUE,
+    collapse_ar1_threshold = 0.01,
+    delta = TRUE,
+    silent = TRUE
+  )
+
+  result <- do.call(check_and_collapse_spatial_fields, args)
+  expect_equal(result$spatiotemporal_arg, list("iid", "ar1"))
+
+  args$report_vals$rho <- c(0.999, -0.001)
+  result <- do.call(check_and_collapse_spatial_fields, args)
+  expect_equal(result$spatiotemporal_arg, list("rw", "iid"))
+
+  args$spatiotemporal <- c("off", "ar1")
+  args$report_vals$rho <- c(0, 0.5)
+  result <- do.call(check_and_collapse_spatial_fields, args)
+  expect_false(result$do_refit)
+  expect_equal(result$spatiotemporal_arg, list("off", "ar1"))
+})
+
+test_that("variance collapse takes precedence over AR1 collapse", {
+  args <- list(
+    report_vals = list(
+      sigma_O = 1,
+      sigma_E = matrix(rep(0.001, 3L), nrow = 3L),
+      rho = 0
+    ),
+    spatial = "off",
+    spatiotemporal = "ar1",
+    n_m = 1L,
+    n_t = 3L,
+    omit_spatial_intercept = FALSE,
+    collapse_spatial_variance = TRUE,
+    collapse_spatial_variance_threshold = 0.01,
+    collapse_spatiotemporal_ar1 = TRUE,
+    collapse_ar1_threshold = 0.01,
+    delta = FALSE,
+    silent = TRUE
+  )
+
+  result <- do.call(check_and_collapse_spatial_fields, args)
+  expect_true(result$do_refit)
+  expect_identical(result$spatiotemporal_arg, "off")
+})
+
+test_that("spatiotemporal AR1 collapse ignores unavailable rho estimates", {
+  args <- list(
+    report_vals = list(
+      sigma_O = c(1, 1),
+      sigma_E = matrix(rep(1, 6L), nrow = 3L)
+    ),
+    spatial = c("off", "off"),
+    spatiotemporal = c("ar1", "ar1"),
+    n_m = 2L,
+    n_t = 3L,
+    omit_spatial_intercept = FALSE,
+    collapse_spatial_variance = FALSE,
+    collapse_spatial_variance_threshold = 0.01,
+    collapse_spatiotemporal_ar1 = TRUE,
+    collapse_ar1_threshold = 0.01,
+    delta = TRUE,
+    silent = TRUE
+  )
+
+  for (rho in list(NULL, numeric(0), NA_real_, c(NaN, Inf))) {
+    args$report_vals$rho <- rho
+    result <- do.call(check_and_collapse_spatial_fields, args)
+    expect_false(result$do_refit)
+    expect_equal(result$spatiotemporal_arg, list("ar1", "ar1"))
+  }
+})
+
+test_that("spatiotemporal AR1 collapse refits and predicts", {
+  skip_on_cran()
+  skip_on_ci()
+
+  fit_at_rho <- function(rho) {
+    control <- sdmTMBcontrol(
+      multiphase = FALSE,
+      newton_loops = 0,
+      getsd = FALSE,
+      collapse_spatiotemporal_ar1 = TRUE,
+      collapse_ar1_threshold = 0.01,
+      start = list(ar1_phi = stats::qlogis((rho + 1) / 2)),
+      map = list(ar1_phi = factor(NA))
+    )
+    sdmTMB(
+      density ~ 1,
+      data = pcod_2011,
+      time = "year",
+      mesh = pcod_mesh_2011,
+      spatial = "off",
+      spatiotemporal = "ar1",
+      family = gaussian(),
+      control = control,
+      silent = TRUE
+    )
+  }
+
+  fit_iid <- fit_at_rho(0)
+  expect_identical(fit_iid$spatiotemporal, "iid")
+  expect_equal(nrow(predict(fit_iid)), nrow(pcod_2011))
+
+  fit_rw <- fit_at_rho(0.99)
+  expect_identical(fit_rw$spatiotemporal, "rw")
+  expect_equal(nrow(predict(fit_rw)), nrow(pcod_2011))
 })

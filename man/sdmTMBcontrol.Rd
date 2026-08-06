@@ -23,7 +23,10 @@ sdmTMBcontrol(
   parallel = getOption("sdmTMB.cores", 1L),
   suppress_nlminb_warnings = TRUE,
   collapse_spatial_variance = FALSE,
-  collapse_threshold = 0.01,
+  collapse_threshold = deprecated(),
+  collapse_spatial_variance_threshold = 0.01,
+  collapse_spatiotemporal_ar1 = FALSE,
+  collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
   get_rsr = FALSE,
   ...
@@ -111,19 +114,35 @@ are then replaced with \code{Inf} and avoided during estimation?}
 
 \item{collapse_spatial_variance}{Logical: should spatial and/or spatiotemporal
 random fields be automatically dropped if their estimated standard deviation
-is effectively zero (i.e., below \code{collapse_threshold})? This helps prevent
-overfitting and numerical instability when the data provide little evidence
-for spatial or spatiotemporal variation, i.e., when the variance parameter is
-estimated on or near the boundary of zero. When enabled, the model will be
-automatically refitted via \code{\link[=update.sdmTMB]{update.sdmTMB()}} with the corresponding field(s)
-disabled. This adds a computational cost (a single model refit if
-collapsing occurs) but can yield a simpler, more stable model and more
-reliable inference. Default is \code{FALSE} for backward compatibility.}
+is effectively zero (i.e., below \code{collapse_spatial_variance_threshold})?
+This helps prevent overfitting and numerical instability when the data
+provide little evidence for spatial or spatiotemporal variation, i.e.,
+when the variance parameter is estimated on or near the boundary of zero.
+When enabled, the model will be automatically refitted via
+\code{\link[=update.sdmTMB]{update.sdmTMB()}} with the corresponding field(s) disabled. This adds the
+computational cost of one or more model refits if collapsing occurs but can
+yield a simpler, more stable model and more reliable inference. Default is
+\code{FALSE} for backward compatibility.}
 
-\item{collapse_threshold}{Numeric: the standard deviation threshold below which random
-fields are considered to be collapsing to zero. Only used when
-\code{collapse_spatial_variance = TRUE}. Values are on the standard deviation
-scale (i.e., square root of variance). Default is 0.01.}
+\item{collapse_threshold}{Deprecated alias for
+\code{collapse_spatial_variance_threshold}. It will be removed in a future
+release.}
+
+\item{collapse_spatial_variance_threshold}{Numeric: the standard deviation
+threshold below which random fields are considered to be collapsing to zero.
+Only used when \code{collapse_spatial_variance = TRUE}. Values are on the
+standard deviation scale (i.e., square root of variance). Default is 0.01.}
+
+\item{collapse_spatiotemporal_ar1}{Logical: should spatiotemporal AR1 fields
+be automatically simplified when the estimated correlation (\code{rho}) is near
+zero or one? Fields with \code{abs(rho) <= collapse_ar1_threshold} are refitted
+as \code{"iid"}; fields with \code{rho >= 1 - collapse_ar1_threshold} are refitted as
+\code{"rw"}. This does not apply to \code{time_varying} effects. Default is \code{FALSE}.}
+
+\item{collapse_ar1_threshold}{Numeric: distance from zero or one at which a
+spatiotemporal AR1 correlation is considered to be collapsing. Must be
+greater than zero and less than 0.5. Only used when
+\code{collapse_spatiotemporal_ar1 = TRUE}. Default is 0.01.}
 
 \item{sar_weight_style}{Weight matrix to use for areal SAR models. \code{"row"}
 uses row-normalized weights and is the default. \code{"raw"} uses the raw

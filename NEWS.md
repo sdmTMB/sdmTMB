@@ -1,5 +1,14 @@
 # sdmTMB (development version)
 
+* Add opt-in `collapse_spatiotemporal_ar1` and `collapse_ar1_threshold`
+  controls to simplify spatiotemporal AR1 fields to IID or random-walk fields
+  when the estimated correlation is near zero or one. This operates
+  independently across delta-model components and does not affect
+  `time_varying` effects.
+
+* `collapse_threshold` in `sdmTMBcontrol()` is deprecated in favor of
+  `collapse_spatial_variance_threshold`.
+
 * `project()` now separates estimated parameter uncertainty, historical latent
   state uncertainty, and future process variation with the
   `sample_parameters`, `sample_historical_re`, and `sample_future_re`

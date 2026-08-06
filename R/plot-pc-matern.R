@@ -15,7 +15,7 @@
 #' [pc_matern()]
 #'
 #' @return
-#' A plot from [image()].
+#' A plot from [graphics::image()].
 #' Invisibly returns the underlying matrix data. The rows are the sigmas. The
 #' columns are the ranges. Column and row names are provided.
 #'

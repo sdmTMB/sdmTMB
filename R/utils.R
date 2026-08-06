@@ -66,18 +66,31 @@
 #'   are then replaced with `Inf` and avoided during estimation?
 #' @param collapse_spatial_variance Logical: should spatial and/or spatiotemporal
 #'   random fields be automatically dropped if their estimated standard deviation
-#'   is effectively zero (i.e., below `collapse_threshold`)? This helps prevent
-#'   overfitting and numerical instability when the data provide little evidence
-#'   for spatial or spatiotemporal variation, i.e., when the variance parameter is
-#'   estimated on or near the boundary of zero. When enabled, the model will be
-#'   automatically refitted via [update.sdmTMB()] with the corresponding field(s)
-#'   disabled. This adds a computational cost (a single model refit if
-#'   collapsing occurs) but can yield a simpler, more stable model and more
-#'   reliable inference. Default is `FALSE` for backward compatibility.
-#' @param collapse_threshold Numeric: the standard deviation threshold below which random
-#'   fields are considered to be collapsing to zero. Only used when
-#'   `collapse_spatial_variance = TRUE`. Values are on the standard deviation
-#'   scale (i.e., square root of variance). Default is 0.01.
+#'   is effectively zero (i.e., below `collapse_spatial_variance_threshold`)?
+#'   This helps prevent overfitting and numerical instability when the data
+#'   provide little evidence for spatial or spatiotemporal variation, i.e.,
+#'   when the variance parameter is estimated on or near the boundary of zero.
+#'   When enabled, the model will be automatically refitted via
+#'   [update.sdmTMB()] with the corresponding field(s) disabled. This adds the
+#'   computational cost of one or more model refits if collapsing occurs but can
+#'   yield a simpler, more stable model and more reliable inference. Default is
+#'   `FALSE` for backward compatibility.
+#' @param collapse_spatial_variance_threshold Numeric: the standard deviation
+#'   threshold below which random fields are considered to be collapsing to zero.
+#'   Only used when `collapse_spatial_variance = TRUE`. Values are on the
+#'   standard deviation scale (i.e., square root of variance). Default is 0.01.
+#' @param collapse_threshold Deprecated alias for
+#'   `collapse_spatial_variance_threshold`. It will be removed in a future
+#'   release.
+#' @param collapse_spatiotemporal_ar1 Logical: should spatiotemporal AR1 fields
+#'   be automatically simplified when the estimated correlation (`rho`) is near
+#'   zero or one? Fields with `abs(rho) <= collapse_ar1_threshold` are refitted
+#'   as `"iid"`; fields with `rho >= 1 - collapse_ar1_threshold` are refitted as
+#'   `"rw"`. This does not apply to `time_varying` effects. Default is `FALSE`.
+#' @param collapse_ar1_threshold Numeric: distance from zero or one at which a
+#'   spatiotemporal AR1 correlation is considered to be collapsing. Must be
+#'   greater than zero and less than 0.5. Only used when
+#'   `collapse_spatiotemporal_ar1 = TRUE`. Default is 0.01.
 #' @param sar_weight_style Weight matrix to use for areal SAR models. `"row"`
 #'   uses row-normalized weights and is the default. `"raw"` uses the raw
 #'   adjacency/weight matrix for direct comparisons to packages that do so.
@@ -130,7 +143,10 @@ sdmTMBcontrol <- function(
   parallel = getOption("sdmTMB.cores", 1L),
   suppress_nlminb_warnings = TRUE,
   collapse_spatial_variance = FALSE,
-  collapse_threshold = 0.01,
+  collapse_threshold = deprecated(),
+  collapse_spatial_variance_threshold = 0.01,
+  collapse_spatiotemporal_ar1 = FALSE,
+  collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
   get_rsr = FALSE,
   ...) {
@@ -150,7 +166,33 @@ sdmTMBcontrol <- function(
   assert_that(is.logical(profile) || is.character(profile))
   assert_that(is.logical(get_rsr))
   assert_that(is.logical(collapse_spatial_variance))
-  assert_that(is.numeric(collapse_threshold), collapse_threshold > 0)
+  threshold_supplied <- !missing(collapse_spatial_variance_threshold)
+  if (is_present(collapse_threshold)) {
+    deprecate_warn(
+      "1.1.0.9004",
+      "sdmTMBcontrol(collapse_threshold = )",
+      "sdmTMBcontrol(collapse_spatial_variance_threshold = )"
+    )
+    if (!threshold_supplied) {
+      collapse_spatial_variance_threshold <- collapse_threshold
+    }
+  }
+  assert_that(
+    is.numeric(collapse_spatial_variance_threshold),
+    collapse_spatial_variance_threshold > 0
+  )
+  assert_that(
+    is.logical(collapse_spatiotemporal_ar1),
+    length(collapse_spatiotemporal_ar1) == 1L,
+    !is.na(collapse_spatiotemporal_ar1)
+  )
+  assert_that(
+    is.numeric(collapse_ar1_threshold),
+    length(collapse_ar1_threshold) == 1L,
+    is.finite(collapse_ar1_threshold),
+    collapse_ar1_threshold > 0,
+    collapse_ar1_threshold < 0.5
+  )
   sar_weight_style <- match.arg(sar_weight_style)
 
   out <- named_list(
@@ -171,7 +213,9 @@ sdmTMBcontrol <- function(
     parallel,
     get_joint_precision,
     collapse_spatial_variance,
-    collapse_threshold,
+    collapse_spatial_variance_threshold,
+    collapse_spatiotemporal_ar1,
+    collapse_ar1_threshold,
     sar_weight_style,
     get_rsr
   )

@@ -33,7 +33,7 @@ with \code{1 - sigma_prob} probability.}
 \item{plot}{Logical controlling whether plot is drawn (defaults to \code{TRUE}).}
 }
 \value{
-A plot from \code{\link[=image]{image()}}.
+A plot from \code{\link[graphics:image]{graphics::image()}}.
 Invisibly returns the underlying matrix data. The rows are the sigmas. The
 columns are the ranges. Column and row names are provided.
 }

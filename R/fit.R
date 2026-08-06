@@ -772,7 +772,9 @@ sdmTMB <- function(
   upr <- control$censored_upper
   suppress_nlminb_warnings <- control$suppress_nlminb_warnings
   collapse_spatial_variance <- control$collapse_spatial_variance
-  collapse_threshold <- control$collapse_threshold
+  collapse_spatial_variance_threshold <- control$collapse_spatial_variance_threshold
+  collapse_spatiotemporal_ar1 <- control$collapse_spatiotemporal_ar1
+  collapse_ar1_threshold <- control$collapse_ar1_threshold
   sar_weight_style <- control$sar_weight_style
   do_rsr <- as.integer(isTRUE(control$get_rsr))
 
@@ -780,7 +782,9 @@ sdmTMB <- function(
     "lower", "upper", "profile", "parallel", "censored_upper", "getsd",
     "nlminb_loops", "newton_steps", "mgcv", "quadratic_roots", "multiphase",
     "newton_loops", "start", "map", "get_joint_precision", "normalize",
-    "suppress_nlminb_warnings", "collapse_spatial_variance", "collapse_threshold",
+    "suppress_nlminb_warnings", "collapse_spatial_variance",
+    "collapse_spatial_variance_threshold",
+    "collapse_spatiotemporal_ar1", "collapse_ar1_threshold",
     "sar_weight_style", "get_rsr"
   )
   .control <- control
@@ -1956,30 +1960,31 @@ sdmTMB <- function(
 
   check_bounds(tmb_opt$par, lim$lower, lim$upper)
 
-  # Check if spatial/spatiotemporal variances are collapsing to zero
-  # Do this before Newton steps to avoid Hessian issues if variances have collapsed
-  if (collapse_spatial_variance && length(tmb_obj$par) > 0) {
+  # Check fields before Newton steps to avoid Hessian issues after collapse
+  if ((collapse_spatial_variance || collapse_spatiotemporal_ar1) &&
+      length(tmb_obj$par) > 0) {
     report_vals <- tmb_obj$report()
-    collapse_result <- check_and_collapse_random_fields(
+    collapse_result <- check_and_collapse_spatial_fields(
       report_vals = report_vals,
       spatial = spatial,
       spatiotemporal = spatiotemporal,
       n_m = n_m,
       n_t = n_t,
       omit_spatial_intercept = omit_spatial_intercept,
-      collapse_threshold = collapse_threshold,
+      collapse_spatial_variance = collapse_spatial_variance,
+      collapse_spatial_variance_threshold = collapse_spatial_variance_threshold,
+      collapse_spatiotemporal_ar1 = collapse_spatiotemporal_ar1,
+      collapse_ar1_threshold = collapse_ar1_threshold,
       delta = delta,
       silent = silent
     )
     if (collapse_result$do_refit) {
       if (!silent) {
         cli_inform(c(
-          "i" = "Refitting model with collapsed random field(s) using update()..."
+          "i" = "Refitting model with collapsed spatial field(s) using update()..."
         ))
       }
 
-      # Now refit with collapsed fields disabled
-      # The rest of this sdmTMB() function call was just executed with update()
       updated_call <- update(
         out_structure,
         spatial = collapse_result$spatial_arg,
@@ -2053,14 +2058,17 @@ check_bounds <- function(.par, lower, upper) {
   }
 }
 
-check_and_collapse_random_fields <- function(
+check_and_collapse_spatial_fields <- function(
     report_vals,
     spatial,
     spatiotemporal,
     n_m,
     n_t,
     omit_spatial_intercept,
-    collapse_threshold,
+    collapse_spatial_variance,
+    collapse_spatial_variance_threshold,
+    collapse_spatiotemporal_ar1,
+    collapse_ar1_threshold,
     delta,
     silent) {
 
@@ -2068,18 +2076,18 @@ check_and_collapse_random_fields <- function(
   spatial_updated <- spatial
   spatiotemporal_updated <- spatiotemporal
 
-  # Check spatial field
-  if (any(spatial == "on") && !omit_spatial_intercept) {
+  if (collapse_spatial_variance && any(spatial == "on") &&
+      !omit_spatial_intercept) {
     est_sigma_O <- c(report_vals$sigma_O)
     which_sigma <- which(
       spatial == "on" & is.finite(est_sigma_O) &
-        est_sigma_O < collapse_threshold
+        est_sigma_O < collapse_spatial_variance_threshold
     )
 
     if (length(which_sigma) > 0L) {
       if (!silent) {
         cli_inform(c(
-          "!" = "Spatial variance below threshold ({collapse_threshold}) detected",
+          "!" = "Spatial variance below threshold ({collapse_spatial_variance_threshold}) detected",
           "i" = "Affected model(s): {paste(which_sigma, collapse = ', ')}",
           ">" = "Refitting with spatial field(s) disabled"
         ))
@@ -2092,8 +2100,7 @@ check_and_collapse_random_fields <- function(
     }
   }
 
-  # Check spatiotemporal field (epsilon_st)
-  if (!all(spatiotemporal == "off")) {
+  if (collapse_spatial_variance && !all(spatiotemporal == "off")) {
     est_sigma_E <- report_vals$sigma_E
 
     if (length(est_sigma_E) > 0) {
@@ -2109,13 +2116,13 @@ check_and_collapse_random_fields <- function(
 
       which_sigma <- which(
         spatiotemporal != "off" & is.finite(est_sigma_E_by_model) &
-          est_sigma_E_by_model < collapse_threshold
+          est_sigma_E_by_model < collapse_spatial_variance_threshold
       )
 
       if (length(which_sigma) > 0L) {
         if (!silent) {
           cli_inform(c(
-            "!" = "Spatiotemporal variance below threshold ({collapse_threshold}) detected",
+            "!" = "Spatiotemporal variance below threshold ({collapse_spatial_variance_threshold}) detected",
             "i" = "Affected model(s): {paste(which_sigma, collapse = ', ')}",
             ">" = "Refitting with spatiotemporal field(s) disabled"
           ))
@@ -2129,7 +2136,49 @@ check_and_collapse_random_fields <- function(
     }
   }
 
-  # Prepare spatial/spatiotemporal arguments for update()
+  if (collapse_spatiotemporal_ar1 &&
+      any(spatiotemporal_updated == "ar1")) {
+    reported_rho <- c(report_vals$rho)
+    est_rho <- rep(NA_real_, n_m)
+    n_rho <- min(length(reported_rho), n_m)
+    if (n_rho > 0L) {
+      est_rho[seq_len(n_rho)] <- reported_rho[seq_len(n_rho)]
+    }
+
+    which_iid <- which(
+      spatiotemporal_updated == "ar1" & is.finite(est_rho) &
+        abs(est_rho) <= collapse_ar1_threshold
+    )
+    which_rw <- which(
+      spatiotemporal_updated == "ar1" & is.finite(est_rho) &
+        est_rho >= 1 - collapse_ar1_threshold
+    )
+
+    if (length(which_iid) > 0L) {
+      if (!silent) {
+        cli_inform(c(
+          "!" = "Spatiotemporal AR1 correlation within {collapse_ar1_threshold} of zero detected",
+          "i" = "Affected model(s): {paste(which_iid, collapse = ', ')}",
+          ">" = "Refitting with spatiotemporal field(s) set to IID"
+        ))
+      }
+      spatiotemporal_updated[which_iid] <- "iid"
+      do_refit <- TRUE
+    }
+
+    if (length(which_rw) > 0L) {
+      if (!silent) {
+        cli_inform(c(
+          "!" = "Spatiotemporal AR1 correlation within {collapse_ar1_threshold} of one detected",
+          "i" = "Affected model(s): {paste(which_rw, collapse = ', ')}",
+          ">" = "Refitting with spatiotemporal field(s) set to RW"
+        ))
+      }
+      spatiotemporal_updated[which_rw] <- "rw"
+      do_refit <- TRUE
+    }
+  }
+
   if (delta) {
     spatial_arg <- as.list(spatial_updated)
     spatiotemporal_arg <- as.list(spatiotemporal_updated)
