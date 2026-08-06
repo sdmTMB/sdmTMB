@@ -13,8 +13,6 @@ project(
   sample_future_re = TRUE,
   silent = FALSE,
   sims_var = NULL,
-  simulate_re = c(spatial = FALSE, spatiotemporal = TRUE, spatial_varying = FALSE, iid =
-    FALSE, time_varying = TRUE, smoothers = FALSE),
   return_tmb_report = FALSE,
   ...
 )
@@ -47,13 +45,6 @@ simulation report. If \code{NULL}, the default, the usual named projection list
 is returned. If supplied, use a native projection report name such as
 \code{"proj_eta"} or \code{"proj_epsilon_st_A_vec"}; the simulation dimension is
 last. See also \code{return_tmb_report}.}
-
-\item{simulate_re}{Named logical vector specifying which random effects to
-simulate in the projection. The required names are \code{spatial},
-\code{spatiotemporal}, \code{spatial_varying}, \code{iid}, \code{time_varying}, and \code{smoothers};
-their order may vary. The default simulates spatiotemporal fields and
-time-varying coefficients, when present. Spatial fields default to \code{FALSE}
-because they are time invariant.}
 
 \item{return_tmb_report}{Return the \pkg{TMB} report from \code{simulate()}? This
 lets you parse out whatever elements you want from the simulation including

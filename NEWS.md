@@ -3,9 +3,10 @@
 * `project()` now separates estimated parameter uncertainty, historical latent
   state uncertainty, and future process variation with the
   `sample_parameters`, `sample_historical_re`, and `sample_future_re`
-  arguments. Its random-effect simulation controls are now a named logical
-  `simulate_re` vector. It now also uses the native TMB prediction path, making
-  projections faster when `newdata` repeats spatial locations across time.
+  arguments. It simulates future spatiotemporal and time-varying effects while
+  retaining static random effects, and uses the native TMB prediction path,
+  making projections faster when `newdata` repeats spatial locations across
+  time.
 
 * Make sdmTMB compatible with the new visreg 3.0.0, which now defaults to
   ggplot output.

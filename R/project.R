@@ -31,12 +31,6 @@
 #'   is returned. If supplied, use a native projection report name such as
 #'   `"proj_eta"` or `"proj_epsilon_st_A_vec"`; the simulation dimension is
 #'   last. See also `return_tmb_report`.
-#' @param simulate_re Named logical vector specifying which random effects to
-#'   simulate in the projection. The required names are `spatial`,
-#'   `spatiotemporal`, `spatial_varying`, `iid`, `time_varying`, and `smoothers`;
-#'   their order may vary. The default simulates spatiotemporal fields and
-#'   time-varying coefficients, when present. Spatial fields default to `FALSE`
-#'   because they are time invariant.
 #' @param return_tmb_report Return the \pkg{TMB} report from `simulate()`? This
 #'   lets you parse out whatever elements you want from the simulation including
 #'   grabbing multiple elements from one set of simulations. Prediction-path
@@ -159,14 +153,6 @@ project <- function(
     sample_future_re = TRUE,
     silent = FALSE,
     sims_var = NULL,
-    simulate_re = c(
-      spatial = FALSE,
-      spatiotemporal = TRUE,
-      spatial_varying = FALSE,
-      iid = FALSE,
-      time_varying = TRUE,
-      smoothers = FALSE
-    ),
     return_tmb_report = FALSE,
     ...) {
   assert_that(inherits(object, "sdmTMB"))
@@ -193,8 +179,19 @@ project <- function(
         is.na(sims_var) || !nzchar(sims_var))) {
     cli_abort("`sims_var` must be `NULL` or one non-empty character value.")
   }
-  simulate_re <- validate_project_simulate_re(simulate_re)
-  old_arguments <- intersect(names(list(...)), c("uncertainty", "sim_re"))
+  ## Keep static random effects at their sampled historical values and simulate
+  ## only future dynamic effects. `sample_future_re` can disable the latter.
+  simulate_re <- c(
+    spatial = FALSE,
+    spatiotemporal = TRUE,
+    spatial_varying = FALSE,
+    iid = FALSE,
+    time_varying = TRUE,
+    smoothers = FALSE
+  )
+  old_arguments <- intersect(
+    names(list(...)), c("uncertainty", "sim_re", "simulate_re")
+  )
   if (length(old_arguments)) {
     cli_abort("`{paste(old_arguments, collapse = '`, `')}` is no longer supported by `project()`.")
   }
@@ -385,34 +382,6 @@ project <- function(
     out$epsilon_st1 <- out$epsilon_st2 <- out$epsilon_st <- NULL
   }
   out
-}
-
-validate_project_simulate_re <- function(x) {
-  expected <- c(
-    "spatial", "spatiotemporal", "spatial_varying", "iid",
-    "time_varying", "smoothers"
-  )
-  if (!is.logical(x) || length(x) != length(expected)) {
-    cli_abort("`simulate_re` must be a logical vector with six named values.")
-  }
-  if (is.null(names(x)) || length(names(x)) != length(x)) {
-    cli_abort("`simulate_re` must have the names: {paste(expected, collapse = ', ')}.")
-  }
-  if (anyDuplicated(names(x))) {
-    cli_abort("`simulate_re` names must be unique.")
-  }
-  unknown <- setdiff(names(x), expected)
-  missing <- setdiff(expected, names(x))
-  if (length(unknown) || length(missing)) {
-    cli_abort(c(
-      "`simulate_re` must use exactly the six expected names.",
-      "i" = "Unknown: {paste(unknown, collapse = ', ')}; missing: {paste(missing, collapse = ', ')}."
-    ))
-  }
-  if (anyNA(x)) {
-    cli_abort("`simulate_re` must contain non-missing logical values.")
-  }
-  x[expected]
 }
 
 project_sd_report <- function(object) {
