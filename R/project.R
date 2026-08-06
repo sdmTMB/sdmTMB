@@ -17,14 +17,19 @@
 #'   values must be numeric and align with the constant cadence in the fitted
 #'   model. Missing intermediate future time elements are simulated.
 #' @param nsim Number of projection simulations.
-#' @param sample_parameters Logical. Sample uncertainty in the estimated model
+#' @param sample_fe Logical. Sample uncertainty in the estimated model
 #'   parameters, including regression coefficients, covariance parameters, and
 #'   dispersion parameters.
 #' @param sample_historical_re Logical. Sample uncertainty in random effects
 #'   associated with the fitted historical period.
 #' @param sample_future_re Logical. Simulate random effects in the projection
 #'   period. When `FALSE`, dynamic effects are propagated at their conditional
-#'   means.
+#'   means. Ignored when `future_re` is `"zero"` or `"fix"`.
+#' @param future_re Treatment of spatiotemporal random effects and time-varying
+#'   coefficients in the projection period. `"include"` preserves the usual
+#'   process dynamics, `"zero"` sets them to zero, and `"fix"` holds them at
+#'   their value in the final historical time step. Historical effects are
+#'   unchanged.
 #' @param silent Logical. Suppress progress messages?
 #' @param sims_var Optional single element to extract from the \pkg{TMB}
 #'   simulation report. If `NULL`, the default, the usual named projection list
@@ -148,9 +153,10 @@ project <- function(
     object,
     newdata,
     nsim = 1,
-    sample_parameters = TRUE,
+    sample_fe = TRUE,
     sample_historical_re = TRUE,
     sample_future_re = TRUE,
+    future_re = c("include", "zero", "fix"),
     silent = FALSE,
     sims_var = NULL,
     return_tmb_report = FALSE,
@@ -165,8 +171,9 @@ project <- function(
     cli_abort("`nsim` must be less than or equal to `.Machine$integer.max`.")
   }
   nsim <- as.integer(nsim)
+  future_re <- match.arg(future_re)
   for (x in c(
-    "sample_parameters", "sample_historical_re", "sample_future_re",
+    "sample_fe", "sample_historical_re", "sample_future_re",
     "return_tmb_report", "silent"
   )) {
     value <- get(x)
@@ -219,7 +226,7 @@ project <- function(
     lpb = lpb,
     sd_report = sd_report,
     nsim = nsim,
-    sample_parameters = sample_parameters,
+    sample_fe = sample_fe,
     sample_historical_re = sample_historical_re
   )
 
@@ -251,7 +258,7 @@ project <- function(
   p$simulate_t <- as.integer(object$time_lu$sim_projected)
   ## Convert the named R controls to TMB's fixed six-entry contract here.
   tmb_simulate_re <- simulate_re
-  if (!sample_future_re) {
+  if (!sample_future_re || future_re != "include") {
     tmb_simulate_re[c("spatiotemporal", "time_varying")] <- FALSE
   }
   p$sim_re <- as.integer(tmb_simulate_re)
@@ -337,9 +344,10 @@ project <- function(
         n_groups = n_m, fill = as.vector(new_epsilon_re)
       )
     }
-    if (!sample_future_re || !simulate_re[["spatiotemporal"]] ||
+    if (future_re != "include" || !sample_future_re ||
+        !simulate_re[["spatiotemporal"]] ||
         !simulate_re[["time_varying"]]) {
-      lpx <- project_future_conditional_means(
+      lpx <- project_apply_future_re(
         lpx = lpx,
         tmb_obj = obj,
         object = object,
@@ -347,6 +355,7 @@ project <- function(
         nproj = nproj,
         simulate_re = simulate_re,
         sample_future_re = sample_future_re,
+        future_re = future_re,
         epsilon_active = epsilon_active
       )
     }
@@ -428,11 +437,11 @@ project_conditional_draws <- function(mu, sd_report, indices, nsim) {
 }
 
 project_historical_draws <- function(
-    lpb, sd_report, nsim, sample_parameters, sample_historical_re
+    lpb, sd_report, nsim, sample_fe, sample_historical_re
 ) {
   re_index <- project_historical_re_indices(lpb)
   lp <- lpb %o% rep(1, nsim)
-  if (sample_parameters) {
+  if (sample_fe) {
     lp <- project_joint_draws(lpb, sd_report, nsim)
     if (!sample_historical_re && length(re_index)) {
       lp[re_index, ] <- lpb[re_index]
@@ -457,9 +466,9 @@ project_replace_parameter <- function(lp, nm, value, active = NULL) {
   lp
 }
 
-project_future_conditional_means <- function(
+project_apply_future_re <- function(
     lpx, tmb_obj, object, historical_n_t, nproj, simulate_re,
-    sample_future_re, epsilon_active
+    sample_future_re, future_re, epsilon_active
 ) {
   ## parList() takes the fixed part of a TMB parameter vector. Reconstruct the
   ## two time-dependent random arrays from the full simulation vector below so
@@ -468,14 +477,20 @@ project_future_conditional_means <- function(
   n_m <- length(object$spatiotemporal)
 
   if (length(pars$epsilon_st) &&
-      (!sample_future_re || !simulate_re[["spatiotemporal"]])) {
+      (future_re != "include" || !sample_future_re ||
+        !simulate_re[["spatiotemporal"]])) {
     epsilon <- pars$epsilon_st
     epsilon[] <- 0
     epsilon_index <- which(names(lpx) == "epsilon_st")
     if (length(epsilon_index)) epsilon[epsilon_active] <- lpx[epsilon_index]
     for (m in seq_len(n_m)) {
       type <- tolower(as.character(object$spatiotemporal[[m]]))
-      if (type == "ar1") {
+      future_index <- historical_n_t + seq_len(nproj)
+      if (future_re == "zero") {
+        epsilon[, future_index, m] <- 0
+      } else if (future_re == "fix") {
+        epsilon[, future_index, m] <- epsilon[, historical_n_t, m]
+      } else if (type == "ar1") {
         ar1_phi <- as.numeric(pars$ar1_phi)
         ar1_phi <- ar1_phi[min(m, length(ar1_phi))]
         rho <- 2 * stats::plogis(ar1_phi) - 1
@@ -498,12 +513,18 @@ project_future_conditional_means <- function(
   has_time_varying <- isTRUE(object$tmb_data$random_walk %in% c(1L, 2L)) ||
     isTRUE(object$tmb_data$ar1_time == 1L)
   if (length(pars$b_rw_t) && has_time_varying &&
-      (!sample_future_re || !simulate_re[["time_varying"]])) {
+      (future_re != "include" || !sample_future_re ||
+        !simulate_re[["time_varying"]])) {
     b_rw_t <- array(
       lpx[names(lpx) == "b_rw_t"],
       dim = dim(pars$b_rw_t)
     )
-    if (isTRUE(object$tmb_data$ar1_time == 1L)) {
+    future_index <- historical_n_t + seq_len(nproj)
+    if (future_re == "zero") {
+      b_rw_t[future_index, , ] <- 0
+    } else if (future_re == "fix") {
+      b_rw_t[future_index, , ] <- b_rw_t[historical_n_t, , ]
+    } else if (isTRUE(object$tmb_data$ar1_time == 1L)) {
       rho_time <- 2 * stats::plogis(pars$rho_time_unscaled) - 1
       for (m in seq_len(dim(b_rw_t)[3])) {
         for (k in seq_len(dim(b_rw_t)[2])) {

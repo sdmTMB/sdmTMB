@@ -8,9 +8,10 @@ project(
   object,
   newdata,
   nsim = 1,
-  sample_parameters = TRUE,
+  sample_fe = TRUE,
   sample_historical_re = TRUE,
   sample_future_re = TRUE,
+  future_re = c("include", "zero", "fix"),
   silent = FALSE,
   sims_var = NULL,
   return_tmb_report = FALSE,
@@ -27,7 +28,7 @@ model. Missing intermediate future time elements are simulated.}
 
 \item{nsim}{Number of projection simulations.}
 
-\item{sample_parameters}{Logical. Sample uncertainty in the estimated model
+\item{sample_fe}{Logical. Sample uncertainty in the estimated model
 parameters, including regression coefficients, covariance parameters, and
 dispersion parameters.}
 
@@ -36,7 +37,13 @@ associated with the fitted historical period.}
 
 \item{sample_future_re}{Logical. Simulate random effects in the projection
 period. When \code{FALSE}, dynamic effects are propagated at their conditional
-means.}
+means. Ignored when \code{future_re} is \code{"zero"} or \code{"fix"}.}
+
+\item{future_re}{Treatment of spatiotemporal random effects and time-varying
+coefficients in the projection period. \code{"include"} preserves the usual
+process dynamics, \code{"zero"} sets them to zero, and \code{"fix"} holds them at
+their value in the final historical time step. Historical effects are
+unchanged.}
 
 \item{silent}{Logical. Suppress progress messages?}
 

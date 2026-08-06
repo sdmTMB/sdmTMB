@@ -44,7 +44,7 @@ test_that("project supports all independent sampling combinations", {
   )
 
   controls <- expand.grid(
-    sample_parameters = c(FALSE, TRUE),
+    sample_fe = c(FALSE, TRUE),
     sample_historical_re = c(FALSE, TRUE),
     sample_future_re = c(FALSE, TRUE)
   )
@@ -53,7 +53,7 @@ test_that("project supports all independent sampling combinations", {
       fit,
       grid,
       nsim = 2,
-      sample_parameters = controls$sample_parameters[[i]],
+      sample_fe = controls$sample_fe[[i]],
       sample_historical_re = controls$sample_historical_re[[i]],
       sample_future_re = controls$sample_future_re[[i]],
       return_tmb_report = TRUE,
@@ -81,7 +81,7 @@ test_that("project supports all independent sampling combinations", {
   }
 
   stochastic <- which(
-    !controls$sample_parameters & !controls$sample_historical_re &
+    !controls$sample_fe & !controls$sample_historical_re &
       controls$sample_future_re
   )
   future <- grid$year > max(historical_years)
@@ -124,12 +124,12 @@ test_that("project treats REML regression coefficients as parameters", {
   )
 
   parameter_only <- project(
-    fit, grid, nsim = 2, sample_parameters = TRUE,
+    fit, grid, nsim = 2, sample_fe = TRUE,
     sample_historical_re = FALSE, sample_future_re = FALSE,
     return_tmb_report = TRUE, allow_new_levels = TRUE, silent = TRUE
   )
   historical_only <- project(
-    fit, grid, nsim = 2, sample_parameters = FALSE,
+    fit, grid, nsim = 2, sample_fe = FALSE,
     sample_historical_re = TRUE, sample_future_re = FALSE,
     return_tmb_report = TRUE, allow_new_levels = TRUE, silent = TRUE
   )
@@ -167,7 +167,7 @@ test_that("project propagates conditional means for future process effects", {
       family = tweedie()
     )
     report <- project(
-      fit, grid, nsim = 1, sample_parameters = FALSE,
+      fit, grid, nsim = 1, sample_fe = FALSE,
       sample_historical_re = FALSE, sample_future_re = FALSE,
       return_tmb_report = TRUE, silent = TRUE
     )[[1L]]
@@ -189,6 +189,43 @@ test_that("project propagates conditional means for future process effects", {
         rep(0, nrow(report$epsilon_st))
       )
     }
+  }
+})
+
+test_that("project can zero or fix future spatiotemporal effects", {
+  skip_on_cran()
+
+  mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
+  historical_years <- sort(unique(pcod_2011$year))
+  grid <- replicate_df(
+    pcod_2011[seq(1, nrow(pcod_2011), by = 100), , drop = FALSE],
+    "year", c(historical_years, max(historical_years) + 2)
+  )
+  fit <- sdmTMB(
+    density ~ 1, data = pcod_2011, mesh = mesh, time = "year",
+    extra_time = historical_years, spatial = "off",
+    spatiotemporal = "ar1", family = tweedie()
+  )
+  n_historical <- nrow(fit$time_lu)
+
+  zero <- project(
+    fit, grid, nsim = 1, sample_fe = FALSE,
+    sample_historical_re = FALSE, future_re = "zero",
+    return_tmb_report = TRUE, silent = TRUE
+  )[[1L]]
+  future_index <- seq.int(n_historical + 1L, dim(zero$epsilon_st)[2L])
+  expect_true(all(zero$epsilon_st[, future_index, 1L] == 0))
+
+  fixed <- project(
+    fit, grid, nsim = 1, sample_fe = FALSE,
+    sample_historical_re = FALSE, future_re = "fix",
+    return_tmb_report = TRUE, silent = TRUE
+  )[[1L]]
+  for (tt in future_index) {
+    expect_equal(
+      fixed$epsilon_st[, tt, 1L],
+      fixed$epsilon_st[, n_historical, 1L]
+    )
   }
 })
 
@@ -278,7 +315,7 @@ test_that("project() handles decimal time cadence and preserves rows", {
   newdata <- newdata[c(nrow(newdata), seq_len(nrow(newdata) - 1L)), , drop = FALSE]
 
   out <- project(
-    fit, newdata, nsim = 2, sample_parameters = FALSE,
+    fit, newdata, nsim = 2, sample_fe = FALSE,
     sample_historical_re = FALSE, silent = TRUE
   )
   expect_identical(names(out), "est")
@@ -324,7 +361,7 @@ test_that("project() works with delta models", {
   )
   set.seed(1)
   out <- project(
-    fit2, newdata = proj_grid, nsim = 25, sample_parameters = FALSE,
+    fit2, newdata = proj_grid, nsim = 25, sample_fe = FALSE,
     sample_historical_re = FALSE
   )
   none <- out
@@ -358,7 +395,7 @@ test_that("project() works with delta models", {
     fit2,
     newdata = proj_grid,
     nsim = 25,
-    sample_parameters = FALSE,
+    sample_fe = FALSE,
     sample_historical_re = FALSE,
     return_tmb_report = TRUE #< difference from above example
   )
@@ -381,7 +418,7 @@ test_that("project() works with delta models", {
   suppressWarnings({
     random <- project(
       fit2, newdata = proj_grid, nsim = 20,
-      sample_parameters = FALSE, sample_historical_re = TRUE
+      sample_fe = FALSE, sample_historical_re = TRUE
     )
   })
 
@@ -416,7 +453,7 @@ test_that("project() pads delta spatiotemporal fields by active component", {
       control = sdmTMBcontrol(newton_loops = 0)
     )
     out <- project(
-      fit, grid, nsim = 1, sample_parameters = FALSE,
+      fit, grid, nsim = 1, sample_fe = FALSE,
       sample_historical_re = FALSE, silent = TRUE
     )
     fitted <- predict(fit, grid[historical, , drop = FALSE])
@@ -460,7 +497,7 @@ test_that("project() works with non-delta models", {
   )
   set.seed(1)
   out <- project(
-    fit2, newdata = proj_grid, nsim = 25, sample_parameters = FALSE,
+    fit2, newdata = proj_grid, nsim = 25, sample_fe = FALSE,
     sample_historical_re = FALSE
   )
   expect_identical(names(out), c("est", "epsilon_st"))
@@ -472,7 +509,7 @@ test_that("project() works with non-delta models", {
   expect_gt(cor(p$epsilon_st[i], proj_grid$eps_mean[i]), 0.98)
 
   eta <- project(
-    fit2, newdata = proj_grid, nsim = 2, sample_parameters = FALSE,
+    fit2, newdata = proj_grid, nsim = 2, sample_fe = FALSE,
     sample_historical_re = FALSE,
     sims_var = "proj_eta", silent = TRUE
   )
@@ -481,13 +518,13 @@ test_that("project() works with non-delta models", {
   old_fit <- fit2
   old_fit$tmb_data$sim_obs <- NULL
   old_fit_out <- project(
-    old_fit, newdata = proj_grid, nsim = 1, sample_parameters = FALSE,
+    old_fit, newdata = proj_grid, nsim = 1, sample_fe = FALSE,
     sample_historical_re = FALSE, silent = TRUE
   )
   expect_equal(dim(old_fit_out$est), c(nrow(proj_grid), 1L))
   expect_error(
     project(
-      fit2, newdata = proj_grid, nsim = 1, sample_parameters = FALSE,
+      fit2, newdata = proj_grid, nsim = 1, sample_fe = FALSE,
       sample_historical_re = FALSE,
       sims_var = "not_a_report_element", silent = TRUE
     ),
@@ -533,7 +570,7 @@ test_that("project() works with time-varying effects", {
   )
   set.seed(1)
   out <- project(
-    fit2, newdata = proj_grid, nsim = 25, sample_parameters = FALSE,
+    fit2, newdata = proj_grid, nsim = 25, sample_fe = FALSE,
     sample_historical_re = FALSE
   )
   expect_identical(names(out), c("est"))
@@ -554,7 +591,7 @@ test_that("project() works with time-varying effects", {
     family = tweedie()
   )
   raw <- project(
-    fit3, newdata = proj_grid, nsim = 2, sample_parameters = FALSE,
+    fit3, newdata = proj_grid, nsim = 2, sample_fe = FALSE,
     sample_historical_re = FALSE,
     return_tmb_report = TRUE, silent = TRUE
   )
@@ -565,7 +602,7 @@ test_that("project() works with time-varying effects", {
     tolerance = 1e-3
   )
   raw_mean <- project(
-    fit3, newdata = proj_grid, nsim = 1, sample_parameters = FALSE,
+    fit3, newdata = proj_grid, nsim = 1, sample_fe = FALSE,
     sample_historical_re = FALSE, sample_future_re = FALSE,
     return_tmb_report = TRUE, silent = TRUE
   )[[1L]]
@@ -574,6 +611,23 @@ test_that("project() works with time-varying effects", {
   expect_equal(
     raw_mean$b_rw_t[n_historical + 1L, 1L, 1L],
     rho_time * raw_mean$b_rw_t[n_historical, 1L, 1L]
+  )
+
+  raw_zero <- project(
+    fit3, newdata = proj_grid, nsim = 1, sample_fe = FALSE,
+    sample_historical_re = FALSE, future_re = "zero",
+    return_tmb_report = TRUE, silent = TRUE
+  )[[1L]]
+  expect_equal(raw_zero$b_rw_t[n_historical + 1L, , 1L], c(0, 0))
+
+  raw_fix <- project(
+    fit3, newdata = proj_grid, nsim = 1, sample_fe = FALSE,
+    sample_historical_re = FALSE, future_re = "fix",
+    return_tmb_report = TRUE, silent = TRUE
+  )[[1L]]
+  expect_equal(
+    raw_fix$b_rw_t[n_historical + 1L, , 1L],
+    raw_fix$b_rw_t[n_historical, , 1L]
   )
 })
 
@@ -604,7 +658,7 @@ test_that("project() works/fails as expected in some less obvious situations", {
   set.seed(1)
   expect_message(
     out <- project(
-      fit, newdata = proj_grid, nsim = 2, sample_parameters = FALSE,
+      fit, newdata = proj_grid, nsim = 2, sample_fe = FALSE,
       sample_historical_re = FALSE
     ),
     "structures"
@@ -614,7 +668,7 @@ test_that("project() works/fails as expected in some less obvious situations", {
   expect_message(
     out <- project(
       fit, newdata = proj_grid, nsim = 1,
-      sample_parameters = FALSE, sample_historical_re = TRUE, silent = TRUE
+      sample_fe = FALSE, sample_historical_re = TRUE, silent = TRUE
     )
   )
 
@@ -665,9 +719,10 @@ test_that("project() works/fails as expected in some less obvious situations", {
   expect_error(project(fit, proj_grid, nsim = 1.5), "whole number")
   expect_error(project(fit, proj_grid, nsim = Inf), "finite")
   expect_error(project(fit, proj_grid, nsim = .Machine$integer.max + 1), "integer.max")
-  expect_error(project(fit, proj_grid, sample_parameters = NA), "sample_parameters")
+  expect_error(project(fit, proj_grid, sample_fe = NA), "sample_fe")
   expect_error(project(fit, proj_grid, sample_historical_re = c(TRUE, FALSE)), "sample_historical_re")
   expect_error(project(fit, proj_grid, sample_future_re = NA), "sample_future_re")
+  expect_error(project(fit, proj_grid, future_re = "unknown"), "arg")
   expect_error(project(fit, proj_grid, silent = NA), "silent")
   expect_error(project(fit, proj_grid, return_tmb_report = c(TRUE, FALSE)), "return_tmb_report")
   expect_error(project(fit, proj_grid, uncertainty = "none"), "uncertainty")
