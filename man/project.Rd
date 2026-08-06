@@ -44,8 +44,9 @@ means.}
 
 \item{sims_var}{Optional single element to extract from the \pkg{TMB}
 simulation report. If \code{NULL}, the default, the usual named projection list
-is returned. If supplied, the simulation dimension is last. See also
-\code{return_tmb_report}.}
+is returned. If supplied, use a native projection report name such as
+\code{"proj_eta"} or \code{"proj_epsilon_st_A_vec"}; the simulation dimension is
+last. See also \code{return_tmb_report}.}
 
 \item{simulate_re}{Named logical vector specifying which random effects to
 simulate in the projection. The required names are \code{spatial},
@@ -56,7 +57,8 @@ because they are time invariant.}
 
 \item{return_tmb_report}{Return the \pkg{TMB} report from \code{simulate()}? This
 lets you parse out whatever elements you want from the simulation including
-grabbing multiple elements from one set of simulations. See examples.}
+grabbing multiple elements from one set of simulations. Prediction-path
+elements retain their native \verb{proj_*} names. See examples.}
 
 \item{...}{Passed to \code{\link[=predict.sdmTMB]{predict.sdmTMB()}}.}
 }
@@ -71,7 +73,9 @@ space.
 If \code{sims_var} is supplied, an array containing that report element, with the
 simulation dimension last. If \code{return_tmb_report = TRUE}, a list of
 \pkg{TMB} reports returned by \code{simulate()}. Run \code{names()} on an element of the
-output to see the available \code{sims_var} options.
+output to see the available \code{sims_var} options. Unprefixed observation-path
+reports such as \code{eta_i} describe the historical fitting data; projected
+\code{newdata} values are in the corresponding \verb{proj_*} reports.
 }
 \description{
 \ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}}

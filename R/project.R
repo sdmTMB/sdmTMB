@@ -28,8 +28,9 @@
 #' @param silent Logical. Suppress progress messages?
 #' @param sims_var Optional single element to extract from the \pkg{TMB}
 #'   simulation report. If `NULL`, the default, the usual named projection list
-#'   is returned. If supplied, the simulation dimension is last. See also
-#'   `return_tmb_report`.
+#'   is returned. If supplied, use a native projection report name such as
+#'   `"proj_eta"` or `"proj_epsilon_st_A_vec"`; the simulation dimension is
+#'   last. See also `return_tmb_report`.
 #' @param simulate_re Named logical vector specifying which random effects to
 #'   simulate in the projection. The required names are `spatial`,
 #'   `spatiotemporal`, `spatial_varying`, `iid`, `time_varying`, and `smoothers`;
@@ -38,7 +39,8 @@
 #'   because they are time invariant.
 #' @param return_tmb_report Return the \pkg{TMB} report from `simulate()`? This
 #'   lets you parse out whatever elements you want from the simulation including
-#'   grabbing multiple elements from one set of simulations. See examples.
+#'   grabbing multiple elements from one set of simulations. Prediction-path
+#'   elements retain their native `proj_*` names. See examples.
 #' @param ... Passed to [predict.sdmTMB()].
 #'
 #' @references `project_model()` in the \pkg{VAST} package.
@@ -59,7 +61,9 @@
 #' If `sims_var` is supplied, an array containing that report element, with the
 #' simulation dimension last. If `return_tmb_report = TRUE`, a list of
 #' \pkg{TMB} reports returned by `simulate()`. Run `names()` on an element of the
-#' output to see the available `sims_var` options.
+#' output to see the available `sims_var` options. Unprefixed observation-path
+#' reports such as `eta_i` describe the historical fitting data; projected
+#' `newdata` values are in the corresponding `proj_*` reports.
 #' @export
 #'
 #' @examples
@@ -240,8 +244,10 @@ project <- function(
   ## generate prediction TMB data list
   p <- predict(object, newdata = newdata, return_tmb_data = TRUE, ...)
 
-  ## move data elements over
-  p <- move_proj_to_tmbdat(p, object, newdata)
+  ## Keep the native prediction path, which projects unique spatial locations.
+  ## Observation draws are unused by project(), but random-effect SIMULATE
+  ## blocks remain active through sim_re and simulate_t.
+  p$sim_obs <- 0L
 
   ## extend time
   p$n_t <- nrow(object$time_lu)
@@ -360,11 +366,14 @@ project <- function(
   out <- list()
   if (delta) {
     element_names <- c("est1", "est2", "epsilon_st1", "epsilon_st2")
-    element_internal <- c("eta_i", "eta_i", "epsilon_st_A_vec", "epsilon_st_A_vec")
+    element_internal <- c(
+      "proj_eta", "proj_eta", "proj_epsilon_st_A_vec",
+      "proj_epsilon_st_A_vec"
+    )
     linear_predictor <- c(1L, 2L, 1L, 2L)
   } else {
     element_names <- c("est", "epsilon_st")
-    element_internal <- c("eta_i", "epsilon_st_A_vec")
+    element_internal <- c("proj_eta", "proj_epsilon_st_A_vec")
     linear_predictor <- c(1L, 1L)
   }
   for (i in seq_along(element_names)) {

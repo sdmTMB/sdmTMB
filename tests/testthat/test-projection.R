@@ -114,6 +114,23 @@ test_that("project supports all independent sampling combinations", {
       reports[[i]][[2]]$epsilon_st[, seq_len(n_historical), 1L]
     )
   }
+
+  stochastic <- which(
+    !controls$sample_parameters & !controls$sample_historical_re &
+      controls$sample_future_re
+  )
+  future <- grid$year > max(historical_years)
+  expect_false(all(
+    reports[[stochastic]][[1]]$proj_epsilon_st_A_vec[future, 1L] == 0
+  ))
+  expect_false(isTRUE(all.equal(
+    reports[[stochastic]][[1]]$proj_epsilon_st_A_vec[future, 1L],
+    reports[[stochastic]][[2]]$proj_epsilon_st_A_vec[future, 1L]
+  )))
+  expect_false(isTRUE(all.equal(
+    reports[[stochastic]][[1]]$proj_eta[future, 1L],
+    reports[[stochastic]][[2]]$proj_eta[future, 1L]
+  )))
 })
 
 test_that("project treats REML regression coefficients as parameters", {
@@ -381,12 +398,13 @@ test_that("project() works with delta models", {
     return_tmb_report = TRUE #< difference from above example
   )
 
-  eps <- lapply(out, \(x) x[["epsilon_st_A_vec"]][, 1])
+  expect_true(all(vapply(out, \(x) "proj_eta" %in% names(x), logical(1L))))
+  eps <- lapply(out, \(x) x[["proj_epsilon_st_A_vec"]][, 1])
   eps <- do.call(cbind, eps)
   eps_mean <- apply(eps, 1, mean)
   expect_gt(cor(eps_mean, proj_grid$eps_mean1), OK_COR)
 
-  eps <- lapply(out, \(x) x[["epsilon_st_A_vec"]][, 2])
+  eps <- lapply(out, \(x) x[["proj_epsilon_st_A_vec"]][, 2])
   eps <- do.call(cbind, eps)
   eps_mean <- apply(eps, 1, mean)
   expect_gt(cor(eps_mean, proj_grid$eps_mean2), OK_COR)
@@ -491,9 +509,17 @@ test_that("project() works with non-delta models", {
   eta <- project(
     fit2, newdata = proj_grid, nsim = 2, sample_parameters = FALSE,
     sample_historical_re = FALSE,
-    sims_var = "eta_i", silent = TRUE
+    sims_var = "proj_eta", silent = TRUE
   )
   expect_equal(dim(eta), c(nrow(proj_grid), 1L, 2L))
+
+  old_fit <- fit2
+  old_fit$tmb_data$sim_obs <- NULL
+  old_fit_out <- project(
+    old_fit, newdata = proj_grid, nsim = 1, sample_parameters = FALSE,
+    sample_historical_re = FALSE, silent = TRUE
+  )
+  expect_equal(dim(old_fit_out$est), c(nrow(proj_grid), 1L))
   expect_error(
     project(
       fit2, newdata = proj_grid, nsim = 1, sample_parameters = FALSE,
