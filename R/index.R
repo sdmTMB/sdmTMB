@@ -1,9 +1,11 @@
 #' Extract a relative biomass/abundance index, center of gravity, effective
 #' area occupied, or weighted average
 #'
-#' @param obj Output from [predict.sdmTMB()] with `return_tmb_object = TRUE`
-#'   (the most common case). Alternatively, if [sdmTMB()] was called with `do_index =
-#'   TRUE`, or if using [get_index_split()], an object from [sdmTMB()].
+#' @param obj A model fitted with [sdmTMB()]. For backwards compatibility,
+#'   output from [predict.sdmTMB()] with `return_tmb_object = TRUE` is also
+#'   accepted.
+#' @param newdata New data (e.g., a prediction grid by year) to pass to
+#'   [predict.sdmTMB()]. Not used when `obj` is legacy prediction output.
 #' @param bias_correct Should bias correction be implemented via
 #'   [TMB::sdreport()]? Bias correction accounts for the non-linear
 #'   transformation of random effects when calculating the index. Recommended to
@@ -16,11 +18,15 @@
 #'   a single numeric value to apply to all grid cells, or (3) a character value
 #'   giving the column name in `newdata` containing areas. See Details for
 #'   non-spatial uses of `area` as an integration multiplier.
+#' @param offset An optional numeric offset vector with one value per row of
+#'   `newdata`.
 #' @param silent Logical. Suppress progress messages?
 #' @param derived_link Optional override for the inverse link used when
 #'   calculating derived quantities such as the index. By default, the fitted
 #'   family link is used. Currently supported for non-delta `binomial()` and
 #'   `betabinomial()` models fit with `link = "cloglog"`.
+#' @param predict_args A named list of less commonly used arguments to pass to
+#'   [predict.sdmTMB()]. `newdata` and `offset` should be supplied directly.
 #' @param ... Passed to [TMB::sdreport()].
 #'
 #' @details
@@ -110,11 +116,8 @@
 #' # prepare a prediction grid:
 #' nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
 #'
-#' # Note `return_tmb_object = TRUE` and the prediction grid:
-#' predictions <- predict(m, newdata = nd, return_tmb_object = TRUE)
-#'
 #' # biomass index:
-#' ind <- get_index(predictions, bias_correct = TRUE)
+#' ind <- get_index(m, newdata = nd, bias_correct = TRUE)
 #' ind
 #' ggplot(ind, aes(year, est)) + geom_line() +
 #'   geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.4) +
@@ -127,7 +130,7 @@
 #' ind <- get_index_split(m, newdata = nd, nsplit = 2, bias_correct = TRUE)
 #'
 #' # center of gravity:
-#' cog <- get_cog(predictions, format = "wide")
+#' cog <- get_cog(m, newdata = nd, format = "wide")
 #' cog
 #' ggplot(cog, aes(est_x, est_y, colour = year)) +
 #'   geom_point() +
@@ -136,25 +139,36 @@
 #'   scale_colour_viridis_c()
 #'
 #' # effective area occupied:
-#' eao <- get_eao(predictions)
+#' eao <- get_eao(m, newdata = nd)
 #' eao
 #' ggplot(eao, aes(year, est)) + geom_line() +
 #'   geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.4) +
 #'   ylim(0, NA)
 #'
 #' # weighted average (e.g., depth-weighted by biomass):
-#' wa <- get_weighted_average(predictions, vector = nd$depth)
+#' wa <- get_weighted_average(m, newdata = nd, vector = nd$depth)
 #' wa
 #' ggplot(wa, aes(year, est)) + geom_line() +
 #'   geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.4)
 #' }
 #' }
 #' @export
-get_index <- function(obj, bias_correct = TRUE, level = 0.95, area = 1, silent = TRUE,
-  derived_link = NULL, ...)  {
+get_index <- function(obj, newdata = NULL, bias_correct = TRUE, level = 0.95,
+  area = 1, offset = NULL, silent = TRUE, derived_link = NULL,
+  predict_args = list(), ...)  {
+  if (is.logical(newdata)) {
+    if (length(newdata) != 1L || is.na(newdata) || !missing(bias_correct)) {
+      cli_abort("A logical `newdata` is ambiguous; name `newdata` and `bias_correct` explicitly.")
+    }
+    cli_warn("Interpreting the second positional argument as `bias_correct`; use `bias_correct =` explicitly.")
+    bias_correct <- newdata
+    newdata <- NULL
+  }
+  area_missing <- missing(area)
+  obj <- .prepare_index_input(obj, newdata, offset, predict_args)
   d <- get_generic(obj, value_name = "link_total",
     bias_correct = bias_correct, level = level, trans = exp, area = area,
-    derived_link = derived_link, area_missing = missing(area), ...)
+    derived_link = derived_link, area_missing = area_missing, ...)
   names(d)[names(d) == "trans_est"] <- "log_est"
   d$type <- "index"
   d
@@ -211,41 +225,123 @@ chunk_time <- function(x, chunks) {
   }
 }
 
+.prepare_index_input <- function(obj, newdata = NULL, offset = NULL,
+  predict_args = list()) {
+  if (!is.list(predict_args)) {
+    cli_abort("`predict_args` must be a list.")
+  }
+  if (length(predict_args)) {
+    if (is.null(names(predict_args)) || any(!nzchar(names(predict_args)))) {
+      cli_abort("All elements of `predict_args` must be named.")
+    }
+    reserved <- c("object", "newdata", "offset", "return_tmb_object",
+      "return_tmb_report", "return_tmb_data", "nsim", "mcmc_samples")
+    invalid <- intersect(names(predict_args), reserved)
+    if (length(invalid)) {
+      cli_abort(c(
+        "Reserved arguments cannot be supplied in `predict_args`.",
+        "i" = "Supply {.arg {invalid}} directly or remove them."
+      ))
+    }
+  }
+
+  if (inherits(obj, "sdmTMB")) {
+    if (is.null(newdata)) {
+      if (!is.null(offset)) {
+        cli_abort("`offset` can only be supplied with `newdata`.")
+      }
+      if (length(predict_args)) {
+        cli_abort("`predict_args` can only be supplied with `newdata`.")
+      }
+      return(obj)
+    }
+    if (!is.data.frame(newdata)) {
+      cli_abort("`newdata` must be a data frame.")
+    }
+    if (!is.null(offset) &&
+        (!is.numeric(offset) || length(offset) != nrow(newdata))) {
+      cli_abort("`offset` must be a numeric vector with one value per row of `newdata`.")
+    }
+    args <- c(list(
+      object = obj,
+      newdata = newdata,
+      offset = offset,
+      return_tmb_data = TRUE
+    ), predict_args)
+    tmb_data <- do.call(predict.sdmTMB, args)
+    return(list(data = newdata, fit_obj = obj, pred_tmb_data = tmb_data))
+  }
+
+  if (!is.null(newdata)) {
+    cli_abort("`newdata` cannot be supplied when `obj` is prediction output.")
+  }
+  if (!is.null(offset)) {
+    cli_abort(c(
+      "`offset` cannot be added to existing prediction output.",
+      "i" = "Use `get_index(fit, newdata = ..., offset = ...)` instead."
+    ))
+  }
+  if (length(predict_args)) {
+    cli_abort("`predict_args` cannot be supplied when `obj` is prediction output.")
+  }
+  if (!is.list(obj) || is.null(obj$fit_obj) ||
+      is.null(obj$pred_tmb_data) || is.null(obj$data)) {
+    cli_abort(c(
+      "`obj` must be an sdmTMB fit or legacy prediction output.",
+      "i" = "The preferred form is `get_index(fit, newdata = data)`.",
+      "i" = "Legacy prediction output requires `return_tmb_object = TRUE`."
+    ))
+  }
+  obj
+}
+
 #' @rdname get_index
-#' @param newdata New data (e.g., a prediction grid by year) to pass to
-#'   [predict.sdmTMB()] in the case of `get_index_split()`.
 #' @param nsplit The number of splits to do the calculation in. For memory
 #'   intensive operations (large grids and/or models), it can be helpful to
 #'   do the prediction, area integration, and bias correction on subsets of
 #'   time slices (e.g., years) instead of all at once. If `nsplit > 1`, this
 #'   will usually be slower but with reduced memory use.
-#' @param predict_args A list of arguments to pass to [predict.sdmTMB()] in the
-#'   case of `get_index_split()`.
 #' @export
 get_index_split <- function(
     obj, newdata, bias_correct = FALSE, nsplit = 1,
-    level = 0.95, area = 1, silent = FALSE, predict_args = list(),
+    level = 0.95, area = 1, offset = NULL, silent = FALSE, predict_args = list(),
     derived_link = NULL, ...) {
   if (!inherits(obj, "sdmTMB")) {
     cli_abort("get_index_split() is meant to be run on a fitted object from sdmTMB() and not a prediction object as in get_index().")
   }
-  assert_that(is.list(predict_args))
-
-  predict_args[["return_tmb_object"]] <- TRUE
-  predict_args[["object"]] <- obj
+  if (!is.list(predict_args)) {
+    cli_abort("`predict_args` must be a list.")
+  }
 
   times <- sort(obj$time_lu$time_from_data)
   time_chunks <- chunk_time(times, nsplit)
 
   if ("offset" %in% names(predict_args)) {
-    if (!is.numeric(predict_args$offset))
-      cli_abort("`offset` should be a numeric vector for use with `get_index_split()`")
+    if (!is.null(offset)) {
+      cli_abort("Supply `offset` directly or in `predict_args`, not both.")
+    }
+    cli_warn("Supplying `offset` in `predict_args` is deprecated; use the top-level `offset` argument.")
     offset <- predict_args$offset
     predict_args$offset <- NULL
-  } else {
+  }
+  if (is.null(offset)) {
     offset <- rep(0, nrow(newdata))
   }
-  if (length(area) == 1L) area <- rep(area, nrow(newdata))
+  if (!is.numeric(offset) || length(offset) != nrow(newdata)) {
+    cli_abort("`offset` must be a numeric vector with one value per row of `newdata`.")
+  }
+  if (is.character(area)) {
+    if (length(area) != 1L || !area %in% names(newdata)) {
+      cli_abort("A character `area` must name a column in `newdata`.")
+    }
+    area <- newdata[[area]]
+  }
+  if (length(area) == 1L) {
+    area <- rep(area, nrow(newdata))
+  }
+  if (length(area) != nrow(newdata)) {
+    cli_abort("`area` must have length one or one value per row of `newdata`.")
+  }
 
   msg <- paste0("Calculating index in ", nsplit, " chunks")
   if (!silent) cli::cli_progress_bar(msg, total = length(time_chunks))
@@ -257,17 +353,17 @@ get_index_split <- function(
     this_chunk_i <- newdata[[obj$time]] %in% time_chunks[[i]]
     nd <- newdata[this_chunk_i, , drop = FALSE]
 
-    predict_args[["newdata"]] <- nd
-    predict_args[["offset"]] <- offset[this_chunk_i]
-    pred <- do.call(predict, predict_args)
     index_list[[i]] <-
       get_index(
-        pred,
+        obj,
+        newdata = nd,
         bias_correct = bias_correct,
         level = level,
         area = area[this_chunk_i],
+        offset = offset[this_chunk_i],
         silent = TRUE,
         derived_link = derived_link,
+        predict_args = predict_args,
         ...
       )
   }
@@ -278,8 +374,20 @@ get_index_split <- function(
 #' @rdname get_index
 #' @param format Long or wide.
 #' @export
-get_cog <- function(obj, bias_correct = FALSE, level = 0.95, format = c("long", "wide"),
-  area = 1, silent = TRUE, derived_link = NULL, ...)  {
+get_cog <- function(obj, newdata = NULL, bias_correct = FALSE, level = 0.95,
+  format = c("long", "wide"), area = 1, offset = NULL, silent = TRUE,
+  derived_link = NULL, predict_args = list(), ...)  {
+
+  if (is.logical(newdata)) {
+    if (length(newdata) != 1L || is.na(newdata) || !missing(bias_correct)) {
+      cli_abort("A logical `newdata` is ambiguous; name `newdata` and `bias_correct` explicitly.")
+    }
+    cli_warn("Interpreting the second positional argument as `bias_correct`; use `bias_correct =` explicitly.")
+    bias_correct <- newdata
+    newdata <- NULL
+  }
+  area_missing <- missing(area)
+  obj <- .prepare_index_input(obj, newdata, offset, predict_args)
 
   xy_cols <- obj$fit_obj$spde$xy_cols
   if (all(xy_cols %in% names(obj$data))) {
@@ -294,10 +402,10 @@ get_cog <- function(obj, bias_correct = FALSE, level = 0.95, format = c("long", 
   }
   d_x <- get_generic(obj, value_name = "weighted_avg",
     bias_correct = bias_correct, level = level, trans = I, area = area,
-    vector = x_vec, derived_link = derived_link, area_missing = missing(area), ...)
+    vector = x_vec, derived_link = derived_link, area_missing = area_missing, ...)
   d_y <- get_generic(obj, value_name = "weighted_avg",
     bias_correct = bias_correct, level = level, trans = I, area = area,
-    vector = y_vec, derived_link = derived_link, area_missing = missing(area), ...)
+    vector = y_vec, derived_link = derived_link, area_missing = area_missing, ...)
   d_x <- d_x[, names(d_x) != "trans_est", drop = FALSE]
   d_y <- d_y[, names(d_y) != "trans_est", drop = FALSE]
   d_x$coord <- "X"
@@ -319,12 +427,21 @@ get_cog <- function(obj, bias_correct = FALSE, level = 0.95, format = c("long", 
 #' @param vector A numeric vector of the same length as the prediction data,
 #'   containing the values to be averaged (e.g., depth, temperature).
 #' @export
-get_weighted_average <- function(obj, vector, bias_correct = FALSE, level = 0.95,
-  area = 1, silent = TRUE, derived_link = NULL, ...)  {
+get_weighted_average <- function(obj, newdata = NULL, vector, bias_correct = FALSE,
+  level = 0.95, area = 1, offset = NULL, silent = TRUE, derived_link = NULL,
+  predict_args = list(), ...)  {
+
+  if (!is.data.frame(newdata) && missing(vector) && !is.null(newdata)) {
+    cli_warn("Interpreting the second positional argument as `vector`; use `vector =` explicitly.")
+    vector <- newdata
+    newdata <- NULL
+  }
+  area_missing <- missing(area)
+  obj <- .prepare_index_input(obj, newdata, offset, predict_args)
 
   d <- get_generic(obj, value_name = "weighted_avg",
     bias_correct = bias_correct, level = level, trans = I, area = area,
-    vector = vector, derived_link = derived_link, area_missing = missing(area), ...)
+    vector = vector, derived_link = derived_link, area_missing = area_missing, ...)
   d <- d[, names(d) != "trans_est", drop = FALSE]
   d$type <- "weighted_average"
   d
@@ -333,17 +450,31 @@ get_weighted_average <- function(obj, vector, bias_correct = FALSE, level = 0.95
 #' @rdname get_index
 #' @export
 get_eao <- function(obj,
+  newdata = NULL,
   bias_correct = FALSE,
   level = 0.95,
   area = 1,
+  offset = NULL,
   silent = TRUE,
   derived_link = NULL,
+  predict_args = list(),
   ...
 )  {
 
+  if (is.logical(newdata)) {
+    if (length(newdata) != 1L || is.na(newdata) || !missing(bias_correct)) {
+      cli_abort("A logical `newdata` is ambiguous; name `newdata` and `bias_correct` explicitly.")
+    }
+    cli_warn("Interpreting the second positional argument as `bias_correct`; use `bias_correct =` explicitly.")
+    bias_correct <- newdata
+    newdata <- NULL
+  }
+  area_missing <- missing(area)
+  obj <- .prepare_index_input(obj, newdata, offset, predict_args)
+
   d <- get_generic(obj, value_name = c("log_eao"),
     bias_correct = bias_correct, level = level, trans = exp, area = area,
-    derived_link = derived_link, area_missing = missing(area), ...)
+    derived_link = derived_link, area_missing = area_missing, ...)
   names(d)[names(d) == "trans_est"] <- "log_est"
   d$type <- "eoa"
   d
@@ -370,9 +501,12 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     !use_precomputed
 
   if (!use_precomputed && !rebuild_from_fit) {
-    if (is.null(obj[["obj"]])) {
-      cli_abort(paste0("`obj` needs to be created with ",
-        "`predict(..., return_tmb_object = TRUE).`"))
+    if (is.null(obj$pred_tmb_data$proj_X_ij) ||
+        is.null(obj$pred_tmb_data$proj_time_include)) {
+      cli_abort(c(
+        "Prediction data needed for index calculation are missing.",
+        "i" = "Use `get_index(fit, newdata = data)` with the current sdmTMB version."
+      ))
     }
 
     nr1 <- nrow(obj$data)
@@ -381,16 +515,6 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       cli_abort(c("Predicted data appears to be modified after prediction",
         "i" = "Please filter `newdata` before predicting."))
     }
-
-    if (!"report" %in% names(obj$obj)) {
-      cli_abort(c("It looks like the predict function was run without `newdata` specified.",
-        "Re-run the predict function with `newdata` specified.")) #276
-    }
-    test <- suppressWarnings(tryCatch(obj$obj$report(obj$obj$env$last.par),
-      error = function(e) NA))
-    if (all(is.na(test)))
-      cli_abort(c("It looks like the model was built with an older version of sdmTMB. ",
-        "Please refit with the current version."))
 
     if (bias_correct && obj$fit_obj$control$parallel > 1) {
       cli_warn("Bias correction can be slower with multiple cores; using 1 core.")
@@ -410,7 +534,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
 
     tmb_data <- obj$pred_tmb_data
     if (is.null(tmb_data$proj_time_include)) {
-      cli_abort("Missing `proj_time_include` in prediction data. Please re-run `predict(..., return_tmb_object = TRUE)` with the current sdmTMB version.")
+      cli_abort("Missing `proj_time_include` in prediction data. Please recreate the index input with the current sdmTMB version.")
     }
     tmb_data$link_pred <- .resolve_link_pred(obj$fit_obj, tmb_data, derived_link)
     tmb_data$area_i <- area

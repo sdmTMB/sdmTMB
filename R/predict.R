@@ -18,9 +18,9 @@
 #'   fields are included. For faster uncertainty estimation, either use
 #'   `re_form = NA` to exclude random fields or use the `nsim` argument to
 #'   simulate from the joint precision matrix.
-#' @param return_tmb_object Logical. If `TRUE`, include the TMB object in a
-#'   list-format output. Necessary for the [get_index()] or [get_cog()]
-#'   functions.
+#' @param return_tmb_object `r lifecycle::badge("deprecated")` Logical. If
+#'   `TRUE`, include the TMB object in a list-format output. Instead, pass the
+#'   fitted model and `newdata` directly to [get_index()] or [get_cog()].
 #' @param re_form `NULL` to include all spatial/spatiotemporal random fields in
 #'   predictions. `~0` or `NA` for population-level predictions (predictions
 #'   excluding spatial/spatiotemporal random fields). Often used with
@@ -286,12 +286,24 @@ predict.sdmTMB <- function(object, newdata = NULL,
   offset = NULL,
   mcmc_samples = NULL,
   nonlocal_newdata = NULL,
-  return_tmb_object = FALSE,
+  return_tmb_object = deprecated(),
   return_tmb_report = FALSE,
   return_tmb_data = FALSE,
   ...) {
 
   dots <- list(...)
+  if (is_present(return_tmb_object)) {
+    lifecycle::deprecate_soft(
+      "1.2.0",
+      "predict.sdmTMB(return_tmb_object = )",
+      details = paste(
+        "Pass the fitted model and `newdata` directly to `get_index()`,",
+        "`get_cog()`, `get_eao()`, or `get_weighted_average()`."
+      )
+    )
+  } else {
+    return_tmb_object <- FALSE
+  }
   if ("version" %in% names(object)) {
     check_sdmTMB_version(object$version)
   } else {

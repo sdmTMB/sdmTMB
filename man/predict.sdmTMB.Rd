@@ -18,7 +18,7 @@
   offset = NULL,
   mcmc_samples = NULL,
   nonlocal_newdata = NULL,
-  return_tmb_object = FALSE,
+  return_tmb_object = deprecated(),
   return_tmb_report = FALSE,
   return_tmb_data = FALSE,
   ...
@@ -107,9 +107,9 @@ is reused as-is (so \code{newdata} need not contain the diffusion covariate
 columns); otherwise the field is rebuilt from \code{newdata}'s own covariate
 columns, as before.}
 
-\item{return_tmb_object}{Logical. If \code{TRUE}, include the TMB object in a
-list-format output. Necessary for the \code{\link[=get_index]{get_index()}} or \code{\link[=get_cog]{get_cog()}}
-functions.}
+\item{return_tmb_object}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} Logical. If
+\code{TRUE}, include the TMB object in a list-format output. Instead, pass the
+fitted model and \code{newdata} directly to \code{\link[=get_index]{get_index()}} or \code{\link[=get_cog]{get_cog()}}.}
 
 \item{return_tmb_report}{Logical: return the output from the TMB
 report? For regular prediction, this is all the reported variables

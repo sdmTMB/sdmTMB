@@ -1,5 +1,12 @@
 # sdmTMB (development version)
 
+* `get_index()`, `get_cog()`, `get_eao()`, and `get_weighted_average()` can now
+  take a fitted model and prediction grid directly, for example
+  `get_index(fit, newdata = grid)`. These functions, along with
+  `get_index_split()`, also gain a top-level `offset` argument.
+  `predict(..., return_tmb_object = TRUE)` remains available for backwards
+  compatibility but is now soft-deprecated.
+
 * Add opt-in `collapse_spatiotemporal_ar1` and `collapse_ar1_threshold`
   controls to simplify spatiotemporal AR1 fields to IID or random-walk fields
   when the estimated correlation is near zero or one. This operates

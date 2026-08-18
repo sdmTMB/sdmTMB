@@ -10,10 +10,19 @@ test_that("get_index works", {
     family = tweedie(link = "log")
   )
   nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  predictions <- predict(m, newdata = nd, return_tmb_object = TRUE)
+  lifecycle::expect_deprecated(
+    predictions <- predict(m, newdata = nd, return_tmb_object = TRUE),
+    "return_tmb_object"
+  )
   ind <- get_index(predictions, bias_correct = FALSE)
+  ind_direct <- get_index(m, newdata = nd, bias_correct = FALSE)
+  expect_equal(get_index(m, nd, bias_correct = FALSE), ind)
+  expect_warning(ind_positional <- get_index(predictions, FALSE), "positional")
+  expect_equal(ind_positional, ind)
+  expect_error(get_index(predictions, FALSE, 0.9), "ambiguous")
   ind
   expect_s3_class(ind, "data.frame")
+  expect_equal(ind_direct, ind)
   expect_equal(ind$est, c(231093.53593233, 496535.536294892, 448246.178485261,
     123741.27252067, 186757.491613366, 354408.827465818, 319877.944093621,
     363284.968094093, 191744.545097374), tolerance = 1e-5)
@@ -40,6 +49,7 @@ test_that("get_index works", {
   cog <- get_cog(predictions)
   cog
   expect_s3_class(cog, "data.frame")
+  expect_equal(get_cog(m, newdata = nd), cog)
 
   cog <- get_cog(predictions, format = "wide")
   cog
@@ -68,8 +78,34 @@ test_that("get_index works", {
   fake_offset <- rnorm(nrow(nd2), 0, 0.1)
   predictions2 <- predict(m2, newdata = nd2, return_tmb_object = TRUE, offset = fake_offset)
   ind <- get_index(predictions2, bias_correct = FALSE)
-  indsp <- get_index_split(m2, nd2, nsplit = 2, predict_args = list(offset = fake_offset), bias_correct = FALSE)
+  ind_direct <- get_index(m2, newdata = nd2, offset = fake_offset, bias_correct = FALSE)
+  indsp <- get_index_split(m2, nd2, nsplit = 2, offset = fake_offset, bias_correct = FALSE)
+  expect_equal(ind, ind_direct)
   expect_equal(ind, indsp)
+  expect_error(
+    get_index(m2, newdata = nd2, offset = fake_offset[-1], bias_correct = FALSE),
+    "one value per row"
+  )
+  expect_error(
+    get_index(m2, newdata = nd2, predict_args = list(offset = fake_offset),
+      bias_correct = FALSE),
+    "Reserved arguments"
+  )
+  expect_error(
+    get_index(m2, newdata = nd2, predict_args = list(NA), bias_correct = FALSE),
+    "must be named"
+  )
+
+  expect_warning(
+    get_index_split(m2, nd2, nsplit = 2,
+      predict_args = list(offset = fake_offset), bias_correct = FALSE),
+    "top-level `offset`"
+  )
+  expect_error(
+    get_index_split(m2, nd2, offset = fake_offset,
+      predict_args = list(offset = fake_offset), bias_correct = FALSE),
+    "not both"
+  )
 })
 
 test_that("get_index() can override the derived response link for cloglog binomial models", {
@@ -99,8 +135,11 @@ test_that("get_index() can override the derived response link for cloglog binomi
 
   idx_default <- get_index(pred, area = n_trials, bias_correct = FALSE)
   idx_log <- get_index(pred, area = n_trials, bias_correct = FALSE, derived_link = "log")
+  idx_log_direct <- get_index(m, newdata = nd, area = n_trials,
+    bias_correct = FALSE, derived_link = "log")
   expect_equal(idx_default$est, binomial(link = "cloglog")$linkinv(pred$data$est) * n_trials)
   expect_equal(idx_log$est, exp(pred$data$est) * n_trials)
+  expect_equal(idx_log_direct, idx_log)
 
   idx_split <- get_index_split(
     m, nd,
@@ -296,12 +335,19 @@ test_that("get_index works", {
   # get predictions with area as a named column
   ind2 <- get_index(predictions, area = "area", bias_correct = FALSE)
   expect_equal(ind, ind2)
+  expect_equal(get_index(m, newdata = nd, area = "area", bias_correct = FALSE), ind)
+  expect_equal(
+    get_index_split(m, newdata = nd, nsplit = 2, area = "area",
+      bias_correct = FALSE),
+    ind
+  )
 
   # get predictions with area passed as vector
   eao <- get_eao(predictions, area = nd$area)
   # get predictions with area as a named column
   eao2 <- get_eao(predictions, area = "area")
   expect_equal(eao, eao2)
+  expect_equal(get_eao(m, newdata = nd, area = "area"), eao)
 
   # get predictions with area passed as vector
   cog <- get_cog(predictions, area = nd$area)
@@ -380,7 +426,15 @@ test_that("get_weighted_average works", {
 
   # Test the weighted average function
   wa <- get_weighted_average(predictions, vector = nd$test_vector, bias_correct = FALSE)
+  wa_direct <- get_weighted_average(m, newdata = nd, vector = nd$test_vector,
+    bias_correct = FALSE)
+  expect_warning(
+    wa_positional <- get_weighted_average(predictions, nd$test_vector),
+    "positional"
+  )
   expect_s3_class(wa, "data.frame")
+  expect_equal(wa_direct, wa)
+  expect_equal(wa_positional, wa)
   expect_true("est" %in% names(wa))
   expect_true("se" %in% names(wa))
   expect_true("year" %in% names(wa))
@@ -394,7 +448,10 @@ test_that("get_weighted_average works", {
   nd$area <- runif(nrow(nd), 0.9, 1.1)
   predictions_area <- predict(m, newdata = nd, return_tmb_object = TRUE)
   wa_area <- get_weighted_average(predictions_area, vector = nd$test_vector, area = nd$area, bias_correct = FALSE)
+  wa_area_direct <- get_weighted_average(m, newdata = nd,
+    vector = nd$test_vector, area = "area", bias_correct = FALSE)
   expect_s3_class(wa_area, "data.frame")
+  expect_equal(wa_area_direct, wa_area)
 
   # Test error conditions
   expect_error(get_weighted_average(predictions, vector = c(1, 2, 3)), regexp = "length")

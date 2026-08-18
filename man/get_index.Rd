@@ -11,11 +11,14 @@ area occupied, or weighted average}
 \usage{
 get_index(
   obj,
+  newdata = NULL,
   bias_correct = TRUE,
   level = 0.95,
   area = 1,
+  offset = NULL,
   silent = TRUE,
   derived_link = NULL,
+  predict_args = list(),
   ...
 )
 
@@ -26,6 +29,7 @@ get_index_split(
   nsplit = 1,
   level = 0.95,
   area = 1,
+  offset = NULL,
   silent = FALSE,
   predict_args = list(),
   derived_link = NULL,
@@ -34,39 +38,52 @@ get_index_split(
 
 get_cog(
   obj,
+  newdata = NULL,
   bias_correct = FALSE,
   level = 0.95,
   format = c("long", "wide"),
   area = 1,
+  offset = NULL,
   silent = TRUE,
   derived_link = NULL,
+  predict_args = list(),
   ...
 )
 
 get_weighted_average(
   obj,
+  newdata = NULL,
   vector,
   bias_correct = FALSE,
   level = 0.95,
   area = 1,
+  offset = NULL,
   silent = TRUE,
   derived_link = NULL,
+  predict_args = list(),
   ...
 )
 
 get_eao(
   obj,
+  newdata = NULL,
   bias_correct = FALSE,
   level = 0.95,
   area = 1,
+  offset = NULL,
   silent = TRUE,
   derived_link = NULL,
+  predict_args = list(),
   ...
 )
 }
 \arguments{
-\item{obj}{Output from \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} with \code{return_tmb_object = TRUE}
-(the most common case). Alternatively, if \code{\link[=sdmTMB]{sdmTMB()}} was called with \code{do_index = TRUE}, or if using \code{\link[=get_index_split]{get_index_split()}}, an object from \code{\link[=sdmTMB]{sdmTMB()}}.}
+\item{obj}{A model fitted with \code{\link[=sdmTMB]{sdmTMB()}}. For backwards compatibility,
+output from \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} with \code{return_tmb_object = TRUE} is also
+accepted.}
+
+\item{newdata}{New data (e.g., a prediction grid by year) to pass to
+\code{\link[=predict.sdmTMB]{predict.sdmTMB()}}. Not used when \code{obj} is legacy prediction output.}
 
 \item{bias_correct}{Should bias correction be implemented via
 \code{\link[TMB:sdreport]{TMB::sdreport()}}? Bias correction accounts for the non-linear
@@ -83,6 +100,9 @@ a single numeric value to apply to all grid cells, or (3) a character value
 giving the column name in \code{newdata} containing areas. See Details for
 non-spatial uses of \code{area} as an integration multiplier.}
 
+\item{offset}{An optional numeric offset vector with one value per row of
+\code{newdata}.}
+
 \item{silent}{Logical. Suppress progress messages?}
 
 \item{derived_link}{Optional override for the inverse link used when
@@ -90,19 +110,16 @@ calculating derived quantities such as the index. By default, the fitted
 family link is used. Currently supported for non-delta \code{binomial()} and
 \code{betabinomial()} models fit with \code{link = "cloglog"}.}
 
-\item{...}{Passed to \code{\link[TMB:sdreport]{TMB::sdreport()}}.}
+\item{predict_args}{A named list of less commonly used arguments to pass to
+\code{\link[=predict.sdmTMB]{predict.sdmTMB()}}. \code{newdata} and \code{offset} should be supplied directly.}
 
-\item{newdata}{New data (e.g., a prediction grid by year) to pass to
-\code{\link[=predict.sdmTMB]{predict.sdmTMB()}} in the case of \code{get_index_split()}.}
+\item{...}{Passed to \code{\link[TMB:sdreport]{TMB::sdreport()}}.}
 
 \item{nsplit}{The number of splits to do the calculation in. For memory
 intensive operations (large grids and/or models), it can be helpful to
 do the prediction, area integration, and bias correction on subsets of
 time slices (e.g., years) instead of all at once. If \code{nsplit > 1}, this
 will usually be slower but with reduced memory use.}
-
-\item{predict_args}{A list of arguments to pass to \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} in the
-case of \code{get_index_split()}.}
 
 \item{format}{Long or wide.}
 
@@ -163,11 +180,8 @@ m <- sdmTMB(
 # prepare a prediction grid:
 nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
 
-# Note `return_tmb_object = TRUE` and the prediction grid:
-predictions <- predict(m, newdata = nd, return_tmb_object = TRUE)
-
 # biomass index:
-ind <- get_index(predictions, bias_correct = TRUE)
+ind <- get_index(m, newdata = nd, bias_correct = TRUE)
 ind
 ggplot(ind, aes(year, est)) + geom_line() +
   geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.4) +
@@ -180,7 +194,7 @@ ggplot(ind, aes(year, est)) + geom_line() +
 ind <- get_index_split(m, newdata = nd, nsplit = 2, bias_correct = TRUE)
 
 # center of gravity:
-cog <- get_cog(predictions, format = "wide")
+cog <- get_cog(m, newdata = nd, format = "wide")
 cog
 ggplot(cog, aes(est_x, est_y, colour = year)) +
   geom_point() +
@@ -189,14 +203,14 @@ ggplot(cog, aes(est_x, est_y, colour = year)) +
   scale_colour_viridis_c()
 
 # effective area occupied:
-eao <- get_eao(predictions)
+eao <- get_eao(m, newdata = nd)
 eao
 ggplot(eao, aes(year, est)) + geom_line() +
   geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.4) +
   ylim(0, NA)
 
 # weighted average (e.g., depth-weighted by biomass):
-wa <- get_weighted_average(predictions, vector = nd$depth)
+wa <- get_weighted_average(m, newdata = nd, vector = nd$depth)
 wa
 ggplot(wa, aes(year, est)) + geom_line() +
   geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.4)

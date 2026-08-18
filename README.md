@@ -396,15 +396,13 @@ fit_spatiotemporal <- sdmTMB(
 
 If we wanted to create an area-weighted standardized population index (a
 time series of abundance accounting for spatial variation in sampling),
-we could predict on a grid covering the entire survey (`qcs_grid`) with
-grid cell area 4 km² (2 x 2 km) and pass the predictions to
-`get_index()`:
+we could integrate predictions over a grid covering the entire survey
+(`qcs_grid`) with grid cell area 4 km² (2 x 2 km):
 
 ``` r
 grid_yrs <- replicate_df(qcs_grid, "year", unique(pcod$year))
-p_st <- predict(fit_spatiotemporal, newdata = grid_yrs,
-  return_tmb_object = TRUE)
-index <- get_index(p_st, area = rep(4, nrow(grid_yrs)))
+index <- get_index(fit_spatiotemporal, newdata = grid_yrs,
+  area = rep(4, nrow(grid_yrs)))
 ggplot(index, aes(year, est)) +
   geom_ribbon(aes(ymin = lwr, ymax = upr), fill = "grey90") +
   geom_line(lwd = 1, colour = "grey30") +
@@ -417,7 +415,7 @@ Or the center of gravity (mean location of the population, useful for
 detecting distributional shifts):
 
 ``` r
-cog <- get_cog(p_st, format = "wide")
+cog <- get_cog(fit_spatiotemporal, newdata = grid_yrs, format = "wide")
 ggplot(cog, aes(est_x, est_y, colour = year)) +
   geom_pointrange(aes(xmin = lwr_x, xmax = upr_x)) +
   geom_pointrange(aes(ymin = lwr_y, ymax = upr_y)) +

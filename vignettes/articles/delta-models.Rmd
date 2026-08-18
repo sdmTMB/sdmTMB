@@ -212,14 +212,12 @@ str(p)
 # p_combined <- predict(fit_dg, newdata = grid_yrs, model = NA, type = "response")
 ```
 
-We can use predictions from the built-in delta model (making sure that `return_tmb_object = TRUE`) to get the index values using the `get_index()` function.
-This can be used with predictions that include both the first and second models (i.e., using the default and specifying no `model` argument) or with predictions generated using `model = NA`.
+We can pass the built-in delta model and prediction grid directly to `get_index()` to calculate index values.
 The `get_index()` function will automatically combine predictions from the first and second model in calculating the index values.
 For more on modelling for the purposes of creating an index see the vignette on [Index standardization with sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/index-standardization.html).
 
 ```{r, message=FALSE, warning=FALSE, eval=FALSE}
-p2 <- predict(fit_dg, newdata = grid_yrs, return_tmb_object = TRUE)
-ind_dg <- get_index(p2, bias_correct = FALSE)
+ind_dg <- get_index(fit_dg, newdata = grid_yrs, bias_correct = FALSE)
 ```
 
 We can plot conditional effects of covariates (such as depth in the example model) using the package `visreg` by specifying each model component with `model = 1` for the presence-absence model or `model = 2` for the positive-catch model. Currently, plotting effects of built-in delta models with `ggeffects` is not supported. See the vignette on using [visreg](https://sdmTMB.github.io/sdmTMB/articles/visreg.html) with sdmTMB for more information.

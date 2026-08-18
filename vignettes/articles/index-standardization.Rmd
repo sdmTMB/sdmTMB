@@ -81,10 +81,10 @@ grid_yrs <- replicate_df(qcs_grid, "year", unique(pcod$year))
 ```
 
 
-Now make the predictions on new data.
+Now make predictions on the new data for mapping.
 
 ```{r predictions}
-predictions <- predict(m, newdata = grid_yrs, return_tmb_object = TRUE)
+predictions <- predict(m, newdata = grid_yrs)
 ```
 
 Let's make a small function to help make maps.
@@ -101,7 +101,7 @@ plot_map <- function(dat, column) {
 There are four kinds of predictions that we get out of the model. First, we will show the predictions that incorporate all fixed and random effects:
 
 ```{r plot-all-effects, fig.width = 8}
-plot_map(predictions$data, exp(est)) +
+plot_map(predictions, exp(est)) +
   scale_fill_viridis_c(trans = "sqrt") +
   ggtitle("Prediction (fixed effects + all random effects)")
 ```
@@ -109,7 +109,7 @@ plot_map(predictions$data, exp(est)) +
 We can also look at just the fixed effects, here year:
 
 ```{r plot-fix-defects, fig.width = 8}
-plot_map(predictions$data, exp(est_non_rf)) +
+plot_map(predictions, exp(est_non_rf)) +
   ggtitle("Prediction (fixed effects only)") +
   scale_fill_viridis_c(trans = "sqrt")
 ```
@@ -117,7 +117,7 @@ plot_map(predictions$data, exp(est_non_rf)) +
 We can look at the spatial random effects that represent persistent deviations in space through time that are not accounted for by our fixed effects. In other words, these deviations represent persistent biotic and abiotic factors affecting biomass density that are not accounted for in the model.
 
 ```{r plot-spatial-effects, fig.width = 8}
-plot_map(predictions$data, omega_s) +
+plot_map(predictions, omega_s) +
   ggtitle("Spatial random effects only") +
   scale_fill_gradient2()
 ```
@@ -125,17 +125,17 @@ plot_map(predictions$data, omega_s) +
 And finally we can look at the spatiotemporal random effects that represent deviations from the fixed-effect predictions and the spatial random-effect deviations. These represent biotic and abiotic factors that change through time and are not accounted for in the model.
 
 ```{r plot-spatiotemporal-effects, fig.width = 8}
-plot_map(predictions$data, epsilon_st) +
+plot_map(predictions, epsilon_st) +
   ggtitle("Spatiotemporal random effects only") +
   scale_fill_gradient2()
 ```
 
-When we ran our `predict.sdmTMB()` function, it also returned a report from TMB in the output because we included `return_tmb_object = TRUE`. We can then run our `get_index()` function to extract the total biomass estimates and standard errors.
+We can pass the fitted model and prediction grid directly to `get_index()` to calculate total biomass estimates and standard errors.
 
 We will need to set the `area` argument to 4 km^2^ since our grid cells are 2 km x 2 km. If some grid cells were not fully in the survey domain (or were on land), we could instead pass a vector of grid-cell areas to the `area` argument matching the number of grid cells.
 
 ```{r get-index}
-index <- get_index(predictions, area = 4, bias_correct = TRUE)
+index <- get_index(m, newdata = grid_yrs, area = 4, bias_correct = TRUE)
 ```
 
 ```{r plot-index}
@@ -156,9 +156,8 @@ We can also calculate an index for part of the survey domain. We'll make an inde
 
 ```{r index-subset}
 qcs_grid_south <- grid_yrs[grid_yrs$Y < 5700, ]
-predictions_south <- predict(m, newdata = qcs_grid_south, 
-  return_tmb_object = TRUE)
-index_south <- get_index(predictions_south, area = 4, bias_correct = TRUE)
+index_south <- get_index(m, newdata = qcs_grid_south,
+  area = 4, bias_correct = TRUE)
 head(index_south)
 ```
 

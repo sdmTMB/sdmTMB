@@ -23,6 +23,10 @@ test_that("Delta-Gamma family fits", {
 
   p <- predict(fit_dg, newdata = nd, return_tmb_object = TRUE)
   ind_dg <- get_index(p, bias_correct = FALSE)
+  expect_equal(
+    get_index(fit_dg, newdata = nd, bias_correct = FALSE),
+    ind_dg
+  )
 
   # check
   fit_bin <- sdmTMB(present ~ 1,
