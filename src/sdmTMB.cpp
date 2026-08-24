@@ -152,6 +152,8 @@ Type objective_function<Type>::operator()()
   DATA_ARRAY(y_i);      // response
   DATA_STRUCT(X_ij, sdmTMB::LOM_t); // list of model matrices
   DATA_MATRIX(z_i);      // model matrix for spatial covariate effect
+  DATA_INTEGER(model_index_z); // model-derived time-index SVC column; -1 if absent
+  DATA_STRUCT(model_index_X_t, sdmTMB::LOM_t); // time-level fixed-effect designs
   DATA_MATRIX(X_rw_ik);  // model matrix for random walk covariate(s)
 
   DATA_STRUCT(Zs, sdmTMB::LOM_t); // [L]ist [O]f (basis function matrices) [Matrices]
@@ -809,6 +811,21 @@ Type objective_function<Type>::operator()()
     REPORT(sigma_V);
     ADREPORT(sigma_V); // time-varying SD
   }
+  // ------------------ Model-derived time index -------------------------------
+
+  vector<Type> model_index_t(n_t);
+  model_index_t.setZero();
+  if (model_index_z >= 0 && n_m == 1) {
+    vector<Type> component_eta_t = model_index_X_t(0) * b_j;
+    for (int t = 0; t < n_t; t++) {
+      component_eta_t(t) += epsilon_st.col(0).col(t).sum() /
+        Type(epsilon_st.col(0).col(t).size());
+      model_index_t(t) = log(InverseLink(component_eta_t(t), link(0)));
+    }
+    Type model_index_mean = model_index_t.sum() / Type(n_t);
+    for (int t = 0; t < n_t; t++) model_index_t(t) -= model_index_mean;
+  }
+
   // ------------------ INLA projections ---------------------------------------
 
   // Here we are projecting the spatiotemporal and spatial random effects to the
@@ -954,8 +971,11 @@ Type objective_function<Type>::operator()()
           eta_i(i,m) += omega_s_A(i,m);  // spatial omega
       }
       if (spatial_covariate)
-        for (int z = 0; z < n_z; z++)
-          eta_i(i,m) += zeta_s_A(i,z,m) * z_i(i,z); // spatially varying covariate DELTA
+        for (int z = 0; z < n_z; z++) {
+          Type svc_covariate = z_i(i,z);
+          if (z == model_index_z) svc_covariate = model_index_t(year_i(i));
+          eta_i(i,m) += zeta_s_A(i,z,m) * svc_covariate; // spatially varying covariate
+        }
       if (!no_spatial) epsilon_st_A_vec(i,m) = epsilon_st_A(A_spatial_index(i), year_i(i),m); // record it
       eta_i(i,m) += epsilon_st_A_vec(i,m); // spatiotemporal
 
@@ -1537,7 +1557,9 @@ Type objective_function<Type>::operator()()
         for (int m = 0; m < n_m; m++) {
           for (int z = 0; z < n_z; z++) {
             for (int i = 0; i < n_p; i++) {
-              proj_zeta_s_A_cov(i,z,m) = proj_zeta_s_A(i,z,m) * proj_z_i(i,z);
+              Type svc_covariate = proj_z_i(i,z);
+              if (z == model_index_z) svc_covariate = model_index_t(proj_year(i));
+              proj_zeta_s_A_cov(i,z,m) = proj_zeta_s_A(i,z,m) * svc_covariate;
             }
           }
         }
@@ -1853,6 +1875,7 @@ Type objective_function<Type>::operator()()
   REPORT(b_rw_t);   // time-varying effects
   REPORT(omega_s_A);      // spatial effects; n_s length vector
   REPORT(zeta_s_A);     // spatial covariate effects; n_s length vector
+  REPORT(model_index_t); // centered model-derived time index
   REPORT(eta_fixed_i);  // fixed effect predictions in the link space
   REPORT(eta_smooth_i); // smooth effect predictions in the link space
   REPORT(eta_i);        // fixed and random effect predictions in link space

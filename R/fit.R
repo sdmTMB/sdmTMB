@@ -973,7 +973,7 @@ sdmTMB <- function(
     if (!user_time_supplied) cli_abort("`time` must be supplied when using `model_index()`.")
     if (n_t < 2L) cli_abort("`model_index()` requires at least two fitted time values.")
     if (!is.null(extra_time)) cli_abort("`extra_time` is not supported with `model_index()`.")
-    if (!delta && !family$link[1L] %in% c("log", "logit", "probit", "cloglog")) {
+    if (!delta && !family$link[1L] %in% c("log", "logit", "cloglog")) {
       cli_abort("This family/link combination is not supported with `model_index()` because its expected response is not guaranteed to be positive.")
     }
   }

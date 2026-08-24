@@ -134,3 +134,74 @@ test_that("model_index validates version-one constraints", {
     "constant within"
   )
 })
+
+test_that("one-part TMB model index uses fixed effects and mean epsilon_st", {
+  d <- pcod
+  d$year_factor <- factor(d$year)
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  fit <- sdmTMB(
+    density ~ year_factor,
+    spatial_varying = ~ 0 + model_index(year_factor),
+    data = d, mesh = mesh, time = "year",
+    family = tweedie(link = "log"), do_fit = FALSE
+  )
+
+  parameters <- fit$tmb_params
+  parameters$b_j[] <- seq_along(parameters$b_j) / 4
+  epsilon_mean <- seq(-0.4, 0.4, length.out = fit$tmb_data$n_t)
+  vertex_deviation <- seq(-0.2, 0.2, length.out = dim(parameters$epsilon_st)[1L])
+  vertex_deviation <- vertex_deviation - mean(vertex_deviation)
+  parameters$epsilon_st[, , 1L] <- outer(vertex_deviation, epsilon_mean, `+`)
+  parameters$zeta_s[] <- 0
+
+  obj <- TMB::MakeADFun(
+    data = fit$tmb_data, parameters = parameters, map = fit$tmb_map,
+    random = NULL, DLL = "sdmTMB", silent = TRUE
+  )
+  report <- obj$report(obj$par)
+  uncentered <- drop(fit$tmb_data$model_index_X_t[[1L]] %*% parameters$b_j) +
+    apply(parameters$epsilon_st[, , 1L], 2L, mean)
+  expected <- uncentered - mean(uncentered)
+
+  expect_equal(report$model_index_t, expected, tolerance = 1e-10)
+  expect_equal(sum(report$model_index_t), 0, tolerance = 1e-10)
+})
+
+test_that("one-part TMB SVC multiplies the model-derived index", {
+  d <- pcod
+  d$year_factor <- factor(d$year)
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  fit <- sdmTMB(
+    present ~ year_factor,
+    spatial_varying = ~ 0 + model_index(year_factor),
+    data = d, mesh = mesh, time = "year",
+    family = binomial(link = "logit"), do_fit = FALSE
+  )
+
+  parameters <- fit$tmb_params
+  parameters$b_j[] <- seq_along(parameters$b_j) / 5
+  parameters$epsilon_st[] <- 0
+  parameters$zeta_s[] <- 0
+  make_report <- function(parameters) {
+    obj <- TMB::MakeADFun(
+      data = fit$tmb_data, parameters = parameters, map = fit$tmb_map,
+      random = NULL, DLL = "sdmTMB", silent = TRUE
+    )
+    obj$report(obj$par)
+  }
+  report_zero <- make_report(parameters)
+  parameters$zeta_s[] <- 0.7
+  report_svc <- make_report(parameters)
+
+  component_eta <- drop(fit$tmb_data$model_index_X_t[[1L]] %*% parameters$b_j)
+  q <- log(plogis(component_eta))
+  expected_index <- q - mean(q)
+  expected_difference <- 0.7 * expected_index[fit$tmb_data$year_i + 1L]
+
+  expect_equal(report_svc$model_index_t, expected_index, tolerance = 1e-10)
+  expect_equal(
+    drop(report_svc$eta_i - report_zero$eta_i),
+    expected_difference,
+    tolerance = 1e-9
+  )
+})
