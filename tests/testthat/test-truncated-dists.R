@@ -141,8 +141,7 @@ test_that("Truncated NB1/2 indexes are right", {
     spatial = FALSE,
     family = delta_truncated_nbinom2()
   )
-  p <- predict(fit, newdata = d0, return_tmb_object = TRUE)
-  x <- get_index(p, area = 1/nrow(d0))
+  x <- get_index(fit, newdata = d0, area = 1/nrow(d0))
   pp <- predict(fit, type = "response")
   expect_equal(x$est, pp$est[1], tolerance = 1e-3)
 
@@ -155,8 +154,7 @@ test_that("Truncated NB1/2 indexes are right", {
     spatial = FALSE,
     family = delta_truncated_nbinom1()
   )
-  p <- predict(fit, newdata = d0, return_tmb_object = TRUE)
-  x <- get_index(p, area = 1/nrow(d0))
+  x <- get_index(fit, newdata = d0, area = 1/nrow(d0))
   pp <- predict(fit, type = "response")
   expect_equal(x$est, pp$est[1], tolerance = 1e-3)
 
@@ -170,8 +168,7 @@ test_that("Truncated NB1/2 indexes are right", {
     spatial = FALSE,
     family = truncated_nbinom2()
   )
-  p <- predict(fit, newdata = d0, return_tmb_object = TRUE)
-  x <- get_index(p, area = 1/nrow(d0))
+  x <- get_index(fit, newdata = d0, area = 1/nrow(d0))
   pp <- predict(fit, type = "response")
   expect_equal(x$est, pp$est[1], tolerance = 1e-3)
 
@@ -184,8 +181,7 @@ test_that("Truncated NB1/2 indexes are right", {
     spatial = FALSE,
     family = truncated_nbinom2()
   )
-  p <- predict(fit, newdata = d0, return_tmb_object = TRUE)
-  x <- get_index(p, area = 1/nrow(d0))
+  x <- get_index(fit, newdata = d0, area = 1/nrow(d0))
   pp <- predict(fit, type = "response")
   expect_equal(x$est, pp$est[1], tolerance = 1e-3)
 })

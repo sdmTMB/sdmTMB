@@ -68,8 +68,7 @@ test_that("get_index_sims works", {
   expect_equal(nrow(x), length(unique(qcs_grid_2011$year)))
   expect_true(sum(is.na(x$se)) == 0L)
 
-  p_regular <- predict(m, newdata = qcs_grid_2011, return_tmb_object = TRUE)
-  x_regular <- get_index(p_regular)
+  x_regular <- get_index(m, newdata = qcs_grid_2011)
   # expect_equal(round(x_regular$est/x$est, 5),
   #   c(0.91494, 0.92115, 0.92244, 0.9049))
 
@@ -220,8 +219,7 @@ test_that("predict link attribute and get_index_sims work with delta", {
   expect_equal(nrow(x), length(unique(qcs_grid_2011$year)))
   expect_true(sum(is.na(x$se)) == 0L)
 
-  p_regular <- predict(m, newdata = qcs_grid_2011, return_tmb_object = TRUE)
-  x_regular <- get_index(p_regular, bias_correct = T)
+  x_regular <- get_index(m, newdata = qcs_grid_2011, bias_correct = T)
 
   x_sims <- get_index_sims(p, return_sims = TRUE)
   expect_equal(nrow(x_sims), nrow(x) * ncol(p))

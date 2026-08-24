@@ -9,15 +9,13 @@ test_that("get_index(), get_index_sims(), and get_cog() work", {
   )
   # expect_snapshot(m)
   nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  predictions <- predict(m, newdata = nd, return_tmb_object = TRUE)
-
-  p <- predict(m, newdata = nd, return_tmb_object = FALSE)
+  p <- predict(m, newdata = nd)
   expect_error(get_index(p), regexp = "return_tmb_object")
 
-  ind <- get_index(predictions, bias_correct = FALSE)
+  ind <- get_index(m, newdata = nd, bias_correct = FALSE)
   expect_equal(class(ind), "data.frame")
 
-  ind_corrected <- get_index(predictions, bias_correct = TRUE)
+  ind_corrected <- get_index(m, newdata = nd, bias_correct = TRUE)
   cached <- c(259275.869, 385596.993, 428192.403, 116533.436, 189156.419,
     333697.54, 336522.903, 400682.008, 191430.747)
   expect_lt(sum(abs(ind_corrected$est - cached) / cached), 1e-03)
@@ -40,7 +38,7 @@ test_that("get_index(), get_index_sims(), and get_cog() work", {
   # sims mimics bias corrected index, which would be higher:
   expect_gt(mean(ind$est), mean(ind_sim$est))
 
-  cog <- get_cog(predictions, bias_correct = FALSE)
+  cog <- get_cog(m, newdata = nd, bias_correct = FALSE)
   expect_equal(class(cog), "data.frame")
   cached <- c(462.0865, 481.3353, 471.6714, 481.9013, 485.464, 469.7996,
     475.9824, 457.4335, 463.3973, 5756.9909, 5729.2348, 5760.9857,
@@ -48,7 +46,7 @@ test_that("get_index(), get_index_sims(), and get_cog() work", {
   )
   expect_lt(sum(abs(cog$est - cached) / cached), 1e-04)
 
-  cog_wide <- get_cog(predictions, bias_correct = FALSE, format="wide")
+  cog_wide <- get_cog(m, newdata = nd, bias_correct = FALSE, format="wide")
   expect_equal(class(cog_wide), "data.frame")
   expect_equal(names(cog_wide), c("year", "est_x", "lwr_x","upr_x", "se_x","est_y","lwr_y","upr_y","se_y", "type"))
   expect_equal(cog$est[which(cog$coord=="X")], cog_wide$est_x)
@@ -65,9 +63,8 @@ test_that("get_cog() with bias correction works", {
   )
 
   nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  predictions <- predict(m, newdata = nd, return_tmb_object = TRUE)
   system.time({
-    cog_bc <- get_cog(predictions, bias_correct = TRUE)
+    cog_bc <- get_cog(m, newdata = nd, bias_correct = TRUE)
   })
   cached <- c(463.4799, 482.7737, 471.7401, 481.6446, 485.0965, 470.2728,
     475.3523, 460.7445, 465.8458, 5755.4058, 5727.3907, 5758.6983,
@@ -99,12 +96,14 @@ test_that("index errors are returned as needed", {
     family = tweedie(link = "log"),
     time = "year"
   )
-  p1 <- predict(fit, newdata = NULL, return_tmb_object = TRUE)
+  lifecycle::expect_deprecated(
+    p1 <- predict(fit, newdata = NULL, return_tmb_object = TRUE),
+    "return_tmb_object"
+  )
   expect_error(get_index(p1), "newdata") # missing!
 
-  p2 <- predict(fit, newdata = g, return_tmb_object = TRUE)
   suppressMessages(
-    i <- get_index(p2)
+    i <- get_index(fit, newdata = g)
   )
   expect_s3_class(i, "data.frame")
 })

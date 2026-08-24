@@ -76,8 +76,7 @@ test_that("get_index works", {
   nd2 <- replicate_df(wcvi_grid, "year", unique(dogfish$year))
   set.seed(1)
   fake_offset <- rnorm(nrow(nd2), 0, 0.1)
-  predictions2 <- predict(m2, newdata = nd2, return_tmb_object = TRUE, offset = fake_offset)
-  ind <- get_index(predictions2, bias_correct = FALSE)
+  ind <- get_index(m2, newdata = nd2, offset = fake_offset, bias_correct = FALSE)
   ind_direct <- get_index(m2, newdata = nd2, offset = fake_offset, bias_correct = FALSE)
   indsp <- get_index_split(m2, nd2, nsplit = 2, offset = fake_offset, bias_correct = FALSE)
   expect_equal(ind, ind_direct)
@@ -131,7 +130,10 @@ test_that("get_index() can override the derived response link for cloglog binomi
   )
 
   nd <- data.frame(time = 1:2)
-  pred <- predict(m, newdata = nd, return_tmb_object = TRUE)
+  lifecycle::expect_deprecated(
+    pred <- predict(m, newdata = nd, return_tmb_object = TRUE),
+    "return_tmb_object"
+  )
 
   idx_default <- get_index(pred, area = n_trials, bias_correct = FALSE)
   idx_log <- get_index(pred, area = n_trials, bias_correct = FALSE, derived_link = "log")
@@ -197,23 +199,16 @@ test_that("get_cog works with subsets of years", {
     family = tweedie()
   )
   nd <- replicate_df(qcs_grid, "year", unique(d$year))
-  p_full <- predict(m, newdata = nd, return_tmb_object = TRUE)
-
   nd_2011 <- replicate_df(qcs_grid, "year", 2011)
-  p_2011 <- predict(m, newdata = nd_2011, return_tmb_object = TRUE)
-
   nd_2 <- replicate_df(qcs_grid, "year", c(2011, 2013))
-  p_2 <- predict(m, newdata = nd_2, return_tmb_object = TRUE)
-
   nd_3 <- replicate_df(qcs_grid, "year", c(2015, 2011))
-  p_3 <- predict(m, newdata = nd_3, return_tmb_object = TRUE)
 
   # use get_weighted_average to halve time:
-  cog_full <- get_weighted_average(p_full, bias_correct = TRUE, vector = p_full$data$X)
+  cog_full <- get_weighted_average(m, newdata = nd, bias_correct = TRUE, vector = nd$X)
   expect_equal(cog_full$est, c(465.937297088344, 473.391667509379, 463.328781317731), tolerance = 1e-5)
-  cog_2011 <- get_weighted_average(p_2011, bias_correct = TRUE, vector = p_2011$data$X)
-  cog_2 <- get_weighted_average(p_2, bias_correct = TRUE, vector = p_2$data$X)
-  cog_3 <- get_weighted_average(p_3, bias_correct = TRUE, vector = p_3$data$X)
+  cog_2011 <- get_weighted_average(m, newdata = nd_2011, bias_correct = TRUE, vector = nd_2011$X)
+  cog_2 <- get_weighted_average(m, newdata = nd_2, bias_correct = TRUE, vector = nd_2$X)
+  cog_3 <- get_weighted_average(m, newdata = nd_3, bias_correct = TRUE, vector = nd_3$X)
   expect_equal(cog_2011$est, subset(cog_full, year == 2011)$est)
   expect_equal(cog_2$est, subset(cog_full, year %in% c(2011, 2013))$est)
   expect_equal(cog_3$est, subset(cog_full, year %in% c(2015, 2011))$est)
@@ -232,28 +227,21 @@ test_that("get_index works with subsets of years", {
     family = delta_gamma()
   )
   nd <- replicate_df(qcs_grid, "year", unique(pcod_2011$year))
-  p_full <- predict(m, newdata = nd, return_tmb_object = TRUE)
-
   nd_2011 <- replicate_df(qcs_grid, "year", 2011)
-  p_2011 <- predict(m, newdata = nd_2011, return_tmb_object = TRUE)
-
   nd_2 <- replicate_df(qcs_grid, "year", c(2011, 2013))
-  p_2 <- predict(m, newdata = nd_2, return_tmb_object = TRUE)
-
   nd_3 <- replicate_df(qcs_grid, "year", c(2015, 2011))
-  p_3 <- predict(m, newdata = nd_3, return_tmb_object = TRUE)
 
-  index_full <- get_index(p_full, bias_correct = TRUE)
+  index_full <- get_index(m, newdata = nd, bias_correct = TRUE)
   expect_equal(index_full$est, c(322529.726849684, 293854.369632378, 390942.264920706, 184368.275544616), tolerance = 1e-4)
 
-  index_full_no_bias_correction <- get_index(p_full, bias_correct = FALSE)
+  index_full_no_bias_correction <- get_index(m, newdata = nd, bias_correct = FALSE)
   expect_equal(index_full_no_bias_correction$est, c(322529.726849684, 293854.369632378, 390942.264920706, 184368.275544616), tolerance = 1e-4)
 
-  index_2011 <- get_index(p_2011, bias_correct = TRUE)
-  index_2 <- get_index(p_2, bias_correct = TRUE)
-  index_3 <- get_index(p_3, bias_correct = TRUE)
-  cog <- get_cog(p_full)
-  cog_bias <- get_cog(p_full, bias_correct = TRUE)
+  index_2011 <- get_index(m, newdata = nd_2011, bias_correct = TRUE)
+  index_2 <- get_index(m, newdata = nd_2, bias_correct = TRUE)
+  index_3 <- get_index(m, newdata = nd_3, bias_correct = TRUE)
+  cog <- get_cog(m, newdata = nd)
+  cog_bias <- get_cog(m, newdata = nd, bias_correct = TRUE)
   expect_equal(cog$est, cog$est) # no random effects so equal
 
   expect_equal(index_2011$est, subset(index_full, year == 2011)$est)
@@ -262,19 +250,18 @@ test_that("get_index works with subsets of years", {
 
   index_apply <- lapply(unique(pcod_2011$year), \(y) {
     nd <- replicate_df(qcs_grid, "year", y)
-    p <- predict(m, newdata = nd, return_tmb_object = TRUE)
-    get_index(p, bias_correct = TRUE)
+    get_index(m, newdata = nd, bias_correct = TRUE)
   })
   index_apply <- do.call(rbind, index_apply)
   expect_equal(index_apply, index_full)
 
-  cog <- get_cog(p_full)
-  eao <- get_eao(p_full, bias_correct = FALSE)
-  eao_bias <- get_eao(p_full, bias_correct = TRUE)
+  cog <- get_cog(m, newdata = nd)
+  eao <- get_eao(m, newdata = nd, bias_correct = FALSE)
+  eao_bias <- get_eao(m, newdata = nd, bias_correct = TRUE)
   expect_equal(eao$est, eao_bias$est) # no random effects so equal
   expect_equal(eao$est, c(7314.00000000023, 7313.99999999846, 7314.00000000215, 7313.99999999964), tolerance = 1e-5)
-  cog2011 <- get_cog(p_2011)
-  eao2011 <- get_eao(p_2011)
+  cog2011 <- get_cog(m, newdata = nd_2011)
+  eao2011 <- get_eao(m, newdata = nd_2011)
   expect_equal(eao2011$est, eao$est[eao$year == 2011])
   expect_equal(cog2011$est, cog2011$est[cog2011$year == 2011])
 })
@@ -295,14 +282,12 @@ test_that("Index integration with area vector works with extra time and possibly
   # with all years:
   nd <- replicate_df(qcs_grid, "year", seq(2011, 2017))
   nd$area <- 4
-  p <- predict(fit, newdata = nd, return_tmb_object = TRUE)
-  ind0 <- get_index(p, area = nd$area, bias_correct = FALSE)
+  ind0 <- get_index(fit, newdata = nd, area = nd$area, bias_correct = FALSE)
 
   # newdata doesn't have all fitted years:
   nd <- replicate_df(qcs_grid, "year", unique(pcod_2011$year))
   nd$area <- 4
-  p <- predict(fit, newdata = nd, return_tmb_object = TRUE)
-  ind <- get_index(p, area = nd$area, bias_correct = FALSE)
+  ind <- get_index(fit, newdata = nd, area = nd$area, bias_correct = FALSE)
   if (FALSE) {
     library(ggplot2)
     ggplot(ind, aes(year, est, ymin = lwr, ymax = upr)) + geom_pointrange() +
@@ -328,12 +313,10 @@ test_that("get_index works", {
   qcs_grid$area <- runif(nrow(qcs_grid), 0.9, 1.1)
   nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
 
-  predictions <- predict(m, newdata = nd, return_tmb_object = TRUE)
-
   # get predictions with area passed as vector
-  ind <- get_index(predictions, area = nd$area, bias_correct = FALSE)
+  ind <- get_index(m, newdata = nd, area = nd$area, bias_correct = FALSE)
   # get predictions with area as a named column
-  ind2 <- get_index(predictions, area = "area", bias_correct = FALSE)
+  ind2 <- get_index(m, newdata = nd, area = "area", bias_correct = FALSE)
   expect_equal(ind, ind2)
   expect_equal(get_index(m, newdata = nd, area = "area", bias_correct = FALSE), ind)
   expect_equal(
@@ -343,16 +326,16 @@ test_that("get_index works", {
   )
 
   # get predictions with area passed as vector
-  eao <- get_eao(predictions, area = nd$area)
+  eao <- get_eao(m, newdata = nd, area = nd$area)
   # get predictions with area as a named column
-  eao2 <- get_eao(predictions, area = "area")
+  eao2 <- get_eao(m, newdata = nd, area = "area")
   expect_equal(eao, eao2)
   expect_equal(get_eao(m, newdata = nd, area = "area"), eao)
 
   # get predictions with area passed as vector
-  cog <- get_cog(predictions, area = nd$area)
+  cog <- get_cog(m, newdata = nd, area = nd$area)
   # get predictions with area as a named column
-  cog2 <- get_cog(predictions, area = "area")
+  cog2 <- get_cog(m, newdata = nd, area = "area")
   expect_equal(cog, cog2)
 })
 
@@ -422,7 +405,10 @@ test_that("get_weighted_average works", {
   nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
   nd$test_vector <- nd$depth # use depth as our test vector
 
-  predictions <- predict(m, newdata = nd, return_tmb_object = TRUE)
+  lifecycle::expect_deprecated(
+    predictions <- predict(m, newdata = nd, return_tmb_object = TRUE),
+    "return_tmb_object"
+  )
 
   # Test the weighted average function
   wa <- get_weighted_average(predictions, vector = nd$test_vector, bias_correct = FALSE)
@@ -446,7 +432,10 @@ test_that("get_weighted_average works", {
 
   # Test with area weighting
   nd$area <- runif(nrow(nd), 0.9, 1.1)
-  predictions_area <- predict(m, newdata = nd, return_tmb_object = TRUE)
+  lifecycle::expect_deprecated(
+    predictions_area <- predict(m, newdata = nd, return_tmb_object = TRUE),
+    "return_tmb_object"
+  )
   wa_area <- get_weighted_average(predictions_area, vector = nd$test_vector, area = nd$area, bias_correct = FALSE)
   wa_area_direct <- get_weighted_average(m, newdata = nd,
     vector = nd$test_vector, area = "area", bias_correct = FALSE)
@@ -472,7 +461,10 @@ test_that("get_weighted_average matches get_cog when using latitude", {
 
   # Create prediction grid
   nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  predictions <- predict(m, newdata = nd, return_tmb_object = TRUE)
+  lifecycle::expect_deprecated(
+    predictions <- predict(m, newdata = nd, return_tmb_object = TRUE),
+    "return_tmb_object"
+  )
 
   # Get center of gravity
   cog <- get_cog(predictions, bias_correct = FALSE, format = "wide")
@@ -506,7 +498,10 @@ test_that("get_index() etc. errors if the data have been subset after predicting
     time = "year", family = tweedie(link = "log")
   )
   nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  p <- predict(m, newdata = nd, return_tmb_object = TRUE)
+  lifecycle::expect_deprecated(
+    p <- predict(m, newdata = nd, return_tmb_object = TRUE),
+    "return_tmb_object"
+  )
   p$data <- p$data[p$data$Y > 5700, , drop=FALSE]
   expect_error(get_index(p), regexp = "data")
 })

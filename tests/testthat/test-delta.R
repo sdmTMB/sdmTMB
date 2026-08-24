@@ -21,8 +21,7 @@ test_that("Delta-Gamma family fits", {
     c(16.224, 0.992, 0.656, 1.426)
   )
 
-  p <- predict(fit_dg, newdata = nd, return_tmb_object = TRUE)
-  ind_dg <- get_index(p, bias_correct = FALSE)
+  ind_dg <- get_index(fit_dg, newdata = nd, bias_correct = FALSE)
   expect_equal(
     get_index(fit_dg, newdata = nd, bias_correct = FALSE),
     ind_dg
@@ -201,8 +200,6 @@ test_that("Delta-Gengamma family fits", {
   )
 
   nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  p <- predict(fit_dgg, newdata = nd, return_tmb_object = TRUE)
-
   # check
   fit_bin <- sdmTMB(present ~ 1,
     data = pcod, mesh = pcod_spde,
