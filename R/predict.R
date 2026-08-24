@@ -747,10 +747,15 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
     # SVC:
     if (!is.null(object$spatial_varying)) {
+      svc_formula <- if (!is.null(object$model_index)) {
+        object$spatial_varying_ordinary_formula
+      } else {
+        object$spatial_varying_formula
+      }
       # recreate original data SVC formula stuff:
-      z_i_orig <- model.matrix(object$spatial_varying_formula, object$data)
+      z_i_orig <- model.matrix(svc_formula, object$data)
       svc_contrasts <- attr(z_i_orig, which = "contrasts")
-      ttsv <- stats::terms(object$spatial_varying_formula)
+      ttsv <- stats::terms(svc_formula)
       mfsv <- model.frame(ttsv, object$data)
       mtsv <- attr(mfsv, "terms")
       xlevelssv <- stats::.getXlevels(mtsv, mfsv)
@@ -758,7 +763,19 @@ predict.sdmTMB <- function(object, newdata = NULL,
       mfsv_new <- model.frame(ttsv, newdata, xlev = xlevelssv)
       z_i <- model.matrix(ttsv, mfsv_new, contrasts.arg = svc_contrasts)
       .int <- grep("(Intercept)", colnames(z_i))
-      if (sum(.int) > 0) z_i <- z_i[,-.int,drop=FALSE]
+      if (isTRUE(object$svc_omega_is_intercept) && length(.int)) {
+        z_i <- z_i[, -.int, drop = FALSE]
+      }
+      if (!is.null(object$model_index)) {
+        z_i <- cbind(z_i, rep(0, nrow(z_i)))
+        colnames(z_i)[ncol(z_i)] <- object$model_index$label
+      }
+      if (!identical(colnames(z_i), object$spatial_varying)) {
+        cli_abort(c(
+          "The spatially varying prediction matrix has different columns than the fitted model.",
+          "This may be caused by changed factor levels or contrasts in `newdata`."
+        ))
+      }
     } else {
       z_i <- matrix(0, nrow(newdata), 0L)
     }

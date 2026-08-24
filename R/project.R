@@ -163,6 +163,9 @@ project <- function(
     ...) {
   assert_that(inherits(object, "sdmTMB"))
   assert_that(is.data.frame(newdata))
+  if (!is.null(object$model_index)) {
+    cli_abort("`project()` does not currently support models containing `model_index()`.")
+  }
   if (!is.numeric(nsim) || length(nsim) != 1L || is.na(nsim) ||
       !is.finite(nsim) || nsim < 1 || nsim != floor(nsim)) {
     cli_abort("`nsim` must be one finite, positive whole number.")

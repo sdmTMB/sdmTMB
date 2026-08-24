@@ -133,6 +133,39 @@ test_that("model_index validates version-one constraints", {
     ),
     "constant within"
   )
+
+  one_time <- d[d$year == d$year[[1L]], ]
+  one_time$year_factor <- droplevels(one_time$year_factor)
+  one_time_mesh <- make_mesh(one_time, c("X", "Y"), cutoff = 20)
+  expect_error(
+    sdmTMB(
+      density ~ year_factor,
+      spatial_varying = ~ 0 + model_index(year_factor),
+      data = one_time, mesh = one_time_mesh, time = "year",
+      family = tweedie(link = "log"), do_fit = FALSE
+    ),
+    "at least two fitted time values"
+  )
+
+  expect_error(
+    sdmTMB(
+      density ~ depth_scaled,
+      spatial_varying = ~ 0 + model_index(year_factor),
+      data = d, mesh = mesh, time = "year",
+      family = tweedie(link = "log"), do_fit = FALSE
+    ),
+    "must occur as a complete term"
+  )
+
+  expect_error(
+    sdmTMB(
+      list(density ~ year_factor, density ~ depth_scaled),
+      spatial_varying = ~ 0 + model_index(year_factor),
+      data = d, mesh = mesh, time = "year",
+      family = delta_gamma(), do_fit = FALSE
+    ),
+    "every model formula"
+  )
 })
 
 test_that("one-part TMB model index uses fixed effects and mean epsilon_st", {
@@ -315,4 +348,121 @@ test_that("truncated delta model index uses the conditional positive mean", {
   expected <- q - mean(q)
 
   expect_equal(report$model_index_t, expected, tolerance = 1e-10)
+})
+
+test_that("prediction uses the stored model index at fitted times", {
+  d <- pcod
+  d$year_factor <- factor(d$year)
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  fit <- sdmTMB(
+    density ~ depth_scaled + year_factor,
+    spatial_varying = ~ 0 + depth_scaled + model_index(year_factor),
+    data = d, mesh = mesh, time = "year",
+    family = tweedie(link = "log"), do_fit = FALSE
+  )
+  rows <- unique(round(seq(nrow(d), 1L, length.out = 40L)))
+  nd <- d[rows, ]
+  prediction_data <- predict(fit, newdata = nd, return_tmb_data = TRUE)
+
+  expect_identical(
+    colnames(prediction_data$proj_z_i),
+    c("depth_scaled", "model_index(year_factor)")
+  )
+  expect_true(all(prediction_data$proj_z_i[, 2L] == 0))
+
+  parameters <- fit$tmb_params
+  parameters$b_j[] <- seq_along(parameters$b_j) / 5
+  parameters$epsilon_st[] <- 0
+  parameters$zeta_s[] <- 0
+  make_report <- function(parameters) {
+    obj <- TMB::MakeADFun(
+      data = prediction_data, parameters = parameters, map = fit$tmb_map,
+      random = NULL, DLL = "sdmTMB", silent = TRUE
+    )
+    obj$report(obj$par)
+  }
+  report_zero <- make_report(parameters)
+  parameters$zeta_s[, 2L, 1L] <- 0.6
+  report_svc <- make_report(parameters)
+  expected <- 0.6 * report_svc$model_index_t[prediction_data$proj_year + 1L]
+
+  expect_equal(
+    drop(report_svc$proj_eta - report_zero$proj_eta),
+    expected,
+    tolerance = 1e-9
+  )
+
+  nd_repeated <- nd[c(seq_len(nrow(nd)), 1L, 1L, 5L), ]
+  repeated_data <- predict(fit, newdata = nd_repeated, return_tmb_data = TRUE)
+  repeated_obj <- TMB::MakeADFun(
+    data = repeated_data, parameters = parameters, map = fit$tmb_map,
+    random = NULL, DLL = "sdmTMB", silent = TRUE
+  )
+  expect_equal(
+    repeated_obj$report(repeated_obj$par)$model_index_t,
+    report_svc$model_index_t,
+    tolerance = 1e-10
+  )
+})
+
+test_that("simulation recomputes the model index from simulated epsilon_st", {
+  d <- pcod
+  d$year_factor <- factor(d$year)
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+
+  one_part <- sdmTMB(
+    density ~ year_factor,
+    spatial_varying = ~ 0 + model_index(year_factor),
+    data = d, mesh = mesh, time = "year",
+    family = tweedie(link = "log"), do_fit = FALSE
+  )
+  one_part_reports <- simulate(
+    one_part, nsim = 2L, seed = 101, re_form = NA,
+    return_tmb_report = TRUE, silent = TRUE
+  )
+  expect_length(one_part_reports, 2L)
+  for (report in one_part_reports) {
+    epsilon_mean <- apply(report$epsilon_st[, , 1L], 2L, mean)
+    expected <- epsilon_mean - mean(epsilon_mean)
+    expect_equal(report$model_index_t, expected, tolerance = 1e-8)
+  }
+  expect_false(isTRUE(all.equal(
+    one_part_reports[[1L]]$model_index_t,
+    one_part_reports[[2L]]$model_index_t
+  )))
+
+  delta <- sdmTMB(
+    density ~ year_factor,
+    spatial_varying = ~ 0 + model_index(year_factor),
+    data = d, mesh = mesh, time = "year",
+    family = delta_gamma(), do_fit = FALSE
+  )
+  delta_sim <- simulate(
+    delta, nsim = 2L, seed = 102, re_form = NA,
+    newdata = d[seq_len(30L), ], silent = TRUE
+  )
+  expect_identical(dim(delta_sim), c(30L, 2L))
+  expect_true(all(is.finite(delta_sim)))
+})
+
+test_that("forward project rejects model-index models", {
+  d <- pcod
+  d$year_factor <- factor(d$year)
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  fit <- sdmTMB(
+    density ~ year_factor,
+    spatial_varying = ~ 0 + model_index(year_factor),
+    data = d, mesh = mesh, time = "year",
+    family = tweedie(link = "log"), do_fit = FALSE
+  )
+  expect_error(
+    project(fit, newdata = d[1L, ], nsim = 1L),
+    "does not currently support.*model_index"
+  )
+  future <- d[1L, ]
+  future$year <- max(d$year) + 1
+  expect_error(
+    predict(fit, newdata = future, return_tmb_data = TRUE),
+    "Some new time values"
+  )
 })
