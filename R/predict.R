@@ -782,16 +782,14 @@ predict.sdmTMB <- function(object, newdata = NULL,
     new_tmb_obj <- TMB::MakeADFun(
       data = tmb_data,
       profile = object$control$profile,
-      parameters = get_pars(object),
+      parameters = object$parlist,
       map = object$tmb_map,
       random = object$tmb_random,
       DLL = "sdmTMB",
       silent = TRUE
     )
 
-    old_par <- object$model$par
-    # need to initialize the new TMB object once:
-    new_tmb_obj$fn(old_par)
+    lp <- object$last.par.best
 
     if (sims > 0 && is.null(mcmc_samples)) {
       if (!"jointPrecision" %in% names(object$sd_report) && !has_no_random_effects(object)) {
@@ -805,7 +803,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
           sigma = sd_report$cov.fixed))
         row.names(t_draws) <- NULL
       } else {
-        t_draws <- rmvnorm_prec(mu = new_tmb_obj$env$last.par.best,
+        t_draws <- rmvnorm_prec(mu = lp,
           tmb_sd = sd_report, n_sims = sims)
       }
       r <- apply(t_draws, 2L, new_tmb_obj$report)
@@ -910,7 +908,6 @@ predict.sdmTMB <- function(object, newdata = NULL,
       return(out)
     }
 
-    lp <- new_tmb_obj$env$last.par.best
     r <- new_tmb_obj$report(lp)
     if (return_tmb_report) return(r)
     if (has_nonlocal) {

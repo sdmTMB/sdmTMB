@@ -1,5 +1,9 @@
 # sdmTMB (development version)
 
+* `predict.sdmTMB()` has been sped up by avoiding an expensive `obj$fn()` call
+  and instead directly reporting predictions using saved fitted fixed
+  and random effect values.
+
 * `get_index()`, `get_cog()`, `get_eao()`, and `get_weighted_average()` can now
   take a fitted model and prediction grid directly, for example
   `get_index(fit, newdata = grid)`. These functions, along with
