@@ -210,3 +210,90 @@ add_model_index <- function(split_formula, dataframe_name) {
     df
   })
 }
+
+#' Mark a model-derived time index in a spatially varying formula
+#'
+#' `model_index()` marks one complete fixed-effect term whose model-derived,
+#' centered time index will be used as a single spatially varying covariate.
+#' It is only valid inside the `spatial_varying` argument to [sdmTMB()].
+#'
+#' @param x One complete term that also occurs in the main model formula.
+#'
+#' @return This function is a formula marker and is not evaluated directly.
+#' @export
+model_index <- function(x) {
+  cli_abort("`model_index()` can only be used inside the `spatial_varying` argument to `sdmTMB()`.")
+}
+
+.parse_model_index_svc <- function(spatial_varying) {
+  inactive <- list(
+    ordinary_formula = spatial_varying,
+    active = FALSE,
+    term = NULL,
+    label = NULL
+  )
+  if (is.null(spatial_varying)) return(inactive)
+  if (!inherits(spatial_varying, "formula") || length(spatial_varying) != 2L) {
+    cli_abort("`spatial_varying` must be a one-sided formula when using `model_index()`.")
+  }
+
+  tt <- stats::terms(spatial_varying, specials = "model_index", keep.order = TRUE)
+  labels <- attr(tt, "term.labels")
+  n_specials <- length(attr(tt, "specials")$model_index)
+  special_labels <- labels[grepl("(^|:)model_index\\(", labels)]
+  if (!n_specials) return(inactive)
+  if (n_specials > 1L || length(special_labels) > 1L) {
+    cli_abort("At most one `model_index()` term may be used in `spatial_varying`.")
+  }
+
+  label <- special_labels[[1L]]
+  call <- tryCatch(str2lang(label), error = function(e) NULL)
+  direct <- is.call(call) && identical(call[[1L]], as.name("model_index"))
+  if (!direct || length(call) != 2L || grepl("model_index", safe_deparse(call[[2L]]), fixed = TRUE)) {
+    cli_abort("Use `model_index()` as one direct term with exactly one argument in `spatial_varying`.")
+  }
+  term <- safe_deparse(call[[2L]])
+  other_labels <- labels[labels != label]
+  ordinary_formula <- stats::reformulate(
+    other_labels,
+    intercept = attr(tt, "intercept") == 1L,
+    env = environment(spatial_varying)
+  )
+
+  list(
+    ordinary_formula = ordinary_formula,
+    active = TRUE,
+    term = term,
+    label = label
+  )
+}
+
+.model_index_coefficient_indices <- function(model_index, fixed_terms, X_ij) {
+  if (!isTRUE(model_index$active)) return(NULL)
+  lapply(seq_along(X_ij), function(m) {
+    labels <- attr(fixed_terms[[m]], "term.labels")
+    term_number <- match(model_index$term, labels)
+    if (is.na(term_number)) {
+      cli_abort("The term `{model_index$term}` inside `model_index()` must occur as a complete term in every model formula.")
+    }
+    assign <- attr(X_ij[[m]], "assign")
+    which(assign == 0L | assign == term_number)
+  })
+}
+
+.build_model_index_X_t <- function(X_ij, coefficient_indices, year_i, n_t, term) {
+  lapply(seq_along(X_ij), function(m) {
+    out <- matrix(0, nrow = n_t, ncol = ncol(X_ij[[m]]))
+    cols <- coefficient_indices[[m]]
+    for (t in seq_len(n_t) - 1L) {
+      rows <- which(year_i == t)
+      values <- X_ij[[m]][rows, cols, drop = FALSE]
+      if (!length(rows) || any(apply(values, 2L, function(x) any(x != x[[1L]])))) {
+        cli_abort("The fixed-effect design for `model_index({term})` must be constant within each fitted time value.")
+      }
+      out[t + 1L, cols] <- values[1L, , drop = TRUE]
+    }
+    colnames(out) <- colnames(X_ij[[m]])
+    out
+  })
+}

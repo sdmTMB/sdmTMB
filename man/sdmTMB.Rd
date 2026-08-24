@@ -138,7 +138,10 @@ Predictors should usually be centered to have mean zero and standard deviation
 approximately 1. \strong{The spatial intercept is controlled by the \code{spatial}
 argument}; set \code{spatial = 'on'} or \code{'off'} to include or exclude it. For
 factor predictors, if \code{spatial_varying} excludes the intercept (\code{~ 0} or \code{~ -1}), set \code{spatial = 'off'} to match. Structure is shared in delta
-models.}
+models. Use \code{model_index(term)} to create one spatially varying field from
+a centered, model-derived time index based on a complete fixed-effect term.
+This special requires an explicit \code{time} argument and creates one SVC field
+even when the wrapped term has multiple model-matrix columns.}
 
 \item{nonlocal_formula}{An optional one-sided formula describing distributed
 lag terms with \code{diffusion()} or \code{time_lag()} wrappers.

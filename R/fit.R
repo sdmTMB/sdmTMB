@@ -108,7 +108,10 @@ NULL
 #'   argument**; set `spatial = 'on'` or `'off'` to include or exclude it. For
 #'   factor predictors, if `spatial_varying` excludes the intercept (`~ 0` or `~
 #'   -1`), set `spatial = 'off'` to match. Structure is shared in delta
-#'   models.
+#'   models. Use `model_index(term)` to create one spatially varying field from
+#'   a centered, model-derived time index based on a complete fixed-effect term.
+#'   This special requires an explicit `time` argument and creates one SVC field
+#'   even when the wrapped term has multiple model-matrix columns.
 #' @param nonlocal_formula An optional one-sided formula describing distributed
 #'   lag terms with `diffusion()` or `time_lag()` wrappers.
 #'   Example: `~ diffusion(x) + time_lag(x)`. Note that diffused spatial
@@ -965,8 +968,18 @@ sdmTMB <- function(
   )
 
   spatial_varying_formula <- spatial_varying # save it
-  if (!is.null(spatial_varying)) {
-    mf1 <- model.frame(spatial_varying, data)
+  model_index_parsed <- .parse_model_index_svc(spatial_varying)
+  if (isTRUE(model_index_parsed$active)) {
+    if (!user_time_supplied) cli_abort("`time` must be supplied when using `model_index()`.")
+    if (n_t < 2L) cli_abort("`model_index()` requires at least two fitted time values.")
+    if (!is.null(extra_time)) cli_abort("`extra_time` is not supported with `model_index()`.")
+    if (!delta && !family$link[1L] %in% c("log", "logit", "probit", "cloglog")) {
+      cli_abort("This family/link combination is not supported with `model_index()` because its expected response is not guaranteed to be positive.")
+    }
+  }
+  spatial_varying_ordinary <- model_index_parsed$ordinary_formula
+  if (!is.null(spatial_varying_ordinary)) {
+    mf1 <- model.frame(spatial_varying_ordinary, data)
     for (i in seq_len(ncol(mf1))) {
       if (is.character(mf1[[i]])) {
         cli_warn(paste0(
@@ -976,7 +989,7 @@ sdmTMB <- function(
         ))
       }
     }
-    z_i <- model.matrix(spatial_varying, data)
+    z_i <- model.matrix(spatial_varying_ordinary, data)
     .int <- grep("(Intercept)", colnames(z_i))
     has_intercept <- length(.int) > 0L
     svc_omega_is_intercept <- has_intercept && !omit_spatial_intercept
@@ -1000,8 +1013,12 @@ sdmTMB <- function(
         "To use the ordinary spatial field as the reference-level field instead (same resulting model), set `spatial = \"on\"`."
       ))
     }
-    spatial_varying <- colnames(z_i)
     svc_contrasts <- attr(z_i, which = "contrasts")
+    if (isTRUE(model_index_parsed$active)) {
+      z_i <- cbind(z_i, rep(0, nrow(z_i)))
+      colnames(z_i)[ncol(z_i)] <- model_index_parsed$label
+    }
+    spatial_varying <- colnames(z_i)
   } else {
     z_i <- matrix(0, nrow(data), 0L)
     svc_contrasts <- NULL
@@ -1050,6 +1067,10 @@ sdmTMB <- function(
     sm[[ii]]$formula_no_bars <- formula_no_bars
     sm[[ii]]$formula_no_bars_no_sm <- formula_no_bars_no_sm
   }
+
+  model_index_coefficient_indices <- .model_index_coefficient_indices(
+    model_index_parsed, mt, X_ij
+  )
 
   # random slopes and intercepts --------------------------------------------
   # bind the elements of split_formula[[ii]] together to pass into TMB
@@ -1348,6 +1369,20 @@ sdmTMB <- function(
     term_covariate = nonlocal_term_covariate
   )
 
+  if (isTRUE(model_index_parsed$active)) {
+    model_index_X_t <- .build_model_index_X_t(
+      X_ij = X_ij,
+      coefficient_indices = model_index_coefficient_indices,
+      year_i = year_i_data,
+      n_t = n_t,
+      term = model_index_parsed$term
+    )
+    model_index_z <- n_z - 1L
+  } else {
+    model_index_X_t <- lapply(X_ij, function(X) matrix(0, nrow = n_t, ncol = ncol(X)))
+    model_index_z <- -1L
+  }
+
   # TODO: make this cleaner
   X_ij_list <- list()
   for (i in seq_len(n_m)) X_ij_list[[i]] <- X_ij[[i]]
@@ -1376,6 +1411,8 @@ sdmTMB <- function(
     A_spatial_index = A_spatial_index,
     year_i = year_i_data,
     covariate_diffusion = nonlocal_tmb,
+    model_index_z = model_index_z,
+    model_index_X_t = model_index_X_t,
     ar1_fields = ar1_fields,
     simulate_t = rep(1L, n_t),
     rw_fields = rw_fields,
@@ -1838,6 +1875,14 @@ sdmTMB <- function(
       spatial = spatial_user,
       spatiotemporal = spatiotemporal,
       spatial_varying_formula = spatial_varying_formula,
+      spatial_varying_ordinary_formula = spatial_varying_ordinary,
+      model_index = if (isTRUE(model_index_parsed$active)) list(
+        formula = spatial_varying_formula,
+        term = model_index_parsed$term,
+        label = model_index_parsed$label,
+        z_index = n_z,
+        coefficient_indices = model_index_coefficient_indices
+      ) else NULL,
       svc_omega_is_intercept = if (!is.null(spatial_varying_formula)) svc_omega_is_intercept else FALSE,
       reml = reml,
       priors = priors,

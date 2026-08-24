@@ -1,0 +1,136 @@
+test_that("model_index parser removes one direct special", {
+  p <- .parse_model_index_svc(~ 0 + depth + model_index(factor(year)))
+  expect_true(p$active)
+  expect_identical(p$term, "factor(year)")
+  expect_identical(p$label, "model_index(factor(year))")
+  expect_identical(attr(terms(p$ordinary_formula), "term.labels"), "depth")
+  expect_identical(attr(terms(p$ordinary_formula), "intercept"), 0L)
+
+  expect_error(model_index(year), "only be used inside")
+  expect_error(.parse_model_index_svc(~ model_index()), "exactly one")
+  expect_error(.parse_model_index_svc(~ model_index(year, depth)), "exactly one")
+  expect_error(
+    .parse_model_index_svc(~ model_index(year) + model_index(depth)),
+    "At most one"
+  )
+  expect_error(.parse_model_index_svc(~ depth:model_index(year)), "one direct term")
+})
+
+test_that("model_index creates one ordered SVC placeholder and metadata", {
+  d <- pcod
+  d$year_factor <- factor(d$year)
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  fit <- sdmTMB(
+    density ~ depth_scaled + year_factor,
+    spatial_varying = ~ 0 + depth_scaled + model_index(year_factor),
+    data = d,
+    mesh = mesh,
+    time = "year",
+    family = tweedie(link = "log"),
+    do_fit = FALSE
+  )
+
+  expect_identical(
+    colnames(fit$tmb_data$z_i),
+    c("depth_scaled", "model_index(year_factor)")
+  )
+  expect_true(all(fit$tmb_data$z_i[, 2L] == 0))
+  expect_identical(fit$tmb_data$model_index_z, 1L)
+  expect_identical(fit$model_index$z_index, 2L)
+
+  X <- fit$tmb_data$X_ij[[1L]]
+  selected <- fit$model_index$coefficient_indices[[1L]]
+  expect_identical(selected, which(attr(X, "assign") %in% c(0L, 2L)))
+  expect_equal(nrow(fit$tmb_data$model_index_X_t[[1L]]), length(unique(d$year)))
+  expect_equal(ncol(fit$tmb_data$model_index_X_t[[1L]]), ncol(X))
+  expect_true(all(fit$tmb_data$model_index_X_t[[1L]][, -selected, drop = FALSE] == 0))
+})
+
+test_that("model_index time design handles cell means, row order, and delta formulas", {
+  d <- pcod
+  d$year_factor <- factor(d$year)
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  args <- list(
+    formula = density ~ 0 + year_factor,
+    spatial_varying = ~ 0 + model_index(year_factor),
+    mesh = mesh,
+    time = "year",
+    family = delta_gamma(),
+    do_fit = FALSE
+  )
+  fit1 <- do.call(sdmTMB, c(args, list(data = d)))
+  set.seed(1)
+  fit2 <- do.call(sdmTMB, c(args, list(data = d[sample(nrow(d)), ])))
+
+  expect_length(fit1$tmb_data$model_index_X_t, 2L)
+  expect_identical(ncol(fit1$tmb_data$z_i), 1L)
+  expect_false(any(attr(fit1$tmb_data$X_ij[[1L]], "assign")[
+    fit1$model_index$coefficient_indices[[1L]]
+  ] == 0L))
+  expect_equal(fit1$tmb_data$model_index_X_t, fit2$tmb_data$model_index_X_t)
+
+  formulas <- list(
+    density ~ year_factor + depth_scaled,
+    density ~ depth_scaled + year_factor
+  )
+  fit3 <- sdmTMB(
+    formulas,
+    spatial_varying = ~ 0 + model_index(year_factor),
+    data = d,
+    mesh = mesh,
+    time = "year",
+    family = delta_gamma(),
+    do_fit = FALSE
+  )
+  expect_length(fit3$model_index$coefficient_indices, 2L)
+  expect_true(all(vapply(fit3$model_index$coefficient_indices, length, integer(1L)) > 1L))
+})
+
+test_that("model_index time design is padded after fixed-effect columns are appended", {
+  d <- data.frame(year = rep(1:3, each = 2), f = factor(rep(1:3, each = 2)))
+  X <- model.matrix(~ f, d)
+  parsed <- .parse_model_index_svc(~ 0 + model_index(f))
+  idx <- .model_index_coefficient_indices(parsed, list(terms(~ f)), list(X))
+  X_padded <- .append_nonlocal_coef_columns(X, "diffusion(x)")
+  X_t <- .build_model_index_X_t(list(X_padded), idx, rep(0:2, each = 2), 3L, "f")
+
+  expect_identical(dim(X_t[[1L]]), c(3L, ncol(X_padded)))
+  expect_true(all(X_t[[1L]][, ncol(X_padded)] == 0))
+})
+
+test_that("model_index validates version-one constraints", {
+  d <- pcod
+  d$year_factor <- factor(d$year)
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  base <- list(
+    formula = density ~ year_factor,
+    spatial_varying = ~ 0 + model_index(year_factor),
+    data = d,
+    mesh = mesh,
+    family = tweedie(link = "log"),
+    do_fit = FALSE
+  )
+  expect_error(do.call(sdmTMB, base), "`time` must be supplied")
+  expect_error(do.call(sdmTMB, c(base, list(time = "year", extra_time = 2020))), "`extra_time`")
+  expect_error(
+    sdmTMB(
+      density ~ year_factor,
+      spatial_varying = ~ 0 + model_index(year_factor),
+      data = d, mesh = mesh, time = "year",
+      family = gaussian(), do_fit = FALSE
+    ),
+    "not guaranteed to be positive"
+  )
+
+  bad <- d
+  bad$within_time <- seq_len(nrow(bad))
+  expect_error(
+    sdmTMB(
+      density ~ within_time,
+      spatial_varying = ~ 0 + model_index(within_time),
+      data = bad, mesh = mesh, time = "year",
+      family = tweedie(link = "log"), do_fit = FALSE
+    ),
+    "constant within"
+  )
+})
