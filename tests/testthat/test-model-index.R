@@ -205,3 +205,114 @@ test_that("one-part TMB SVC multiplies the model-derived index", {
     tolerance = 1e-9
   )
 })
+
+test_that("standard delta model index combines components before centering", {
+  d <- pcod
+  d$year_factor <- factor(d$year)
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  fit <- sdmTMB(
+    density ~ year_factor,
+    spatial_varying = ~ 0 + model_index(year_factor),
+    data = d, mesh = mesh, time = "year",
+    family = delta_gamma(), do_fit = FALSE
+  )
+  parameters <- fit$tmb_params
+  parameters$b_j[] <- seq_along(parameters$b_j) / 5 - 1
+  parameters$b_j2[] <- rev(seq_along(parameters$b_j2)) / 4
+  parameters$epsilon_st[] <- 0
+  parameters$zeta_s[] <- 0
+  make_report <- function(parameters) {
+    obj <- TMB::MakeADFun(
+      data = fit$tmb_data, parameters = parameters, map = fit$tmb_map,
+      random = NULL, DLL = "sdmTMB", silent = TRUE
+    )
+    obj$report(obj$par)
+  }
+  report_zero <- make_report(parameters)
+
+  a1 <- drop(fit$tmb_data$model_index_X_t[[1L]] %*% parameters$b_j)
+  a2 <- drop(fit$tmb_data$model_index_X_t[[2L]] %*% parameters$b_j2)
+  q <- log(plogis(a1) * exp(a2))
+  expected <- q - mean(q)
+  separately_centered <- log(plogis(a1 - mean(a1))) + a2 - mean(a2)
+  separately_centered <- separately_centered - mean(separately_centered)
+
+  expect_equal(report_zero$model_index_t, expected, tolerance = 1e-10)
+  expect_false(isTRUE(all.equal(expected, separately_centered, tolerance = 1e-6)))
+
+  parameters$zeta_s[, , 1L] <- 0.4
+  parameters$zeta_s[, , 2L] <- -0.2
+  report_svc <- make_report(parameters)
+  expected_by_observation <- expected[fit$tmb_data$year_i + 1L]
+  expect_equal(
+    report_svc$eta_i[, 1L] - report_zero$eta_i[, 1L],
+    0.4 * expected_by_observation,
+    tolerance = 1e-9
+  )
+  expect_equal(
+    report_svc$eta_i[, 2L] - report_zero$eta_i[, 2L],
+    -0.2 * expected_by_observation,
+    tolerance = 1e-9
+  )
+})
+
+test_that("Poisson-link delta model index is the centered component sum", {
+  d <- pcod
+  d$year_factor <- factor(d$year)
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  fit <- sdmTMB(
+    density ~ year_factor,
+    spatial_varying = ~ 0 + model_index(year_factor),
+    data = d, mesh = mesh, time = "year",
+    family = delta_gamma(type = "poisson-link"), do_fit = FALSE
+  )
+  parameters <- fit$tmb_params
+  parameters$b_j[] <- seq_along(parameters$b_j) / 6
+  parameters$b_j2[] <- rev(seq_along(parameters$b_j2)) / 7
+  parameters$epsilon_st[, , 1L] <- 0.15
+  parameters$epsilon_st[, , 2L] <- -0.05
+
+  obj <- TMB::MakeADFun(
+    data = fit$tmb_data, parameters = parameters, map = fit$tmb_map,
+    random = NULL, DLL = "sdmTMB", silent = TRUE
+  )
+  report <- obj$report(obj$par)
+  a1 <- drop(fit$tmb_data$model_index_X_t[[1L]] %*% parameters$b_j) + 0.15
+  a2 <- drop(fit$tmb_data$model_index_X_t[[2L]] %*% parameters$b_j2) - 0.05
+  expected <- a1 + a2
+  expected <- expected - mean(expected)
+
+  expect_equal(report$model_index_t, expected, tolerance = 1e-10)
+})
+
+test_that("truncated delta model index uses the conditional positive mean", {
+  d <- pcod
+  d$year_factor <- factor(d$year)
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  fit <- sdmTMB(
+    density ~ year_factor,
+    spatial_varying = ~ 0 + model_index(year_factor),
+    data = d, mesh = mesh, time = "year",
+    family = delta_truncated_nbinom2(), do_fit = FALSE
+  )
+  parameters <- fit$tmb_params
+  parameters$b_j[] <- seq_along(parameters$b_j) / 8 - 0.5
+  parameters$b_j2[] <- rev(seq_along(parameters$b_j2)) / 9
+  parameters$epsilon_st[] <- 0
+  parameters$ln_phi[2L] <- log(2.3)
+
+  obj <- TMB::MakeADFun(
+    data = fit$tmb_data, parameters = parameters, map = fit$tmb_map,
+    random = NULL, DLL = "sdmTMB", silent = TRUE
+  )
+  report <- obj$report(obj$par)
+  a1 <- drop(fit$tmb_data$model_index_X_t[[1L]] %*% parameters$b_j)
+  a2 <- drop(fit$tmb_data$model_index_X_t[[2L]] %*% parameters$b_j2)
+  mu <- exp(a2)
+  phi <- exp(parameters$ln_phi[2L])
+  nonzero_probability <- 1 - (phi / (phi + mu))^phi
+  q <- log(plogis(a1) * mu / nonzero_probability)
+  expected <- q - mean(q)
+
+  expect_equal(report$model_index_t, expected, tolerance = 1e-10)
+})

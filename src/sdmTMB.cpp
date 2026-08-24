@@ -815,12 +815,31 @@ Type objective_function<Type>::operator()()
 
   vector<Type> model_index_t(n_t);
   model_index_t.setZero();
-  if (model_index_z >= 0 && n_m == 1) {
-    vector<Type> component_eta_t = model_index_X_t(0) * b_j;
+  if (model_index_z >= 0) {
+    matrix<Type> component_eta_t(n_t, n_m);
+    component_eta_t.col(0) = model_index_X_t(0) * b_j;
+    if (n_m > 1) component_eta_t.col(1) = model_index_X_t(1) * b_j2;
+    for (int m = 0; m < n_m; m++) {
+      for (int t = 0; t < n_t; t++) {
+        component_eta_t(t,m) += epsilon_st.col(m).col(t).sum() /
+          Type(epsilon_st.col(m).col(t).size());
+      }
+    }
     for (int t = 0; t < n_t; t++) {
-      component_eta_t(t) += epsilon_st.col(0).col(t).sum() /
-        Type(epsilon_st.col(0).col(t).size());
-      model_index_t(t) = log(InverseLink(component_eta_t(t), link(0)));
+      if (n_m == 1) {
+        model_index_t(t) = log(InverseLink(component_eta_t(t,0), link(0)));
+      } else if (poisson_link_delta) {
+        model_index_t(t) = component_eta_t(t,0) + component_eta_t(t,1);
+      } else {
+        Type encounter_mean = InverseLink(component_eta_t(t,0), link(0));
+        Type positive_mean = InverseLink(component_eta_t(t,1), link(1));
+        model_index_t(t) = log(encounter_mean) + log(positive_mean);
+        if (family(1) == truncated_nbinom1_family ||
+            family(1) == truncated_nbinom2_family) {
+          Type log_nzprob = calc_log_nzprob(positive_mean, phi(1), family(1));
+          model_index_t(t) -= log_nzprob;
+        }
+      }
     }
     Type model_index_mean = model_index_t.sum() / Type(n_t);
     for (int t = 0; t < n_t; t++) model_index_t(t) -= model_index_mean;
