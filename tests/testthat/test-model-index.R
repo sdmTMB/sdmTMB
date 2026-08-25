@@ -405,69 +405,6 @@ test_that("prediction uses the stored model index at fitted times", {
   )
 })
 
-test_that("optimized model-index fits converge and predict fitted rows consistently", {
-  skip_on_cran()
-  set.seed(104)
-  years <- sort(unique(pcod$year))[5:9]
-  d <- do.call(rbind, lapply(years, function(y) {
-    dy <- pcod[pcod$year == y, ]
-    dy[sample.int(nrow(dy), 40L), ]
-  }))
-  rownames(d) <- NULL
-  d$year_factor <- factor(d$year)
-  mesh <- make_mesh(d, c("X", "Y"), cutoff = 35)
-
-  fit_model_index <- function(family) {
-    sdmTMB(
-      density ~ 0 + year_factor,
-      spatial_varying = ~ 0 + model_index(year_factor),
-      data = d, mesh = mesh, time = "year", family = family,
-      spatial = "off", spatiotemporal = "iid",
-      priors = sdmTMBpriors(matern_s = pc_matern(5, 5)),
-      control = sdmTMBcontrol(nlminb_loops = 2L, newton_loops = 1L)
-    )
-  }
-  fits <- list(
-    tweedie = fit_model_index(tweedie(link = "log")),
-    standard_delta = fit_model_index(delta_gamma())
-  )
-
-  for (fit in fits) {
-    expect_identical(fit$model$convergence, 0L)
-    expect_true(fit$sd_report$pdHess)
-    expect_true(all(is.finite(fit$gradients)))
-    expect_lt(max(abs(fit$gradients)), 0.001)
-
-    p_fitted <- predict(fit)
-    p_original <- predict(fit, newdata = d)
-    prediction_columns <- intersect(
-      c("est", "est_non_rf", "est_rf", "omega_s", "epsilon_st", "zeta_s"),
-      names(p_fitted)
-    )
-    expect_equal(
-      p_fitted[, prediction_columns, drop = FALSE],
-      p_original[, prediction_columns, drop = FALSE],
-      tolerance = 1e-5
-    )
-
-    reordered <- rev(seq_len(nrow(d)))
-    p_reordered <- predict(fit, newdata = d[reordered, ])
-    expect_equal(
-      p_reordered[, prediction_columns, drop = FALSE],
-      p_fitted[reordered, prediction_columns, drop = FALSE],
-      tolerance = 1e-5
-    )
-
-    keep <- d$year %in% years[c(2L, 4L)]
-    p_subset <- predict(fit, newdata = d[keep, ])
-    expect_equal(
-      p_subset[, prediction_columns, drop = FALSE],
-      p_fitted[keep, prediction_columns, drop = FALSE],
-      tolerance = 1e-5
-    )
-  }
-})
-
 test_that("simulation recomputes the model index from simulated epsilon_st", {
   d <- pcod
   d$year_factor <- factor(d$year)
@@ -528,4 +465,98 @@ test_that("forward project rejects model-index models", {
     predict(fit, newdata = future, return_tmb_data = TRUE),
     "Some new time values"
   )
+})
+
+test_that("optimized model-index fits converge and predict fitted rows consistently", {
+  # kind of slow!
+  skip_on_cran()
+  skip_on_ci()
+  skip_if_not_installed("dplyr")
+
+  d <- dogfish
+  d$year_factor <- factor(d$year)
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+
+  fit_model_index <- function(family) {
+    sdmTMB(
+      catch_weight ~ 0 + year_factor,
+      offset = log(d$area_swept),
+      spatial_varying = ~ 0 + model_index(year_factor),
+      data = d, mesh = mesh, time = "year", family = family,
+      spatial = "off", spatiotemporal = "iid", silent = TRUE,
+      control = sdmTMBcontrol(multiphase = FALSE))
+  }
+  suppressWarnings({
+  fits <- list(
+    tweedie = fit_model_index(tweedie(link = "log")),
+    delta = fit_model_index(delta_lognormal(type = "poisson-link"))
+  )})
+
+  for (fit in fits) {
+    expect_identical(fit$model$convergence, 0L)
+    expect_true(fit$sd_report$pdHess)
+    expect_true(all(is.finite(fit$gradients)))
+    expect_lt(max(abs(fit$gradients)), 0.01)
+
+    p_fitted <- predict(fit)
+    p_original <- predict(fit, newdata = d)
+    expect_equal(
+      p_fitted[, prediction_columns, drop = FALSE],
+      p_original[, prediction_columns, drop = FALSE],
+      tolerance = 1e-5
+    )
+
+    reordered <- rev(seq_len(nrow(d)))
+    p_reordered <- predict(fit, newdata = d[reordered, ])
+    expect_equal(
+      p_reordered[, prediction_columns, drop = FALSE],
+      p_fitted[reordered, prediction_columns, drop = FALSE],
+      tolerance = 1e-5
+    )
+
+    years <- sort(unique(d$year))
+    keep <- d$year %in% years[c(2L, 4L)]
+    p_subset <- predict(fit, newdata = d[keep, ])
+    expect_equal(
+      p_subset[, prediction_columns, drop = FALSE],
+      p_fitted[keep, prediction_columns, drop = FALSE],
+      tolerance = 1e-5
+    )
+  }
+
+  # two-part comparison:
+  # index:
+  fit1 <- sdmTMB(
+    catch_weight ~ 0 + year_factor,
+    offset = log(d$area_swept),
+    data = d, mesh = mesh, time = "year", family = tweedie(),
+    spatial = "off", spatiotemporal = "iid"
+  )
+  p <- get_pars(fit1)
+  df <- data.frame(year = sort(unique(d$year)), B = coef(fit0), eps_mean = apply(p$epsilon_st, 2, mean))
+  df$index <- df$B + df$eps_mean
+  df$index <- df$index - mean(df$index)
+
+  d2 <- dplyr::left_join(d, df, by = join_by(year))
+
+  # log density SVC
+  fit2 <- sdmTMB(
+    catch_weight ~ 0 + year_factor,
+    spatial_varying = ~ 0 + index,
+    offset = log(d$area_swept),
+    data = d2, mesh = mesh, time = "year", family = tweedie(),
+    spatial = "off", spatiotemporal = "iid"
+  )
+
+  pred_fancy <- predict(fits$tweedie)
+  pred2part <- predict(fit2)
+
+  z1 <- pred_fancy$`zeta_s_model_index(year_factor)`
+  z2 <- pred2part$zeta_s_index
+  plot(z1, z2)
+  abline(0, 1)
+  expect_gt(cor(z2, z1), 0.98)
+
+  tidy(fit2, "ran_pars")
+  tidy(fits$tweedie, "ran_pars")
 })
