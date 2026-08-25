@@ -16,4 +16,52 @@ This function is a formula marker and is not evaluated directly.
 \code{model_index()} marks one complete fixed-effect term whose model-derived,
 centered time index will be used as a single spatially varying covariate.
 It is only valid inside the \code{spatial_varying} argument to \code{\link[=sdmTMB]{sdmTMB()}}.
+A term with multiple model-matrix columns, such as a factor, still creates
+exactly one spatially varying coefficient field.
+}
+\details{
+For model component \eqn{m} and fitted time \eqn{t}, \code{model_index()} first
+constructs
+\deqn{a_{tm} = X^I_{tm} b_m + \bar{\epsilon}_{tm},}
+where \eqn{X^I} contains the fixed-effect columns belonging to \code{x} plus the
+fixed-effect intercept when present. \eqn{\bar{\epsilon}_{tm}} is the
+arithmetic mean of the raw spatiotemporal field across mesh vertices. The
+resulting expected response is placed on the log scale and centered across
+fitted times. For a standard delta model, component expectations are
+multiplied before taking the log and centering; Poisson-link delta models
+use the sum of their two component predictors.
+
+The centered index is jointly estimated with the model and interacts with
+one existing SVC field per model component. It does not replace the selected
+fixed effect or the local spatiotemporal field. Because the spatial mean is
+an equal-vertex mean, its value can depend on mesh construction.
+
+Exactly one \code{model_index()} term is supported and \code{time} is required. The
+wrapped expression must exactly match a complete fixed-effect term in every
+component, and its design must be constant within time. \code{extra_time} and
+\code{\link[=project]{project()}} are unsupported; \code{\link[=predict]{predict()}} and \code{\link[=simulate.sdmTMB]{simulate.sdmTMB()}} support
+fitted time values.
+
+The resulting SVC describes an endogenous association between the fitted
+model-derived index and spatial redistribution. It is not, by itself,
+evidence of a causal density-dependent mechanism.
+}
+\examples{
+\dontrun{
+pcod$year_factor <- factor(pcod$year)
+mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 20)
+fit <- sdmTMB(
+  density ~ 0 + year_factor,
+  spatial_varying = ~ 0 + model_index(year_factor),
+  data = pcod,
+  mesh = mesh,
+  time = "year",
+  family = tweedie(link = "log")
+)
+}
+}
+\references{
+Thorson, J. T. (2022). Development and simulation testing for a new
+approach to density dependence in species distribution models. \emph{ICES
+Journal of Marine Science}, 79, 117--128. \doi{10.1093/icesjms/fsab247}.
 }

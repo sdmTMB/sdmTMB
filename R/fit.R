@@ -108,10 +108,11 @@ NULL
 #'   argument**; set `spatial = 'on'` or `'off'` to include or exclude it. For
 #'   factor predictors, if `spatial_varying` excludes the intercept (`~ 0` or `~
 #'   -1`), set `spatial = 'off'` to match. Structure is shared in delta
-#'   models. Use `model_index(term)` to create one spatially varying field from
+#'   models. Use [model_index()] to create one spatially varying field from
 #'   a centered, model-derived time index based on a complete fixed-effect term.
 #'   This special requires an explicit `time` argument and creates one SVC field
-#'   even when the wrapped term has multiple model-matrix columns.
+#'   even when the wrapped term has multiple model-matrix columns. See
+#'   [model_index()] for its definition, interpretation, and restrictions.
 #' @param nonlocal_formula An optional one-sided formula describing distributed
 #'   lag terms with `diffusion()` or `time_lag()` wrappers.
 #'   Example: `~ diffusion(x) + time_lag(x)`. Note that diffused spatial

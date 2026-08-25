@@ -321,6 +321,66 @@ When multiple spatially varying coefficients are specified, each is estimated as
 Usually, $\bX^{\RM{svc}}_{\s, t}$ represents the corresponding design matrix for the spatially varying coefficient terms, as defined by a one-sided formula supplied to `spatial_varying`.
 For example `spatial_varying = ~ 0 + x`, where `0` omits the intercept.
 
+### Model-derived time index
+
+The `model_index()` formula special creates one SVC covariate from a centered, model-derived time index.
+For example, a factor with many levels still creates one SVC field rather than one field per level:
+
+```r
+fit <- sdmTMB(
+  density ~ 0 + factor(year),
+  spatial_varying = ~ 0 + model_index(factor(year)),
+  data = dat,
+  mesh = mesh,
+  time = "year",
+  family = tweedie(link = "log"),
+  spatial = "on",
+  spatiotemporal = "iid"
+)
+```
+
+For model component $m$ and fitted time $t$, define
+
+$$
+a_{tm} = \bX^I_{tm}\bbeta_m + \bar{\epsilon}_{tm}, \qquad
+\bar{\epsilon}_{tm} = n_s^{-1}\sum_{\s=1}^{n_s}\epsilon_{\s tm}.
+$$
+
+$\bX^I$ contains only the columns assigned to the wrapped fixed-effect term and the ordinary fixed-effect intercept, when present.
+The intercept is important for standard delta models because the encounter inverse link is nonlinear.
+The construction excludes other fixed effects, ordinary spatial fields, SVCs, offsets, smoothers, time-varying coefficients, IID random effects, thresholds, and nonlocal terms.
+
+For a one-part model, let $q_t = \log\{f^{-1}(a_{t1})\}$.
+For a standard delta model with component inverse links $f_1^{-1}$ and $f_2^{-1}$,
+
+$$
+q_t = \log\{f_1^{-1}(a_{t1}) f_2^{-1}(a_{t2})\}.
+$$
+
+Zero-truncated count families use their conditional positive expectation.
+For Poisson-link delta models, $q_t = a_{t1} + a_{t2}$.
+In every case, the SVC covariate is centered only after combining components:
+
+$$
+x_t = q_t - n_t^{-1}\sum_{u=1}^{n_t}q_u,
+\qquad
+\eta_{\s tm} = \ldots + \zeta_{m,\s}x_t.
+$$
+
+The fixed temporal effect and local spatiotemporal effect remain in their usual places in the linear predictor.
+For delta models, $x_t$ is shared but each component has its own SVC field $\zeta_{m,\s}$.
+The index is jointly estimated and is recomputed from simulated spatiotemporal fields during simulation.
+
+The mean $\bar{\epsilon}_{tm}$ is an unweighted arithmetic mean over mesh vertices, so the index can depend on mesh construction.
+The SVC represents an endogenous association between the model-derived index and spatial redistribution; it is not automatically evidence of a causal density-dependent mechanism.
+Other interpretations can include changing spatial distributions with overall incidence, prevalence, abundance, productivity, exposure, or activity.
+This construction is motivated by the density-dependent species-distribution model of Thorson (2022).
+
+One direct `model_index()` term is supported.
+It must exactly match a complete fixed-effect term in every model component and be constant within each fitted time.
+At least two fitted times and an explicit `time` argument are required.
+Prediction and simulation are supported at fitted times; `extra_time` and forward `project()` are not.
+
 The random fields are parameterized internally with a sparse precision matrix ($\bQ_\zeta$)
 
 $$
@@ -883,3 +943,5 @@ knitr::kable(symbols, caption = "Table 2: Symbol notation, code representation (
 ```
 
 # References
+
+Thorson, J. T. (2022). Development and simulation testing for a new approach to density dependence in species distribution models. *ICES Journal of Marine Science*, 79, 117--128. https://doi.org/10.1093/icesjms/fsab247
