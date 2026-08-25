@@ -200,9 +200,7 @@ ggplot(svc_comparison, aes(two_step, joint)) +
 
 ## A joint model with two components
 
-The same syntax can be used with a delta model. Here we use a Poisson-link
-delta-lognormal model, which has one component for encounter probability and a
-second component for positive catch weight.
+The same syntax can be used with a delta model. Here we use a Poisson-link delta-lognormal model.
 
 We won't evaluate it to save time in this vignette.
 
@@ -221,18 +219,13 @@ fit_joint_delta <- sdmTMB(
 )
 ```
 
-For a standard delta model, the model-derived index is constructed by
-combining the expected values of both components and then centering the
-combined log-scale value. For a Poisson-link delta model, the two
-linear predictors are added before centering. The two linear predictors share the
-same time index, but each has its own SVC field.
+The two linear predictors share the same time index, but each has its own SVC field.
 
 ## Interpretation and current limits
 
 The model-derived index is an equal-vertex mean of the spatiotemporal field,
-so its numerical value can depend on the mesh. The SVC is a model-based,
-endogenous association: it describes how spatial deviations vary with the
-model-derived overall index, not an experimentally manipulated causal effect.
+so its numerical value can depend on the mesh. The SVC is a model-based association: it describes how spatial deviations vary with the
+model-derived overall index.
 
 Only one direct `model_index()` term is supported. The wrapped term must be
 a complete fixed-effect term in every component and must be constant within
