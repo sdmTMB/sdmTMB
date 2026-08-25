@@ -1,0 +1,251 @@
+---
+title: "Estimating density-dependent effects on spatial distribution with sdmTMB"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Estimating density-dependent effects on spatial distribution with sdmTMB}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+**If the code in this vignette has not been evaluated, a rendered version is available on the [documentation site](https://sdmTMB.github.io/sdmTMB/index.html) under 'Articles'.**
+
+```{r setup, include = FALSE, cache=FALSE}
+dplyr_installed <- require("dplyr", quietly = TRUE)
+ggplot_installed <- require("ggplot2", quietly = TRUE)
+pkgs <- dplyr_installed && ggplot_installed
+EVAL <- identical(Sys.getenv("NOT_CRAN"), "true") && pkgs
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.asp = 0.618,
+  eval = EVAL,
+  purl = EVAL
+)
+```
+
+```{r packages, message=FALSE, warning=TRUE}
+library(ggplot2)
+library(dplyr)
+library(sdmTMB)
+```
+
+## Overview
+
+In some applications, the spatial distribution of a species may change as its overall expected abundance changes.
+For example, fish may redistribute as density changes.
+See Thorson et al. (2022).
+
+`model_index()` lets a spatially varying coefficient (SVC) use a time index that is derived from the fitted model.
+The index is estimated jointly with the other model parameters and is centered across time.
+This is an association between a model-derived index and spatial redistribution.
+
+There are two useful ways to fit this type of model:
+
+1. Fit an overall time index first, then use the estimated index as an
+   ordinary SVC covariate in a second, separate model (a two-step
+   workflow).
+2. Use `model_index()` to estimate the index and the SVC jointly
+
+The first approach is easier to break into separate diagnostics.
+The second propagates uncertainty between the index and the spatially varying coefficient.
+
+## Data and mesh
+
+We will use the built-in dogfish trawl-survey data.
+The response is catch weight, and `area_swept` is included as an offset so that the model describes catch rate.
+
+```{r data}
+d <- dogfish
+d$year_factor <- factor(d$year)
+
+glimpse(d)
+sort(unique(d$year))
+```
+
+We use the same mesh for all fits.
+The relatively coarse mesh keeps this example manageable; in an analysis, check that the conclusions are stable to a finer mesh.
+
+```{r mesh, fig.asp=0.8}
+mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+plot(mesh)
+```
+
+## Joint model-derived index
+
+The formula below includes a fixed effect for each year and asks for one SVC
+whose covariate is the model-derived time index:
+
+```{r joint-model, warning=FALSE, message=FALSE, results='hide'}
+fit_joint <- sdmTMB(
+  catch_weight ~ 0 + year_factor, #<
+  offset = log(d$area_swept),
+  spatial_varying = ~ 0 + model_index(year_factor), #<
+  data = d,
+  mesh = mesh,
+  time = "year",
+  family = tweedie(link = "log"),
+  spatial = "off",
+  spatiotemporal = "iid",
+  silent = FALSE
+)
+```
+
+```{r}
+sanity(fit_joint)
+```
+
+The `year_factor` term supplies the overall temporal pattern. It remains in
+the model in the usual way; `model_index()` adds an additional interaction
+between a centered version of the fitted temporal index and a spatial random
+field.
+
+We can inspect the fitted SVC field in the predictions. The long name records
+the term used to construct the model-derived index.
+
+```{r joint-predictions}
+pred_joint <- predict(fit_joint)
+names(pred_joint)
+```
+
+The estimated spatially varying coefficient is on the log scale for this
+Tweedie log-link model. Positive values indicate that the spatial pattern
+becomes relatively stronger when the centered model-derived index is positive;
+negative values indicate the opposite association.
+
+```{r joint-svc, fig.asp=0.8}
+ggplot(pred_joint, aes(X, Y, colour = `zeta_s_model_index(year_factor)`)) +
+  geom_point() +
+  coord_fixed() +
+  scale_colour_gradient2() +
+  labs(colour = "Model-index SVC")
+```
+
+## Two-step index and SVC model
+
+To make the two-step version, first fit the same temporal model without an
+SVC. The fitted fixed effects and the mean spatiotemporal field at each year
+form the uncentered time index.
+
+```{r first-step, warning=FALSE, message=FALSE, results='hide'}
+fit_overall <- sdmTMB(
+  catch_weight ~ 0 + year_factor,
+  offset = log(d$area_swept),
+  data = d,
+  mesh = mesh,
+  time = "year",
+  family = tweedie(link = "log"),
+  spatial = "off",
+  spatiotemporal = "iid",
+  silent = FALSE
+)
+
+pars <- get_pars(fit_overall)
+index <- data.frame(
+  year = sort(unique(d$year)),
+  fixed_effect = unname(coef(fit_overall)),
+  epsilon_mean = apply(pars$epsilon_st, 2, mean)
+)
+index <- dplyr::mutate(index, index = fixed_effect + epsilon_mean)
+index <- dplyr::mutate(index, index = index - mean(index))
+index
+```
+
+Now add this estimated index to the data and use it as an ordinary SVC
+covariate. This is the explicit two-step analogue of the joint model
+above.
+
+```{r second-step, warning=FALSE, message=FALSE, results='hide'}
+d_index <- dplyr::left_join(d, index[c("year", "index")], by = "year")
+
+fit_two_step <- sdmTMB(
+  catch_weight ~ 0 + year_factor,
+  spatial_varying = ~ 0 + index,
+  offset = log(d_index$area_swept),
+  data = d_index,
+  mesh = mesh,
+  time = "year",
+  family = tweedie(link = "log"),
+  spatial = "off",
+  spatiotemporal = "iid",
+  silent = FALSE
+)
+```
+
+The two fitted SVC fields should be closely related, although they are not
+expected to be identical: the joint model estimates the index and SVC at the
+same time, whereas the two-step model treats the first-step index as fixed.
+
+```{r compare-svc, fig.asp=0.8}
+pred_two_step <- predict(fit_two_step)
+svc_comparison <- data.frame(
+  joint = pred_joint$`zeta_s_model_index(year_factor)`,
+  two_step = pred_two_step$zeta_s_index
+)
+
+ggplot(svc_comparison, aes(two_step, joint)) +
+  geom_point(alpha = 0.35) +
+  coord_fixed() +
+  geom_abline(intercept = 0, slope = 1, colour = "grey40") +
+  labs(
+    x = "Two-step SVC",
+    y = "Joint model SVC",
+    subtitle = paste0(
+      "Correlation = ",
+      round(cor(svc_comparison$two_step, svc_comparison$joint), 3)
+    )
+  )
+```
+
+## A joint model with two components
+
+The same syntax can be used with a delta model. Here we use a Poisson-link
+delta-lognormal model, which has one component for encounter probability and a
+second component for positive catch weight.
+
+We won't evaluate it to save time in this vignette.
+
+```{r joint-delta, warning=FALSE, message=FALSE, eval=FALSE}
+fit_joint_delta <- sdmTMB(
+  catch_weight ~ 0 + year_factor,
+  offset = log(d$area_swept),
+  spatial_varying = ~ 0 + model_index(year_factor),
+  data = d,
+  mesh = mesh,
+  time = "year",
+  family = delta_lognormal(type = "poisson-link"),
+  spatial = "off",
+  spatiotemporal = "iid",
+  silent = FALSE
+)
+```
+
+For a standard delta model, the model-derived index is constructed by
+combining the expected values of both components and then centering the
+combined log-scale value. For a Poisson-link delta model, the two
+linear predictors are added before centering. The two linear predictors share the
+same time index, but each has its own SVC field.
+
+## Interpretation and current limits
+
+The model-derived index is an equal-vertex mean of the spatiotemporal field,
+so its numerical value can depend on the mesh. The SVC is a model-based,
+endogenous association: it describes how spatial deviations vary with the
+model-derived overall index, not an experimentally manipulated causal effect.
+
+Only one direct `model_index()` term is supported. The wrapped term must be
+a complete fixed-effect term in every component and must be constant within
+each fitted time. An explicit `time` argument and at least two fitted times are
+required. Prediction and simulation are supported at fitted times, but
+`extra_time` and forward `project()` are not currently supported for these
+models.
+
+For the underlying statistical definition and the restrictions on the formula,
+see [the `model_index()` reference](https://sdmTMB.github.io/sdmTMB/reference/model_index.html).
+
+## References
+
+Thorson, J. T. (2022). Development and simulation testing for a new approach
+to density dependence in species distribution models. *ICES Journal of Marine
+Science*, 79, 117--128. <https://doi.org/10.1093/icesjms/fsab247>

@@ -30,6 +30,7 @@ articles:
 - title: Predictions and Applications
   contents:
   - articles/index-standardization
+  - articles/model-index
   - articles/forecasting
   - articles/spatial-trend-models
   - articles/range-edges

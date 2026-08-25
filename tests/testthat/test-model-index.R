@@ -508,6 +508,10 @@ test_that("optimized model-index fits converge and predict fitted rows consisten
 
     reordered <- rev(seq_len(nrow(d)))
     p_reordered <- predict(fit, newdata = d[reordered, ])
+    prediction_columns <- intersect(
+      c("est", "est_non_rf", "est_rf", "omega_s", "epsilon_st", "zeta_s"),
+      names(p_fitted)
+    )
     expect_equal(
       p_reordered[, prediction_columns, drop = FALSE],
       p_fitted[reordered, prediction_columns, drop = FALSE],
@@ -533,7 +537,7 @@ test_that("optimized model-index fits converge and predict fitted rows consisten
     spatial = "off", spatiotemporal = "iid"
   )
   p <- get_pars(fit1)
-  df <- data.frame(year = sort(unique(d$year)), B = coef(fit0), eps_mean = apply(p$epsilon_st, 2, mean))
+  df <- data.frame(year = sort(unique(d$year)), B = coef(fit1), eps_mean = apply(p$epsilon_st, 2, mean))
   df$index <- df$B + df$eps_mean
   df$index <- df$index - mean(df$index)
 
