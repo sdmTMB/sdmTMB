@@ -86,7 +86,7 @@ fit_joint <- sdmTMB(
   mesh = mesh,
   time = "year",
   family = tweedie(link = "log"),
-  spatial = "off",
+  spatial = "on",
   spatiotemporal = "iid",
   silent = FALSE
 )
@@ -136,7 +136,7 @@ fit_overall <- sdmTMB(
   mesh = mesh,
   time = "year",
   family = tweedie(link = "log"),
-  spatial = "off",
+  spatial = "on",
   spatiotemporal = "iid",
   silent = FALSE
 )
@@ -167,7 +167,7 @@ fit_two_step <- sdmTMB(
   mesh = mesh,
   time = "year",
   family = tweedie(link = "log"),
-  spatial = "off",
+  spatial = "on",
   spatiotemporal = "iid",
   silent = FALSE
 )
@@ -196,6 +196,11 @@ ggplot(svc_comparison, aes(two_step, joint)) +
       round(cor(svc_comparison$two_step, svc_comparison$joint), 3)
     )
   )
+```
+
+```{r}
+tidy(fit_joint, "ran_pars")
+tidy(fit_two_step, "ran_pars")
 ```
 
 ## A joint model with two components
