@@ -1125,6 +1125,14 @@ sdmTMB <- function(
 
   y_i <- model.response(mf[[1]], "numeric")
 
+  # Keep the CV inclusion mask separate from user weights. In particular,
+  # binomial user weights can represent trial sizes rather than likelihood
+  # weights and must be processed before the mask is applied.
+  cv_fold_weights <- experimental[[".cv_fold_weights"]]
+  if (!is.null(cv_fold_weights) && length(cv_fold_weights) != nrow(data)) {
+    cli_abort("Internal error: CV fold weights do not match the number of data rows.")
+  }
+
   # Filter weights and offset to match NA-filtered response
   # model.frame() removes NAs by default; external vectors need same filtering
   na_action <- attr(mf[[1]], "na.action")
@@ -1135,6 +1143,9 @@ sdmTMB <- function(
     }
     if (!is.null(offset)) {
       offset <- offset[-na_action]
+    }
+    if (!is.null(cv_fold_weights)) {
+      cv_fold_weights <- cv_fold_weights[-na_action]
     }
   }
 
@@ -1219,6 +1230,11 @@ sdmTMB <- function(
     y_i <- result$y_i
     size <- result$size
     weights <- result$weights
+  }
+
+  likelihood_weights <- if (!is.null(weights)) weights else rep(1, length(y_i))
+  if (!is.null(cv_fold_weights)) {
+    weights <- likelihood_weights * cv_fold_weights
   }
 
   if (identical(family$link[1], "log") && min(y_i, na.rm = TRUE) < 0 && !delta) {
@@ -1842,6 +1858,7 @@ sdmTMB <- function(
       time = time,
       time_lu = time_df,
       family = family,
+      likelihood_weights = likelihood_weights,
       smoothers = sm,
       response = y_i,
       tmb_data = tmb_data,

@@ -1,71 +1,3 @@
-ll_gaussian <- function(object, withheld_y, withheld_mu) {
-  .sd <- exp(object$model$par[["ln_phi"]])
-  stats::dnorm(x = withheld_y, mean = withheld_mu, sd = .sd, log = TRUE)
-}
-
-ll_tweedie <- function(object, withheld_y, withheld_mu) {
-  p <- stats::plogis(object$model$par[["thetaf"]]) + 1
-  phi <- exp(object$model$par[["ln_phi"]])
-  fishMod::dTweedie(y = withheld_y, mu = withheld_mu, p = p, phi = phi, LOG = TRUE)
-}
-
-ll_binomial <- function(object, withheld_y, withheld_mu) {
-  stats::dbinom(x = withheld_y, size = 1, prob = withheld_mu, log = TRUE)
-}
-
-ll_gamma <- function(object, withheld_y, withheld_mu) {
-  .shape <- exp(object$model$par[["ln_phi"]])
-  stats::dgamma(x = withheld_y, shape = .shape, scale = withheld_mu / .shape, log = TRUE)
-}
-
-ll_lognormal <- function(object, withheld_y, withheld_mu) {
-  .sd <- exp(object$model$par[["ln_phi"]])
-  stats::dlnorm(x = withheld_y, meanlog = withheld_mu - 0.5 * (.sd)^2, sdlog = .sd, log = TRUE)
-}
-
-dstudent <- function(x, df, mean, sd, ncp, log = FALSE) {
-  # from metRology::dt.scaled()
-  if (!log) {
-    return(stats::dt((x - mean) / sd, df, ncp = ncp, log = FALSE) / sd)
-  } else {
-    return(stats::dt((x - mean) / sd, df, ncp = ncp, log = TRUE) - log(sd))
-  }
-}
-
-ll_student <- function(object, withheld_y, withheld_mu) {
-  .sd <- exp(object$model$par[["ln_phi"]])
-  dstudent(x = withheld_y, df = object$tmb_data$df, mean = withheld_mu, sd = .sd, log = TRUE)
-}
-
-ll_nbinom1 <- function(object, withheld_y, withheld_mu) {
-  phi <- exp(object$model$par[["ln_phi"]])
-  stats::dnbinom(x = withheld_y, size = withheld_mu / phi, mu = withheld_mu, log = TRUE)
-}
-
-ll_nbinom2 <- function(object, withheld_y, withheld_mu) {
-  phi <- exp(object$model$par[["ln_phi"]])
-  stats::dnbinom(x = withheld_y, size = phi, mu = withheld_mu, log = TRUE)
-}
-
-# no longer used within sdmTMB_cv(); uses TMB report() instead
-ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
-  family_func <- switch(object$family$family,
-    gaussian = ll_gaussian,
-    tweedie = ll_tweedie,
-    binomial = ll_binomial,
-    lognormal = ll_lognormal,
-    student = ll_student,
-    Gamma = ll_gamma,
-    nbinom1 = ll_nbinom1,
-    nbinom2 = ll_nbinom2,
-    cli_abort(paste0(
-      object$family$family, " not yet implemented. ",
-      "Please file an issue on GitHub."
-    ))
-  )
-  family_func(object, withheld_y, withheld_mu)
-}
-
 #' Cross validation with sdmTMB models
 #'
 #' Performs k-fold or leave-future-out cross validation with sdmTMB models.
@@ -309,6 +241,7 @@ sdmTMB_cv <- function(
   } else {
     user_weights <- rep(1, nrow(data))
   }
+  user_weights <- user_weights[data[["_sdm_order_"]]]
 
   if ("offset" %in% names(dot_args)) {
     if (!is.character(dot_args$offset)) {
@@ -326,9 +259,6 @@ sdmTMB_cv <- function(
     fold_weights <- rep(1, nrow(data))
   }
   if (lfo) fold_weights <- ifelse(data$cv_fold == 1L, 1, 0)
-
-  # Combine user weights with fold weights
-  weights <- user_weights * fold_weights
 
   if (use_initial_fit) {
     # run model on first fold to get starting values:
@@ -348,12 +278,16 @@ sdmTMB_cv <- function(
     } else {
       mesh <- spde
     }
-    dot_args <- list(dot_args)[[1]]
+    dot_args <- list(...)
     dot_args$offset <- NULL
     dot_args$weights <- NULL
+    experimental <- dot_args$experimental
+    if (is.null(experimental)) experimental <- list()
+    experimental[[".cv_fold_weights"]] <- fold_weights
+    dot_args$experimental <- experimental
     .args <- c(list(
       data = data, formula = formula, time = time, mesh = mesh,
-      weights = weights, offset = .offset
+      weights = user_weights, offset = .offset
     ), dot_args)
     fit1 <- do.call(sdmTMB, .args)
   }
@@ -365,9 +299,6 @@ sdmTMB_cv <- function(
       # data in kth fold get weight of 0:
       fold_weights <- ifelse(data$cv_fold == k, 0, 1)
     }
-    # Combine user weights with fold weights
-    weights <- user_weights * fold_weights
-
     if (k == 1L && use_initial_fit) {
       object <- fit1
     } else {
@@ -390,22 +321,33 @@ sdmTMB_cv <- function(
       dot_args <- list(...)
       dot_args$offset <- NULL
       dot_args$weights <- NULL
+      experimental <- dot_args$experimental
+      if (is.null(experimental)) experimental <- list()
+      experimental[[".cv_fold_weights"]] <- fold_weights
+      dot_args$experimental <- experimental
       args <- c(list(
         data = data, formula = formula, time = time, mesh = mesh, offset = .offset,
-        weights = weights, previous_fit = if (use_initial_fit) fit1 else NULL
+        weights = user_weights, previous_fit = if (use_initial_fit) fit1 else NULL
       ), dot_args)
       object <- do.call(sdmTMB, args)
     }
 
-    if (lfo) {
-      cv_data <- data[data$cv_fold == (k + lfo_forecast), , drop = FALSE]
-    } else {
-      cv_data <- data[data$cv_fold == k, , drop = FALSE]
+    validation_fold <- if (lfo) k + lfo_forecast else k
+    validation <- data$cv_fold == validation_fold
+    cv_data <- data[validation, , drop = FALSE]
+
+    obj_order <- object$data[["_sdm_order_"]]
+    validation_order <- cv_data[["_sdm_order_"]]
+    validation_index <- match(validation_order, obj_order)
+    if (length(validation_index) != nrow(cv_data) ||
+        length(obj_order) != length(object$tmb_data$weights_i) ||
+        anyNA(validation_index) || anyDuplicated(obj_order) ||
+        anyDuplicated(validation_index)) {
+      cli_abort("Internal error mapping cross-validation rows to the fitted model.")
     }
 
     time_indexed_nonlocal <- .nonlocal_time_indexed_from_object(object)
 
-    # FIXME: only use TMB report() below to be faster!
     # predict for withheld data:
     # cli_inform("Testing on data fold {k}.")
     if (time_indexed_nonlocal) {
@@ -419,10 +361,6 @@ sdmTMB_cv <- function(
     }
 
     cv_data$cv_predicted <- predicted$est
-    response <- get_response(object$formula[[1]])
-    withheld_y <- predicted[[response]]
-    withheld_mu <- cv_data$cv_predicted
-
     # Calculate deviance residuals for held-out data
     dev_resids <- tryCatch({
       residuals(object, type = "deviance")
@@ -432,8 +370,6 @@ sdmTMB_cv <- function(
     if (!is.null(dev_resids) && !all(dev_resids == 0)) {
       # Get the row indices from cv_data (held-out data)
       cv_order <- cv_data[["_sdm_order_"]]
-      # Get the row indices from object$data (fitted data)
-      obj_order <- object$data[["_sdm_order_"]]
       # Match held-out indices to fitted data indices
       match_idx <- match(cv_order, obj_order)
       # Extract corresponding deviance residuals
@@ -443,37 +379,22 @@ sdmTMB_cv <- function(
       cv_data$cv_deviance_resid <- NA_real_
     }
 
-    # FIXME: get LFO working with the TMB report() option below!
-    # calculate log likelihood for each withheld observation:
-    # trickery to get the log likelihood of the withheld data directly
-    # from the TMB report():
-    if (!lfo) {
-      tmb_data <- object$tmb_data
+    # Report only the selected validation observations at the fitted values.
+    tmb_data <- object$tmb_data
+    score_weights <- numeric(nrow(object$data))
+    score_weights[validation_index] <- object$likelihood_weights[validation_index]
+    tmb_data$weights_i <- score_weights
 
-      # Reverse weights: training (weight != 0) → 0, held-out (weight == 0) → user_weight
-      tmb_data$weights_i <- ifelse(tmb_data$weights_i == 0, user_weights, 0)
-
-      new_tmb_obj <- TMB::MakeADFun(
-        data = tmb_data,
-        parameters = get_pars(object),
-        map = object$tmb_map,
-        random = object$tmb_random,
-        DLL = "sdmTMB",
-        silent = TRUE
-      )
-      lp <- object$tmb_obj$env$last.par.best
-      r <- new_tmb_obj$report(lp)
-      cv_loglik <- -1 * r$jnll_obs
-      # Extract log-likelihoods for held-out observations (where reversed weights > 0)
-      cv_data$cv_loglik <- cv_loglik[tmb_data$weights_i > 0]
-    } else { # old method; doesn't work with delta models!
-      cv_data$cv_loglik <- ll_sdmTMB(object, withheld_y, withheld_mu)
-    }
-
-    ## test
-    # x2 <- ll_sdmTMB(object, withheld_y, withheld_mu)
-    # identical(round(cv_data$cv_loglik, 6), round(x2, 6))
-    # cv_data$cv_loglik <- ll_sdmTMB(object, withheld_y, withheld_mu)
+    scoring_obj <- TMB::MakeADFun(
+      data = tmb_data,
+      parameters = get_pars(object),
+      map = object$tmb_map,
+      random = object$tmb_random,
+      DLL = "sdmTMB",
+      silent = TRUE
+    )
+    r <- scoring_obj$report(object$tmb_obj$env$last.par.best)
+    cv_data$cv_loglik <- -r$jnll_obs[validation_index]
 
     list(
       data = cv_data,

@@ -82,6 +82,22 @@ test_that("Leave future out cross validation works", {
   expect_equal(class(x$sum_loglik), "numeric")
   expect_equal(x$sum_loglik, sum(x$data$cv_loglik))
   expect_equal(x$sum_loglik, sum(x$fold_loglik))
+
+  expected_loglik <- stats::dbinom(
+    x = x$data$present,
+    size = 1,
+    prob = x$data$cv_predicted,
+    log = TRUE
+  )
+  expected_fold_loglik <- vapply(
+    seq_along(x$models),
+    function(k) sum(expected_loglik[x$data$cv_fold == k + 1L]),
+    numeric(1L)
+  )
+  expect_equal(x$data$cv_loglik, expected_loglik, tolerance = 1e-8)
+  expect_equal(x$fold_loglik, expected_fold_loglik, tolerance = 1e-8)
+  expect_equal(x$sum_loglik, sum(expected_loglik), tolerance = 1e-8)
+
   expect_true("data.frame" %in% class(x$data))
   expect_true(inherits(x$models[[1]], "sdmTMB"))
 
@@ -142,6 +158,149 @@ test_that("LFO fold assignments follow documented structure", {
   # For validation 2: years 2003-2013 should have fold <= 2
   train_years_2 <- c(2003, 2004, 2005, 2007, 2009, 2011, 2013)
   expect_true(all(x$data$cv_fold[x$data$year %in% train_years_2] <= 2))
+})
+
+test_that("LFO CV scores delta observations with explicit validation masks", {
+  skip_on_cran()
+  skip_on_ci()
+
+  d <- subset(pcod, year %in% c(2003, 2004, 2005, 2007, 2009))
+  d$cv_row <- seq_len(nrow(d))
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 25)
+  cv_args <- list(
+    formula = density ~ depth_scaled,
+    data = d,
+    mesh = mesh,
+    spatial = "off",
+    spatiotemporal = "off",
+    lfo = TRUE,
+    lfo_forecast = 2,
+    lfo_validations = 2,
+    time = "year",
+    parallel = FALSE
+  )
+  validation_years <- tail(sort(unique(d$year)), 2)
+
+  x_delta <- do.call(sdmTMB_cv, c(list(family = delta_gamma()), cv_args))
+  expect_equal(sort(unique(x_delta$data$year)), validation_years)
+  expect_false(any(x_delta$data$year == 2005))
+
+  for (k in seq_along(x_delta$models)) {
+    object <- x_delta$models[[k]]
+    validation_fold <- k + cv_args$lfo_forecast
+    validation <- object$data$cv_fold == validation_fold
+    validation_data <- object$data[validation, , drop = FALSE]
+    predicted <- predict(object, newdata = validation_data, type = "response")
+    shape <- exp(object$model$par[["ln_phi"]])
+    expected <- ifelse(
+      validation_data$density == 0,
+      log1p(-predicted$est1),
+      log(predicted$est1) + stats::dgamma(
+        validation_data$density,
+        shape = shape,
+        scale = predicted$est2 / shape,
+        log = TRUE
+      )
+    )
+    actual <- x_delta$data$cv_loglik[
+      match(validation_data$cv_row, x_delta$data$cv_row)
+    ]
+
+    expect_true(any(validation_data$density == 0))
+    expect_true(any(validation_data$density > 0))
+    expect_equal(actual, expected, tolerance = 1e-8)
+    expect_equal(x_delta$fold_loglik[[k]], sum(expected), tolerance = 1e-8)
+
+    scoring_data <- object$tmb_data
+    scoring_data$weights_i <- as.numeric(validation)
+    scoring_obj <- TMB::MakeADFun(
+      data = scoring_data,
+      parameters = get_pars(object),
+      map = object$tmb_map,
+      random = object$tmb_random,
+      DLL = "sdmTMB",
+      silent = TRUE
+    )
+    report <- scoring_obj$report(object$tmb_obj$env$last.par.best)
+    expect_equal(report$jnll_obs[!validation], rep(0, sum(!validation)))
+  }
+
+  x_poisson <- do.call(
+    sdmTMB_cv,
+    c(list(family = delta_gamma(type = "poisson-link")), cv_args)
+  )
+  expect_equal(sort(unique(x_poisson$data$year)), validation_years)
+  expect_true(all(is.finite(x_poisson$data$cv_loglik)))
+  expect_equal(x_poisson$sum_loglik, sum(x_poisson$data$cv_loglik), tolerance = 1e-8)
+  expect_equal(x_poisson$sum_loglik, sum(x_poisson$fold_loglik), tolerance = 1e-8)
+  expect_false(isTRUE(all.equal(x_poisson$sum_loglik, x_delta$sum_loglik)))
+})
+
+test_that("CV report likelihood respects row order and user weights", {
+  skip_on_cran()
+  skip_on_ci()
+
+  set.seed(1234)
+  d <- subset(pcod, year %in% c(2003, 2004, 2005, 2007))
+  d <- d[sample(nrow(d)), , drop = FALSE]
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 25)
+  weights <- seq(1, 2, length.out = nrow(d))
+  x <- sdmTMB_cv(
+    present ~ depth_scaled,
+    data = d,
+    mesh = mesh,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = binomial(),
+    time = "year",
+    k_folds = 2,
+    weights = weights,
+    parallel = FALSE
+  )
+  expected <- weights * stats::dbinom(
+    x = d$present,
+    size = 1,
+    prob = x$data$cv_predicted,
+    log = TRUE
+  )
+
+  expect_equal(x$data$cv_loglik, expected, tolerance = 1e-8)
+  expect_equal(x$sum_loglik, sum(expected), tolerance = 1e-8)
+  expect_equal(x$sum_loglik, sum(x$fold_loglik), tolerance = 1e-8)
+  for (k in seq_along(x$models)) {
+    object <- x$models[[k]]
+    expected_fit_weights <- weights[object$data[["_sdm_order_"]]] *
+      (object$data$cv_fold != k)
+    expect_equal(object$tmb_data$weights_i, expected_fit_weights)
+  }
+})
+
+test_that("CV report likelihood preserves binomial trial sizes", {
+  d <- pcod_2011
+  d$proportion <- (d$present + 1) / 3
+  trials <- rep(3, nrow(d))
+  fold <- rep(1:2, length.out = nrow(d))
+
+  x <- sdmTMB_cv(
+    proportion ~ depth_scaled,
+    data = d,
+    mesh = pcod_mesh_2011,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = binomial(),
+    fold_ids = fold,
+    weights = trials,
+    parallel = FALSE
+  )
+  expected <- stats::dbinom(
+    x$data$proportion * trials,
+    size = trials,
+    prob = x$data$cv_predicted,
+    log = TRUE
+  )
+
+  expect_equal(x$data$cv_loglik, expected, tolerance = 1e-8)
+  expect_equal(x$sum_loglik, sum(expected), tolerance = 1e-8)
 })
 
 test_that("LFO parameter validation works", {

@@ -1,5 +1,9 @@
 # sdmTMB (development version)
 
+* `sdmTMB_cv(lfo = TRUE)` now supports delta/hurdle families.
+  LFOCV log likelihoods for lognormal models are now calculated consistently
+  with the TMB model; previous versions omitted a logarithm in this calculation.
+
 * `sdmTMB()` does more robust checking against different formula random
   effects in delta model list formulas.
 
