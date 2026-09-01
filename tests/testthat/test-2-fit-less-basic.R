@@ -371,13 +371,16 @@ test_that("update() works", {
 test_that("update() handles cbind binomial responses with random effects", {
   set.seed(1)
   data <- data.frame(
-    town = factor(rep(letters[1:4], each = 25L)),
+    town = factor(rep(letters[1:6], each = 25L)),
+    x = rnorm(150L),
     trials = 10L
   )
-  town_effect <- rnorm(nlevels(data$town), sd = 0.8)
+  town_intercept <- rnorm(nlevels(data$town), sd = 0.8)
+  town_slope <- rnorm(nlevels(data$town), sd = 0.4)
   data$success <- rbinom(
     nrow(data), data$trials,
-    plogis(qlogis(0.3) + town_effect[data$town])
+    plogis(qlogis(0.3) + 0.5 * data$x + town_intercept[data$town] +
+      town_slope[data$town] * data$x)
   )
   data$failure <- data$trials - data$success
 
@@ -385,12 +388,28 @@ test_that("update() handles cbind binomial responses with random effects", {
     cbind(success, failure) ~ 1,
     data = data, spatial = "off", family = binomial()
   )
-  updated <- update(fit, cbind(success, failure) ~ 1 + (1 | town))
+  updated <- update(fit, formula. = . ~ . + (1 | town))
   direct <- sdmTMB(
     cbind(success, failure) ~ 1 + (1 | town),
     data = data, spatial = "off", family = binomial()
   )
   expect_equal(logLik(updated), logLik(direct))
+
+  updated_slope <- update(fit, formula. = . ~ . + x + (1 + x | town))
+  direct_slope <- sdmTMB(
+    cbind(success, failure) ~ 1 + x + (1 + x | town),
+    data = data, spatial = "off", family = binomial()
+  )
+  expect_equal(logLik(updated_slope), logLik(direct_slope))
+
+  updated_no_intercept <- update(
+    fit, formula. = . ~ . - 1 + x + (0 + x | town)
+  )
+  direct_no_intercept <- sdmTMB(
+    cbind(success, failure) ~ 0 + x + (0 + x | town),
+    data = data, spatial = "off", family = binomial()
+  )
+  expect_equal(logLik(updated_no_intercept), logLik(direct_no_intercept))
 })
 
 test_that("Irregular time gets detected", {
