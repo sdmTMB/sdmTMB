@@ -622,84 +622,13 @@ test_that("Delta model works with random effects", {
   expect_equal(nrow(tidy(m_yrf_re, "ran_vals")), length(unique(pcod$year))*2)
 
 
-  # test 2 different RE intercepts
- m_yrf_re_1 <- sdmTMB(
+  # Explicit list formulas must use the same random-effect structure.
+  m_yrf_re_1 <- sdmTMB(
     data = pcod,
     formula = list(density ~ (1 | year_f), density ~ (1|year_f)),
     family = delta_gamma(),
     spatial = "off"
   )
-
-  # 2 diff intercepts, same number of levels
-  intcpts <- rnorm(9)
-  pcod$vessel <- sample(1:9, size = nrow(pcod), replace=T)
-  pcod$density[which(pcod$present==1)] <- exp(log(pcod$density[which(pcod$present==1)]) + intcpts[pcod$vessel[which(pcod$present==1)]])
-  pcod$vessel <- as.factor(pcod$vessel)
-  pcod$density[which(pcod$present==1)] <- exp(log(pcod$density[which(pcod$present==1)]) + intcpts[pcod$vessel[which(pcod$present==1)]])
-
-  m_yrf_re2 <- sdmTMB(
-    data = pcod,
-    formula = list(density ~ (1 | year_f), density ~ (1|vessel)),
-    family = delta_gamma(),
-    spatial = "off"
-  )
-  glmm_pres <- glmmTMB::glmmTMB(
-    data = pcod,
-    formula = present ~ (1 | year),
-    family = binomial()
-  )
-  log_vars <- m_yrf_re2$sd_report$value[grep("re_cov_pars", names(m_yrf_re2$sd_report$value))]
-  expect_equal(as.numeric(attr(summary(glmm_pres)$varcor[[1]]$year, "stddev")), as.numeric(exp(log_vars[1])),
-               tolerance = 1e-5)
-
-  # 2 diff intercepts, different number of levels
-  intcpts <- rnorm(10)
-  pcod$vessel <- sample(1:10, size = nrow(pcod), replace=T)
-  pcod$density[which(pcod$present==1)] <- exp(log(pcod$density[which(pcod$present==1)]) + intcpts[pcod$vessel[which(pcod$present==1)]])
-  pcod$vessel <- as.factor(pcod$vessel)
-  pcod$density[which(pcod$present==1)] <- exp(log(pcod$density[which(pcod$present==1)]) + intcpts[pcod$vessel[which(pcod$present==1)]])
-
-  m_yrf_re3 <- sdmTMB(
-    data = pcod,
-    formula = list(density ~ (-1+depth | year_f), density ~ (1|vessel)),
-    family = delta_gamma(),
-    spatial = "off"
-  )
-
-  # test 2 different numbers of random ints
-  m_yrf_re4 <- sdmTMB(
-    data = pcod,
-    formula = list(density ~ (1 | year_f) + (1|vessel), density ~ (1|vessel)),
-    family = delta_gamma(),
-    spatial = "off"
-  )
-
-
-  # test 2 different numbers of random ints, different number of levels
-  # m_yrf_re5 <- sdmTMB(
-  #   data = pcod,
-  #   formula = list(density ~ (depth | year_f) + (1|vessel), density ~ (1|vessel)),
-  #   family = delta_gamma(),
-  #   spatial = "off"
-  # )
-
-  # # Test same model with characters
-  # pcod$year_chr <- paste(pcod$year)
-  # m_yrf_re6 <- sdmTMB(
-  #   data = pcod,
-  #   formula = list(density ~ (depth | year_chr) + (1|vessel), density ~ (1|vessel)),
-  #   family = delta_gamma(),
-  #   spatial = "off"
-  # )
-  #
-  #
-  # # Test same model with integers
-  # m_yrf_re7 <- sdmTMB(
-  #   data = pcod,
-  #   formula = list(density ~ (depth | year) + (1|vessel), density ~ (1|vessel)),
-  #   family = delta_gamma(),
-  #   spatial = "off"
-  # )
 })
 
 test_that("issue breakpt() version of formula doesn't break random effect prediction #423", {
