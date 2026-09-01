@@ -569,10 +569,8 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     )
 
     old_par <- obj$fit_obj$model$par
-    new_obj$fn(old_par) # (sometimes) need to initialize the new TMB object once!
-
     bc <- FALSE ## done below
-    sr <- TMB::sdreport(new_obj, bias.correct = bc, ...)
+    sr <- TMB::sdreport(new_obj, par.fixed = old_par, bias.correct = bc, ...)
   } else if (rebuild_from_fit) {
     reinitialize(obj)
     if (bias_correct && obj$control$parallel > 1) {
@@ -627,10 +625,8 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     )
 
     old_par <- obj$model$par
-    new_obj$fn(old_par)
-
     bc <- FALSE
-    sr <- TMB::sdreport(new_obj, bias.correct = bc, ...)
+    sr <- TMB::sdreport(new_obj, par.fixed = old_par, bias.correct = bc, ...)
     obj <- list(fit_obj = obj)
   } else {
     sr <- obj$sd_report # already done in sdmTMB(do_index = TRUE)

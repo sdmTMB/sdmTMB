@@ -1,5 +1,9 @@
 # sdmTMB (development version)
 
+* `get_index()`, `get_cog()`, `get_eao()`, and `get_weighted_average()` no
+  longer make a redundant TMB objective-function evaluation when calculating
+  standard errors.
+
 * `update.sdmTMB()` now works with binomial `cbind()` responses and random
   effects. #544
 
