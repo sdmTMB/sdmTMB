@@ -1057,6 +1057,18 @@ sdmTMB <- function(
     sm[[ii]]$formula_no_bars_no_sm <- formula_no_bars_no_sm
   }
 
+  if (delta) {
+    random_effects <- lapply(split_formula, function(x) {
+      vapply(x$bars, safe_deparse, character(1))
+    })
+    if (!identical(random_effects[[1L]], random_effects[[2L]])) {
+      cli_abort(c(
+        "Random-effect terms must be identical in both components of a delta model.",
+        "i" = "Use the same random intercepts, slopes, and grouping variables in both formulas."
+      ))
+    }
+  }
+
   # random slopes and intercepts --------------------------------------------
   # bind the elements of split_formula[[ii]] together to pass into TMB
   # add a new column to each dataframe storing the model number (1, 2, ...)

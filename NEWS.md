@@ -1,5 +1,8 @@
 # sdmTMB (development version)
 
+* `sdmTMB()` does more robust checking against different formula random
+  effects in delta model list formulas.
+
 * `get_index()`, `get_cog()`, `get_eao()`, and `get_weighted_average()` no
   longer make a redundant TMB objective-function evaluation when calculating
   standard errors.

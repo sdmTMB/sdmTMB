@@ -446,6 +446,29 @@ test_that("externally updated random-effect formulas work in delta formula lists
 
   expect_equal(updated$model, direct$model)
   expect_equal(updated$tmb_params, direct$tmb_params)
+
+  expect_error(
+    sdmTMB(
+      formula = list(
+        density ~ 1 + (1 | fyear),
+        density ~ 1 + (1 + depth_scaled | fyear)
+      ),
+      data = data, mesh = pcod_mesh_2011, spatial = "off",
+      family = delta_gamma(), do_fit = FALSE
+    ),
+    "Random-effect terms must be identical"
+  )
+  expect_error(
+    sdmTMB(
+      formula = list(
+        density ~ 1 + (1 | fyear),
+        density ~ 1 + (1 | year)
+      ),
+      data = data, mesh = pcod_mesh_2011, spatial = "off",
+      family = delta_gamma(), do_fit = FALSE
+    ),
+    "Random-effect terms must be identical"
+  )
 })
 
 test_that("Irregular time gets detected", {
