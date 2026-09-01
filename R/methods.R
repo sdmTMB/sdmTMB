@@ -455,7 +455,7 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
 
   # handle formula update if provided
   if (!missing(formula.)) {
-    if (is.null(call$formula)) {
+    if (is.null(call$formula) || !inherits(formula., "formula") || !"." %in% all.vars(formula.)) {
       call$formula <- formula.
     } else {
       call$formula <- stats::update.formula(call$formula, formula.)

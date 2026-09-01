@@ -1,5 +1,8 @@
 # sdmTMB (development version)
 
+* `update.sdmTMB()` now works with binomial `cbind()` responses and random
+  effects. #544
+
 * `predict.sdmTMB()` has been sped up by avoiding an expensive `obj$fn()` call
   and instead directly reporting predictions using saved fitted fixed
   and random effect values.

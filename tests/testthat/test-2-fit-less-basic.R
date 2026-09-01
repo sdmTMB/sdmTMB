@@ -368,6 +368,31 @@ test_that("update() works", {
   expect_equal(fit$model, fit2$model)
 })
 
+test_that("update() handles cbind binomial responses with random effects", {
+  set.seed(1)
+  data <- data.frame(
+    town = factor(rep(letters[1:4], each = 25L)),
+    trials = 10L
+  )
+  town_effect <- rnorm(nlevels(data$town), sd = 0.8)
+  data$success <- rbinom(
+    nrow(data), data$trials,
+    plogis(qlogis(0.3) + town_effect[data$town])
+  )
+  data$failure <- data$trials - data$success
+
+  fit <- sdmTMB(
+    cbind(success, failure) ~ 1,
+    data = data, spatial = "off", family = binomial()
+  )
+  updated <- update(fit, cbind(success, failure) ~ 1 + (1 | town))
+  direct <- sdmTMB(
+    cbind(success, failure) ~ 1 + (1 | town),
+    data = data, spatial = "off", family = binomial()
+  )
+  expect_equal(logLik(updated), logLik(direct))
+})
+
 test_that("Irregular time gets detected", {
   skip_on_cran()
 
@@ -532,4 +557,3 @@ test_that("Prediction outside fitted coordinates gets warned about #285", {
   nd$Y <- nd$Y * 10
   expect_warning(p <- predict(fit, newdata = nd), regexp = "coordinates")
 })
-
