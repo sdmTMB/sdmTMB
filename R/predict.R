@@ -779,17 +779,24 @@ predict.sdmTMB <- function(object, newdata = NULL,
       return(tmb_data)
     }
 
+    has_saved_fit <- !is.null(object$parlist) && !is.null(object$last.par.best)
     new_tmb_obj <- TMB::MakeADFun(
       data = tmb_data,
       profile = object$control$profile,
-      parameters = object$parlist,
+      parameters = if (has_saved_fit) object$parlist else get_pars(object),
       map = object$tmb_map,
       random = object$tmb_random,
       DLL = "sdmTMB",
       silent = TRUE
     )
 
-    lp <- object$last.par.best
+    if (has_saved_fit) {
+      lp <- object$last.par.best
+    } else {
+      old_par <- object$model$par
+      new_tmb_obj$fn(old_par)
+      lp <- new_tmb_obj$env$last.par.best
+    }
 
     if (sims > 0 && is.null(mcmc_samples)) {
       if (!"jointPrecision" %in% names(object$sd_report) && !has_no_random_effects(object)) {
