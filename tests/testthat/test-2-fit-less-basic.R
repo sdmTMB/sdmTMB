@@ -410,6 +410,42 @@ test_that("update() handles cbind binomial responses with random effects", {
     data = data, spatial = "off", family = binomial()
   )
   expect_equal(logLik(updated_no_intercept), logLik(direct_no_intercept))
+
+  external_formula <- stats::update.formula(
+    cbind(success, failure) ~ 1, . ~ . + (1 | town)
+  )
+  external_update <- sdmTMB(
+    external_formula, data = data, spatial = "off",
+    family = betabinomial(link = "cloglog")
+  )
+  external_direct <- sdmTMB(
+    cbind(success, failure) ~ 1 + (1 | town),
+    data = data, spatial = "off", family = betabinomial(link = "cloglog")
+  )
+  expect_equal(logLik(external_update), logLik(external_direct))
+})
+
+test_that("externally updated random-effect formulas work in delta formula lists", {
+  data <- pcod_2011
+  data$fyear <- factor(data$year)
+  updated_formula <- stats::update.formula(
+    density ~ 1, . ~ . + depth_scaled + (1 + depth_scaled | fyear)
+  )
+
+  updated <- sdmTMB(
+    formula = list(updated_formula, updated_formula),
+    data = data, mesh = pcod_mesh_2011, spatial = "off",
+    family = delta_gamma(), do_fit = FALSE
+  )
+  direct_formula <- density ~ 1 + depth_scaled + (1 + depth_scaled | fyear)
+  direct <- sdmTMB(
+    formula = list(direct_formula, direct_formula),
+    data = data, mesh = pcod_mesh_2011, spatial = "off",
+    family = delta_gamma(), do_fit = FALSE
+  )
+
+  expect_equal(updated$model, direct$model)
+  expect_equal(updated$tmb_params, direct$tmb_params)
 })
 
 test_that("Irregular time gets detected", {

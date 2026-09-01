@@ -666,6 +666,12 @@ sdmTMB <- function(
   delta <- isTRUE(family$delta)
   n_m <- if (delta) 2L else 1L
 
+  if (inherits(formula, "formula")) {
+    formula <- normalize_bar_only_formula(formula)
+  } else {
+    formula <- lapply(formula, normalize_bar_only_formula)
+  }
+
   if (!missing(spatial)) {
     if (length(spatial) > 1 && !is.list(spatial)) {
       cli_abort("`spatial` should be a single value or a list")

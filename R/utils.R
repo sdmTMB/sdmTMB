@@ -412,6 +412,15 @@ remove_s_and_t2 <- function(formula) {
   formula
 }
 
+normalize_bar_only_formula <- function(formula) {
+  if (inherits(formula, "formula") &&
+      length(reformulas::findbars(formula)) > 0L &&
+      !inherits(reformulas::nobars(formula), "formula")) {
+    formula[[3L]] <- call("+", 1, formula[[3L]])
+  }
+  formula
+}
+
 has_no_random_effects <- function(obj) {
   length(obj$tmb_random) == 0L
 }

@@ -459,11 +459,7 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
       call$formula <- formula.
     } else {
       call$formula <- stats::update.formula(call$formula, formula.)
-      # update.formula() simplifies `~ 1 + (1 | group)` to `~ (1 | group)`.
-      # reformulas::nobars() does not return a formula for a bar-only RHS.
-      if (!inherits(reformulas::nobars(call$formula), "formula")) {
-        call$formula[[3L]] <- call("+", 1, call$formula[[3L]])
-      }
+      call$formula <- normalize_bar_only_formula(call$formula)
     }
   }
 
