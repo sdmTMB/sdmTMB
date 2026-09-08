@@ -45,7 +45,8 @@ print_model_info <- function(x) {
   if (!is.null(x$nonlocal_formula_parsed) &&
       !is.null(x$nonlocal_formula_parsed$terms) &&
       nrow(x$nonlocal_formula_parsed$terms) > 0L) {
-    nl_terms <- x$nonlocal_formula_parsed$terms
+    nl_terms <- x$nonlocal_formula_parsed$source_terms
+    if (is.null(nl_terms)) nl_terms <- x$nonlocal_formula_parsed$terms
     nl_labels <- paste0(nl_terms$component, "(", nl_terms$variable, ")")
     nonlocal_formula <- paste0("Nonlocal formula: ", paste(nl_labels, collapse = " + "), "\n")
   } else if ("nonlocal_formula" %in% names(x$call)) {
@@ -484,7 +485,7 @@ print_other_parameters <- function(x, m = 1L) {
   rho_sar <- get_term_text("rho_sar", "SAR spatial dependence")
   alpha_car <- get_term_text("alpha_car", "CAR spatial dependence")
   rhoT <- nonlocal_term_text("rhoT", "Nonlocal temporal persistence")
-  RMSD <- nonlocal_term_text("RMSD", "Nonlocal RMSD")
+  RMSDK <- nonlocal_term_text("RMSDK", "Nonlocal RMSDK")
 
   if ("sigma_Z" %in% b$term) {
     # tidy() takes sigma_Z from the sdreport,
@@ -508,7 +509,7 @@ print_other_parameters <- function(x, m = 1L) {
     sigma_Z <- ""
   }
 
-  named_list(phi, tweedie_p, student_df, sigma_O, sigma_E, sigma_Z, rho, rho_sar, alpha_car, rhoT, RMSD, gengamma_par)
+  named_list(phi, tweedie_p, student_df, sigma_O, sigma_E, sigma_Z, rho, rho_sar, alpha_car, rhoT, RMSDK, gengamma_par)
 }
 
 print_header <- function(x) {
@@ -575,7 +576,7 @@ print_one_model <- function(x, m = 1, edf = FALSE, silent = FALSE) {
   cat(other$sigma_O)
   cat(other$sigma_Z)
   cat(other$sigma_E)
-  cat(other$RMSD)
+  cat(other$RMSDK)
 }
 print_footer <- function(x) {
   info <- print_model_info(x)

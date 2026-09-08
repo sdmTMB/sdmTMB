@@ -195,7 +195,7 @@ test_that("predict() reuses or overrides the stored covariate diffusion grid", {
   )
 
   expect_false(isTRUE(all.equal(
-    p_reused$nl_diffusion_x1,
-    p_override$nl_diffusion_x1
+    p_reused$nl_diffusion_time_lag_x1,
+    p_override$nl_diffusion_time_lag_x1
   )))
 })

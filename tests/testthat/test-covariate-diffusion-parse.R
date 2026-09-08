@@ -44,6 +44,21 @@ test_that("nonlocal_formula parses valid terms", {
   )
 })
 
+test_that("same-covariate wrappers form one joint operator", {
+  parsed <- .parse_nonlocal_formula(
+    ~ time_lag(x1) + diffusion(x1) + diffusion(x2)
+  )
+
+  expect_equal(parsed$terms$variable, c("x1", "x2"))
+  expect_equal(parsed$terms$component, c("combined", "diffusion"))
+  expect_equal(parsed$terms$has_space, c(TRUE, TRUE))
+  expect_equal(parsed$terms$has_time, c(TRUE, FALSE))
+  expect_equal(
+    parsed$terms$coef_name,
+    c("nl_diffusion_time_lag_x1", "nl_diffusion_x2")
+  )
+})
+
 test_that("nonlocal_formula covariates do not need to be in the main formula", {
   dat <- data.frame(
     y = rnorm(8),

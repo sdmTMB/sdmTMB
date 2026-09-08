@@ -1505,7 +1505,7 @@ sdmTMB <- function(
     ln_tau_E = rep(0, n_m),
     ln_kappa = matrix(0, 2L, n_m),
     log_kappaS_nl = numeric(nonlocal_n_covariates),
-    kappaT_nl_raw = numeric(nonlocal_n_covariates),
+    kappaT_nl_raw = rep(1, nonlocal_n_covariates),
     # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
     thetaf = 0,
     ln_student_df = if (family$family[1] == "student") {
@@ -1724,6 +1724,17 @@ sdmTMB <- function(
     }
     if (param_name %in% names(map)) {
       .validate_nonlocal_control_length(map[[param_name]], param_name, "map")
+    }
+  }
+  if ("kappaT_nl_raw" %in% names(start)) {
+    temporal_start <- start$kappaT_nl_raw[
+      as.logical(nonlocal_covariate_has_temporal)
+    ]
+    if (!is.numeric(temporal_start) || anyNA(temporal_start) ||
+        any(!is.finite(temporal_start)) || any(temporal_start < 0)) {
+      cli_abort(
+        "Active values in `control$start$kappaT_nl_raw` must be finite and non-negative."
+      )
     }
   }
 
@@ -1989,7 +2000,7 @@ sdmTMB <- function(
   }
   if (!is.null(control$upper) || !is.null(control$lower)) {
     if (newton_loops > 0) {
-      cli_inform("Upper or lower limits were set. `stats::optimHess()` will ignore these limits. Set `control = sdmTMBcontrol(newton_loops = 0)` to avoid the `stats::optimHess()` optimization if desired.")
+      cli_inform("Upper or lower limits were set. Newton updates that cross these limits will be skipped.")
     }
   }
 
@@ -2033,7 +2044,10 @@ sdmTMB <- function(
   }
 
   # We only end up here if no collapse was detected
-  tmb_opt <- run_newton_loops(newton_loops = newton_loops, tmb_opt, tmb_obj, silent)
+  tmb_opt <- run_newton_loops(
+    newton_loops = newton_loops, tmb_opt, tmb_obj, silent,
+    lower = lim$lower, upper = lim$upper
+  )
 
   if (!silent && getsd) cli_inform("running TMB sdreport\n")
   if (getsd) {
@@ -2233,6 +2247,19 @@ set_limits <- function(tmb_obj, lower, upper, loc = NULL, spatial_model = 0L,
                        silent = TRUE) {
   .lower <- stats::setNames(rep(-Inf, length(tmb_obj$par)), names(tmb_obj$par))
   .upper <- stats::setNames(rep(Inf, length(tmb_obj$par)), names(tmb_obj$par))
+  has_kappaT <- "kappaT_nl_raw" %in% names(tmb_obj$par)
+  if (has_kappaT && "kappaT_nl_raw" %in% names(lower)) {
+    x <- lower$kappaT_nl_raw
+    if (!is.numeric(x) || anyNA(x) || any(!is.finite(x)) || any(x < 0)) {
+      cli_abort("`control$lower$kappaT_nl_raw` must contain finite, non-negative values.")
+    }
+  }
+  if (has_kappaT && "kappaT_nl_raw" %in% names(upper)) {
+    x <- upper$kappaT_nl_raw
+    if (!is.numeric(x) || anyNA(x) || any(x < 0)) {
+      cli_abort("`control$upper$kappaT_nl_raw` must contain non-negative values.")
+    }
+  }
   for (i_name in names(lower)) {
     if (i_name %in% names(.lower)) {
       .lower[names(.lower) %in% i_name] <- lower[[i_name]]
@@ -2262,7 +2289,7 @@ set_limits <- function(tmb_obj, lower, upper, loc = NULL, spatial_model = 0L,
   }
   if ("kappaT_nl_raw" %in% names(tmb_obj$par) &&
     !"kappaT_nl_raw" %in% names(lower)) {
-    .lower[names(.lower) == "kappaT_nl_raw"] <- -1 + 1e-6
+    .lower[names(.lower) == "kappaT_nl_raw"] <- 0
   }
   if ("logit_rho_sar" %in% names(tmb_obj$par) &&
     !"logit_rho_sar" %in% union(names(lower), names(upper))) {

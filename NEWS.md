@@ -1,5 +1,10 @@
 # sdmTMB (development version)
 
+* `diffusion(x) + time_lag(x)` in `nonlocal_formula` now fits one stationary
+  joint space--time distributed-lag operator with one coefficient. The derived
+  diffusion-kernel summaries have been renamed from `MSD`/`RMSD` to
+  `MSDK`/`RMSDK`. Temporal persistence is now constrained to be non-negative.
+
 * `sdmTMB_cv(lfo = TRUE)` now supports delta/hurdle families.
   LFOCV log likelihoods for lognormal models are now calculated consistently
   with the TMB model; previous versions omitted a logarithm in this calculation.

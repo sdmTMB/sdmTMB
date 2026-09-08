@@ -139,8 +139,8 @@ test_that("covariate diffusion derived quantities are conditionally reported", {
   rep_time <- fit_time$tmb_obj$report()
   expect_true(is.numeric(rep_time$rhoT))
   expect_true(is.finite(rep_time$rhoT))
-  expect_null(rep_time$MSD)
-  expect_null(rep_time$RMSD)
+  expect_null(rep_time[["MSDK", exact = TRUE]])
+  expect_null(rep_time[["RMSDK", exact = TRUE]])
 
   fit_space <- sdmTMB(
     y ~ x1 + x2,
@@ -156,9 +156,9 @@ test_that("covariate diffusion derived quantities are conditionally reported", {
   )
   rep_space <- fit_space$tmb_obj$report()
   expect_null(rep_space$rhoT)
-  expect_true(is.numeric(rep_space$MSD))
-  expect_true(is.numeric(rep_space$RMSD))
-  expect_true(is.finite(rep_space$MSD))
-  expect_true(is.finite(rep_space$RMSD))
-  expect_equal(rep_space$RMSD^2, rep_space$MSD, tolerance = 1e-6)
+  expect_true(is.numeric(rep_space$MSDK))
+  expect_true(is.numeric(rep_space$RMSDK))
+  expect_true(is.finite(rep_space$MSDK))
+  expect_true(is.finite(rep_space$RMSDK))
+  expect_equal(rep_space$RMSDK^2, rep_space$MSDK, tolerance = 1e-6)
 })

@@ -32,8 +32,7 @@ plot_nonlocal_kernel(
 
 \item{component}{Covariate-diffusion component name. Must be one of
 \code{"diffusion"}, \code{"time_lag"}, or \code{"combined"}. \code{"combined"}
-plots the joint response of all covariate-diffusion components fitted for
-\code{covariate}.}
+plots the fitted joint operator and requires both wrappers for \code{covariate}.}
 
 \item{newdata}{Optional data frame with x/y coordinate columns matching the
 fitted mesh. If supplied, values are evaluated at the unique \code{newdata}
@@ -115,7 +114,7 @@ sim <- simulate_new(
   sigma_O = 0,
   sigma_E = 0,
   phi = 0.1,
-  B = c(0, 0.7, 0.6),
+  B = c(0, 0.7),
   nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
   nonlocal_data = nonlocal_data,
   lags_kappaS = 4.4,

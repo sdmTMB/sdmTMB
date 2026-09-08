@@ -82,8 +82,8 @@ test_that("covariate diffusion ran_pars include lag scales and derived diagnosti
     "kappaS_nl[x1]",
     "kappaT_nl[x1]",
     "rhoT[x1]",
-    "MSD[x1]",
-    "RMSD[x1]"
+    "MSDK[x1]",
+    "RMSDK[x1]"
   )
   expect_true(all(expected_terms %in% td$term), info = paste(setdiff(expected_terms, td$term), collapse = ", "))
 
@@ -92,13 +92,20 @@ test_that("covariate diffusion ran_pars include lag scales and derived diagnosti
   expect_length(rep_est$kappaS_nl, 1L)
   expect_length(rep_est$kappaT_nl, 1L)
   expect_length(rep_est$rhoT, 1L)
-  expect_length(rep_est$MSD, 1L)
-  expect_length(rep_est$RMSD, 1L)
+  expect_length(rep_est$MSDK, 1L)
+  expect_length(rep_est$RMSDK, 1L)
   expect_length(rep_se$kappaS_nl, 1L)
   expect_length(rep_se$kappaT_nl, 1L)
   expect_length(rep_se$rhoT, 1L)
-  expect_length(rep_se$MSD, 1L)
-  expect_length(rep_se$RMSD, 1L)
+  expect_length(rep_se$MSDK, 1L)
+  expect_length(rep_se$RMSDK, 1L)
+  expect_null(rep_est[["MSD", exact = TRUE]])
+  expect_null(rep_est[["RMSD", exact = TRUE]])
+  expect_equal(
+    rep_est$MSDK,
+    4 / rep_est$kappaS_nl^2 * (1 - rep_est$rhoT),
+    tolerance = 1e-6
+  )
 })
 
 test_that("print output reports covariate diffusion structure and diagnostics", {
@@ -123,5 +130,5 @@ test_that("print output reports covariate diffusion structure and diagnostics", 
   out <- paste(capture.output(print(fit)), collapse = "\n")
   expect_match(out, "Nonlocal formula: diffusion\\(x1\\) \\+ time_lag\\(x1\\)")
   expect_match(out, "rhoT\\[x1\\]=")
-  expect_match(out, "RMSD\\[x1\\]=")
+  expect_match(out, "RMSDK\\[x1\\]=")
 })

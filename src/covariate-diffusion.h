@@ -26,8 +26,9 @@ struct covariate_diffusion_data_t {
     for (int t = 0; t < n_terms; t++) {
       int cov_i = term_covariate(t);
       int comp = term_component(t);
-      if (cov_i >= 0 && cov_i < n_covariates && comp >= 0 && comp < 2) {
-        has(cov_i, comp) = 1;
+      if (cov_i >= 0 && cov_i < n_covariates) {
+        if (comp == 0 || comp == 2) has(cov_i, 0) = 1;
+        if (comp == 1 || comp == 2) has(cov_i, 1) = 1;
       }
     }
   }
@@ -56,12 +57,14 @@ struct CovariateDiffusionContext {
 
 enum CovariateDiffusionComponent {
   nl_space = 0,
-  nl_time = 1
+  nl_time = 1,
+  nl_joint = 2
 };
 
 inline bool nl_is_valid_component(int component) {
   return component == nl_space ||
-    component == nl_time;
+    component == nl_time ||
+    component == nl_joint;
 }
 
 template <class Type>
@@ -83,19 +86,19 @@ bool nl_solve_transformed_vertex_time(
     const Eigen::SparseMatrix<Type>& M1_nl,
     Type kappaS_scale,
     Type kappaT_nl,
-    bool has_spatial_solver,
-    Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> >& lu_spatial,
+    bool has_system_solver,
+    Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> >& lu_system,
     Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic>& transformed_vertex_time) {
   transformed_vertex_time.setZero();
   if (!nl_is_valid_component(component)) return false;
 
   if (component == nl_space) {
-    if (!has_spatial_solver || lu_spatial.info() != Eigen::Success) return false;
+    if (!has_system_solver || lu_system.info() != Eigen::Success) return false;
     for (int t = 0; t < n_t; t++) {
       Eigen::Matrix<Type, Eigen::Dynamic, 1> rhs =
         M0_nl * nl_get_covariate_col(covariate_vertex_time, cov_i, t, n_vertices);
-      Eigen::Matrix<Type, Eigen::Dynamic, 1> solved = lu_spatial.solve(rhs);
-      if (lu_spatial.info() != Eigen::Success) return false;
+      Eigen::Matrix<Type, Eigen::Dynamic, 1> solved = lu_system.solve(rhs);
+      if (lu_system.info() != Eigen::Success) return false;
       transformed_vertex_time.col(t) = solved;
     }
     return true;
@@ -111,6 +114,19 @@ bool nl_solve_transformed_vertex_time(
         transformed_vertex_time(v, t) =
           (covariate_vertex_time(v, t, cov_i) + kappaT_nl * transformed_vertex_time(v, t - 1)) / denom;
       }
+    }
+    return true;
+  }
+
+  if (component == nl_joint) {
+    if (!has_system_solver || lu_system.info() != Eigen::Success) return false;
+    for (int t = 0; t < n_t; t++) {
+      Eigen::Matrix<Type, Eigen::Dynamic, 1> rhs =
+        M0_nl * nl_get_covariate_col(covariate_vertex_time, cov_i, t, n_vertices);
+      if (t > 0) rhs += kappaT_nl * M0_nl * transformed_vertex_time.col(t - 1);
+      Eigen::Matrix<Type, Eigen::Dynamic, 1> solved = lu_system.solve(rhs);
+      if (lu_system.info() != Eigen::Success) return false;
+      transformed_vertex_time.col(t) = solved;
     }
     return true;
   }
@@ -158,19 +174,21 @@ void add_covariate_diffusion_to_eta_fixed(
 
   // Determine required solvers/scales by scanning terms
   std::vector<int> cov_needs_spatial_scale(ctx.n_covariates, 0);
-  std::vector<int> cov_needs_spatial_solver(ctx.n_covariates, 0);
+  std::vector<int> cov_needs_system_solver(ctx.n_covariates, 0);
+  std::vector<int> cov_uses_joint_system(ctx.n_covariates, 0);
   for (int term = 0; term < ctx.n_terms; term++) {
     int component = ctx.term_component(term);
     int cov_i = ctx.term_covariate(term);
     if (!nl_is_valid_component(component)) {
-      error("Nonlocal metadata error: invalid component code (expected spatial=0 or temporal=1).");
+      error("Nonlocal metadata error: invalid component code (expected spatial=0, temporal=1, or joint=2).");
     }
     if (cov_i < 0 || cov_i >= ctx.n_covariates) {
       error("Nonlocal metadata error: term covariate index out of bounds.");
     }
-    if (component == nl_space) {
+    if (component == nl_space || component == nl_joint) {
       cov_needs_spatial_scale[cov_i] = 1;
-      cov_needs_spatial_solver[cov_i] = 1;
+      cov_needs_system_solver[cov_i] = 1;
+      if (component == nl_joint) cov_uses_joint_system[cov_i] = 1;
     }
   }
 
@@ -183,15 +201,17 @@ void add_covariate_diffusion_to_eta_fixed(
     }
   }
 
-  // Factorize per-covariate spatial systems once
+  // Factorize each spatial or joint system once per covariate
   std::vector< Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> > >
-    lu_spatial_by_covariate(ctx.n_covariates);
+    lu_system_by_covariate(ctx.n_covariates);
   for (int cov_i = 0; cov_i < ctx.n_covariates; cov_i++) {
-    if (!cov_needs_spatial_solver[cov_i]) continue;
-    Eigen::SparseMatrix<Type> spatial_system = ctx.M0 + kappaS_scale(cov_i) * ctx.M1;
-    lu_spatial_by_covariate[cov_i].compute(spatial_system);
-    if (lu_spatial_by_covariate[cov_i].info() != Eigen::Success) {
-      error("Nonlocal sparse solve failed while factorizing spatial system (M0 + kappa^{-2} M1).");
+    if (!cov_needs_system_solver[cov_i]) continue;
+    Type temporal_scale = cov_uses_joint_system[cov_i] == 1 ?
+      Type(1.0) + ctx.kappaT_by_covariate(cov_i) : Type(1.0);
+    Eigen::SparseMatrix<Type> system = temporal_scale * ctx.M0 + kappaS_scale(cov_i) * ctx.M1;
+    lu_system_by_covariate[cov_i].compute(system);
+    if (lu_system_by_covariate[cov_i].info() != Eigen::Success) {
+      error("Nonlocal sparse solve failed while factorizing a spatial or joint system.");
     }
   }
 
@@ -211,8 +231,8 @@ void add_covariate_diffusion_to_eta_fixed(
       ctx.M1,
       kappaS_scale(cov_i),
       ctx.kappaT_by_covariate(cov_i),
-      cov_needs_spatial_solver[cov_i] == 1,
-      lu_spatial_by_covariate[cov_i],
+      cov_needs_system_solver[cov_i] == 1,
+      lu_system_by_covariate[cov_i],
       transformed_vertex_time
     );
     if (!solved) {

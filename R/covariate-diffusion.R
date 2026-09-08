@@ -111,16 +111,42 @@
     ))
   }
 
-  unique_covariates <- unique(terms_df$variable)
-  terms_df$covariate_id <- match(terms_df$variable, unique_covariates)
-  terms_df$coef_name <- paste0("nl_", terms_df$component, "_", make.names(terms_df$variable))
+  source_terms <- terms_df
+  unique_covariates <- unique(source_terms$variable)
+  terms_df <- do.call(rbind, lapply(seq_along(unique_covariates), function(i) {
+    variable <- unique_covariates[[i]]
+    components <- source_terms$component[source_terms$variable == variable]
+    has_space <- "diffusion" %in% components
+    has_time <- "time_lag" %in% components
+    component <- if (has_space && has_time) {
+      "combined"
+    } else if (has_space) {
+      "diffusion"
+    } else {
+      "time_lag"
+    }
+    data.frame(
+      component = component,
+      variable = variable,
+      covariate_id = i,
+      has_space = has_space,
+      has_time = has_time,
+      coef_name = paste0(
+        "nl_",
+        if (component == "combined") "diffusion_time_lag" else component,
+        "_", make.names(variable)
+      ),
+      stringsAsFactors = FALSE
+    )
+  }))
 
   list(
     formula = nonlocal_formula,
+    source_terms = source_terms,
     terms = terms_df,
     covariates = unique_covariates,
-    has_diffusion = any(terms_df$component == "diffusion"),
-    needs_time = any(terms_df$component == "time_lag")
+    has_diffusion = any(terms_df$has_space),
+    needs_time = any(terms_df$has_time)
   )
 }
 
@@ -434,17 +460,14 @@
   )
   covariate_vertex_time <- vertex_cov$covariate_vertex_time
 
-  component_levels <- c("diffusion", "time_lag")
+  component_levels <- c("diffusion", "time_lag", "combined")
   component_id <- match(nonlocal_formula$terms$component, component_levels)
   terms_df <- nonlocal_formula$terms
   covariates <- nonlocal_formula$covariates
   covariate_has_spatial <- integer(length(covariates))
   covariate_has_temporal <- integer(length(covariates))
-  for (i in seq_along(covariates)) {
-    components <- terms_df$component[terms_df$variable == covariates[i]]
-    covariate_has_spatial[i] <- any(components == "diffusion")
-    covariate_has_temporal[i] <- any(components == "time_lag")
-  }
+  covariate_has_spatial[terms_df$covariate_id] <- as.integer(terms_df$has_space)
+  covariate_has_temporal[terms_df$covariate_id] <- as.integer(terms_df$has_time)
 
   list(
     covariate_vertex_time = covariate_vertex_time,
@@ -486,16 +509,12 @@
   if (component == "combined") {
     has_space <- isTRUE(has_space)
     has_time <- isTRUE(has_time)
-    if (has_space && !has_time) {
-      component <- "diffusion"
-    } else if (has_time && !has_space) {
-      component <- "time_lag"
-    } else if (!has_space && !has_time) {
-      cli_abort("`component = \"combined\"` requires at least one fitted `diffusion()` or `time_lag()` term.")
+    if (!(has_space && has_time)) {
+      cli_abort("`component = \"combined\"` requires both `diffusion()` and `time_lag()` for the selected covariate.")
     } else {
       kappaS_scale <- 1 / (kappaS^2)
       kappaT_scale <- kappaT
-      system_mat <- M0 + kappaS_scale * M1
+      system_mat <- (1 + kappaT_scale) * M0 + kappaS_scale * M1
       for (tt in seq_len(n_t)) {
         rhs <- as.numeric(M0 %*% vertex_time_input[, tt, drop = TRUE])
         if (tt > 1L && kappaT_scale != 0) {
@@ -603,7 +622,9 @@
       M0 = M0,
       M1 = M1,
       kappaS = kappaS,
-      kappaT = kappaT
+      kappaT = kappaT,
+      has_space = nonlocal_parsed$covariate_has_spatial[[cov_i]],
+      has_time = nonlocal_parsed$covariate_has_temporal[[cov_i]]
     )
     term_out[, term_i] <- .project_nonlocal_vertex_time(
       transformed_vertex_time = transformed_vertex_time,
@@ -736,18 +757,22 @@
       "x" = "Could not find `{covariate}` in the fitted covariate-diffusion terms."
     ))
   }
-  components_for_covariate <- unique(terms_df$component[terms_df$variable == covariate])
-  if (component != "combined" && !component %in% components_for_covariate) {
+  term <- terms_df[terms_df$variable == covariate, , drop = FALSE]
+  component_fitted <- switch(component,
+    diffusion = term$has_space,
+    time_lag = term$has_time,
+    combined = term$has_space && term$has_time
+  )
+  if (!component_fitted) {
     cli_abort(c(
       "Requested component/covariate term was not fitted.",
-      "x" = "No term `{component}({covariate})` in `object$nonlocal_formula`."
+      "x" = "The requested `{component}` operator was not fitted for `{covariate}`."
     ))
   }
-  component_for_time <- if (component == "combined" && !"time_lag" %in% components_for_covariate) "diffusion" else component
 
   mesh_info <- .nl_plot_extract_mesh(object$spde$mesh)
   time_info <- .nl_plot_resolve_time(
-    object, component_for_time, time_value, n_steps
+    object, component, time_value, n_steps
   )
 
   cov_i <- match(covariate, object$nonlocal_parsed$covariates)
@@ -771,7 +796,7 @@
 }
 
 .nl_plot_time_panels <- function(first_field, first_title, transformed_vertex_time,
-                                 time_i, time_idx, time_values) {
+                                 time_i, time_idx, time_values, component) {
   panel_fields <- vector("list", length(time_idx) + 1L)
   panel_titles <- character(length(panel_fields))
   panel_fields[[1L]] <- first_field
@@ -780,8 +805,13 @@
     tt <- time_idx[j]
     lag <- tt - time_i
     panel_fields[[j + 1L]] <- transformed_vertex_time[, tt]
+    transform_label <- switch(component,
+      diffusion = "diffused",
+      time_lag = "time-lagged",
+      combined = "jointly transformed"
+    )
     panel_titles[[j + 1L]] <- if (lag == 0L) {
-      paste0("diffused (t=", time_values[tt], ")")
+      paste0(transform_label, " (t=", time_values[tt], ")")
     } else {
       paste0("lag+", lag, " (t=", time_values[tt], ")")
     }
@@ -935,8 +965,7 @@
 #'   Required when multiple lag covariates were fitted.
 #' @param component Covariate-diffusion component name. Must be one of
 #'   `"diffusion"`, `"time_lag"`, or `"combined"`. `"combined"`
-#'   plots the joint response of all covariate-diffusion components fitted for
-#'   `covariate`.
+#'   plots the fitted joint operator and requires both wrappers for `covariate`.
 #' @param time_value Optional time slice to plot or use for the impulse. Supply
 #'   either a modeled time value or a 1-based time index. Defaults to 1.
 #' @param n_steps Number of transformed slices to plot starting at
@@ -1001,7 +1030,7 @@
 #'   sigma_O = 0,
 #'   sigma_E = 0,
 #'   phi = 0.1,
-#'   B = c(0, 0.7, 0.6),
+#'   B = c(0, 0.7),
 #'   nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
 #'   nonlocal_data = nonlocal_data,
 #'   lags_kappaS = 4.4,
@@ -1113,7 +1142,8 @@ plot_nonlocal_covariate <- function(object,
     transformed_vertex_time = transformed_vertex_time,
     time_i = time_i,
     time_idx = time_idx,
-    time_values = time_values
+    time_values = time_values,
+    component = ctx$component
   )
   panel <- .nl_plot_df(
     loc = plot_locations$loc,
@@ -1185,7 +1215,8 @@ plot_nonlocal_kernel <- function(object,
     transformed_vertex_time = transformed_vertex_time,
     time_i = time_i,
     time_idx = time_idx,
-    time_values = time_values
+    time_values = time_values,
+    component = ctx$component
   )
   panel <- .nl_plot_df(
     loc = plot_locations$loc,

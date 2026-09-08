@@ -234,7 +234,7 @@ test_that("plot_nonlocal_kernel defaults to the first time index for temporal co
     n_steps = 2
   )
 
-  expect_equal(levels(out$data$panel), c("original (t=1)", "diffused (t=1)", "lag+1 (t=2)"))
+  expect_equal(levels(out$data$panel), c("original (t=1)", "time-lagged (t=1)", "lag+1 (t=2)"))
 })
 
 test_that("plot_nonlocal_covariate returns a ggplot on mesh vertices by default", {
@@ -340,7 +340,7 @@ test_that("plot_nonlocal_covariate selects requested time slices", {
     time_value = 3L
   )
 
-  expect_equal(levels(out$data$panel), c("original (t=3)", "diffused (t=3)"))
+  expect_equal(levels(out$data$panel), c("original (t=3)", "time-lagged (t=3)"))
 })
 
 test_that("plot_nonlocal_covariate plots lagged contributions from one time slice", {
@@ -375,7 +375,7 @@ test_that("plot_nonlocal_covariate plots lagged contributions from one time slic
     levels(out$data$panel),
     c(
       "original (t=2)",
-      "diffused (t=2)",
+      "time-lagged (t=2)",
       "lag+1 (t=3)",
       "lag+2 (t=4)"
     )
@@ -420,9 +420,11 @@ test_that("plot_nonlocal_covariate can plot combined fitted transforms", {
     n_steps = 2L
   )
 
-  expect_equal(levels(out_combined$data$panel), c("original (t=2)", "diffused (t=2)", "lag+1 (t=3)"))
-  combined_lag <- out_combined$data$value[out_combined$data$panel == "lag+1 (t=3)"]
-  space_lag <- out_space$data$value[out_space$data$panel == "lag+1 (t=3)"]
+  expect_equal(levels(out_combined$data$panel), c("original (t=2)", "jointly transformed (t=2)", "lag+1 (t=3)"))
+  combined_lag <- out_combined$data$value[
+    out_combined$data$panel == "jointly transformed (t=2)"
+  ]
+  space_lag <- out_space$data$value[out_space$data$panel == "diffused (t=2)"]
   expect_false(isTRUE(all.equal(
     combined_lag,
     space_lag,
@@ -457,7 +459,7 @@ test_that("plot_nonlocal_covariate errors cleanly for invalid inputs", {
   )
   expect_error(
     plot_nonlocal_covariate(fit_multi, covariate = "x1", component = "time_lag"),
-    regexp = "No term `time_lag\\(x1\\)`"
+    regexp = "requested `time_lag` operator was not fitted"
   )
   expect_error(
     plot_nonlocal_covariate(fit_multi, covariate = "x1", component = "diffusion", time_value = 99L),

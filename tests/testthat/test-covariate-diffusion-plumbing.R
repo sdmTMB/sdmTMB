@@ -84,11 +84,12 @@ test_that("covariate diffusion coefficient slots are appended and lag parameters
   expect_null(fit$tmb_map[["b_j", exact = TRUE]])
   expect_length(fit$tmb_params$log_kappaS_nl, 2L)
   expect_length(fit$tmb_params$kappaT_nl_raw, 2L)
+  expect_equal(fit$tmb_params$kappaT_nl_raw, c(1, 1))
   expect_equal(as.integer(fit$tmb_map$log_kappaS_nl), c(1L, NA_integer_))
   expect_equal(as.integer(fit$tmb_map$kappaT_nl_raw), c(NA_integer_, 1L))
 })
 
-test_that("covariate diffusion coefficient slots are appended to both delta components", {
+test_that("joint covariate diffusion slot is appended once to both delta components", {
   dat <- data.frame(
     y = c(0, 1, 0, 2, 0.5, 1.2, 0, 0.7),
     x1 = rnorm(8),
@@ -108,13 +109,15 @@ test_that("covariate diffusion coefficient slots are appended to both delta comp
     spatial = "off",
     spatiotemporal = "off",
     family = delta_gamma(),
-    nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
     nonlocal_data = grid,
     do_fit = FALSE
   )
 
-  expect_true(all(c("nl_diffusion_x1", "nl_time_lag_x2") %in% colnames(fit$tmb_data$X_ij[[1]])))
-  expect_true(all(c("nl_diffusion_x1", "nl_time_lag_x2") %in% colnames(fit$tmb_data$X_ij[[2]])))
+  joint_name <- "nl_diffusion_time_lag_x1"
+  expect_equal(tail(colnames(fit$tmb_data$X_ij[[1]]), 1L), joint_name)
+  expect_equal(tail(colnames(fit$tmb_data$X_ij[[2]]), 1L), joint_name)
+  expect_equal(fit$nonlocal_parsed$n_terms, 1L)
   expect_equal(length(fit$tmb_params$b_j), ncol(fit$tmb_data$X_ij[[1]]))
   expect_equal(length(fit$tmb_params$b_j2), ncol(fit$tmb_data$X_ij[[2]]))
 })
@@ -163,6 +166,47 @@ test_that("covariate diffusion control names set start and map values", {
   expect_equal(fit$tmb_params$kappaT_nl_raw, c(0.2, 0.3))
   expect_equal(as.integer(fit$tmb_map$log_kappaS_nl), c(NA_integer_, 1L))
   expect_equal(as.integer(fit$tmb_map$kappaT_nl_raw), c(1L, NA_integer_))
+})
+
+test_that("temporal nonlocal starts must be non-negative", {
+  dat <- make_nl_plumbing_data()
+  mesh <- make_nl_plumbing_mesh(dat)
+  grid <- make_nl_plumbing_grid(mesh, sort(unique(dat$year)))
+
+  expect_error(
+    sdmTMB(
+      y ~ 1,
+      data = dat,
+      mesh = mesh,
+      time = "year",
+      spatial = "off",
+      spatiotemporal = "off",
+      nonlocal_formula = ~ time_lag(x1),
+      nonlocal_data = grid,
+      control = sdmTMBcontrol(
+        start = list(kappaT_nl_raw = -0.1)
+      ),
+      do_fit = FALSE
+    ),
+    "must be finite and non-negative"
+  )
+
+  fit_zero <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
+    control = sdmTMBcontrol(
+      start = list(kappaT_nl_raw = 0),
+      map = list(kappaT_nl_raw = factor(NA))
+    ),
+    do_fit = FALSE
+  )
+  expect_equal(fit_zero$tmb_params$kappaT_nl_raw, 0)
 })
 
 test_that("no-lag fit remains numerically identical with explicit nonlocal_formula = NULL", {

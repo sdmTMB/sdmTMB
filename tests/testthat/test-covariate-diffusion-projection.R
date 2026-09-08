@@ -215,6 +215,56 @@ test_that(".build_nonlocal_tmb_data returns term-covariate mapping", {
   expect_equal(dim(out$covariate_vertex_time), c(2L, 2L, 2L))
 })
 
+test_that(".build_nonlocal_tmb_data represents a joint operator once", {
+  A_st <- Matrix::Diagonal(2L)
+  dat <- data.frame(x1 = 1:4)
+  parsed <- .parse_nonlocal_formula(~ diffusion(x1) + time_lag(x1))
+
+  out <- .build_nonlocal_tmb_data(
+    nonlocal_formula = parsed,
+    data = dat,
+    A_st = A_st,
+    A_spatial_index = c(0L, 1L, 0L, 1L),
+    year_i = c(0L, 0L, 1L, 1L),
+    n_t = 2L
+  )
+
+  expect_equal(out$n_terms, 1L)
+  expect_equal(out$term_component, "combined")
+  expect_equal(out$term_component_id, 3L)
+  expect_equal(out$term_coef_name, "nl_diffusion_time_lag_x1")
+  expect_equal(out$covariate_has_spatial, 1L)
+  expect_equal(out$covariate_has_temporal, 1L)
+})
+
+test_that("joint R solver uses the stationary space-time recursion", {
+  M0 <- Matrix::Diagonal(2L, c(1, 2))
+  M1 <- Matrix::Diagonal(2L, c(2, 4))
+  x <- matrix(c(1, 2, 3, 4), nrow = 2L)
+  kappaS <- 2
+  kappaT <- 0.5
+
+  actual <- .solve_nonlocal_vertex_time(
+    "combined", x, M0, M1, kappaS, kappaT,
+    has_space = TRUE, has_time = TRUE
+  )
+  system <- (1 + kappaT) * M0 + kappaS^(-2) * M1
+  expected <- matrix(0, nrow = 2L, ncol = 2L)
+  expected[, 1L] <- as.numeric(Matrix::solve(system, M0 %*% x[, 1L]))
+  expected[, 2L] <- as.numeric(Matrix::solve(
+    system, M0 %*% x[, 2L] + kappaT * M0 %*% expected[, 1L]
+  ))
+
+  expect_equal(actual, expected)
+  expect_error(
+    .solve_nonlocal_vertex_time(
+      "combined", x, M0, M1, kappaS, kappaT,
+      has_space = TRUE, has_time = FALSE
+    ),
+    "requires both"
+  )
+})
+
 test_that("sdmTMB builds nonlocal_parsed in fit path", {
   dat <- data.frame(
     y = rnorm(8),

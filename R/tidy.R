@@ -406,8 +406,8 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     list(term_name = "kappaS_nl", display_name = "kappaS_nl", covariate_mask_name = "covariate_has_spatial"),
     list(term_name = "kappaT_nl", display_name = "kappaT_nl", covariate_mask_name = "covariate_has_temporal"),
     list(term_name = "rhoT", display_name = "rhoT", covariate_mask_name = "covariate_has_temporal"),
-    list(term_name = "MSD", display_name = "MSD", covariate_mask_name = "covariate_has_spatial"),
-    list(term_name = "RMSD", display_name = "RMSD", covariate_mask_name = "covariate_has_spatial")
+    list(term_name = "MSDK", display_name = "MSDK", covariate_mask_name = "covariate_has_spatial"),
+    list(term_name = "RMSDK", display_name = "RMSDK", covariate_mask_name = "covariate_has_spatial")
   )
   for (term_info in nonlocal_term_masks) {
     term_df <- add_nonlocal_parameter(
