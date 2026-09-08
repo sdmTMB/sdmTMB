@@ -43,7 +43,7 @@ One option is to fit models using covariates with different levels of smoothing 
 Alternatively, we can estimate the appropriate degree of smoothing simultaneously while we fit the model.
 This is what the covariate-diffusion functionality does.
 
-Users are encouraged to read and cite @lindmark2025 for spatial models and @thorson2026 for extensions to temporal and spatiotemporal settings, including the introduction of the MSD and RMSD terms.
+Users are encouraged to read and cite @lindmark2025 for spatial models and @thorson2026 for extensions to temporal and spatiotemporal settings, including the introduction of the MSDK and RMSDK terms.
 
 We begin with a simple spatial-diffusion example and then fit an example that combines `diffusion()` and `time_lag()` terms.
 
@@ -109,10 +109,26 @@ tidy(fit, effects = "ran_pars")
 
 Here `kappaS_nl[x1]` is the estimated spatial diffusion scale parameter for `x1` (larger values imply less smoothing).
 
-The output also reports `MSD[x1]` and `RMSD[x1]`, the implied mean squared displacement (`4 / kappaS_nl[x1]^2`) and root mean squared displacement (`2 / kappaS_nl[x1]`).
-`RMSD[x1]` is a typical diffusion distance (a blur radius) in coordinate units.
+The output also reports `MSDK[x1]` and `RMSDK[x1]`, the implied mean-squared diffusion-kernel scale (`4 / kappaS_nl[x1]^2`) and its square root (`2 / kappaS_nl[x1]`).
+`RMSDK[x1]` is a typical diffusion distance (a blur radius) in coordinate units. These quantities describe the spatial diffusion kernel; they are not the time-specific MSD of a realized response.
 Users applying this spatial diffusion method should cite @lindmark2025.
-Users using these MSD and RMSD metrics should consult and cite @thorson2026.
+Users using these MSDK and RMSDK metrics should consult and cite @thorson2026.
+
+### SR, MSDK, and realized MSD
+
+sdmTMB reports MSDK and RMSDK, but not SR. SR depends on the finite-element basis, impulse location, projection grid, cell-area weights, and domain boundaries. For a spatial-only point response, under a sufficiently fine grid, a nonnegative symmetric kernel, and negligible boundary effects,
+
+$$
+\mathrm{MSD}(1) \approx \mathrm{SR} + \mathrm{MSDK}.
+$$
+
+For the stationary joint operator used by sdmTMB (the `kappaST = 0` formulation in @thorson2026),
+
+$$
+\mathrm{MSD}(t^*) \approx \mathrm{SR} + t^*\,\mathrm{MSDK}.
+$$
+
+Here MSD is the normalized spatial second central moment of a projected point response at time $t^*$. MSDK is the approximate slope of this relationship, not a time-specific total MSD. Mesh, projection, and boundary effects make these relationships approximate. If realized point-response MSD is calculated, project to a fine grid, include cell-area weights, normalize separately at each time, and calculate the weighted centroid before calculating squared distances from it.
 
 Compare true and estimated diffused covariates:
 
@@ -153,9 +169,9 @@ plot_nonlocal_kernel(fit, component = "diffusion")
 plot_nonlocal_covariate(fit, component = "diffusion")
 ```
 
-## Space-time example with additive terms
+## Space-time example with a joint operator
 
-Next we will simulate and fit a model containing spatial and temporal components: `~ diffusion(x1) + time_lag(x1)`.
+Next we will simulate and fit a model containing spatial and temporal components: `~ diffusion(x1) + time_lag(x1)`. Because both wrappers refer to `x1`, they select parts of one stationary joint operator and produce one transformed predictor and one coefficient. Wrappers applied to different covariates, such as `~ diffusion(x1) + time_lag(x2)`, produce separate predictors and coefficients.
 
 ```{r fit-space-time-all}
 set.seed(1)
@@ -199,7 +215,7 @@ sim_st <- simulate_new(
   range = 0.3,
   sigma_O = 0.2,
   phi = 0.1,
-  B = c(0, 0.7, 0.6),
+  B = c(0, 0.7),
   nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
   nonlocal_data = nonlocal_st,
   lags_kappaS = 4.4,
@@ -228,8 +244,47 @@ fit_st
 tidy(fit_st, effects = "ran_pars")
 ```
 
-In the random-effect parameters, `kappaS_nl[x1]` controls spatial diffusion and `kappaT_nl[x1]` controls temporal lags.
+In the random-effect parameters, `kappaS_nl[x1]` controls spatial diffusion and `kappaT_nl[x1]` controls temporal persistence in the joint operator. The transformed predictor is named `nl_diffusion_time_lag_x1` because the two wrappers are grouped by covariate.
 Users applying the time-lag functionality should read and cite @thorson2026.
+
+The three operator forms are as follows. For spatial diffusion only,
+
+$$
+(\mathbf{M}_0 + \kappa_S^{-2}\mathbf{M}_1)\mathbf{z}_t = \mathbf{M}_0\mathbf{x}_t.
+$$
+
+For a temporal lag only, the stationary recursion is
+
+$$
+z_1 = \frac{x_1}{1 + \kappa_T}, \qquad
+z_t = \frac{x_t + \kappa_T z_{t-1}}{1 + \kappa_T} \quad (t > 1).
+$$
+
+For the joint space--time operator,
+
+$$
+\left[(1 + \kappa_T)\mathbf{M}_0 + \kappa_S^{-2}\mathbf{M}_1\right]\mathbf{z}_t
+= \mathbf{M}_0\mathbf{x}_t + \kappa_T\mathbf{M}_0\mathbf{z}_{t-1},
+$$
+
+where the final term is omitted for the first time slice. Temporal initialization assumes a zero transformed state immediately before the first modeled slice. Equivalently, with $\rho_T = \kappa_T/(1 + \kappa_T)$, the temporal-only recursion is $z_1 = (1 - \rho_T)x_1$ and $z_t = (1 - \rho_T)x_t + \rho_T z_{t-1}$. The fitted temporal parameter is constrained to $\kappa_T \geq 0$, so $0 \leq \rho_T < 1$. The implementation corresponds to `kappaST = 0` in the formulation described by @thorson2026. At `kappaT_nl = 0`, the joint operator reduces exactly to spatial diffusion.
+
+For a spatial-only operator,
+
+$$
+\mathrm{MSDK} = 4\kappa_S^{-2}, \qquad
+\mathrm{RMSDK} = \sqrt{\mathrm{MSDK}}.
+$$
+
+For the stationary joint operator,
+
+$$
+\mathrm{MSDK} = 4\kappa_S^{-2}(1 - \rho_T)
+= \frac{4\kappa_S^{-2}}{1 + \kappa_T}, \qquad
+\mathrm{RMSDK} = \sqrt{\mathrm{MSDK}}.
+$$
+
+Temporal-only terms do not report MSDK or RMSDK.
 
 ## Supplying a separate covariate grid
 
@@ -267,12 +322,12 @@ fit_st_grid <- sdmTMB(
 sanity(fit_st_grid)
 ```
 
-We will plot the spatially diffused covariate on the non-local data grid locations:
+We will plot the jointly transformed covariate on the non-local data grid locations:
 
 ```{r predict-space-time-grid}
 pred_grid <- predict(fit_st_grid, newdata = grid_st)
 
-ggplot(pred_grid, aes(X, Y, fill = nl_diffusion_x1)) +
+ggplot(pred_grid, aes(X, Y, fill = nl_diffusion_time_lag_x1)) +
   geom_point(shape = 21) +
   facet_wrap(~year) +
   scale_fill_gradient2()
@@ -280,7 +335,7 @@ ggplot(pred_grid, aes(X, Y, fill = nl_diffusion_x1)) +
 
 ## Plot diffusion kernels
 
-We can separately visualize the spatial diffusion, time diffusion, or their combined effects as either the diffusion kernel or the smoothed covariate field.
+We can inspect the spatial and temporal parts of the fitted operator, or the full joint effect, as either the impulse-response kernel or the transformed covariate field. The `combined`/joint plots are diagnostics of the fitted stationary joint operator; they are not an additional predictor.
 By default, the diffusion kernel is shown at the mesh vertices:
 
 ```{r plot-diffusion}
@@ -306,7 +361,7 @@ plot_nonlocal_covariate(fit_st, component = "time_lag", n_steps = 2)
 plot_nonlocal_covariate(fit_st, component = "combined", n_steps = 2)
 ```
 
-We could also have plotted the spatially diffused covariate at the original locations from the predictions.
+We could also have plotted the jointly transformed covariate at the original locations from the predictions.
 
 ```{r}
 pred <- predict(fit_st)
@@ -314,7 +369,7 @@ pred <- predict(fit_st)
 ggplot(pred, aes(X, Y, colour = x1)) + geom_point() +
   scale_colour_gradient2()
 
-ggplot(pred, aes(X, Y, colour = nl_diffusion_x1)) + geom_point() +
+ggplot(pred, aes(X, Y, colour = nl_diffusion_time_lag_x1)) + geom_point() +
   scale_colour_gradient2()
 ```
 
@@ -323,15 +378,15 @@ ggplot(pred, aes(X, Y, colour = nl_diffusion_x1)) + geom_point() +
 These two paths answer different questions, so pick based on what you need:
 
 - Use `predict()` and the `nl_*` columns for the modeled effect.
-  Columns such as `nl_diffusion_x1` and `nl_time_lag_x1` are the transformed covariate values that enter the linear predictor at your data or `newdata` locations.
-  For `time_lag()` these accumulate the response across all prior time slices, and for `diffusion()` they give the smoothed field integrated over space.
+  Columns such as `nl_diffusion_x1`, `nl_time_lag_x1`, and `nl_diffusion_time_lag_x1` are the transformed covariate values that enter the linear predictor at your data or `newdata` locations. The last name is used when both wrappers are applied to `x1`.
+  For `time_lag()` these apply the stationary temporal recursion at each vertex, for `diffusion()` they give the spatially smoothed field, and for the grouped space--time case they give the jointly transformed field.
   This is what you want for reporting, mapping the estimated effect, correlating against a known truth, or any downstream calculation.
-  One column is returned per fitted `nonlocal_formula` term.
+  One column is returned per fitted transformed operator/design column.
 
 - Use `plot_nonlocal_kernel()` and `plot_nonlocal_covariate()` for diagnostics.
   These visualize how the estimated operator behaves.
   `plot_nonlocal_kernel()` shows the impulse response (how a point input spreads in space and/or decays through time) and cannot be reconstructed from the `nl_*` columns.
-  `plot_nonlocal_covariate()` isolates a single input time slice and shows how it propagates forward over `n_steps`; it also offers `component = "combined"` (the joint space-and-time response), which is not returned as a `predict()` column.
+  `plot_nonlocal_covariate()` isolates a single input time slice and shows how it propagates forward over `n_steps`; it also offers `component = "combined"` (the joint space-and-time response). This diagnostic uses the same joint operator as the `nl_diffusion_time_lag_x1` prediction column.
   Both plot on the mesh vertices by default, or at supplied `newdata` coordinates as points or a raster.
 
 For the pure spatial `diffusion()` case at a single time slice, `plot_nonlocal_covariate()` and mapping `nl_diffusion_x1` from `predict()` show the same field, so either is fine.

@@ -111,9 +111,13 @@ NULL
 #'   models.
 #' @param nonlocal_formula An optional one-sided formula describing distributed
 #'   lag terms with `diffusion()` or `time_lag()` wrappers.
-#'   Example: `~ diffusion(x) + time_lag(x)`. Note that diffused spatial
-#'   covariates will be held constant across time slices unless the
-#'   `time` argument is specified.
+#'   Example: `~ diffusion(x) + time_lag(x)`. When both wrappers use the same
+#'   covariate, they select parts of one joint operator and produce one
+#'   transformed predictor and coefficient. Different covariates produce
+#'   separate transformed predictors and coefficients. Note that spatial-only
+#'   covariates will be held constant across time slices unless the `time`
+#'   argument is specified. See the non-local covariates vignette for the
+#'   MSDK and RMSDK definitions.
 #'   See the [non-local covariates vignette](https://sdmTMB.github.io/sdmTMB/articles/nonlocal-covariates.html).
 #' @param nonlocal_data An optional data frame supplying the
 #'   `nonlocal_formula` covariate(s) at a different resolution and/or

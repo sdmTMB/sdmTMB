@@ -507,8 +507,8 @@
   }
 
   if (component == "combined") {
-    has_space <- isTRUE(has_space)
-    has_time <- isTRUE(has_time)
+    has_space <- isTRUE(as.logical(has_space))
+    has_time <- isTRUE(as.logical(has_time))
     if (!(has_space && has_time)) {
       cli_abort("`component = \"combined\"` requires both `diffusion()` and `time_lag()` for the selected covariate.")
     } else {
@@ -984,6 +984,9 @@
 #' `plot_nonlocal_covariate()` visualizes the original mesh-vertex covariate
 #' field and its fitted covariate-diffusion transform for one selected
 #' covariate time slice across one or more lagged output time slices.
+#' When both `diffusion()` and `time_lag()` were fitted for the same covariate,
+#' `component = "combined"` visualizes the single stationary joint operator
+#' represented by that covariate's transformed prediction column.
 #'
 #' `plot_nonlocal_kernel()` visualizes an impulse entering and diffusing through
 #' one covariate-diffusion component.

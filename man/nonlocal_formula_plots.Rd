@@ -69,6 +69,9 @@ and plotted as points or a raster.
 \code{plot_nonlocal_covariate()} visualizes the original mesh-vertex covariate
 field and its fitted covariate-diffusion transform for one selected
 covariate time slice across one or more lagged output time slices.
+When both \code{diffusion()} and \code{time_lag()} were fitted for the same covariate,
+\code{component = "combined"} visualizes the single stationary joint operator
+represented by that covariate's transformed prediction column.
 
 \code{plot_nonlocal_kernel()} visualizes an impulse entering and diffusing through
 one covariate-diffusion component.

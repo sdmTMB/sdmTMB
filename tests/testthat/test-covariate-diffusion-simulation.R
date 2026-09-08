@@ -122,6 +122,40 @@ test_that("simulate_new supports combined covariate diffusion terms", {
   expect_false(any(names(sim) %in% c("nl_diffusion_x_s", "nl_time_lag_x_t")))
 })
 
+test_that("simulate_new supports a joint operator for one covariate", {
+  skip_on_cran()
+
+  dat <- make_nl_sim_data()
+  mesh <- make_nl_sim_mesh(dat)
+  grid <- make_nl_sim_grid(mesh, sort(unique(dat$year)))
+
+  sim <- simulate_new(
+    formula = ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    family = gaussian(),
+    spatial = "off",
+    spatiotemporal = "off",
+    range = 0.5,
+    sigma_O = 0,
+    phi = 0.1,
+    B = c(0.2, 0.5),
+    nonlocal_formula = ~ diffusion(x_s) + time_lag(x_s),
+    nonlocal_data = grid,
+    lags_kappaS = 1.3,
+    lags_rhoT = 0.4,
+    seed = 4
+  )
+
+  expect_s3_class(sim, "data.frame")
+  expect_true("nl_truth_diffusion_time_lag_x_s" %in% names(sim))
+  expect_false(any(names(sim) %in% c(
+    "nl_truth_diffusion_x_s",
+    "nl_truth_time_lag_x_s"
+  )))
+})
+
 test_that("simulate_new errors for missing covariate diffusion parameters", {
   dat <- make_nl_sim_data()
   mesh <- make_nl_sim_mesh(dat)

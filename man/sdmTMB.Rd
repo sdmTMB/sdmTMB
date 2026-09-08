@@ -142,9 +142,13 @@ models.}
 
 \item{nonlocal_formula}{An optional one-sided formula describing distributed
 lag terms with \code{diffusion()} or \code{time_lag()} wrappers.
-Example: \code{~ diffusion(x) + time_lag(x)}. Note that diffused spatial
-covariates will be held constant across time slices unless the
-\code{time} argument is specified.
+Example: \code{~ diffusion(x) + time_lag(x)}. When both wrappers use the same
+covariate, they select parts of one joint operator and produce one
+transformed predictor and coefficient. Different covariates produce
+separate transformed predictors and coefficients. Note that spatial-only
+covariates will be held constant across time slices unless the \code{time}
+argument is specified. See the non-local covariates vignette for the
+MSDK and RMSDK definitions.
 See the \href{https://sdmTMB.github.io/sdmTMB/articles/nonlocal-covariates.html}{non-local covariates vignette}.}
 
 \item{nonlocal_data}{An optional data frame supplying the

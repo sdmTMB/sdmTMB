@@ -24,8 +24,9 @@
 #'   Instead, simulate the two component models separately and combine.
 #' @param B A vector of beta values (fixed-effect coefficient values).
 #'   If `nonlocal_formula` is used, include regular fixed-effect
-#'   coefficients followed by covariate-diffusion coefficients in formula term
-#'   order.
+#'   coefficients followed by transformed-covariate coefficients in operator
+#'   order. Same-covariate `diffusion()` and `time_lag()` wrappers contribute
+#'   one joint coefficient.
 #' @param range Parameter that controls the decay of spatial correlation. If a
 #'   vector of length 2, `share_range` will be set to `FALSE` and the spatial
 #'   and spatiotemporal ranges will be unique.
@@ -57,7 +58,8 @@
 #'   be supplied as a single value or a vector the same length as `sigma_V`.
 #' @param nonlocal_formula An optional one-sided formula describing
 #'   covariate-diffusion terms to pass to [sdmTMB()]. Supported wrappers are
-#'   `diffusion()` and `time_lag()`.
+#'   `diffusion()` and `time_lag()`. Same-covariate wrappers select one joint
+#'   operator and coefficient.
 #' @param lags_kappaS Spatial diffusion scale for `diffusion()` terms.
 #'   Must be positive and finite. Supply a single value or
 #'   one value per covariate needing a spatial scale.

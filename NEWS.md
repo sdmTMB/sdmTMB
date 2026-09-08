@@ -1,9 +1,12 @@
 # sdmTMB (development version)
 
 * `diffusion(x) + time_lag(x)` in `nonlocal_formula` now fits one stationary
-  joint space--time distributed-lag operator with one coefficient. The derived
-  diffusion-kernel summaries have been renamed from `MSD`/`RMSD` to
-  `MSDK`/`RMSDK`. Temporal persistence is now constrained to be non-negative.
+  joint space--time distributed-lag operator with one coefficient and one
+  transformed prediction column (`nl_diffusion_time_lag_x`). Wrappers for
+  different covariates remain separate. The derived diffusion-kernel summaries
+  have been renamed from `MSD`/`RMSD` to `MSDK`/`RMSDK`, and combined diagnostic
+  plots now use the fitted joint operator. Temporal persistence is now
+  constrained to be non-negative.
 
 * `sdmTMB_cv(lfo = TRUE)` now supports delta/hurdle families.
   LFOCV log likelihoods for lognormal models are now calculated consistently

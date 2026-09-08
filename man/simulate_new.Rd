@@ -80,8 +80,9 @@ Instead, simulate the two component models separately and combine.}
 
 \item{B}{A vector of beta values (fixed-effect coefficient values).
 If \code{nonlocal_formula} is used, include regular fixed-effect
-coefficients followed by covariate-diffusion coefficients in formula term
-order.}
+coefficients followed by transformed-covariate coefficients in operator
+order. Same-covariate \code{diffusion()} and \code{time_lag()} wrappers contribute
+one joint coefficient.}
 
 \item{range}{Parameter that controls the decay of spatial correlation. If a
 vector of length 2, \code{share_range} will be set to \code{FALSE} and the spatial
@@ -135,7 +136,8 @@ be supplied as a single value or a vector the same length as \code{sigma_V}.}
 
 \item{nonlocal_formula}{An optional one-sided formula describing
 covariate-diffusion terms to pass to \code{\link[=sdmTMB]{sdmTMB()}}. Supported wrappers are
-\code{diffusion()} and \code{time_lag()}.}
+\code{diffusion()} and \code{time_lag()}. Same-covariate wrappers select one joint
+operator and coefficient.}
 
 \item{lags_kappaS}{Spatial diffusion scale for \code{diffusion()} terms.
 Must be positive and finite. Supply a single value or
