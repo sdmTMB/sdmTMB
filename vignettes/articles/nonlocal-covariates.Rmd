@@ -109,26 +109,23 @@ tidy(fit, effects = "ran_pars")
 
 Here `kappaS_nl[x1]` is the estimated spatial diffusion scale parameter for `x1` (larger values imply less smoothing).
 
-The output also reports `MSDK[x1]` and `RMSDK[x1]`, the implied mean-squared diffusion-kernel scale (`4 / kappaS_nl[x1]^2`) and its square root (`2 / kappaS_nl[x1]`).
-`RMSDK[x1]` is a typical diffusion distance (a blur radius) in coordinate units. These quantities describe the spatial diffusion kernel; they are not the time-specific MSD of a realized response.
-Users applying this spatial diffusion method should cite @lindmark2025.
+The output also reports `MSDK[x1]` and `RMSDK[x1]`, the implied mean-squared diffusion-kernel scale (`4 / kappaS_nl[x1]^2`) and its square root (`2 / kappaS_nl[x1]`). We describe these in the next section.
+
+### SR, MSDK, RMSDK, MSD
+
+@thorson2026 defines 3 quantities: SR, MSD, and MSDK (and MSDK's square root: RMSDK).
+
+SR is the "squared resolution". When the covariate gets projected to the mesh vertices there's a degree of smoothing. That's what SR is.
+
+MSDK is the "mean squared diffusion kernel". It describes the amount of diffusion incorporating both the spatial and any estimate temporal diffusion.
+
+MSD is the "mean squared diplacement": It is the realized diffusion at a given time step. Effectively that means it's SR + one MSDK per time step.
+
+RMSDK is the square root of MSDK. This puts it back in distance units.
+
+Currently, sdmTMB reports MSDK and RMSDK. SR and MSD require defining a fine-resolution grid. We may add these quantities in the future if there is interest.
+
 Users using these MSDK and RMSDK metrics should consult and cite @thorson2026.
-
-### SR, MSDK, and realized MSD
-
-sdmTMB reports MSDK and RMSDK, but not SR. SR depends on the finite-element basis, impulse location, projection grid, cell-area weights, and domain boundaries. For a spatial-only point response, under a sufficiently fine grid, a nonnegative symmetric kernel, and negligible boundary effects,
-
-$$
-\mathrm{MSD}(1) \approx \mathrm{SR} + \mathrm{MSDK}.
-$$
-
-For the stationary joint operator used by sdmTMB (the `kappaST = 0` formulation in @thorson2026),
-
-$$
-\mathrm{MSD}(t^*) \approx \mathrm{SR} + t^*\,\mathrm{MSDK}.
-$$
-
-Here MSD is the normalized spatial second central moment of a projected point response at time $t^*$. MSDK is the approximate slope of this relationship, not a time-specific total MSD. Mesh, projection, and boundary effects make these relationships approximate. If realized point-response MSD is calculated, project to a fine grid, include cell-area weights, normalize separately at each time, and calculate the weighted centroid before calculating squared distances from it.
 
 Compare true and estimated diffused covariates:
 
@@ -335,7 +332,7 @@ ggplot(pred_grid, aes(X, Y, fill = nl_diffusion_time_lag_x1)) +
 
 ## Plot diffusion kernels
 
-We can inspect the spatial and temporal parts of the fitted operator, or the full joint effect, as either the impulse-response kernel or the transformed covariate field. The `combined`/joint plots are diagnostics of the fitted stationary joint operator; they are not an additional predictor.
+We can inspect the spatial and temporal parts of the fitted operator, or the full joint effect, as either the impulse-response kernel or the transformed covariate field.
 By default, the diffusion kernel is shown at the mesh vertices:
 
 ```{r plot-diffusion}
