@@ -158,14 +158,14 @@ extractAIC.sdmTMB <- function(fit, scale, k = 2, ...) {
 #' @importFrom stats family
 #' @export
 family.sdmTMB <- function (object, ...) {
+  family_spec <- .object_family_spec(object, caller = "`family()`")
+  if (.family_spec_is_multi_family(family_spec)) {
+    return(family_spec$family_input)
+  }
   if (.has_delta_attr(object)) {
     which_model <- attr(object, "delta_model_predict")
     if (is.na(which_model)) which_model <- 2L # combined; for link
     return(object$family[[which_model]])
-  }
-  family_spec <- .object_family_spec(object, caller = "`family()`")
-  if (.family_spec_is_multi_family(family_spec)) {
-    return(family_spec$family_input)
   }
   if ("visreg_model" %in% names(object)) {
     return(object$family[[object$visreg_model]])

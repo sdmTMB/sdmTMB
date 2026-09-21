@@ -49,7 +49,7 @@ plot_anisotropy <- function(object, return_data = FALSE) {
     if (.family_spec_is_multi_family(family_spec)) {
       c("linear predictor 1", "linear predictor 2")
     } else {
-      object$family$family
+      family_spec$family$family
     }
   } else {
     family_spec$family$family

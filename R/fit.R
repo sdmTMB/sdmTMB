@@ -59,8 +59,10 @@ NULL
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html) for
 #'   details. For binomial family options, see 'Binomial families' in the Details
 #'   section below.
-#' @param distribution_column For multi-family models, the name of the column
-#'   in `data` mapping each row to a family in the named `family` list.
+#' @param distribution_column For experimental multi-family models, the name of
+#'   the column in `data` mapping each row to a family in the named `family`
+#'   list. See the multi-family vignette for the supported family and method
+#'   combinations.
 #' @param spatial Estimate spatial random fields? Options are `'on'` / `'off'`
 #'   or equivalently `TRUE` / `FALSE`. Optionally, a list for delta models, 
 #'   e.g. `list('on', 'off')`.
@@ -1920,7 +1922,9 @@ sdmTMB <- function(
       epsilon_predictor = epsilon_predictor,
       time = time,
       time_lu = time_df,
-      family = family,
+      # Keep the public field faithful to the user's input. Internal code uses
+      # `family_spec`, so a multi-family fit must not expose only family one.
+      family = family_spec$family_input,
       family_spec = family_spec,
       analysis_rows = analysis_rows,
       distribution_column = family_spec$distribution_column,

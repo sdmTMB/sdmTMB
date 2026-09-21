@@ -649,7 +649,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
         X = proj_X_ij[[1]],
         coef_names = object$nonlocal_parsed$term_coef_name
       )
-      if (isTRUE(object$family$delta)) {
+      if (has_two_components) {
         proj_X_ij[[2]] <- .append_nonlocal_coef_columns(
           X = proj_X_ij[[2]],
           coef_names = object$nonlocal_parsed$term_coef_name

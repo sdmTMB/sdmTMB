@@ -84,8 +84,10 @@ See the \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-
 details. For binomial family options, see 'Binomial families' in the Details
 section below.}
 
-\item{distribution_column}{For multi-family models, the name of the column
-in \code{data} mapping each row to a family in the named \code{family} list.}
+\item{distribution_column}{For experimental multi-family models, the name of
+the column in \code{data} mapping each row to a family in the named \code{family}
+list. See the multi-family vignette for the supported family and method
+combinations.}
 
 \item{spatial}{Estimate spatial random fields? Options are \code{'on'} / \code{'off'}
 or equivalently \code{TRUE} / \code{FALSE}. Optionally, a list for delta models,

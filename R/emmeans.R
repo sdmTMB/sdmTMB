@@ -84,7 +84,7 @@ emm_basis.sdmTMB <- function(object, trms, xlev, grid, ...) {
   model <- if ("model" %in% names(dots)) dots$model else 1L
 
   # For delta models, we need to work with one component at a time
-  if (is_delta(object)) {
+  if (.object_is_delta(object, caller = "`emmeans()`")) {
     model <- as.integer(model)
     if (!model %in% c(1L, 2L)) {
       cli_abort("`model` must be 1 (binomial component) or 2 (positive component) for delta models.")
@@ -99,8 +99,8 @@ emm_basis.sdmTMB <- function(object, trms, xlev, grid, ...) {
   misc <- list()
 
   # Get the appropriate family for delta models
-  if (is_delta(object)) {
-    fam <- object$family[[model]]
+  if (.object_is_delta(object, caller = "`emmeans()`")) {
+    fam <- .object_family_spec(object, caller = "`emmeans()`")$family[[model]]
   } else {
     fam <- family(object)
   }
@@ -113,7 +113,7 @@ emm_basis.sdmTMB <- function(object, trms, xlev, grid, ...) {
 
   # Get coefficients using existing fixef method and filter to parametric terms only
   # This fixes the issue with smoothers by only including parametric terms
-  if (is_delta(object)) {
+  if (.object_is_delta(object, caller = "`emmeans()`")) {
     all_bhat <- fixef(object, model = model)
   } else {
     all_bhat <- fixef(object)

@@ -41,17 +41,35 @@
 # and every analysis row has exactly one family ID. `families` and `components`
 # are the sole declarative representation. Dense matrices and -1 sentinels are
 # constructed only by `.as_tmb_family_data()`.
+#
+# Multi-family scope: multi-family models are experimental and support a
+# deliberately small set of families (`.family_registry` columns
+# `multi_family_single` and `multi_family_delta_positive`). To add a family
+# later: flip the relevant registry flag(s), make sure any auxiliary parameter
+# it needs is declared in the `auxiliary` column, keep the R/C++ enums in
+# sync, and add an equivalence test. No representation change is needed.
 
 .family_registry <- local({
   registry <- data.frame(
     family_name = names(.valid_family),
     uses_phi = !names(.valid_family) %in% c("binomial", "poisson", "censored_poisson"),
     auxiliary = NA_character_,
+    # Allowed as a single-component (LP1-only) family in multi-family mode:
+    multi_family_single = FALSE,
+    # Allowed as the positive (2nd) component of a delta family in
+    # multi-family mode:
+    multi_family_delta_positive = FALSE,
     stringsAsFactors = FALSE
   )
   registry$auxiliary[registry$family_name == "tweedie"] <- "thetaf"
   registry$auxiliary[registry$family_name == "student"] <- "ln_student_df"
   registry$auxiliary[registry$family_name == "gengamma"] <- "gengamma_Q"
+  registry$multi_family_single[registry$family_name %in% c(
+    "gaussian", "binomial", "poisson", "nbinom1", "nbinom2", "tweedie", "betabinomial"
+  )] <- TRUE
+  registry$multi_family_delta_positive[registry$family_name %in% c(
+    "Gamma", "lognormal", "gengamma"
+  )] <- TRUE
   function() registry
 })
 
@@ -246,6 +264,36 @@
   match(dist_values, family_labels)
 }
 
+# Experimental multi-family scope. Multi-family models currently support
+# single-component gaussian, binomial, Poisson, NB1/NB2, Tweedie, and
+# beta-binomial families, plus delta families built on Gamma, lognormal, or
+# gengamma positive components (standard or Poisson-link). Everything else is
+# rejected here, at compile time, before any fitting happens. To widen the
+# scope, flip the corresponding flag(s) in `.family_registry()`.
+.validate_multi_family_scope <- function(family_list, family_labels) {
+  registry <- .family_registry()
+  allowed_single <- registry$family_name[registry$multi_family_single]
+  allowed_delta_positive <- registry$family_name[registry$multi_family_delta_positive]
+  for (i in seq_along(family_list)) {
+    x <- family_list[[i]]
+    if (isTRUE(x$delta)) {
+      positive <- x$family[[2L]]
+      if (!positive %in% allowed_delta_positive) {
+        cli_abort(c(
+          "Family {.val {family_labels[[i]]}} (delta with {.val {positive}} positive component) is not supported in multi-family mode.",
+          "i" = "Supported multi-family families: gaussian, binomial, Poisson, NB1/NB2, Tweedie, beta-binomial, and delta families built on Gamma, lognormal, or gengamma."
+        ))
+      }
+    } else if (!x$family[[1L]] %in% allowed_single) {
+      cli_abort(c(
+        "Family {.val {family_labels[[i]]}} ({.val {x$family[[1L]]}}) is not supported in multi-family mode.",
+        "i" = "Supported multi-family families: gaussian, binomial, Poisson, NB1/NB2, Tweedie, beta-binomial, and delta families built on Gamma, lognormal, or gengamma."
+      ))
+    }
+  }
+  invisible(family_list)
+}
+
 .compile_family_spec <- function(family, data = NULL, distribution_column = NULL) {
   if (inherits(family, "family")) {
     if (!is.null(distribution_column)) {
@@ -278,26 +326,7 @@
   }
 
   if (n_f > 1L) {
-    has_mix <- vapply(
-      family_list,
-      function(x) any(grepl("_mix$", x$family)),
-      logical(1)
-    )
-    if (any(has_mix)) {
-      cli_abort(
-        "Families ending in `_mix` are not supported in multi-family mode: {paste(family_labels[has_mix], collapse = ', ')}"
-      )
-    }
-    has_ordbeta <- vapply(
-      family_list,
-      function(x) any(x$family == "ordbeta"),
-      logical(1)
-    )
-    if (any(has_ordbeta)) {
-      cli_abort(
-        "The `ordbeta` family is not supported in multi-family mode: {paste(family_labels[has_ordbeta], collapse = ', ')}"
-      )
-    }
+    .validate_multi_family_scope(family_list, family_labels)
   }
 
   n_m <- max(components_per_family)
@@ -326,20 +355,6 @@
   target_family <- vapply(seq_len(n_f), function(i) {
     tail(components$family_name[components$family_id == i], 1L)
   }, character(1))
-  fixed_student_df <- vapply(
-    family_list,
-    function(x) {
-      if (length(x$family) == 2L) {
-        identical(x$family[2], "student") && !is.null(x$df)
-      } else {
-        identical(x$family[1], "student") && !is.null(x$df)
-      }
-    },
-    logical(1)
-  )
-  if (n_f > 1L && any(fixed_student_df)) {
-    cli_abort("Fixed student df is not supported in multi-family models yet.")
-  }
 
   param_slot <- .make_family_param_slots(target_family)
 
@@ -439,6 +454,12 @@
 
 .object_has_two_components <- function(object, caller = "This method") {
   .family_spec_has_two_components(.object_family_spec(object, caller = caller))
+}
+
+# This intentionally avoids `object$family$delta`: multi-family `$family` is
+# the complete user input, while `family_spec` is canonical metadata.
+.object_is_delta <- function(object, caller = "This method") {
+  .object_has_two_components(object, caller = caller)
 }
 
 .family_spec_row_family_id <- function(family_spec, data) {

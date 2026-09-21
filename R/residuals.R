@@ -165,7 +165,7 @@ qres_pois <- function(object, y, mu, ...) {
 }
 
 is_delta <- function(object) {
-  isTRUE(object$family$delta)
+  .object_is_delta(object, caller = "`is_delta()`")
 }
 
 qres_gamma <- function(object, y, mu, ...) {
@@ -502,7 +502,9 @@ residuals.sdmTMB <- function(object,
   # need to re-attach environment if in fresh session
   reinitialize(object)
 
-  fam <- object$family$family
+  # This method is guarded above; do not partially interpret multi-family
+  # metadata here.
+  fam <- .object_family_spec(object, caller = "`residuals()`")$family$family
   nd <- NULL
   est_column <- "est"
   linkinv <- object$family$linkinv
@@ -680,7 +682,7 @@ residuals.sdmTMB <- function(object,
   } else {
     cli_abort("residual type not implemented")
   }
-  if (isTRUE(object$family$delta) && is.null(mcmc_samples) && model_missing) {
+  if (.object_is_delta(object, caller = "`residuals()`") && is.null(mcmc_samples) && model_missing) {
     cli_inform(paste0("These are residuals for delta model component ", model,
       ". Use the `model` argument to select the other component."))
   }

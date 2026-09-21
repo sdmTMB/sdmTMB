@@ -22,11 +22,11 @@ test_that("family_spec normalizes mixed family metadata", {
   fam <- list(
     gauss = gaussian(),
     delta = delta_gamma(type = "poisson-link"),
-    stud = student()
+    tw = tweedie()
   )
   dat <- data.frame(
     y = c(1.2, 0, 2.4, 3.1, 0.8),
-    dist = c("gauss", "delta", "delta", "stud", "gauss")
+    dist = c("gauss", "delta", "delta", "tw", "gauss")
   )
 
   spec <- .compile_family_spec(
@@ -43,18 +43,90 @@ test_that("family_spec normalizes mixed family metadata", {
     spec$components[, c("family_id", "component", "family_name", "link_name")],
     data.frame(
       family_id = c(1L, 2L, 2L, 3L), component = c(1L, 1L, 2L, 1L),
-      family_name = c("gaussian", "binomial", "Gamma", "student"),
-      link_name = c("identity", "log", "log", "identity")
+      family_name = c("gaussian", "binomial", "Gamma", "tweedie"),
+      link_name = c("identity", "log", "log", "log")
     )
   )
   expect_equal(spec$param_slot$ln_phi, c(1L, 2L, 3L))
-  expect_equal(spec$param_slot$ln_student_df, c(NA_integer_, NA_integer_, 1L))
+  expect_equal(spec$param_slot$thetaf, c(NA_integer_, NA_integer_, 1L))
 
   y_out <- .family_spec_build_response(dat$y, spec)
   expect_equal(y_out[1, ], c(1.2, NA_real_))
   expect_equal(y_out[2, ], c(0, NA_real_))
   expect_equal(y_out[3, ], c(1, 2.4))
   expect_equal(y_out[4, ], c(3.1, NA_real_))
+})
+
+test_that("multi-family fits retain the complete user family input", {
+  family_input <- list(
+    count = nbinom2(),
+    biomass = delta_lognormal(type = "poisson-link")
+  )
+  spec <- .compile_family_spec(
+    family_input,
+    data = data.frame(y = c(1, 0), dist = c("count", "biomass")),
+    distribution_column = "dist"
+  )
+  object <- structure(
+    list(family = spec$family_input, family_spec = spec),
+    class = "sdmTMB"
+  )
+
+  expect_identical(object$family, family_input)
+  expect_identical(family(object), family_input)
+})
+
+test_that("family_spec accepts the supported multi-family scope", {
+  dat <- data.frame(
+    y = c(1.2, 0, 2.4, 3.1, 0.5, 4, 1),
+    dist = c("gauss", "dg", "dl", "nb1", "bb", "tw", "dg")
+  )
+  spec <- .compile_family_spec(
+    family = list(
+      gauss = gaussian(),
+      dg = delta_gamma(),
+      dl = delta_lognormal(type = "poisson-link"),
+      nb1 = nbinom1(),
+      bb = betabinomial(),
+      tw = tweedie()
+    ),
+    data = dat,
+    distribution_column = "dist"
+  )
+  expect_identical(spec$n_f, 6L)
+  expect_identical(spec$n_m, 2L)
+})
+
+test_that("family_spec rejects families outside the multi-family scope early", {
+  dat <- data.frame(
+    y = c(1.2, 3.1, 0.5, 4, 1, 2, 0.4, 2.2, 1),
+    dist = c("a", "b", "c", "d", "e", "f", "g", "h", "i")
+  )
+  rejected <- list(
+    a = stats::Gamma(link = "log"),
+    b = lognormal(),
+    c = student(),
+    d = censored_poisson(),
+    e = truncated_nbinom2(),
+    f = gamma_mix(),
+    g = delta_gamma_mix(),
+    h = delta_truncated_nbinom2(),
+    i = ordbeta()
+  )
+  for (nm in names(rejected)) {
+    expect_error(
+      .compile_family_spec(
+        family = list(ok = gaussian(), bad = rejected[[nm]]),
+        data = dat,
+        distribution_column = "dist"
+      ),
+      regexp = "not supported in multi-family mode"
+    )
+  }
+
+  # ordinary single-family fits keep every family
+  spec <- .compile_family_spec(student(), data = dat)
+  expect_identical(spec$n_f, 1L)
 })
 
 test_that("family_spec processes rowwise binomial-like responses regardless of family order", {
@@ -199,6 +271,8 @@ test_that("multi-family fits build family-based TMB data", {
   expect_equal(fit$tmb_data$y_i[3, ], c(1, 2.4))
   expect_equal(fit$tmb_data$y_i[4, ], c(3.1, NA_real_))
   expect_length(fit$tmb_params$ln_phi, 2L)
+  expect_identical(names(fit$family), c("gauss", "delta"))
+  expect_identical(family(fit), fit$family)
 })
 
 test_that("missing covariates are rejected before fitting", {
@@ -805,6 +879,7 @@ test_that("mixed-family methods use family-spec routing and guard unsupported su
   fam <- family(fit)
   expect_true(is.list(fam))
   expect_identical(names(fam), c("gauss", "delta"))
+  expect_identical(fit$family, fam)
 
   vc_lp2 <- vcov(fit, model = 2)
   expect_identical(colnames(vc_lp2), rownames(vc_lp2))

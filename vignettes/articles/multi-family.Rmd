@@ -244,6 +244,6 @@ models and is the recommended workaround for the unsupported
 | `do_index = TRUE` inside `sdmTMB()` | Not supported | Fit first, then call `get_index(fit, newdata = ...)` with the prediction grid and `distribution_column`. |
 | `dispformula` | Not supported | Use `dispformula = ~ 1`. If your main goal is to allow different family-level auxiliary parameters across data sources (for example separate `phi` values), one workaround is to define separate named entries in `family = list(...)` even when they use the same likelihood family/link, and route rows with `distribution_column`. |
 | `covariate_diffusion` | Not supported | No direct workaround within multi-family models yet. |
-| Families ending in `_mix()`, `ordbeta()`, or fixed `student(df = ...)` in multi-family mode | Not supported | Use a supported family combination, or fit those models separately. |
+| Families outside the supported multi-family set | Not supported | Multi-family mode currently supports `gaussian()`, `binomial()`, `poisson()`, `nbinom1()`/`nbinom2()`, `tweedie()`, `betabinomial()`, and delta families built on Gamma, lognormal, or gengamma (standard or Poisson-link). Other families (e.g. `_mix()`, `ordbeta()`, `student()`) can still be fit as ordinary single-family models. |
 
 # References
