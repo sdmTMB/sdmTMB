@@ -229,9 +229,7 @@ ranef.sdmTMB <- function(object, ...) {
 #' @importFrom stats residuals
 #' @export
 deviance.sdmTMB <- function(object, ...) {
-  if (.object_is_multi_family(object, caller = "`deviance()`")) {
-    cli_abort("`deviance()` is not yet supported for multi-family models.")
-  }
+  .check_family_capability(object, "deviance")
   implemented <- c("poisson", "Gamma", "binomial",
     "gaussian", "lognormal", "tweedie", "nbinom1", "nbinom2")
   if (!.object_has_two_components(object, caller = "`deviance()`")) {
@@ -374,9 +372,7 @@ Effect.sdmTMB <- function(focal.predictors, mod, ...) {
   if (!requireNamespace("effects", quietly = TRUE)) {
     cli_abort("Please install the effects package")
   }
-  if (.object_is_multi_family(mod, caller = "`effects::Effect()`")) {
-    cli_abort("`effects::Effect()` is not yet supported for multi-family models.")
-  }
+  .check_family_capability(mod, "Effect", caller = "`effects::Effect()`")
 
   if (is_delta(mod)) {
     msg <- paste0("Effect() and ggeffects::ggeffect() do not yet work with ",
@@ -508,9 +504,7 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
 #' @method sigma sdmTMB
 #' @export
 sigma.sdmTMB <- function(object, ...) {
-  if (.object_is_multi_family(object, caller = "`sigma()`")) {
-    cli_abort("`sigma()` is not yet supported for multi-family models.")
-  }
+  .check_family_capability(object, "sigma")
   if (isTRUE(object$has_dispformula)) {
     cli_abort(c(
       "`sigma()` is not available when `dispformula` is used because dispersion varies by observation.",

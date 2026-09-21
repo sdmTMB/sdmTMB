@@ -78,6 +78,7 @@
 #'   }
 #' }
 visreg_delta <- function(object, ..., model = c(1, 2)) {
+  .check_family_capability(object, "visreg_delta")
   object$visreg_model <- check_model_arg(model)
   dat <- object$data[!is.na(object$tmb_data$y_i[, model]), , drop = FALSE]
   visreg::visreg(fit = object, data = dat, ...)
@@ -86,6 +87,7 @@ visreg_delta <- function(object, ..., model = c(1, 2)) {
 #' @export
 #' @rdname visreg_delta
 visreg2d_delta <- function(object, ..., model = c(1, 2)) {
+  .check_family_capability(object, "visreg2d_delta")
   object$visreg_model <- check_model_arg(model)
   dat <- object$data[!is.na(object$tmb_data$y_i[, model]), , drop = FALSE]
   visreg::visreg2d(fit = object, data = dat, ...)

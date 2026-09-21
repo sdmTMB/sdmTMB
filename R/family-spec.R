@@ -437,10 +437,6 @@
   family_spec$n_m == 2L
 }
 
-.object_is_multi_family <- function(object, caller = "This method") {
-  .family_spec_is_multi_family(.object_family_spec(object, caller = caller))
-}
-
 .object_has_two_components <- function(object, caller = "This method") {
   .family_spec_has_two_components(.object_family_spec(object, caller = caller))
 }

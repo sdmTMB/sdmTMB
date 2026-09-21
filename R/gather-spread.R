@@ -35,9 +35,7 @@
 #' }
 
 spread_sims <- function(object, nsim = 200) {
-  if (.object_is_multi_family(object, caller = "`spread_sims()`")) {
-    cli_abort("`spread_sims()` is not yet supported for multi-family models.")
-  }
+  .check_family_capability(object, "spread_sims")
   if (!"jointPrecision" %in% names(object$sd_report)) {
     cli_abort("TMB::sdreport() must be run with the joint precision returned.")
   }

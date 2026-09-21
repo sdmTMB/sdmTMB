@@ -305,6 +305,13 @@ sdmTMB_cv <- function(
 
   dot_args <- as.list(substitute(list(...)))[-1L]
 
+  if ("family" %in% names(dot_args)) {
+    family_arg <- eval(dot_args$family, envir = parent.frame())
+    if (.is_named_family_list(family_arg) && length(family_arg) > 1L) {
+      cli_abort("`sdmTMB_cv()` is not yet supported for multi-family models.")
+    }
+  }
+
   # Extract user-supplied weights if provided
   if ("weights" %in% names(dot_args)) {
     user_weights <- eval(dot_args$weights, envir = parent.frame())

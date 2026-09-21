@@ -204,10 +204,7 @@ project <- function(
   }
 
   reinitialize(object)
-  family_spec <- .object_family_spec(object, caller = "`project()`")
-  if (family_spec$n_f > 1L) {
-    cli_abort("`project()` is not yet supported for multi-family models.")
-  }
+  family_spec <- .check_family_capability(object, "project")
 
   if (object$time == "_sdmTMB_time")
     cli_abort("Please refit the sdmTMB model with the 'time' argument specified.")

@@ -816,6 +816,61 @@ test_that("mixed-family methods use family-spec routing and guard unsupported su
   expect_error(gather_sims(fit), regexp = "not yet supported")
 })
 
+test_that("mixed-family unsupported methods fail early behind one guard", {
+  fixture <- .mixed_family_step4_fixture()
+  fit <- fixture$fit
+
+  expect_error(residuals(fit), regexp = "not yet supported")
+  expect_error(plot_smooth(fit), regexp = "not yet supported")
+  expect_error(visreg_delta(fit), regexp = "not yet supported")
+  expect_error(visreg2d_delta(fit), regexp = "not yet supported")
+  expect_error(cAIC(fit), regexp = "not yet supported")
+
+  skip_if_not_installed("emmeans")
+  expect_error(emmeans::emmeans(fit, ~x), regexp = "not yet supported")
+
+  skip_if_not_installed("effects")
+  expect_error(effects::Effect("x", fit), regexp = "not yet supported")
+})
+
+test_that("mixed-family get_index works on a single-family grid via the fit object", {
+  fixture <- .mixed_family_step4_fixture()
+
+  nd_delta <- fixture$newdata
+  nd_delta$dist <- "delta"
+
+  pred_delta <- predict(fixture$fit, newdata = nd_delta, type = "response")
+  ind <- get_index(
+    fixture$fit,
+    newdata = nd_delta,
+    area = 2,
+    bias_correct = FALSE
+  )
+  expect_s3_class(ind, "data.frame")
+  expect_equal(ind$est, sum(pred_delta$est * 2), tolerance = 1e-6)
+})
+
+test_that("multi-family sdmTMB_cv guard fails before any fitting", {
+  dat <- data.frame(
+    y = c(1.2, 0, 2.4, 3.1),
+    x = c(-1, -0.3, 0.4, 1),
+    dist = c("gauss", "delta", "delta", "gauss")
+  )
+
+  expect_error(
+    sdmTMB_cv(
+      y ~ x,
+      data = dat,
+      spatial = "off",
+      spatiotemporal = "off",
+      family = list(gauss = gaussian(), delta = delta_gamma()),
+      distribution_column = "dist",
+      k_folds = 2
+    ),
+    regexp = "not yet supported"
+  )
+})
+
 test_that("multi-family do_index guard fails before fit setup continues", {
   dat <- data.frame(
     y = c(1.2, 0, 2.4, 3.1),

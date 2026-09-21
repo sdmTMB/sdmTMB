@@ -222,9 +222,7 @@ plot_smooth <- function(object, select = 1, n = 100, level = 0.95,
   )
   cli_inform(msg)
   se <- TRUE
-  if (.object_is_multi_family(object, caller = "`plot_smooth()`")) {
-    cli_abort("`plot_smooth()` is not yet supported for multi-family models.")
-  }
+  .check_family_capability(object, "plot_smooth")
   if (.object_has_two_components(object, caller = "`plot_smooth()`")) {
     cli_abort("This function doesn't work with delta models yet")
   }

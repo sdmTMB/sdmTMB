@@ -69,6 +69,7 @@ cAIC <- function(object, what = c("cAIC", "EDF"), ...) {
 #' @exportS3Method
 cAIC.sdmTMB <- function(object, what = c("cAIC", "EDF"), ...) {
 
+  .check_family_capability(object, "cAIC")
   what <- tolower(what)
   what <- match.arg(what, choices = c("caic", "edf"))
 
