@@ -11,12 +11,14 @@
   se_fit = FALSE,
   re_form = NULL,
   re_form_iid = NULL,
+  allow_new_levels = NULL,
   nsim = 0,
   sims_var = "est",
   model = c(NA, 1, 2),
   offset = NULL,
   mcmc_samples = NULL,
-  return_tmb_object = FALSE,
+  nonlocal_newdata = NULL,
+  return_tmb_object = deprecated(),
   return_tmb_report = FALSE,
   return_tmb_data = FALSE,
   ...
@@ -25,12 +27,12 @@
 \arguments{
 \item{object}{A model fitted with \code{\link[=sdmTMB]{sdmTMB()}}.}
 
-\item{newdata}{A data frame to make predictions on. This should be a data
-frame with the same predictor columns as in the fitted data and a time
-column (if this is a spatiotemporal model) with the same name as in the
-fitted data.}
+\item{newdata}{A data frame to make predictions on. It should contain the
+same predictor columns as the fitted data and, for spatiotemporal models,
+a time column with the same name as in the fitted data.}
 
-\item{type}{Should the \code{est} column be in link (default) or response space?}
+\item{type}{Should predictions be returned in link space (default) or
+response space?}
 
 \item{se_fit}{Should standard errors on predictions be calculated? Warning:
 can be slow for large datasets or high-resolution projections when random
@@ -40,18 +42,29 @@ simulate from the joint precision matrix.}
 
 \item{re_form}{\code{NULL} to include all spatial/spatiotemporal random fields in
 predictions. \code{~0} or \code{NA} for population-level predictions (predictions
-from fixed effects only, marginalizing over random fields). Often used with
+excluding spatial/spatiotemporal random fields). Often used with
 \code{se_fit = TRUE} to visualize marginal effects. Does not affect
 \code{\link[=get_index]{get_index()}} calculations.}
 
-\item{re_form_iid}{\code{NULL} to specify including all random intercepts in the
+\item{re_form_iid}{\code{NULL} to include all IID random intercepts/slopes in the
 predictions. \code{~0} or \code{NA} for population-level predictions. No other
-options (e.g., some but not all random intercepts) are implemented yet.
-Only affects predictions with \code{newdata}. This \emph{does} affects \code{\link[=get_index]{get_index()}}.}
+options (e.g., some but not all random intercepts) are not yet implemented.
+Only affects predictions with \code{newdata}. This \emph{does} affect \code{\link[=get_index]{get_index()}}.}
+
+\item{allow_new_levels}{Logical or \code{NULL}. Similar to \pkg{glmmTMB}'s
+\code{allow.new.levels}.
+Allows predictions for previously unobserved levels in random effect
+grouping variables. If \code{NULL} (default), new levels are allowed when
+\code{re_form_iid = NA} or \code{re_form_iid = ~0} and a warning is issued
+otherwise. If \code{TRUE}, new levels are explicitly allowed. If \code{FALSE}, a
+warning is issued if new levels are found. New levels are always treated
+as population-level predictions for the IID random effects
+(i.e., random effect value = 0).}
 
 \item{nsim}{If \verb{> 0}, simulate from the joint precision matrix with \code{nsim}
-draws. Returns a matrix of \code{nrow(newdata)} by \code{nsim} with each column
-representing one draw of the linear predictor (in link space). Simulating
+draws. Returns a matrix with one row per prediction location and one column
+per draw. By default, each column represents one draw of the linear predictor
+in link space; use \code{type = "response"} for response-space draws. Simulating
 from the joint precision matrix accounts for uncertainty in both fixed and
 random effects. Use this to derive uncertainty on predictions (e.g.,
 \code{apply(x, 1, sd)}) or propagate uncertainty to derived quantities. This is
@@ -69,8 +82,11 @@ returns the positive component only. Predictions are on the link or response
 scale depending on \code{type}. For regular predictions (without simulation),
 both components are returned. See the \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-model vignette}.}
 
-\item{offset}{A numeric vector of optional offset values. If left at default
-\code{NULL}, the offset is implicitly left at 0.}
+\item{offset}{A numeric vector of optional offset values. When predictions
+are made with \code{newdata} or with options that internally rebuild prediction
+data (e.g., \code{type = "response"}, \code{se_fit = TRUE}, or \code{nsim > 0}), the
+default \code{NULL} uses an offset of 0. The simplest \code{predict(object)} call on
+the original data uses the offset from the fitted model.}
 
 \item{mcmc_samples}{See \code{extract_mcmc()} in the
 \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra} package for
@@ -80,35 +96,51 @@ If specified, the predict function will return a matrix of a similar form
 as if \code{nsim > 0} but representing Bayesian posterior samples from the Stan
 model.}
 
-\item{return_tmb_object}{Logical. If \code{TRUE}, will include the TMB object in a
-list format output. Necessary for the \code{\link[=get_index]{get_index()}} or \code{\link[=get_cog]{get_cog()}}
-functions.}
+\item{nonlocal_newdata}{An optional data frame overriding the
+\code{nonlocal_formula} covariate field used for prediction (e.g., for a
+counterfactual/scenario surface), with the same requirements as
+\code{nonlocal_data} in \code{\link[=sdmTMB]{sdmTMB()}}. \code{newdata}'s x/y and time columns
+always determine \emph{where} predictions are projected to; this argument only
+controls where the underlying diffused covariate values come from.
+Defaults to \code{NULL}: if a grid was supplied at fit time, the fitted field
+is reused as-is (so \code{newdata} need not contain the diffusion covariate
+columns); otherwise the field is rebuilt from \code{newdata}'s own covariate
+columns, as before.}
+
+\item{return_tmb_object}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} Logical. If
+\code{TRUE}, include the TMB object in a list-format output. Instead, pass the
+fitted model and \code{newdata} directly to \code{\link[=get_index]{get_index()}} or \code{\link[=get_cog]{get_cog()}}.}
 
 \item{return_tmb_report}{Logical: return the output from the TMB
 report? For regular prediction, this is all the reported variables
 at the MLE parameter values. For \code{nsim > 0} or when \code{mcmc_samples}
-is supplied, this is a list where each element is a sample and the
-contents of each element is the output of the report for that sample.}
+is supplied, this is a list with one element per sample; each element
+contains the report output for that sample.}
 
 \item{return_tmb_data}{Logical: return formatted data for TMB? Used
 internally.}
 
-\item{...}{Not implemented.}
+\item{...}{Unused.}
 }
 \value{
 If \code{return_tmb_object = FALSE} (and \code{nsim = 0} and \code{mcmc_samples = NULL}):
 
 A data frame:
 \itemize{
-\item \code{est}: Estimate in link space (everything included)
-\item \code{est_non_rf}: Estimate from everything except random fields (fixed effects, random intercepts, time-varying effects, etc.)
+\item \code{est}: Estimate in link or response space, depending on \code{type}
+\item \code{est_non_rf}: Estimate from everything except spatial/spatiotemporal random fields (fixed effects, random intercepts, time-varying effects, etc.)
 \item \code{est_rf}: Estimate from all random fields combined
 \item \code{omega_s}: Spatial random field (models consistent spatial patterns)
 \item \code{zeta_s}: Spatially varying coefficient field (models how effects vary across space)
 \item \code{epsilon_st}: Spatiotemporal random field (models spatial patterns that vary over time)
-\item \verb{diffusion_cov_*}: Covariate diffusion transformed covariate values (one column per
-covariate-diffusion term; available when \code{covariate_diffusion} were fitted)
+\item \verb{nl_*}: Nonlocal transformed covariate values (one column per
+nonlocal term; available when \code{nonlocal_formula} terms were fitted)
 }
+
+Delta/hurdle models return component-specific columns with \code{1} and \code{2}
+suffixes for the binomial and positive components, respectively (e.g.,
+\code{est1}, \code{est2}, \code{omega_s1}, \code{omega_s2}). With \code{type = "response"},
+\code{est} is the combined response-scale prediction.
 
 If \code{return_tmb_object = TRUE} (and \code{nsim = 0} and \code{mcmc_samples = NULL}):
 
@@ -128,12 +160,12 @@ If \code{nsim > 0} or \code{mcmc_samples} is not \code{NULL}:
 A matrix:
 \itemize{
 \item Columns represent samples
-\item Rows represent predictions with one row per row of \code{newdata}
+\item Rows represent predictions, with one row per row of \code{newdata}
 }
 }
 \description{
-Make predictions from an \pkg{sdmTMB} model; can predict on the original or
-new data.
+Make predictions from an \pkg{sdmTMB} model. Predictions can be made on the
+original data or on new data.
 }
 \examples{
 \dontshow{if (ggplot2_installed()) withAutoprint(\{ # examplesIf}
@@ -156,15 +188,15 @@ library(ggplot2)
 ggplot(predictions, aes(X, Y, col = resids)) + scale_colour_gradient2() +
   geom_point() + facet_wrap(~year)
 hist(predictions$resids)
-qqnorm(predictions$resids);abline(a = 0, b = 1)
+qqnorm(predictions$resids); abline(a = 0, b = 1)
 
-# Predictions onto new data --------------------------------------------
+# Predictions on new data ----------------------------------------------
 
 qcs_grid_2011 <- replicate_df(qcs_grid, "year", unique(pcod_2011$year))
 predictions <- predict(m, newdata = qcs_grid_2011)
 
 \donttest{
-# A short function for plotting our predictions:
+# A short function for plotting predictions:
 plot_map <- function(dat, column = est) {
   ggplot(dat, aes(X, Y, fill = {{ column }})) +
     geom_raster() +
@@ -203,7 +235,8 @@ nd <- data.frame(depth_scaled =
 nd$depth_scaled2 <- nd$depth_scaled^2
 
 # Because this is a spatiotemporal model, you'll need at least one time
-# element. If time isn't also a fixed effect then it doesn't matter what you pick:
+# value. For these population-level predictions, if time isn't also a fixed
+# effect, it doesn't matter what you pick:
 nd$year <- 2011L # L: integer to match original data
 p <- predict(m, newdata = nd, se_fit = TRUE, re_form = NA)
 ggplot(p, aes(depth_scaled, exp(est),
@@ -235,7 +268,7 @@ mesh <- make_mesh(d, c("X", "Y"), cutoff = 15)
 unique(d$year)
 m <- sdmTMB(
   data = d, formula = density ~ 1,
-  spatiotemporal = "AR1", # using an AR1 to have something to forecast with
+  spatiotemporal = "AR1", # using AR(1) to have something to forecast with
   extra_time = 2019L, # `L` for integer to match our data
   spatial = "off",
   time = "year", mesh = mesh, family = tweedie(link = "log")

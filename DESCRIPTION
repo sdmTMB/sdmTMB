@@ -1,7 +1,7 @@
 Type: Package
 Package: sdmTMB
 Title: Spatial and Spatiotemporal SPDE-Based GLMMs with 'TMB'
-Version: 1.0.0.9005
+Version: 1.1.0.9012
 Authors@R: c(
     person(c("Sean", "C."), "Anderson", , "sean@seananderson.ca",
            role = c("aut", "cre"),
@@ -77,7 +77,7 @@ Imports:
     mgcv,
     mvtnorm,
     nlme,
-    reformulas,
+    reformulas (>= 0.4.4),
     rlang,
     stats,
     TMB (>= 1.8.0)

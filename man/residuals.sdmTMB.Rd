@@ -20,8 +20,8 @@
 
 \item{model}{Which delta/hurdle model component?}
 
-\item{mcmc_samples}{A vector of MCMC samples of the linear predictor in link
-space. See the \code{predict_mle_mcmc()} function in the
+\item{mcmc_samples}{A vector or matrix of MCMC samples of the linear
+predictor in link space. See the \code{predict_mle_mcmc()} function in the
 \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra} package.}
 
 \item{qres_func}{A custom quantile residuals function. Function should take
@@ -38,8 +38,9 @@ a randomization seed} and to not go "fishing" for the perfect residuals or
 to present all inspected residuals.
 }
 \description{
-See the residual-checking vignette: \code{browseVignettes("sdmTMB")} or \href{https://sdmTMB.github.io/sdmTMB/articles/residual-checking.html}{on the documentation site}.
-See notes about types of residuals in 'Details' section below.
+See the residual-checking vignette: \code{browseVignettes("sdmTMB")} or the
+\href{https://sdmTMB.github.io/sdmTMB/articles/residual-checking.html}{documentation site}.
+See the Details section below for notes on residual types.
 }
 \details{
 \strong{Randomized quantile residuals:}
@@ -81,9 +82,9 @@ function \code{TMB:::oneSamplePosterior()}. Residuals are converted to randomize
 quantile residuals as described above.
 
 \strong{\code{mle-eb}}: Fixed effects are held at their MLEs and random effects are
-taken as their EB estimates. These used to be the default residuals in
+taken as their EB estimates. These used to be the default residual type in
 \pkg{sdmTMB} (and were called \code{mle-laplace}). They are available for
-backwards compatibility and for research purposes but they are \emph{not}
+backward compatibility and for research purposes but are \emph{not}
 recommended for checking goodness of fit. Residuals are converted to
 randomized quantile residuals as described above.
 
@@ -122,7 +123,7 @@ r <- residuals(fit, type = "mle-mvn")
 qqnorm(r)
 abline(0, 1)
 
-# response residuals will be not be normally distributed unless
+# response residuals will not be normally distributed unless
 # the family is Gaussian:
 r <- residuals(fit, type = "response")
 qqnorm(r)

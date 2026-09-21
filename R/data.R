@@ -1,7 +1,7 @@
 #' Example fish survey data
 #'
 #' @description
-#' Various fish survey datasets.
+#' Example fish survey datasets used throughout the package documentation and examples.
 #'
 #' @format `pcod`: Trawl survey data for Pacific Cod in Queen Charlotte Sound. A
 #'   data frame.
@@ -18,7 +18,7 @@
 #' @rdname surveydata
 "pcod_mesh_2011"
 
-#' @format `qcs_grid` A 2x2km prediction grid for Queen Charlotte Sound. A data
+#' @format `qcs_grid`: A 2 x 2 km prediction grid for Queen Charlotte Sound. A data
 #'   frame.
 #' @rdname surveydata
 "qcs_grid"
@@ -33,11 +33,11 @@
 #' @rdname surveydata
 "yelloweye"
 
-#' @format `hbll_s_grid`: A survey domain grid to go with `yelloweye`. A data frame.
+#' @format `hbll_s_grid`: A survey domain grid corresponding to `yelloweye`. A data frame.
 #' @rdname surveydata
 "hbll_s_grid"
 
-#' @format `wcvi_grid`: A survey domain grid to go with `dogfish`. A data frame.
+#' @format `wcvi_grid`: A survey domain grid corresponding to `dogfish`. A data frame.
 #' @rdname surveydata
 "wcvi_grid"
 

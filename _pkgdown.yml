@@ -17,13 +17,15 @@ articles:
   - articles/multispecies
   - articles/age-composition
   - articles/presence-only
+  - articles/areal-sar-car-spde
+  - articles/areal-grid-sar-car-spde
 
 - title: Model Estimation and Inference
   contents:
   - articles/residual-checking
   - articles/cross-validation
   - articles/bayesian
-  - articles/covariate-diffusion
+  - articles/nonlocal-covariates
 
 - title: Predictions and Applications
   contents:
@@ -31,8 +33,7 @@ articles:
   - articles/forecasting
   - articles/spatial-trend-models
   - articles/range-edges
-  - articles/areal-sar-car-spde
-  - articles/areal-grid-sar-car-spde
+  - articles/svc-factor-models
 
 - title: Visualization
   contents:
@@ -51,6 +52,7 @@ reference:
   - yelloweye
   - hbll_s_grid
   - wcvi_grid
+  - ohio_df
   - get_pars
   - delta_poisson_link_gamma
   - delta_poisson_link_lognormal
@@ -63,7 +65,6 @@ reference:
   - add_utm_columns
   - get_crs
   - make_areal_domain
-  - make_areal_grid
   - make_mesh
   - add_barrier_mesh
 
@@ -135,7 +136,7 @@ reference:
     Functions for plotting.
   contents:
   - plot_anisotropy
-  - plot_covariate_diffusion
+  - plot_nonlocal_covariate
   - plot_smooth
   - plot_pc_matern
   - visreg_delta

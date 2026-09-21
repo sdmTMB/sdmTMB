@@ -1,4 +1,4 @@
-make_dl_plumbing_data <- function() {
+make_nl_plumbing_data <- function() {
   data.frame(
     y = rnorm(12),
     x1 = rnorm(12),
@@ -9,13 +9,17 @@ make_dl_plumbing_data <- function() {
   )
 }
 
-make_dl_plumbing_mesh <- function(dat) {
+make_nl_plumbing_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
+make_nl_plumbing_grid <- function(mesh, years) {
+  make_nl_covariate_grid(mesh, years, c("x1", "x2"))
+}
+
 test_that("covariate diffusion tmb_data includes safe defaults when feature is off", {
-  dat <- make_dl_plumbing_data()
-  mesh <- make_dl_plumbing_mesh(dat)
+  dat <- make_nl_plumbing_data()
+  mesh <- make_nl_plumbing_mesh(dat)
 
   fit <- sdmTMB(
     y ~ 1,
@@ -32,20 +36,19 @@ test_that("covariate diffusion tmb_data includes safe defaults when feature is o
   expect_equal(dim(fit$tmb_data$covariate_diffusion$covariate_vertex_time), c(1L, 1L, 1L))
   expect_length(fit$tmb_data$covariate_diffusion$term_component, 0L)
   expect_length(fit$tmb_data$covariate_diffusion$term_covariate, 0L)
-  expect_null(fit$covariate_diffusion_data)
+  expect_null(fit$nonlocal_parsed)
 
-  expect_true(all(c("log_kappaS_dl", "kappaT_dl_raw", "kappaST_dl_raw") %in% names(fit$tmb_params)))
-  expect_length(fit$tmb_params$log_kappaS_dl, 0L)
-  expect_length(fit$tmb_params$kappaT_dl_raw, 0L)
-  expect_length(fit$tmb_params$kappaST_dl_raw, 0L)
-  expect_equal(length(fit$tmb_map[["log_kappaS_dl", exact = TRUE]]), 0L)
-  expect_equal(length(fit$tmb_map[["kappaT_dl_raw", exact = TRUE]]), 0L)
-  expect_equal(length(fit$tmb_map[["kappaST_dl_raw", exact = TRUE]]), 0L)
+  expect_true(all(c("log_kappaS_nl", "kappaT_nl_raw") %in% names(fit$tmb_params)))
+  expect_length(fit$tmb_params$log_kappaS_nl, 0L)
+  expect_length(fit$tmb_params$kappaT_nl_raw, 0L)
+  expect_equal(length(fit$tmb_map[["log_kappaS_nl", exact = TRUE]]), 0L)
+  expect_equal(length(fit$tmb_map[["kappaT_nl_raw", exact = TRUE]]), 0L)
 })
 
 test_that("covariate diffusion coefficient slots are appended and lag parameters are length-aware", {
-  dat <- make_dl_plumbing_data()
-  mesh <- make_dl_plumbing_mesh(dat)
+  dat <- make_nl_plumbing_data()
+  mesh <- make_nl_plumbing_mesh(dat)
+  grid <- make_nl_plumbing_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -54,23 +57,23 @@ test_that("covariate diffusion coefficient slots are appended and lag parameters
     time = "year",
     spatial = "off",
     spatiotemporal = "off",
-    covariate_diffusion = ~ space(x1) + time(x2),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
   x_mat <- fit$tmb_data$X_ij[[1]]
-  expect_true(all(c("cov_diff_space_x1", "cov_diff_time_x2") %in% colnames(x_mat)))
+  expect_true(all(c("nl_diffusion_x1", "nl_time_lag_x2") %in% colnames(x_mat)))
   expect_equal(
-    unname(colSums(abs(x_mat[, c("cov_diff_space_x1", "cov_diff_time_x2"), drop = FALSE]))),
+    unname(colSums(abs(x_mat[, c("nl_diffusion_x1", "nl_time_lag_x2"), drop = FALSE]))),
     c(0, 0)
   )
 
   expect_equal(length(fit$tmb_params$b_j), ncol(x_mat))
   expect_equal(fit$tmb_data$covariate_diffusion$n_terms, 2L)
   expect_equal(fit$tmb_data$covariate_diffusion$n_covariates, 2L)
-  expect_equal(fit$covariate_diffusion_data$covariate_has_spatial, c(1L, 0L))
-  expect_equal(fit$covariate_diffusion_data$covariate_has_temporal, c(0L, 1L))
-  expect_equal(fit$covariate_diffusion_data$covariate_has_spacetime, c(0L, 0L))
+  expect_equal(fit$nonlocal_parsed$covariate_has_spatial, c(1L, 0L))
+  expect_equal(fit$nonlocal_parsed$covariate_has_temporal, c(0L, 1L))
   expect_equal(fit$tmb_data$covariate_diffusion$term_component, c(0L, 1L))
   expect_equal(fit$tmb_data$covariate_diffusion$term_covariate, c(0L, 1L))
   expect_equal(
@@ -79,15 +82,14 @@ test_that("covariate diffusion coefficient slots are appended and lag parameters
   )
 
   expect_null(fit$tmb_map[["b_j", exact = TRUE]])
-  expect_length(fit$tmb_params$log_kappaS_dl, 2L)
-  expect_length(fit$tmb_params$kappaT_dl_raw, 2L)
-  expect_length(fit$tmb_params$kappaST_dl_raw, 2L)
-  expect_equal(as.integer(fit$tmb_map$log_kappaS_dl), c(1L, NA_integer_))
-  expect_equal(as.integer(fit$tmb_map$kappaT_dl_raw), c(NA_integer_, 1L))
-  expect_true(all(is.na(as.integer(fit$tmb_map$kappaST_dl_raw))))
+  expect_length(fit$tmb_params$log_kappaS_nl, 2L)
+  expect_length(fit$tmb_params$kappaT_nl_raw, 2L)
+  expect_equal(fit$tmb_params$kappaT_nl_raw, c(1, 1))
+  expect_equal(as.integer(fit$tmb_map$log_kappaS_nl), c(1L, NA_integer_))
+  expect_equal(as.integer(fit$tmb_map$kappaT_nl_raw), c(NA_integer_, 1L))
 })
 
-test_that("covariate diffusion coefficient slots are appended to both delta components", {
+test_that("joint covariate diffusion slot is appended once to both delta components", {
   dat <- data.frame(
     y = c(0, 1, 0, 2, 0.5, 1.2, 0, 0.7),
     x1 = rnorm(8),
@@ -96,7 +98,8 @@ test_that("covariate diffusion coefficient slots are appended to both delta comp
     X = rep(1:4, each = 2),
     Y = rep(c(0, 1), 4)
   )
-  mesh <- make_dl_plumbing_mesh(dat)
+  mesh <- make_nl_plumbing_mesh(dat)
+  grid <- make_nl_plumbing_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -106,43 +109,42 @@ test_that("covariate diffusion coefficient slots are appended to both delta comp
     spatial = "off",
     spatiotemporal = "off",
     family = delta_gamma(),
-    covariate_diffusion = ~ space(x1) + time(x2),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
-  expect_true(all(c("cov_diff_space_x1", "cov_diff_time_x2") %in% colnames(fit$tmb_data$X_ij[[1]])))
-  expect_true(all(c("cov_diff_space_x1", "cov_diff_time_x2") %in% colnames(fit$tmb_data$X_ij[[2]])))
+  joint_name <- "nl_diffusion_time_lag_x1"
+  expect_equal(tail(colnames(fit$tmb_data$X_ij[[1]]), 1L), joint_name)
+  expect_equal(tail(colnames(fit$tmb_data$X_ij[[2]]), 1L), joint_name)
+  expect_equal(fit$nonlocal_parsed$n_terms, 1L)
   expect_equal(length(fit$tmb_params$b_j), ncol(fit$tmb_data$X_ij[[1]]))
   expect_equal(length(fit$tmb_params$b_j2), ncol(fit$tmb_data$X_ij[[2]]))
 })
 
-test_that("covariate diffusion parameter lengths follow used components", {
-  dat <- make_dl_plumbing_data()
-  mesh <- make_dl_plumbing_mesh(dat)
+test_that("unsupported spacetime wrapper errors clearly", {
+  dat <- make_nl_plumbing_data()
+  mesh <- make_nl_plumbing_mesh(dat)
 
-  fit <- suppressWarnings(sdmTMB(
-    y ~ 1,
-    data = dat,
-    mesh = mesh,
-    time = "year",
-    spatial = "off",
-    spatiotemporal = "off",
-    covariate_diffusion = ~ spacetime(x1),
-    do_fit = FALSE
-  ))
-
-  expect_length(fit$tmb_params$log_kappaS_dl, 1L)
-  expect_length(fit$tmb_params$kappaT_dl_raw, 1L)
-  expect_length(fit$tmb_params$kappaST_dl_raw, 1L)
-  expect_equal(fit$covariate_diffusion_data$covariate_has_spatial, 1L)
-  expect_equal(fit$covariate_diffusion_data$covariate_has_temporal, 0L)
-  expect_equal(fit$covariate_diffusion_data$covariate_has_spacetime, 1L)
-  expect_true(is.na(as.integer(fit$tmb_map$kappaT_dl_raw)))
+  expect_error(
+    sdmTMB(
+      y ~ 1,
+      data = dat,
+      mesh = mesh,
+      time = "year",
+      spatial = "off",
+      spatiotemporal = "off",
+      nonlocal_formula = ~ spacetime(x1),
+      do_fit = FALSE
+    ),
+    regexp = "Unsupported wrapper"
+  )
 })
 
 test_that("covariate diffusion control names set start and map values", {
-  dat <- make_dl_plumbing_data()
-  mesh <- make_dl_plumbing_mesh(dat)
+  dat <- make_nl_plumbing_data()
+  mesh <- make_nl_plumbing_mesh(dat)
+  grid <- make_nl_plumbing_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -151,25 +153,67 @@ test_that("covariate diffusion control names set start and map values", {
     time = "year",
     spatial = "off",
     spatiotemporal = "off",
-    covariate_diffusion = ~ time(x1) + spacetime(x2),
+    nonlocal_formula = ~ diffusion(x2) + time_lag(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(
-      start = list(kappaT_dl_raw = c(0.2, 0.3), kappaST_dl_raw = c(0, 0.4)),
-      map = list(kappaT_dl_raw = factor(c(1L, NA)), kappaST_dl_raw = factor(c(NA, 1L)))
+      start = list(log_kappaS_nl = c(0, 0.4), kappaT_nl_raw = c(0.2, 0.3)),
+      map = list(log_kappaS_nl = factor(c(NA, 1L)), kappaT_nl_raw = factor(c(1L, NA)))
     ),
     do_fit = FALSE
   )
 
-  expect_equal(fit$tmb_params$kappaT_dl_raw, c(0.2, 0.3))
-  expect_equal(fit$tmb_params$kappaST_dl_raw, c(0, 0.4))
-  expect_equal(as.integer(fit$tmb_map$kappaT_dl_raw), c(1L, NA_integer_))
-  expect_equal(as.integer(fit$tmb_map$kappaST_dl_raw), c(NA_integer_, 1L))
+  expect_equal(fit$tmb_params$log_kappaS_nl, c(0, 0.4))
+  expect_equal(fit$tmb_params$kappaT_nl_raw, c(0.2, 0.3))
+  expect_equal(as.integer(fit$tmb_map$log_kappaS_nl), c(NA_integer_, 1L))
+  expect_equal(as.integer(fit$tmb_map$kappaT_nl_raw), c(1L, NA_integer_))
 })
 
-test_that("no-lag fit remains numerically identical with explicit covariate_diffusion = NULL", {
+test_that("temporal nonlocal starts must be non-negative", {
+  dat <- make_nl_plumbing_data()
+  mesh <- make_nl_plumbing_mesh(dat)
+  grid <- make_nl_plumbing_grid(mesh, sort(unique(dat$year)))
+
+  expect_error(
+    sdmTMB(
+      y ~ 1,
+      data = dat,
+      mesh = mesh,
+      time = "year",
+      spatial = "off",
+      spatiotemporal = "off",
+      nonlocal_formula = ~ time_lag(x1),
+      nonlocal_data = grid,
+      control = sdmTMBcontrol(
+        start = list(kappaT_nl_raw = -0.1)
+      ),
+      do_fit = FALSE
+    ),
+    "must be finite and non-negative"
+  )
+
+  fit_zero <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
+    control = sdmTMBcontrol(
+      start = list(kappaT_nl_raw = 0),
+      map = list(kappaT_nl_raw = factor(NA))
+    ),
+    do_fit = FALSE
+  )
+  expect_equal(fit_zero$tmb_params$kappaT_nl_raw, 0)
+})
+
+test_that("no-lag fit remains numerically identical with explicit nonlocal_formula = NULL", {
   skip_on_cran()
   set.seed(1)
-  dat <- make_dl_plumbing_data()
-  mesh <- make_dl_plumbing_mesh(dat)
+  dat <- make_nl_plumbing_data()
+  mesh <- make_nl_plumbing_mesh(dat)
 
   fit_base <- sdmTMB(
     y ~ x1,
@@ -189,7 +233,7 @@ test_that("no-lag fit remains numerically identical with explicit covariate_diff
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = NULL
+    nonlocal_formula = NULL
   )
 
   expect_equal(fit_base$model$objective, fit_null$model$objective, tolerance = 1e-8)
@@ -200,8 +244,9 @@ test_that("no-lag fit remains numerically identical with explicit covariate_diff
 test_that("predict tmb_data keeps covariate diffusion columns aligned with b_j", {
   skip_on_cran()
   set.seed(1)
-  dat <- make_dl_plumbing_data()
-  mesh <- make_dl_plumbing_mesh(dat)
+  dat <- make_nl_plumbing_data()
+  mesh <- make_nl_plumbing_mesh(dat)
+  grid <- make_nl_plumbing_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ x1,
@@ -211,12 +256,13 @@ test_that("predict tmb_data keeps covariate diffusion columns aligned with b_j",
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1) + time(x2),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 
   td <- predict(fit, newdata = dat, return_tmb_data = TRUE)
-  lag_cols <- fit$covariate_diffusion_data$term_coef_name
+  lag_cols <- fit$nonlocal_parsed$term_coef_name
 
   expect_equal(colnames(td$proj_X_ij[[1]]), colnames(fit$tmb_data$X_ij[[1]]))
   expect_equal(ncol(td$proj_X_ij[[1]]), length(fit$tmb_params$b_j))
@@ -237,7 +283,8 @@ test_that("predict tmb_data keeps covariate diffusion columns aligned with b_j2 
     X = rep(1:4, each = 3),
     Y = rep(c(0, 1, 2), 4)
   )
-  mesh <- make_dl_plumbing_mesh(dat)
+  mesh <- make_nl_plumbing_mesh(dat)
+  grid <- make_nl_plumbing_grid(mesh, sort(unique(dat$year)))
 
   fit <- suppressWarnings(sdmTMB(
     y ~ x1,
@@ -247,12 +294,13 @@ test_that("predict tmb_data keeps covariate diffusion columns aligned with b_j2 
     spatial = "off",
     spatiotemporal = "off",
     family = delta_gamma(),
-    covariate_diffusion = ~ space(x1) + time(x2),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   ))
 
   td <- predict(fit, newdata = dat, return_tmb_data = TRUE)
-  lag_cols <- fit$covariate_diffusion_data$term_coef_name
+  lag_cols <- fit$nonlocal_parsed$term_coef_name
 
   expect_equal(colnames(td$proj_X_ij[[2]]), colnames(fit$tmb_data$X_ij[[2]]))
   expect_equal(ncol(td$proj_X_ij[[2]]), length(fit$tmb_params$b_j2))

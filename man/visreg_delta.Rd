@@ -10,16 +10,16 @@ visreg_delta(object, ..., model = c(1, 2))
 visreg2d_delta(object, ..., model = c(1, 2))
 }
 \arguments{
-\item{object}{Fit from \code{\link[=sdmTMB]{sdmTMB()}}}
+\item{object}{Fit from \code{\link[=sdmTMB]{sdmTMB()}}.}
 
-\item{...}{Any arguments passed to \code{\link[visreg:visreg]{visreg::visreg()}} or
-\code{\link[visreg:visreg2d]{visreg::visreg2d()}}}
+\item{...}{Arguments passed to \code{\link[visreg:visreg]{visreg::visreg()}} or
+\code{\link[visreg:visreg2d]{visreg::visreg2d()}}.}
 
-\item{model}{1st or 2nd delta model}
+\item{model}{First or second delta-model component.}
 }
 \value{
-A plot from the visreg package. Optionally, the data plotted invisibly if
-\code{plot = FALSE}. This is useful if you want to make your own plot after.
+A plot from the visreg package. If \code{plot = FALSE}, the plotted data are
+returned invisibly. This is useful if you want to make your own plot.
 }
 \description{
 sdmTMB models fit with regular (non-delta) families can be passed to
@@ -28,8 +28,8 @@ below. Delta models can use the helper functions \code{visreg_delta()} or
 \code{visreg2d_delta()} described here.
 }
 \details{
-Note the residuals are currently randomized quantile residuals,
-\emph{not} deviance residuals as is usual for GLMs with \pkg{visreg}.
+Note that the residuals are currently randomized quantile residuals,
+\emph{not} the deviance residuals usually used for GLMs with \pkg{visreg}.
 }
 \examples{
 if (require("ggplot2", quietly = TRUE) &&
@@ -56,11 +56,11 @@ if (require("ggplot2", quietly = TRUE) &&
     spatial = "off",
     family = delta_gamma()
   )
-  visreg_delta(fit_dg, xvar = "depth_scaled", model = 1, gg = TRUE)
-  visreg_delta(fit_dg, xvar = "depth_scaled", model = 2, gg = TRUE)
+  visreg_delta(fit_dg, xvar = "depth_scaled", model = 1)
+  visreg_delta(fit_dg, xvar = "depth_scaled", model = 2)
   visreg_delta(fit_dg,
     xvar = "depth_scaled", model = 1,
-    scale = "response", gg = TRUE
+    scale = "response"
   )
   visreg_delta(fit_dg,
     xvar = "depth_scaled", model = 2,
@@ -68,19 +68,22 @@ if (require("ggplot2", quietly = TRUE) &&
   )
   visreg_delta(fit_dg,
     xvar = "depth_scaled", model = 2,
-    scale = "response", gg = TRUE, rug = FALSE
+    scale = "response", rug = FALSE
   )
   visreg2d_delta(fit_dg,
     xvar = "depth_scaled", yvar = "year",
     model = 2, scale = "response"
   )
-  visreg2d_delta(fit_dg,
+  v2d <- visreg2d_delta(fit_dg,
     xvar = "depth_scaled", yvar = "year",
-    model = 1, scale = "response", plot.type = "persp"
+    model = 1, scale = "response", plot = FALSE
   )
+  if (!is.null(utils::getS3method("persp", "visreg2d", optional = TRUE))) {
+    persp(v2d)
+  }
   visreg2d_delta(fit_dg,
     xvar = "depth_scaled", yvar = "year",
-    model = 2, scale = "response", plot.type = "gg"
+    model = 2, scale = "response"
   )
   }
 }

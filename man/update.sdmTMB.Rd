@@ -7,23 +7,23 @@
 \method{update}{sdmTMB}(object, formula., ..., evaluate = TRUE)
 }
 \arguments{
-\item{object}{An sdmTMB model object}
+\item{object}{An sdmTMB model object.}
 
-\item{formula.}{Optional updated formula}
+\item{formula.}{Optional updated formula.}
 
-\item{...}{Other arguments to update in the model call}
+\item{...}{Other arguments to update in the model call.}
 
 \item{evaluate}{If \code{TRUE} (default), the updated call is evaluated;
-if \code{FALSE}, the call is returned unevaluated}
+if \code{FALSE}, the call is returned unevaluated.}
 }
 \value{
 An updated sdmTMB model object (if \code{evaluate = TRUE}) or
-an unevaluated call (if \code{evaluate = FALSE})
+an unevaluated call (if \code{evaluate = FALSE}).
 }
 \description{
-This method updates an sdmTMB model with new arguments, automatically
-handling the mesh object to avoid environment issues when loading
-models from saved files.
+This method updates an sdmTMB model with new arguments while automatically
+handling the mesh object to avoid environment issues when loading models
+from saved files.
 }
 \examples{
 mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)

@@ -1,4 +1,4 @@
-make_dl_plot_data <- function() {
+make_nl_plot_data <- function() {
   set.seed(77)
   n_t <- 5L
   n_s <- 6L
@@ -15,13 +15,24 @@ make_dl_plot_data <- function() {
   )
 }
 
-make_dl_plot_mesh <- function(dat) {
+make_nl_plot_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
-test_that("plot_diffusion_kernel returns mesh-based diffusion fields", {
-  dat <- make_dl_plot_data()
-  mesh <- make_dl_plot_mesh(dat)
+make_nl_plot_grid <- function(mesh, years = NULL, include_x2 = FALSE) {
+  grid <- make_nl_covariate_grid(mesh, years, "x1")
+  if (isTRUE(include_x2)) {
+    grid$x2 <- rev(grid$x1)
+  }
+  grid
+}
+
+test_that("plot_nonlocal_kernel returns a ggplot on mesh vertices by default", {
+  skip_if_not_installed("ggplot2")
+
+  dat <- make_nl_plot_data()
+  mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -31,269 +42,352 @@ test_that("plot_diffusion_kernel returns mesh-based diffusion fields", {
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1),
+    nonlocal_formula = ~ diffusion(x1),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
-  out <- plot_diffusion_kernel(
+  out <- plot_nonlocal_kernel(
     fit,
-    covariate = "x1",
-    component = "space",
+    component = "diffusion",
     time_value = 1L,
-    n_steps = 2,
-    plot = FALSE
+    n_steps = 2
   )
 
-  expect_true(is.matrix(out$impulse_vertex_time))
-  expect_true(is.matrix(out$transformed_vertex_time))
-  expect_equal(nrow(out$impulse_vertex_time), fit$spde$mesh$n)
-  expect_equal(nrow(out$transformed_vertex_time), fit$spde$mesh$n)
-  expect_equal(ncol(out$triangle_values), 2L)
-  expect_equal(sum(out$impulse_vertex_time), 1)
-  expect_equal(out$component, "space")
-  expect_equal(out$covariate, "x1")
-})
-
-test_that("plot_diffusion_kernel builds a ggplot object when ggplot2 is installed", {
-  skip_if_not_installed("ggplot2")
-
-  dat <- make_dl_plot_data()
-  mesh <- make_dl_plot_mesh(dat)
-
-  fit <- sdmTMB(
-    y ~ 1,
-    data = dat,
-    mesh = mesh,
-    time = "year",
-    spatial = "off",
-    spatiotemporal = "off",
-    family = gaussian(),
-    covariate_diffusion = ~ time(x1),
-    do_fit = FALSE
-  )
-
-  out <- plot_diffusion_kernel(
-    fit,
-    covariate = "x1",
-    component = "time",
-    time_value = 1L,
-    n_steps = 2,
-    plot = FALSE
-  )
-
-  expect_s3_class(out$plot, "ggplot")
-  expect_true(is.data.frame(out$triangle_df))
-})
-
-test_that("plot_diffusion_kernel plots raw colour values", {
-  skip_if_not_installed("ggplot2")
-
-  dat <- make_dl_plot_data()
-  mesh <- make_dl_plot_mesh(dat)
-
-  fit <- sdmTMB(
-    y ~ 1,
-    data = dat,
-    mesh = mesh,
-    time = "year",
-    spatial = "off",
-    spatiotemporal = "off",
-    family = gaussian(),
-    covariate_diffusion = ~ time(x1),
-    do_fit = FALSE
-  )
-
-  out <- plot_diffusion_kernel(
-    fit,
-    covariate = "x1",
-    component = "time",
-    time_value = 1L,
-    n_steps = 2,
-    common_scale = TRUE,
-    plot = FALSE
-  )
-
-  expect_equal(out$triangle_df$value_plot, out$triangle_df$value, tolerance = 1e-12)
-})
-
-test_that("plot_diffusion_kernel signed_sqrt handles signed values", {
-  x <- c(-4, -1, 0, 9)
-  expect_equal(.dl_plot_transform_values(x, "signed_sqrt"), c(-2, -1, 0, 3))
-  expect_error(.dl_plot_transform_values(x, "sqrt"), regexp = "non-negative")
-})
-
-test_that("plot_diffusion_kernel does not require time_value for space-only covariate diffusions", {
-  skip_if_not_installed("ggplot2")
-
-  dat <- make_dl_plot_data()
-  mesh <- make_dl_plot_mesh(dat)
-
-  fit <- sdmTMB(
-    y ~ 1,
-    data = dat,
-    mesh = mesh,
-    spatial = "off",
-    spatiotemporal = "off",
-    family = gaussian(),
-    covariate_diffusion = ~ space(x1),
-    do_fit = FALSE
-  )
-
-  out <- plot_diffusion_kernel(
-    fit,
-    covariate = "x1",
-    component = "space",
-    n_steps = 2,
-    plot = FALSE
-  )
-
-  expect_equal(out$impulse_time_index, 1L)
-})
-
-test_that("plot_diffusion_kernel defaults to the first time index for temporal covariate diffusions", {
-  skip_if_not_installed("ggplot2")
-
-  dat <- make_dl_plot_data()
-  mesh <- make_dl_plot_mesh(dat)
-
-  fit <- sdmTMB(
-    y ~ 1,
-    data = dat,
-    mesh = mesh,
-    time = "year",
-    spatial = "off",
-    spatiotemporal = "off",
-    family = gaussian(),
-    covariate_diffusion = ~ time(x1),
-    do_fit = FALSE
-  )
-
-  out <- plot_diffusion_kernel(
-    fit,
-    covariate = "x1",
-    component = "time",
-    n_steps = 2,
-    plot = FALSE
-  )
-
-  expect_equal(out$impulse_time_index, 1L)
-})
-
-test_that("plot_diffused_covariate returns original and diffused mesh fields", {
-  skip_if_not_installed("ggplot2")
-
-  dat <- make_dl_plot_data()
-  mesh <- make_dl_plot_mesh(dat)
-
-  fit <- sdmTMB(
-    y ~ 1,
-    data = dat,
-    mesh = mesh,
-    spatial = "off",
-    spatiotemporal = "off",
-    family = gaussian(),
-    covariate_diffusion = ~ space(x1),
-    do_fit = FALSE
-  )
-
-  out <- plot_diffused_covariate(
-    fit,
-    covariate = "x1",
-    component = "space",
-    plot = FALSE
-  )
-
-  expect_s3_class(out$plot, "ggplot")
-  expect_true(is.matrix(out$original_vertex_time))
-  expect_true(is.matrix(out$transformed_vertex_time))
-  expect_equal(dim(out$original_vertex_time), dim(out$transformed_vertex_time))
-  expect_equal(nrow(out$original_vertex_time), fit$spde$mesh$n)
-  expect_equal(ncol(out$triangle_values), 2L)
-  expect_equal(levels(out$triangle_df$panel), paste0(c("original", "diffused"), " (t=", out$time_value, ")"))
-  expect_equal(out$component, "space")
-  expect_equal(out$covariate, "x1")
-})
-
-test_that("plot_diffused_covariate selects requested time slices", {
-  skip_if_not_installed("ggplot2")
-
-  dat <- make_dl_plot_data()
-  mesh <- make_dl_plot_mesh(dat)
-
-  fit <- sdmTMB(
-    y ~ 1,
-    data = dat,
-    mesh = mesh,
-    time = "year",
-    spatial = "off",
-    spatiotemporal = "off",
-    family = gaussian(),
-    covariate_diffusion = ~ time(x1),
-    do_fit = FALSE
-  )
-
-  out <- plot_diffused_covariate(
-    fit,
-    covariate = "x1",
-    component = "time",
-    time_value = 3L,
-    plot = FALSE
-  )
-
-  expect_equal(out$time_index, 3L)
-  expect_equal(out$time_value, 3L)
-  expect_equal(dim(out$transformed_vertex_time), dim(out$original_vertex_time))
-  expect_equal(levels(out$triangle_df$panel), c("original (t=3)", "diffused (t=3)"))
-})
-
-test_that("plot_diffused_covariate plots lagged contributions from one time slice", {
-  skip_if_not_installed("ggplot2")
-
-  dat <- make_dl_plot_data()
-  mesh <- make_dl_plot_mesh(dat)
-
-  fit <- sdmTMB(
-    y ~ 1,
-    data = dat,
-    mesh = mesh,
-    time = "year",
-    spatial = "off",
-    spatiotemporal = "off",
-    family = gaussian(),
-    covariate_diffusion = ~ time(x1),
-    do_fit = FALSE
-  )
-
-  out <- plot_diffused_covariate(
-    fit,
-    covariate = "x1",
-    component = "time",
-    time_value = 2L,
-    n_steps = 3L,
-    plot = FALSE
-  )
-
-  expect_equal(out$transformed_time_index, 2:4)
-  expect_equal(out$transformed_time_values, 2:4)
-  expect_equal(out$source_vertex_time[, 2L], out$original_vertex_time[, 2L])
-  expect_equal(out$source_vertex_time[, -2L], matrix(0, nrow = nrow(out$source_vertex_time), ncol = 4L))
-  expect_equal(ncol(out$triangle_values), 4L)
+  expect_s3_class(out, "ggplot")
+  expect_s3_class(out$layers[[1L]]$geom, "GeomSegment")
+  expect_s3_class(out$layers[[2L]]$geom, "GeomPoint")
+  original <- out$data[out$data$panel == levels(out$data$panel)[[1L]], ]
+  expect_equal(nrow(original), fit$spde$mesh$n)
   expect_equal(
-    levels(out$triangle_df$panel),
+    unname(as.matrix(original[, c("x", "y")])),
+    unname(.nl_plot_extract_mesh(fit$spde$mesh)$loc)
+  )
+  expect_equal(sum(original$value == 1), 1L)
+  expect_equal(sum(original$value == 0), fit$spde$mesh$n - 1L)
+})
+
+test_that("plot_nonlocal_kernel projects to newdata locations", {
+  skip_if_not_installed("ggplot2")
+
+  dat <- make_nl_plot_data()
+  mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
+
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
+    do_fit = FALSE
+  )
+
+  newdata <- unique(dat[dat$year %in% 1:2, c("X", "Y")])
+  newdata <- newdata[seq_len(4L), , drop = FALSE]
+  out <- plot_nonlocal_kernel(
+    fit,
+    component = "time_lag",
+    newdata = newdata,
+    covariate = "x1",
+    time_value = 1L,
+    n_steps = 2
+  )
+
+  original <- out$data[out$data$panel == levels(out$data$panel)[[1L]], ]
+  expect_s3_class(out$layers[[1L]]$geom, "GeomPoint")
+  expect_equal(nrow(original), nrow(newdata))
+  expect_equal(
+    unname(as.matrix(original[, c("x", "y")])),
+    unname(as.matrix(newdata))
+  )
+})
+
+test_that("plot_nonlocal_kernel can use raster output with newdata", {
+  skip_if_not_installed("ggplot2")
+
+  dat <- make_nl_plot_data()
+  mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
+
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
+    do_fit = FALSE
+  )
+
+  grid <- expand.grid(X = seq(1, 6, length.out = 4), Y = seq(1, 2, length.out = 3))
+  out <- plot_nonlocal_kernel(
+    fit,
+    component = "time_lag",
+    newdata = grid,
+    type = "raster",
+    covariate = "x1",
+    time_value = 1L,
+    n_steps = 2
+  )
+
+  expect_s3_class(out$layers[[1L]]$geom, "GeomRaster")
+  expect_equal(nrow(out$data[out$data$panel == levels(out$data$panel)[[1L]], ]), nrow(grid))
+  expect_error(
+    plot_nonlocal_kernel(fit, component = "time_lag", type = "raster", covariate = "x1"),
+    regexp = '`type = "raster"` requires `newdata`'
+  )
+})
+
+test_that("plot_nonlocal_kernel plots raw colour values with common_scale", {
+  skip_if_not_installed("ggplot2")
+
+  dat <- make_nl_plot_data()
+  mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
+
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
+    do_fit = FALSE
+  )
+
+  out <- plot_nonlocal_kernel(
+    fit,
+    component = "time_lag",
+    covariate = "x1",
+    time_value = 1L,
+    n_steps = 2,
+    common_scale = TRUE
+  )
+
+  expect_equal(out$data$value_plot, out$data$value, tolerance = 1e-12)
+})
+
+test_that("plot_nonlocal_kernel does not require time_value for space-only covariate diffusions", {
+  skip_if_not_installed("ggplot2")
+
+  dat <- make_nl_plot_data()
+  mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh)
+
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    nonlocal_formula = ~ diffusion(x1),
+    nonlocal_data = grid,
+    do_fit = FALSE
+  )
+
+  out <- plot_nonlocal_kernel(
+    fit,
+    component = "diffusion",
+    covariate = "x1",
+    n_steps = 2
+  )
+
+  expect_equal(levels(out$data$panel), c("original (t=0)", "diffused (t=0)"))
+})
+
+test_that("plot_nonlocal_kernel defaults to the first time index for temporal covariate diffusions", {
+  skip_if_not_installed("ggplot2")
+
+  dat <- make_nl_plot_data()
+  mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
+
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
+    do_fit = FALSE
+  )
+
+  out <- plot_nonlocal_kernel(
+    fit,
+    component = "time_lag",
+    covariate = "x1",
+    n_steps = 2
+  )
+
+  expect_equal(levels(out$data$panel), c("original (t=1)", "time-lagged (t=1)", "lag+1 (t=2)"))
+})
+
+test_that("plot_nonlocal_covariate returns a ggplot on mesh vertices by default", {
+  skip_if_not_installed("ggplot2")
+
+  dat <- make_nl_plot_data()
+  mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh)
+
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    nonlocal_formula = ~ diffusion(x1),
+    nonlocal_data = grid,
+    do_fit = FALSE
+  )
+
+  out <- plot_nonlocal_covariate(
+    fit,
+    component = "diffusion",
+    covariate = "x1"
+  )
+
+  expect_s3_class(out, "ggplot")
+  expect_s3_class(out$layers[[1L]]$geom, "GeomSegment")
+  expect_s3_class(out$layers[[2L]]$geom, "GeomPoint")
+  expect_equal(levels(out$data$panel), c("original (t=0)", "diffused (t=0)"))
+  expect_equal(nrow(out$data[out$data$panel == "original (t=0)", ]), fit$spde$mesh$n)
+})
+
+test_that("plot_nonlocal_covariate projects to newdata locations and raster output", {
+  skip_if_not_installed("ggplot2")
+
+  dat <- make_nl_plot_data()
+  mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
+
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    nonlocal_formula = ~ diffusion(x1),
+    nonlocal_data = grid,
+    do_fit = FALSE
+  )
+
+  newdata <- unique(dat[dat$year == 1L, c("X", "Y")])
+  point_plot <- plot_nonlocal_covariate(
+    fit,
+    component = "diffusion",
+    newdata = newdata,
+    covariate = "x1"
+  )
+  raster_plot <- plot_nonlocal_covariate(
+    fit,
+    component = "diffusion",
+    newdata = newdata,
+    type = "raster",
+    covariate = "x1"
+  )
+
+  expect_s3_class(point_plot$layers[[1L]]$geom, "GeomPoint")
+  expect_s3_class(raster_plot$layers[[1L]]$geom, "GeomRaster")
+  expect_equal(nrow(point_plot$data[point_plot$data$panel == levels(point_plot$data$panel)[[1L]], ]), nrow(newdata))
+  expect_error(
+    plot_nonlocal_covariate(fit, component = "diffusion", type = "raster", covariate = "x1"),
+    regexp = '`type = "raster"` requires `newdata`'
+  )
+})
+
+test_that("plot_nonlocal_covariate selects requested time slices", {
+  skip_if_not_installed("ggplot2")
+
+  dat <- make_nl_plot_data()
+  mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
+
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
+    do_fit = FALSE
+  )
+
+  out <- plot_nonlocal_covariate(
+    fit,
+    component = "time_lag",
+    covariate = "x1",
+    time_value = 3L
+  )
+
+  expect_equal(levels(out$data$panel), c("original (t=3)", "time-lagged (t=3)"))
+})
+
+test_that("plot_nonlocal_covariate plots lagged contributions from one time slice", {
+  skip_if_not_installed("ggplot2")
+
+  dat <- make_nl_plot_data()
+  mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
+
+  fit <- sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
+    do_fit = FALSE
+  )
+
+  out <- plot_nonlocal_covariate(
+    fit,
+    component = "time_lag",
+    covariate = "x1",
+    time_value = 2L,
+    n_steps = 3L
+  )
+
+  expect_equal(
+    levels(out$data$panel),
     c(
       "original (t=2)",
-      "diffused (t=2)",
+      "time-lagged (t=2)",
       "lag+1 (t=3)",
       "lag+2 (t=4)"
     )
   )
 })
 
-test_that("plot_diffused_covariate can plot combined fitted transforms", {
+test_that("plot_nonlocal_covariate can plot combined fitted transforms", {
   skip_if_not_installed("ggplot2")
 
-  dat <- make_dl_plot_data()
-  mesh <- make_dl_plot_mesh(dat)
+  dat <- make_nl_plot_data()
+  mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -303,44 +397,48 @@ test_that("plot_diffused_covariate can plot combined fitted transforms", {
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1) + time(x1),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(
-      start = list(kappaT_dl_raw = 0.25)
+      start = list(kappaT_nl_raw = 0.25)
     ),
     do_fit = FALSE
   )
 
-  out_combined <- plot_diffused_covariate(
+  out_combined <- plot_nonlocal_covariate(
     fit,
-    covariate = "x1",
     component = "combined",
-    time_value = 2L,
-    n_steps = 2L,
-    plot = FALSE
-  )
-  out_space <- plot_diffused_covariate(
-    fit,
     covariate = "x1",
-    component = "space",
     time_value = 2L,
-    plot = FALSE
+    n_steps = 2L
+  )
+  out_space <- plot_nonlocal_covariate(
+    fit,
+    component = "diffusion",
+    covariate = "x1",
+    time_value = 2L,
+    n_steps = 2L
   )
 
-  expect_equal(out_combined$component, "combined")
-  expect_equal(out_combined$transformed_time_index, 2:3)
+  expect_equal(levels(out_combined$data$panel), c("original (t=2)", "jointly transformed (t=2)", "lag+1 (t=3)"))
+  combined_lag <- out_combined$data$value[
+    out_combined$data$panel == "jointly transformed (t=2)"
+  ]
+  space_lag <- out_space$data$value[out_space$data$panel == "diffused (t=2)"]
   expect_false(isTRUE(all.equal(
-    out_combined$transformed_vertex_time[, 3L],
-    out_space$transformed_vertex_time[, 3L],
+    combined_lag,
+    space_lag,
     tolerance = 1e-8
   )))
 })
 
-test_that("plot_diffused_covariate errors cleanly for invalid inputs", {
+test_that("plot_nonlocal_covariate errors cleanly for invalid inputs", {
   skip_if_not_installed("ggplot2")
 
-  dat <- make_dl_plot_data()
+  dat <- make_nl_plot_data()
   dat$x2 <- rev(dat$x1)
-  mesh <- make_dl_plot_mesh(dat)
+  mesh <- make_nl_plot_mesh(dat)
+  grid <- make_nl_plot_grid(mesh, sort(unique(dat$year)), include_x2 = TRUE)
 
   fit_multi <- sdmTMB(
     y ~ 1,
@@ -350,20 +448,21 @@ test_that("plot_diffused_covariate errors cleanly for invalid inputs", {
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1) + time(x2),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
   expect_error(
-    plot_diffused_covariate(fit_multi, component = "space", plot = FALSE),
+    plot_nonlocal_covariate(fit_multi, component = "diffusion"),
     regexp = "Multiple covariate-diffusion covariates"
   )
   expect_error(
-    plot_diffused_covariate(fit_multi, covariate = "x1", component = "time", plot = FALSE),
-    regexp = "No term `time\\(x1\\)`"
+    plot_nonlocal_covariate(fit_multi, covariate = "x1", component = "time_lag"),
+    regexp = "requested `time_lag` operator was not fitted"
   )
   expect_error(
-    plot_diffused_covariate(fit_multi, covariate = "x1", component = "space", time_value = 99L, plot = FALSE),
+    plot_nonlocal_covariate(fit_multi, covariate = "x1", component = "diffusion", time_value = 99L),
     regexp = "Could not match `time_value`"
   )
 })

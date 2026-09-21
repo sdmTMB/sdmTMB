@@ -5,8 +5,7 @@
 \title{Estimated marginal means with the \pkg{emmeans} package with \pkg{sdmTMB}}
 \description{
 Methods for using the \pkg{emmeans} package with \pkg{sdmTMB}. The
-\pkg{emmeans} package computes estimated marginal means for the fixed
-effects.
+\pkg{emmeans} package computes estimated marginal means for fixed effects.
 
 For delta/hurdle models, you can specify which component to analyze using the
 \code{model} argument: \code{model = 1} for the binomial component (encounter

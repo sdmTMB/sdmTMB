@@ -1,4 +1,4 @@
-make_dl_predict_data <- function() {
+make_nl_predict_data <- function() {
   set.seed(101)
   n_t <- 5L
   n_s <- 6L
@@ -18,11 +18,15 @@ make_dl_predict_data <- function() {
   )
 }
 
-make_dl_predict_mesh <- function(dat) {
+make_nl_predict_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
-make_dl_predict_delta_data <- function() {
+make_nl_predict_grid <- function(mesh, years = NULL) {
+  make_nl_covariate_grid(mesh, years, c("x1", "x2"))
+}
+
+make_nl_predict_delta_data <- function() {
   set.seed(202)
   n_t <- 5L
   n_s <- 6L
@@ -46,8 +50,9 @@ make_dl_predict_delta_data <- function() {
 test_that("covariate diffusion predict works for default and newdata pathways", {
   skip_on_cran()
 
-  dat <- make_dl_predict_data()
-  mesh <- make_dl_predict_mesh(dat)
+  dat <- make_nl_predict_data()
+  mesh <- make_nl_predict_mesh(dat)
+  grid <- make_nl_predict_grid(mesh, sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ x1 + x2,
@@ -57,7 +62,8 @@ test_that("covariate diffusion predict works for default and newdata pathways", 
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1) + time(x2),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0)
   )
 
@@ -66,23 +72,43 @@ test_that("covariate diffusion predict works for default and newdata pathways", 
   expect_equal(nrow(p_fit), nrow(dat))
   expect_equal(p_fit$est, p_new$est, tolerance = 1e-6)
   expect_equal(p_fit$est_non_rf, p_new$est_non_rf, tolerance = 1e-6)
-  expect_true(all(c("diffusion_cov_space_x1", "diffusion_cov_time_x2") %in% names(p_fit)))
-  expect_equal(p_fit$diffusion_cov_space_x1, p_new$diffusion_cov_space_x1, tolerance = 1e-6)
-  expect_equal(p_fit$diffusion_cov_time_x2, p_new$diffusion_cov_time_x2, tolerance = 1e-6)
+  expect_true(all(c("nl_diffusion_x1", "nl_time_lag_x2") %in% names(p_fit)))
+  expect_equal(p_fit$nl_diffusion_x1, p_new$nl_diffusion_x1, tolerance = 1e-6)
+  expect_equal(p_fit$nl_time_lag_x2, p_new$nl_time_lag_x2, tolerance = 1e-6)
 
   p_se <- predict(fit, newdata = dat, re_form = NA, se_fit = TRUE)
   expect_true("est_se" %in% names(p_se))
   expect_true(all(is.finite(p_se$est_se)))
 
-  sims <- predict(fit, newdata = dat, nsim = 3)
-  expect_equal(dim(sims), c(nrow(dat), 3L))
+  expect_silent(p_pop <- predict(fit, newdata = dat, re_form = NA))
+  expect_equal(nrow(p_pop), nrow(dat))
+
+  fit_sim <- sdmTMB(
+    y ~ x1 + x2,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    nonlocal_formula = ~ diffusion(x1),
+    nonlocal_data = grid,
+    control = sdmTMBcontrol(
+      start = list(log_kappaS_nl = 0),
+      map = list(log_kappaS_nl = factor(NA)),
+      newton_loops = 0
+    )
+  )
+  sims <- predict(fit_sim, newdata = dat, nsim = 2)
+  expect_equal(dim(sims), c(nrow(dat), 2L))
 })
 
 test_that("covariate diffusion newdata covariate changes prediction direction when lag beta is fixed positive", {
   skip_on_cran()
 
-  dat <- make_dl_predict_data()
-  mesh <- make_dl_predict_mesh(dat)
+  dat <- make_nl_predict_data()
+  mesh <- make_nl_predict_mesh(dat)
+  grid <- make_nl_predict_grid(mesh, sort(unique(dat$year)))
 
   proto <- sdmTMB(
     y ~ 1,
@@ -92,11 +118,12 @@ test_that("covariate diffusion newdata covariate changes prediction direction wh
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ time(x1),
+    nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
-  lag_col <- proto$covariate_diffusion_data$term_coef_name
+  lag_col <- proto$nonlocal_parsed$term_coef_name
   lag_idx <- match(lag_col, colnames(proto$tmb_data$X_ij[[1]]))
   b_map <- seq_along(proto$tmb_params$b_j)
   b_map[lag_idx] <- NA_integer_
@@ -111,7 +138,8 @@ test_that("covariate diffusion newdata covariate changes prediction direction wh
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ time(x1),
+    nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(
       start = list(b_j = b_start),
       map = list(b_j = factor(b_map)),
@@ -120,23 +148,24 @@ test_that("covariate diffusion newdata covariate changes prediction direction wh
     )
   )
 
-  nd_low <- dat
-  nd_high <- dat
-  nd_high$x1 <- nd_high$x1 + 0.5
+  grid_low <- grid
+  grid_high <- grid
+  grid_high$x1 <- grid_high$x1 + 0.5
 
-  p_low <- predict(fit, newdata = nd_low)
-  p_high <- predict(fit, newdata = nd_high)
+  p_low <- predict(fit, newdata = dat, nonlocal_newdata = grid_low)
+  p_high <- predict(fit, newdata = dat, nonlocal_newdata = grid_high)
 
-  expect_true("diffusion_cov_time_x1" %in% names(p_low))
-  expect_gt(mean(p_high$diffusion_cov_time_x1 - p_low$diffusion_cov_time_x1), 0)
+  expect_true("nl_time_lag_x1" %in% names(p_low))
+  expect_gt(mean(p_high$nl_time_lag_x1 - p_low$nl_time_lag_x1), 0)
   expect_gt(mean(p_high$est - p_low$est), 0)
 })
 
 test_that("delta covariate diffusion in component 2 changes combined response predictions", {
   skip_on_cran()
 
-  dat <- make_dl_predict_delta_data()
-  mesh <- make_dl_predict_mesh(dat)
+  dat <- make_nl_predict_delta_data()
+  mesh <- make_nl_predict_mesh(dat)
+  grid <- make_nl_predict_grid(mesh, sort(unique(dat$year)))
 
   proto <- sdmTMB(
     y ~ 1,
@@ -146,11 +175,12 @@ test_that("delta covariate diffusion in component 2 changes combined response pr
     spatial = "off",
     spatiotemporal = "off",
     family = delta_gamma(),
-    covariate_diffusion = ~ time(x1),
+    nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
-  lag_col <- proto$covariate_diffusion_data$term_coef_name
+  lag_col <- proto$nonlocal_parsed$term_coef_name
   lag_idx1 <- match(lag_col, colnames(proto$tmb_data$X_ij[[1]]))
   lag_idx2 <- match(lag_col, colnames(proto$tmb_data$X_ij[[2]]))
 
@@ -172,7 +202,8 @@ test_that("delta covariate diffusion in component 2 changes combined response pr
     spatial = "off",
     spatiotemporal = "off",
     family = delta_gamma(),
-    covariate_diffusion = ~ time(x1),
+    nonlocal_formula = ~ time_lag(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(
       start = list(b_j = b_start1, b_j2 = b_start2),
       map = list(b_j = factor(b_map1), b_j2 = factor(b_map2)),
@@ -181,23 +212,39 @@ test_that("delta covariate diffusion in component 2 changes combined response pr
     )
   ))
 
-  nd_low <- dat
-  nd_high <- dat
-  nd_high$x1 <- nd_high$x1 + 0.5
+  grid_low <- grid
+  grid_high <- grid
+  grid_high$x1 <- grid_high$x1 + 0.5
 
-  p_low <- predict(fit, newdata = nd_low, type = "response")
-  p_high <- predict(fit, newdata = nd_high, type = "response")
+  p_low <- predict(fit, newdata = dat, nonlocal_newdata = grid_low, type = "response")
+  p_high <- predict(fit, newdata = dat, nonlocal_newdata = grid_high, type = "response")
 
   expect_gt(mean(p_high$est - p_low$est), 0)
 })
 
-test_that("temporal covariate diffusions require full modeled time coverage in newdata", {
+test_that("time-indexed covariate diffusion full-time guard is scoped to no-grid prediction", {
+  object <- list(
+    nonlocal_formula_parsed = list(time_indexed = TRUE),
+    nonlocal_grid_supplied = FALSE
+  )
+  expect_true(.nonlocal_prediction_requires_full_time(object))
+
+  object$nonlocal_grid_supplied <- TRUE
+  expect_false(.nonlocal_prediction_requires_full_time(object))
+  expect_false(.nonlocal_prediction_requires_full_time(object, nonlocal_newdata = data.frame()))
+
+  object$nonlocal_grid_supplied <- FALSE
+  object$nonlocal_formula_parsed$time_indexed <- FALSE
+  expect_false(.nonlocal_prediction_requires_full_time(object))
+})
+
+test_that("covariate diffusion prediction errors for zero-support newdata", {
   skip_on_cran()
 
-  dat <- make_dl_predict_data()
-  mesh <- make_dl_predict_mesh(dat)
-
-  fit_time <- sdmTMB(
+  dat <- make_nl_predict_data()
+  mesh <- make_nl_predict_mesh(dat)
+  grid <- make_nl_predict_grid(mesh, sort(unique(dat$year)))
+  fit_grid <- sdmTMB(
     y ~ x1 + x2,
     data = dat,
     mesh = mesh,
@@ -205,40 +252,25 @@ test_that("temporal covariate diffusions require full modeled time coverage in n
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ time(x1),
+    nonlocal_formula = ~ diffusion(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 
-  nd_subset <- dat[dat$year %in% sort(unique(dat$year))[1:3], , drop = FALSE]
+  grid_sparse <- grid[grid$X == grid$X[1], , drop = FALSE]
   expect_error(
-    predict(fit_time, newdata = nd_subset),
-    regexp = "requires full time coverage"
+    predict(fit_grid, newdata = dat, nonlocal_newdata = grid_sparse),
+    regexp = "zero mesh-vertex support"
   )
-
-  fit_space <- sdmTMB(
-    y ~ x1 + x2,
-    data = dat,
-    mesh = mesh,
-    time = "year",
-    spatial = "off",
-    spatiotemporal = "off",
-    family = gaussian(),
-    covariate_diffusion = ~ space(x1),
-    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
-  )
-
-  expect_silent({
-    p_space <- predict(fit_space, newdata = nd_subset)
-    expect_equal(nrow(p_space), nrow(nd_subset))
-  })
 })
 
 test_that("space-only covariate diffusion predict works without modeled time", {
   skip_on_cran()
 
-  dat <- make_dl_predict_data()
+  dat <- make_nl_predict_data()
   dat$year <- NULL
-  mesh <- make_dl_predict_mesh(dat)
+  mesh <- make_nl_predict_mesh(dat)
+  grid <- make_nl_predict_grid(mesh)
 
   fit <- sdmTMB(
     y ~ x1 + x2,
@@ -247,11 +279,12 @@ test_that("space-only covariate diffusion predict works without modeled time", {
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1),
+    nonlocal_formula = ~ diffusion(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
   )
 
   p <- predict(fit)
   expect_equal(nrow(p), nrow(dat))
-  expect_true("diffusion_cov_space_x1" %in% names(p))
+  expect_true("nl_diffusion_x1" %in% names(p))
 })

@@ -6,14 +6,14 @@
 > Spatial and spatiotemporal GLMMs with TMB
 
 <!-- badges: start -->
-[![](https://www.r-pkg.org/badges/version/sdmTMB)](https://cran.r-project.org/package=sdmTMB)
+[![CRAN version](https://www.r-pkg.org/badges/version/sdmTMB)](https://cran.r-project.org/package=sdmTMB)
 [![Documentation](https://img.shields.io/badge/documentation-sdmTMB-orange.svg?colorB=E91E63)](https://sdmTMB.github.io/sdmTMB/)
 [![R-CMD-check](https://github.com/sdmTMB/sdmTMB/workflows/R-CMD-check/badge.svg)](https://github.com/sdmTMB/sdmTMB/actions)
 [![Codecov test coverage](https://codecov.io/gh/sdmTMB/sdmTMB/branch/main/graph/badge.svg)](https://app.codecov.io/gh/sdmTMB/sdmTMB?branch=main)
 [![downloads](https://cranlogs.r-pkg.org/badges/sdmTMB)](https://cranlogs.r-pkg.org/)
 <!-- badges: end -->
 
-sdmTMB is an R package that fits spatial and spatiotemporal GLMMs (Generalized Linear Mixed Effects Models) using Template Model Builder ([TMB](https://github.com/kaskr/adcomp)), [fmesher](https://github.com/inlabru-org/fmesher), and Gaussian Markov random fields. One common application is for species distribution models (SDMs). See the [documentation site](https://sdmTMB.github.io/sdmTMB/) and a preprint:
+sdmTMB is an R package that fits spatial and spatiotemporal GLMMs (Generalized Linear Mixed Effects Models) using Template Model Builder ([TMB](https://github.com/kaskr/adcomp)), [fmesher](https://github.com/inlabru-org/fmesher), and Gaussian Markov random fields. One common application is for species distribution models (SDMs). See the [documentation site](https://sdmTMB.github.io/sdmTMB/) and the [published paper](https://doi.org/10.18637/jss.v115.i02).
 
 ## Table of contents
 
@@ -23,10 +23,12 @@ sdmTMB is an R package that fits spatial and spatiotemporal GLMMs (Generalized L
 - [Citation](#citation)
 - [Basic use](#basic-use)
 - [Advanced functionality](#advanced-functionality)
+  - [Areal models](#areal-models)
+  - [Non-local covariates](#non-local-covariates)
   - [Time-varying coefficients](#time-varying-coefficients)
   - [Spatially varying coefficients
     (SVC)](#spatially-varying-coefficients-svc)
-  - [Random intercepts](#random-intercepts)
+  - [Random intercepts and slopes](#random-intercepts-and-slopes)
   - [Breakpoint and threshold
     effects](#breakpoint-and-threshold-effects)
   - [Simulating data](#simulating-data)
@@ -90,40 +92,46 @@ s), not \> 1 second.
 
 Analyzing geostatistical data (coordinate-referenced observations from
 some underlying spatial process) is becoming increasingly common in many
-fields. sdmTMB implements geostatistical spatial and spatiotemporal
-GLMMs using [TMB](https://cran.r-project.org/package=TMB) for model
-fitting and [fmesher](https://CRAN.R-project.org/package=fmesher) to set
-up SPDE matrices (for the [stochastic partial differential equation
+fields. sdmTMB implements spatial and spatiotemporal GLMMs using
+[TMB](https://cran.r-project.org/package=TMB) for model fitting. For
+geostatistical models,
+[fmesher](https://CRAN.R-project.org/package=fmesher) is used to set up
+SPDE matrices (for the [stochastic partial differential equation
 approach](https://doi.org/10.1111/j.1467-9868.2011.00777.x); a
-computationally efficient method for modeling spatial correlation). One
-common application is for species distribution models (SDMs), hence the
-package name. The goal of sdmTMB is to provide a fast, flexible, and
-user-friendly interface—similar to the popular R package glmmTMB—but
-with a focus on spatial and spatiotemporal models with an SPDE approach.
-We extend common generalized linear mixed models (GLMMs) to include the
-following optional features:
+computationally efficient method for modeling spatial correlation).
+Areal models can instead use conditional or simultaneous autoregressive
+(CAR/SAR) spatial structures. One common application is for species
+distribution models (SDMs), hence the package name. The goal of sdmTMB
+is to provide a fast, flexible, and user-friendly interface—similar to
+the popular R package glmmTMB—but with a focus on spatial and
+spatiotemporal models. We extend common generalized linear mixed models
+(GLMMs) to include the following optional features:
 
 - spatial random fields
 - spatiotemporal random fields that may be independent by year or
-  modelled with random walks or autoregressive processes
+  modeled with random walks or autoregressive processes
+- areal CAR/SAR spatial or spatiotemporal random fields for polygon or
+  lattice data
 - smooth terms for covariates, using the familiar `s()` notation from
   mgcv
 - breakpoint (hockey-stick) or logistic covariates
-- time-varying covariates (coefficients modelled as random walks)
+- time-varying covariates (coefficients modeled as random walks)
 - spatially varying coefficient models (SVCs)
+- non-local covariate effects via spatial diffusion and temporal lags
 - interpolation or forecasting over missing or future time slices
-- a wide range of families: all standard R families plus `tweedie()`,
+- a wide range of families: many common R families, plus `tweedie()`,
   `nbinom1()`, `nbinom2()`, `lognormal()`, `student()`, `gengamma()`,
   plus some truncated and censored families
 - delta/hurdle models including `delta_gamma()`, `delta_lognormal()`,
   and `delta_truncated_nbinom2()`
+- non-local [diffusion and time-lag covariate
+  effects](https://sdmtmb.github.io/sdmTMB/articles/nonlocal-covariates.html)
 
-Estimation is via maximum marginal likelihood (with random effects
-integrated out) with the objective function calculated in
-[TMB](https://cran.r-project.org/package=TMB) and minimized in R via
-`stats::nlminb()` with the random effects integrated over via the
-Laplace approximation. The sdmTMB package also allows for models to be
-passed to Stan via
+Estimation is via maximum marginal likelihood, with the objective
+function calculated in [TMB](https://cran.r-project.org/package=TMB),
+minimized in R via `stats::nlminb()`, and random effects integrated out
+with the Laplace approximation. The sdmTMB package also allows for
+models to be passed to Stan via
 [tmbstan](https://cran.r-project.org/package=tmbstan), allowing for
 Bayesian model estimation.
 
@@ -132,7 +140,8 @@ and
 [`?predict.sdmTMB`](https://sdmTMB.github.io/sdmTMB/reference/predict.sdmTMB.html)
 for the most complete examples. Also see the vignettes (‘Articles’) on
 the [documentation site](https://sdmTMB.github.io/sdmTMB/index.html) and
-the [preprint](https://doi.org/10.1101/2022.03.24.485545) listed below.
+the [published paper](https://doi.org/10.18637/jss.v115.i02) listed
+below.
 
 ## Getting help
 
@@ -150,8 +159,8 @@ tracker](https://github.com/sdmTMB/sdmTMB/issues).
 
 There have been several [past sdmTMB
 workshops](https://github.com/sdmTMB/sdmTMB-teaching). Slides and
-exercises from the latest workshop are available
-[here](https://github.com/sdmTMB/sdmTMB-TESA-2025).
+exercises from the latest workshop
+[here](https://github.com/sdmTMB/sdmTMB-DSAF-2026).
 [Recordings](https://www.youtube.com/channel/UCYoFG51RjJVx7m9mZGaj-Ng/videos)
 from an older workshop are also available.
 
@@ -163,13 +172,11 @@ To cite sdmTMB in publications, please use:
 citation("sdmTMB")
 ```
 
-Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett., J.T. Thorson.
+Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett, J.T. Thorson.
 2025. sdmTMB: an R package for fast, flexible, and user-friendly
 generalized linear mixed effects models with spatial and spatiotemporal
 random fields. Journal of Statistical Software. 115(2):1–46.
 <https://doi.org/10.18637/jss.v115.i02>.
-
-bioRxiv preprint: <https://doi.org/10.1101/2022.03.24.485545>.
 
 A list of known publications that use sdmTMB can be found
 [here](https://github.com/sdmTMB/sdmTMB/tree/main/scratch/citations).
@@ -183,14 +190,14 @@ usually makes sense to convert the spatial coordinates to an equidistant
 projection such as UTMs such that 1 km remains the same distance
 throughout the study region (unlike latitude/longitude) \[e.g., using
 `sf::st_transform()`\]. Here, we illustrate a spatial model fit to
-Pacific cod (*Gadus macrocephalus*) trawl survey data from Queen
-Charlotte Sound, BC, Canada. Our model contains a main effect of depth
-as a penalized smoother, a spatial random field, and Tweedie observation
-error. Our data frame `pcod` (built into the package) has a column
-`year` for the year of the survey, `density` for density of Pacific cod
-in a given survey tow, `present` for whether `density > 0`, `depth` for
-depth in meters of that tow, and spatial coordinates `X` and `Y`, which
-are UTM coordinates in kilometres.
+Pacific Cod (*Gadus macrocephalus*) trawl survey data from Queen
+Charlotte Sound, British Columbia, Canada. Our model contains a main
+effect of depth as a penalized smoother, a spatial random field, and
+Tweedie observation error. Our data frame `pcod` (built into the
+package) has a column `year` for the year of the survey, `density` for
+density of Pacific cod in a given survey tow, `present` for whether
+`density > 0`, `depth` for depth in meters of that tow, and spatial
+coordinates `X` and `Y`, which are UTM coordinates in kilometres.
 
 ``` r
 library(dplyr)
@@ -216,9 +223,9 @@ mesh <- make_mesh(pcod, xy_cols = c("X", "Y"), cutoff = 10)
 Here, `cutoff` defines the minimum allowed distance between mesh
 vertices in the units of `X` and `Y` (km). Smaller values create finer
 meshes but increase computation time. Alternatively, we could have
-created a mesh via the fmesher or INLA packages and supplied it to
-`make_mesh()`. We can inspect our mesh object with the associated
-plotting method `plot(mesh)`.
+created a mesh via the fmesher package and supplied it to `make_mesh()`.
+We can inspect our mesh object with the associated plotting method
+`plot(mesh)`.
 
 Fit a spatial model with a smoother for depth:
 
@@ -313,7 +320,7 @@ to plot the smoother effect:
 ggeffects::ggpredict(fit, "depth [50:400, by=2]") |> plot()
 ```
 
-<img src="man/figures/README-plot-ggpredict-link-1.png" width="50%" />
+<img src="man/figures/README-plot-ggpredict-link-1.png" alt="" width="50%" />
 
 If the depth effect was parametric and not a penalized smoother, we
 could have alternatively used `ggeffects::ggeffect()` for a fast
@@ -347,7 +354,7 @@ ggplot(p, aes(X, Y, fill = exp(est))) + geom_raster() +
   scale_fill_viridis_c(trans = "sqrt")
 ```
 
-<img src="man/figures/README-plot-predictions-1.png" width="50%" />
+<img src="man/figures/README-plot-predictions-1.png" alt="" width="50%" />
 
 We could switch to a presence-absence model by changing the response
 column and family:
@@ -355,7 +362,7 @@ column and family:
 ``` r
 fit <- sdmTMB(
   present ~ s(depth),
-  data = pcod, 
+  data = pcod,
   mesh = mesh,
   family = binomial(link = "logit")
 )
@@ -377,54 +384,72 @@ column and a spatiotemporal structure:
 
 ``` r
 fit_spatiotemporal <- sdmTMB(
-  density ~ s(depth, k = 5), 
-  data = pcod, 
+  density ~ s(depth, k = 5),
+  data = pcod,
   mesh = mesh,
   time = "year",
-  family = tweedie(link = "log"), 
-  spatial = "off", 
+  family = tweedie(link = "log"),
+  spatial = "off",
   spatiotemporal = "ar1"
 )
 ```
 
 If we wanted to create an area-weighted standardized population index (a
 time series of abundance accounting for spatial variation in sampling),
-we could predict on a grid covering the entire survey (`qcs_grid`) with
-grid cell area 4 km² (2 x 2 km) and pass the predictions to
-`get_index()`:
+we could integrate predictions over a grid covering the entire survey
+(`qcs_grid`) with grid cell area 4 km² (2 x 2 km):
 
 ``` r
 grid_yrs <- replicate_df(qcs_grid, "year", unique(pcod$year))
-p_st <- predict(fit_spatiotemporal, newdata = grid_yrs, 
-  return_tmb_object = TRUE)
-index <- get_index(p_st, area = rep(4, nrow(grid_yrs)))
+index <- get_index(fit_spatiotemporal, newdata = grid_yrs,
+  area = rep(4, nrow(grid_yrs)))
 ggplot(index, aes(year, est)) +
   geom_ribbon(aes(ymin = lwr, ymax = upr), fill = "grey90") +
   geom_line(lwd = 1, colour = "grey30") +
   labs(x = "Year", y = "Biomass (kg)")
 ```
 
-<img src="man/figures/README-plot-index-1.png" width="50%" />
+<img src="man/figures/README-plot-index-1.png" alt="" width="50%" />
 
 Or the center of gravity (mean location of the population, useful for
 detecting distributional shifts):
 
 ``` r
-cog <- get_cog(p_st, format = "wide")
+cog <- get_cog(fit_spatiotemporal, newdata = grid_yrs, format = "wide")
 ggplot(cog, aes(est_x, est_y, colour = year)) +
   geom_pointrange(aes(xmin = lwr_x, xmax = upr_x)) +
   geom_pointrange(aes(ymin = lwr_y, ymax = upr_y)) +
   scale_colour_viridis_c()
 ```
 
-<img src="man/figures/README-plot-cog-1.png" width="50%" />
+<img src="man/figures/README-plot-cog-1.png" alt="" width="50%" />
 
-For more on these basic features, see the vignettes [Intro to modelling
+For more on these basic features, see the vignettes [Intro to modeling
 with sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/basic-intro.html)
 and [Index standardization with
 sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/index-standardization.html).
 
 ## Advanced functionality
+
+### Areal models
+
+Areal models can be fit with `spatial_model = "car"` or `"sar"` and an
+areal domain created by `make_areal_domain()`. These models use
+adjacency among areal units, which can be useful for polygon, lattice,
+or gridded data. See the CAR/SAR articles for [polygon areal
+models](https://sdmTMB.github.io/sdmTMB/articles/areal-sar-car-spde.html)
+and [grid areal
+models](https://sdmTMB.github.io/sdmTMB/articles/areal-grid-sar-car-spde.html).
+
+### Non-local covariates
+
+Non-local covariate models can estimate the spatial or temporal scale
+over which covariates affect the response. For example,
+`nonlocal_formula = ~ diffusion(x) + time_lag(x)` can represent a
+spatially diffused covariate effect, a temporally lagged effect, or
+both. See the [non-local covariates
+vignette](https://sdmTMB.github.io/sdmTMB/articles/nonlocal-covariates.html)
+for details.
 
 ### Time-varying coefficients
 
@@ -436,10 +461,10 @@ Time-varying intercept:
 
 ``` r
 fit <- sdmTMB(
-  density ~ 0 + s(depth, k = 5), 
-  time_varying = ~ 1, 
+  density ~ 0 + s(depth, k = 5),
+  time_varying = ~ 1,
   data = pcod, mesh = mesh,
-  time = "year",  
+  time = "year",
   family = tweedie(link = "log"),
   silent = FALSE # see progress
 )
@@ -449,7 +474,7 @@ Time-varying (random walk) effect of depth:
 
 ``` r
 fit <- sdmTMB(
-  density ~ 1, 
+  density ~ 1,
   time_varying = ~ 0 + depth_scaled + depth_scaled2,
   data = pcod, mesh = mesh,
   time = "year",
@@ -460,7 +485,7 @@ fit <- sdmTMB(
 )
 ```
 
-See the vignette [Intro to modelling with
+See the vignette [Intro to modeling with
 sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/basic-intro.html) for
 more details.
 
@@ -476,8 +501,8 @@ Spatially varying effect of time:
 pcod$year_scaled <- as.numeric(scale(pcod$year))
 fit <- sdmTMB(
   density ~ s(depth, k = 5) + year_scaled,
-  spatial_varying = ~ year_scaled, 
-  data = pcod, mesh = mesh, 
+  spatial_varying = ~ year_scaled,
+  data = pcod, mesh = mesh,
   time = "year",
   family = tweedie(link = "log"),
   spatiotemporal = "off"
@@ -492,22 +517,22 @@ the average effect.
 ``` r
 grid_yrs <- replicate_df(qcs_grid, "year", unique(pcod$year))
 grid_yrs$year_scaled <- (grid_yrs$year - mean(pcod$year)) / sd(pcod$year)
-p <- predict(fit, newdata = grid_yrs) %>% 
+p <- predict(fit, newdata = grid_yrs) |>
   subset(year == 2011) # any year
 ggplot(p, aes(X, Y, fill = zeta_s_year_scaled)) + geom_raster() +
   scale_fill_gradient2()
 ```
 
-<img src="man/figures/README-plot-zeta-1.png" width="50%" />
+<img src="man/figures/README-plot-zeta-1.png" alt="" width="50%" />
 
 See the vignette on [Fitting spatial trend models with
 sdmTMB](https://sdmTMB.github.io/sdmTMB/articles/spatial-trend-models.html)
 for more details.
 
-### Random intercepts
+### Random intercepts and slopes
 
-We can use the same syntax (`1 | group`) as lme4 or glmmTMB to fit
-random intercepts:
+We can use the same syntax (`1 + x | group`) as lme4 or glmmTMB to fit
+random intercepts and slopes:
 
 ``` r
 pcod$year_factor <- as.factor(pcod$year)
@@ -523,7 +548,7 @@ fit <- sdmTMB(
 
 ``` r
 fit <- sdmTMB(
-  present ~ 1 + breakpt(depth_scaled), 
+  present ~ 1 + breakpt(depth_scaled),
   data = pcod, mesh = mesh,
   family = binomial(link = "logit")
 )
@@ -531,7 +556,7 @@ fit <- sdmTMB(
 
 ``` r
 fit <- sdmTMB(
-  present ~ 1 + logistic(depth_scaled), 
+  present ~ 1 + logistic(depth_scaled),
   data = pcod, mesh = mesh,
   family = binomial(link = "logit")
 )
@@ -550,7 +575,7 @@ predictor_dat <- expand.grid(
   X = seq(0, 1, length.out = 100), Y = seq(0, 1, length.out = 100)
 )
 mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.05)
-sim_dat <- sdmTMB_simulate(
+sim_dat <- simulate_new(
   formula = ~ 1,
   data = predictor_dat,
   mesh = mesh,
@@ -585,7 +610,7 @@ ggplot(sim_dat, aes(X, Y)) +
   coord_cartesian(expand = FALSE)
 ```
 
-<img src="man/figures/README-plot-sim-dat-1.png" width="50%" />
+<img src="man/figures/README-plot-sim-dat-1.png" alt="" width="50%" />
 
 Fit to the simulated data:
 
@@ -600,12 +625,13 @@ fit <- sdmTMB(
 ```
 
 See
-[`?sdmTMB_simulate`](https://sdmTMB.github.io/sdmTMB/reference/sdmTMB_simulate.html)
+[`?simulate_new`](https://sdmtmb.github.io/sdmTMB/reference/simulate_new.html)
 for more details.
 
 #### Simulating from an existing fit
 
 ``` r
+set.seed(1)
 s <- simulate(fit, nsim = 500)
 dim(s)
 #> [1] 969 500
@@ -635,7 +661,7 @@ ggplot(samps, aes(.value)) + geom_histogram() +
 #> `stat_bin()` using `bins = 30`. Pick better value `binwidth`.
 ```
 
-<img src="man/figures/README-plot-mvn-1.png" width="50%" />
+<img src="man/figures/README-plot-mvn-1.png" alt="" width="50%" />
 
 See
 [`?gather_sims`](https://sdmTMB.github.io/sdmTMB/reference/gather_sims.html)
@@ -645,7 +671,7 @@ for more details.
 
 ### Calculating uncertainty on spatial predictions
 
-The fastest way to get point-wise prediction uncertainty is to use the
+The fastest way to get pointwise prediction uncertainty is to use the
 MVN samples:
 
 ``` r
@@ -657,12 +683,12 @@ ggplot(predictor_dat, aes(X, Y, fill = se)) +
   coord_cartesian(expand = FALSE)
 ```
 
-<img src="man/figures/README-plot-pred-mvn-1.png" width="50%" />
+<img src="man/figures/README-plot-pred-mvn-1.png" alt="" width="50%" />
 
 ### Cross validation
 
-sdmTMB has built-in functionality for cross-validation. If we were to
-set a `future::plan()`, the folds would be fit in parallel:
+sdmTMB has built-in support for cross-validation. If we were to set a
+`future::plan()`, the folds would be fit in parallel:
 
 ``` r
 mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 10)
@@ -713,7 +739,7 @@ We can visualize the PC Matérn prior:
 plot_pc_matern(range_gt = 10, sigma_lt = 5)
 ```
 
-<img src="man/figures/README-plot-pc-matern-1.png" width="50%" />
+<img src="man/figures/README-plot-pc-matern-1.png" alt="" width="50%" />
 
 See
 [`?sdmTMBpriors`](https://sdmTMB.github.io/sdmTMB/reference/priors.html)
@@ -760,19 +786,19 @@ broom::tidy(fit_glm)
 
 ### Using a custom fmesher mesh
 
-Defining a mesh directly with INLA:
+Defining a mesh directly with fmesher:
 
 ``` r
-bnd <- INLA::inla.nonconvex.hull(cbind(pcod$X, pcod$Y), convex = -0.1)
-mesh_inla <- INLA::inla.mesh.2d(
+bnd <- fmesher::fm_nonconvex_hull(cbind(pcod$X, pcod$Y), convex = -0.1)
+mesh_fmesher <- fmesher::fm_mesh_2d(
   boundary = bnd,
   max.edge = c(25, 50)
 )
-mesh <- make_mesh(pcod, c("X", "Y"), mesh = mesh_inla)
+mesh <- make_mesh(pcod, c("X", "Y"), mesh = mesh_fmesher)
 plot(mesh)
 ```
 
-<img src="man/figures/README-inla-mesh-1.png" width="30%" />
+<img src="man/figures/README-fmesher-mesh-1.png" alt="" width="30%" />
 
 ``` r
 fit <- sdmTMB(
@@ -797,8 +823,8 @@ sdmTMB is heavily inspired by the
 The newer [tinyVAST](https://github.com/vast-lib/tinyVAST) R package can
 fit many of the models that VAST and sdmTMB can with an interface
 similar to sdmTMB. Generally, we recommend tinyVAST for multivariate
-applications or for (dynamic) structural equation modelling with
-optional spatial and/or spatiotemporal components.
+applications or for (dynamic) structural equation modeling with optional
+spatial and/or spatiotemporal components.
 
 [INLA](https://www.r-inla.org/) and
 [inlabru](https://sites.google.com/inlabru.org/inlabru) can fit many of
@@ -810,8 +836,7 @@ SPDE-based Gaussian Markov random field models with code included in
 [Miller et al. (2019)](https://doi.org/10.1007/s13253-019-00377-z), but
 this will be slower for large spatial datasets.
 
-A table in the [sdmTMB
-preprint](https://doi.org/10.1101/2022.03.24.485545) describes
-functionality and timing comparisons between sdmTMB, VAST, INLA/inlabru,
-and mgcv and the discussion makes suggestions about when you might
-choose one package over another.
+A table in the [sdmTMB paper](https://doi.org/10.18637/jss.v115.i02)
+describes functionality and timing comparisons between sdmTMB, VAST,
+INLA/inlabru, and mgcv and the discussion makes suggestions about when
+you might choose one package over another.

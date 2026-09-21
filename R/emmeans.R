@@ -2,8 +2,7 @@
 #'
 #' @description
 #' Methods for using the \pkg{emmeans} package with \pkg{sdmTMB}. The
-#' \pkg{emmeans} package computes estimated marginal means for the fixed
-#' effects.
+#' \pkg{emmeans} package computes estimated marginal means for fixed effects.
 #'
 #' For delta/hurdle models, you can specify which component to analyze using the
 #' `model` argument: `model = 1` for the binomial component (encounter
@@ -63,6 +62,7 @@
 
 NULL # don't document functions below
 
+#' @exportS3Method NULL
 recover_data.sdmTMB <- function(object, ...) {
   fcall <- stats::getCall(object)
   if (!requireNamespace("emmeans", quietly = TRUE)) {
@@ -76,6 +76,7 @@ recover_data.sdmTMB <- function(object, ...) {
 }
 
 # with help from emm_basis.glmmTMB
+#' @exportS3Method NULL
 emm_basis.sdmTMB <- function(object, trms, xlev, grid, ...) {
   if (.object_is_multi_family(object, caller = "`emmeans()`")) {
     cli_abort("`emmeans()` is not yet supported for multi-family models.")

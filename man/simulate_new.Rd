@@ -28,9 +28,9 @@ simulate_new(
   time_varying_type = c("rw", "rw0", "ar1"),
   sigma_V = NULL,
   rho_time = NULL,
-  covariate_diffusion = NULL,
-  diffusion_kappaS = NULL,
-  diffusion_rhoT = NULL,
+  nonlocal_formula = NULL,
+  lags_kappaS = NULL,
+  lags_rhoT = NULL,
   ...
 )
 
@@ -57,9 +57,9 @@ sdmTMB_simulate(
   time_varying_type = c("rw", "rw0", "ar1"),
   sigma_V = NULL,
   rho_time = NULL,
-  covariate_diffusion = NULL,
-  diffusion_kappaS = NULL,
-  diffusion_rhoT = NULL,
+  nonlocal_formula = NULL,
+  lags_kappaS = NULL,
+  lags_rhoT = NULL,
   ...
 )
 }
@@ -79,9 +79,10 @@ Instead, simulate the two component models separately and combine.}
 \item{time}{The time column name.}
 
 \item{B}{A vector of beta values (fixed-effect coefficient values).
-If \code{covariate_diffusion} is used, include regular fixed-effect
-coefficients followed by covariate-diffusion coefficients in formula term
-order.}
+If \code{nonlocal_formula} is used, include regular fixed-effect
+coefficients followed by transformed-covariate coefficients in operator
+order. Same-covariate \code{diffusion()} and \code{time_lag()} wrappers contribute
+one joint coefficient.}
 
 \item{range}{Parameter that controls the decay of spatial correlation. If a
 vector of length 2, \code{share_range} will be set to \code{FALSE} and the spatial
@@ -110,12 +111,12 @@ function is 95\% of the maximum, and the maximum. See the model description
 vignette for details.}
 
 \item{fixed_re}{A list of optional random effects to fix at specified
-(e.g., previously estimated) values. Values of \code{NULL} will result
-in the random effects being simulated.}
+(e.g., previously estimated) values. \code{NULL} values indicate that the
+corresponding random effects should be simulated.}
 
 \item{previous_fit}{(\strong{Deprecated}; please use \code{\link[=simulate.sdmTMB]{simulate.sdmTMB()}}).
 An optional previous \code{\link[=sdmTMB]{sdmTMB()}} fit to pull parameter values.
-Will be over-ruled by any non-NULL specified parameter arguments.}
+Will be overridden by any non-\code{NULL} parameter arguments supplied directly.}
 
 \item{seed}{Seed number.}
 
@@ -133,15 +134,16 @@ vector matching the number of time-varying coefficients.}
 when \code{time_varying_type = "ar1"}. Values must lie between -1 and 1 and may
 be supplied as a single value or a vector the same length as \code{sigma_V}.}
 
-\item{covariate_diffusion}{An optional one-sided formula describing
+\item{nonlocal_formula}{An optional one-sided formula describing
 covariate-diffusion terms to pass to \code{\link[=sdmTMB]{sdmTMB()}}. Supported wrappers are
-\code{space()} and \code{time()}.}
+\code{diffusion()} and \code{time_lag()}. Same-covariate wrappers select one joint
+operator and coefficient.}
 
-\item{diffusion_kappaS}{Spatial diffusion scale for \code{space()} terms.
+\item{lags_kappaS}{Spatial diffusion scale for \code{diffusion()} terms.
 Must be positive and finite. Supply a single value or
 one value per covariate needing a spatial scale.}
 
-\item{diffusion_rhoT}{Temporal diffusion persistence for \code{time()} terms.
+\item{lags_rhoT}{Temporal diffusion persistence for \code{time_lag()} terms.
 Must be finite and satisfy \verb{0 <= rhoT < 1}. Supply a single value or one
 value per covariate needing temporal diffusion.}
 
@@ -150,12 +152,12 @@ value per covariate needing temporal diffusion.}
 \value{
 A data frame where:
 \itemize{
-\item The 1st column is the time variable (if present).
-\item The 2nd and 3rd columns are the spatial coordinates.
+\item The first column is the time variable (if present).
+\item The second and third columns are the spatial coordinates.
 \item \code{omega_s} represents the simulated spatial random effects (only if present).
-\item \code{zeta_s} represents the simulated spatial varying covariate field (only if present).
+\item \code{zeta_s} represents the simulated spatially varying covariate field (only if present).
 \item \code{epsilon_st} represents the simulated spatiotemporal random effects (only if present).
-\item \code{eta} is the true value in link space
+\item \code{eta} is the true value in link space.
 \item \code{mu} is the true value in inverse link space.
 \item \code{observed} represents the simulated process with observation error.
 \item The remaining columns are the fixed-effect model matrix.
@@ -165,8 +167,8 @@ A data frame where:
 \code{simulate_new()} uses TMB to simulate \emph{new} data given specified parameter
 values. \code{\link[=simulate.sdmTMB]{simulate.sdmTMB()}}, on the other hand, takes an \emph{existing} model fit
 and simulates new observations and optionally new random effects.
-\strong{Note:} \code{sdmTMB_simulate()} is retained as a synonym for backwards
-compatibility. We recommend using \code{simulate_new()} going forward as it more
+\strong{Note:} \code{sdmTMB_simulate()} is retained as a synonym for backward
+compatibility. We recommend using \code{simulate_new()} because it more
 clearly conveys the function's purpose. \code{sdmTMB_simulate()} may
 eventually be deprecated.
 }

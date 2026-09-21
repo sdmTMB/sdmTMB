@@ -21,7 +21,7 @@ for speed). A data frame.
 \code{pcod_mesh_2011}: A mesh pre-built for \code{pcod_2011} for examples. A
 list of class \code{sdmTMBmesh}.
 
-\code{qcs_grid} A 2x2km prediction grid for Queen Charlotte Sound. A data
+\code{qcs_grid}: A 2 x 2 km prediction grid for Queen Charlotte Sound. A data
 frame.
 
 \code{dogfish}: Trawl survey data for Pacific Spiny Dogfish on West Coast
@@ -30,9 +30,9 @@ Vancouver Island. A data frame.
 \code{yelloweye}: Survey data for Yelloweye Rockfish from the Hard Bottom
 Longline Survey (South) off West Coast Vancouver Island.
 
-\code{hbll_s_grid}: A survey domain grid to go with \code{yelloweye}. A data frame.
+\code{hbll_s_grid}: A survey domain grid corresponding to \code{yelloweye}. A data frame.
 
-\code{wcvi_grid}: A survey domain grid to go with \code{dogfish}. A data frame.
+\code{wcvi_grid}: A survey domain grid corresponding to \code{dogfish}. A data frame.
 }
 \usage{
 pcod
@@ -52,6 +52,6 @@ hbll_s_grid
 wcvi_grid
 }
 \description{
-Various fish survey datasets.
+Example fish survey datasets used throughout the package documentation and examples.
 }
 \keyword{datasets}

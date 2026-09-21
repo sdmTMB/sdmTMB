@@ -8,16 +8,16 @@
 #' \pkg{tmbstan} (see the Bayesian vignette).
 #'
 #' **Note that Jacobian adjustments are only made if `bayesian = TRUE`** when the
-#' [sdmTMB()] model is fit. I.e., the final model will be fit with \pkg{tmbstan}
-#' and priors are specified then `bayesian` should be set to `TRUE`. Otherwise,
-#' leave `bayesian = FALSE`.
+#' [sdmTMB()] model is fit. In other words, if the final model will be fit with
+#' \pkg{tmbstan} and priors are specified, then `bayesian` should be set to
+#' `TRUE`. Otherwise, leave `bayesian = FALSE`.
 #'
 #' @details
-#' Meant to be passed to the `priors` argument in [sdmTMB()].
+#' Pass these objects to the `priors` argument in [sdmTMB()].
 #'
 #' @details
-#' `normal()` and `halfnormal()` define normal and half-normal priors that, at
-#' this point, must have a location (mean) parameter of 0. `halfnormal()` is the
+#' `normal()` and `halfnormal()` define normal and half-normal priors that, for
+#' now, must have a location (mean) parameter of 0. `halfnormal()` is the
 #' same as `normal()` but can be used to make the syntax clearer. It is intended
 #' to be used for parameters that have support `> 0`.
 #'
@@ -51,7 +51,7 @@
 #' @param matern_s A PC (Penalized Complexity) prior (`pc_matern()`) on the
 #'   spatial random field Matérn parameters.
 #' @param matern_st Same as `matern_s` but for the spatiotemporal random field.
-#'   Note that you will likely want to set `share_fields = FALSE` if you choose
+#'   Note that you will likely want to set `share_range = FALSE` if you choose
 #'   to set both a spatial and spatiotemporal Matérn PC prior since they both
 #'   include a prior on the spatial range parameter.
 #' @param phi A `halfnormal()` prior for the dispersion parameter in the
@@ -186,7 +186,7 @@ mvnormal <- function(location = 0, scale = diag(length(location))) {
 #' [plot_pc_matern()]
 #'
 #' @description
-#' `pc_matern()` is the Penalized Complexity prior for the Matern
+#' `pc_matern()` is the Penalized Complexity prior for the Matérn
 #' covariance function.
 #'
 #' @examples

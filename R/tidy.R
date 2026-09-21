@@ -4,9 +4,14 @@
 #' @param effects A character value. One of `"fixed"` ('fixed' or main-effect
 #'   parameters), `"ran_pars"` (standard deviations, spatial range, and other
 #'   random effect and dispersion-related terms), `"ran_vals"` (individual
-#'   random intercepts or slopes, if included; behaves like `ranef()`), `"ran_vcov"` (list
-#'   of variance covariance matrices for the random effects, by model and group),
-#'   or `"dispersion"` for dispersion-model coefficients when `dispformula` is used.
+#'   random intercepts or slopes, if included; behaves like `ranef()`),
+#'   `"ran_vcov"` (list of variance covariance matrices for the random effects,
+#'   by model and group), or `"rsr"` (Restricted Spatial Regression fixed-effect
+#'   coefficients adjusted for spatial confounding with the random fields;
+#'   Hanks et al. 2015; Diaz and Thorson 2025). To access RSR coefficients the
+#'   model must be fitted with
+#'   `control = sdmTMBcontrol(get_rsr = TRUE)`.
+#'   `"dispersion"` returns dispersion-model coefficients when `dispformula` is used.
 #' @param conf.int Include a confidence interval?
 #' @param conf.level Confidence level for CI.
 #' @param exponentiate Whether to exponentiate the fixed-effect coefficient
@@ -29,6 +34,18 @@
 #' terms, range, or parameters associated with the observation error) are
 #' omitted to avoid confusion. Confidence intervals are still available.
 #'
+#' @references
+#' Restricted Spatial Regression (`effects = "rsr"`):
+#'
+#' Diaz, R.R., and Thorson, J.T. 2025. When and How to Use Restricted Spatial
+#' Regression to Separate Environmental Effects from Spatial Confounding.
+#' EcoEvoRxiv. \doi{10.32942/X28351}.
+#'
+#' Hanks, E.M., Schliep, E.M., Hooten, M.B., and Hoeting, J.A. 2015. Restricted
+#' spatial regression in practice: geostatistical models, confounding, and
+#' robustness under model misspecification. Environmetrics 26(4): 243--254.
+#' \doi{10.1002/env.2331}.
+#'
 #' @export
 #'
 #' @importFrom assertthat assert_that
@@ -49,7 +66,7 @@
 #' )
 #' tidy(fit, "ran_vals")
 
-tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov", "dispersion"), model = 1,
+tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov", "rsr", "dispersion"), model = 1,
                  conf.int = TRUE, conf.level = 0.95, exponentiate = FALSE,
                  silent = FALSE, ...) {
   effects <- match.arg(effects)
@@ -175,8 +192,8 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   .formula <- remove_s_and_t2(.formula)
   if (!"mgcv" %in% names(x)) x[["mgcv"]] <- FALSE
   fe_names <- colnames(model.matrix(.formula, x$data))
-  if (!is.null(x$covariate_diffusion_data)) {
-    fe_names <- c(fe_names, x$covariate_diffusion_data$term_coef_name)
+  if (!is.null(x$nonlocal_parsed)) {
+    fe_names <- c(fe_names, x$nonlocal_parsed$term_coef_name)
   }
 
   b_j <- est$b_j[!fe_names == "offset", drop = TRUE]
@@ -379,13 +396,14 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     ii <- ii + 1
   }
 
-  add_covariate_diffusion_parameter <- function(term_name, covariate_mask_name,
-                                                display_name = term_name) {
-    if (is.null(x$covariate_diffusion_data) || !length(x$covariate_diffusion_data$covariates)) {
+  add_nonlocal_parameter <- function(term_name, covariate_mask_name,
+                                                display_name = term_name,
+                                                log_ci_term_name = NULL) {
+    if (is.null(x$nonlocal_parsed) || !length(x$nonlocal_parsed$covariates)) {
       return(NULL)
     }
-    covariates <- x$covariate_diffusion_data$covariates
-    keep <- x$covariate_diffusion_data[[covariate_mask_name]]
+    covariates <- x$nonlocal_parsed$covariates
+    keep <- x$nonlocal_parsed[[covariate_mask_name]]
     if (is.null(keep) || length(keep) != length(covariates)) {
       return(NULL)
     }
@@ -399,32 +417,46 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     if (!is.null(se[[term_name]])) {
       ses[keep_idx] <- se[[term_name]]
     }
+    conf_low <- estimates - crit * ses
+    conf_high <- estimates + crit * ses
+    if (!is.null(log_ci_term_name) &&
+        !is.null(est[[log_ci_term_name]]) &&
+        !is.null(se[[log_ci_term_name]])) {
+      log_estimates <- rep(NA_real_, length(covariates))
+      log_ses <- rep(NA_real_, length(covariates))
+      log_estimates[keep_idx] <- est[[log_ci_term_name]]
+      log_ses[keep_idx] <- se[[log_ci_term_name]]
+      valid <- keep_idx[is.finite(log_estimates[keep_idx]) &
+        is.finite(log_ses[keep_idx])]
+      conf_low[valid] <- exp(log_estimates[valid] - crit * log_ses[valid])
+      conf_high[valid] <- exp(log_estimates[valid] + crit * log_ses[valid])
+    }
     out <- data.frame(
       term = paste0(display_name, "[", covariates, "]"),
       estimate = estimates,
       std.error = ses,
-      conf.low = estimates - crit * ses,
-      conf.high = estimates + crit * ses,
+      conf.low = conf_low,
+      conf.high = conf_high,
       stringsAsFactors = FALSE
     )
     out[keep_idx, , drop = FALSE]
   }
-  covariate_diffusion_term_masks <- list(
-    list(term_name = "kappaS_dl", display_name = "kappaS_cov_diff", covariate_mask_name = "covariate_has_spatial"),
-    list(term_name = "kappaT_dl", display_name = "kappaT_cov_diff", covariate_mask_name = "covariate_has_temporal"),
-    list(term_name = "kappaST_dl", display_name = "kappaST_cov_diff", covariate_mask_name = "covariate_has_spacetime"),
+  nonlocal_term_masks <- list(
+    list(term_name = "kappaS_nl", display_name = "kappaS_nl", covariate_mask_name = "covariate_has_spatial"),
+    list(term_name = "kappaT_nl", display_name = "kappaT_nl", covariate_mask_name = "covariate_has_temporal"),
     list(term_name = "rhoT", display_name = "rhoT", covariate_mask_name = "covariate_has_temporal"),
-    list(term_name = "MSD", display_name = "MSD", covariate_mask_name = "covariate_has_spatial"),
-    list(term_name = "RMSD", display_name = "RMSD", covariate_mask_name = "covariate_has_spatial")
+    list(term_name = "MSDK", display_name = "MSDK", covariate_mask_name = "covariate_has_spatial", log_ci_term_name = "log_MSDK"),
+    list(term_name = "RMSDK", display_name = "RMSDK", covariate_mask_name = "covariate_has_spatial", log_ci_term_name = "log_RMSDK")
   )
-  for (term_info in covariate_diffusion_term_masks) {
-    term_df <- add_covariate_diffusion_parameter(
+  for (term_info in nonlocal_term_masks) {
+    term_df <- add_nonlocal_parameter(
       term_info$term_name,
       term_info$covariate_mask_name,
-      term_info$display_name
+      term_info$display_name,
+      term_info$log_ci_term_name
     )
     if (!is.null(term_df)) {
-      out_re[[paste0("covariate_diffusion_", term_info$display_name)]] <- term_df
+      out_re[[paste0("nonlocal_", term_info$display_name)]] <- term_df
     }
   }
 
@@ -634,9 +666,61 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
       cli_abort("`effects = 'dispersion'` is only available when `dispformula` is used.")
     }
     return(frm(out_disp))
+  } else if (effects == "rsr") {
+    return(.tidy_rsr_effects(x, model, conf.int, conf.level, exponentiate, crit, trans, frm))
   } else {
     cli_abort("The specified 'effects' type is not available.")
   }
+}
+
+# Extract Restricted Spatial Regression (RSR) fixed-effect estimates.
+# Computed unconditionally in the TMB template; this helper formats them
+# to match the "fixed" effects output of tidy.sdmTMB().
+.tidy_rsr_effects <- function(x, model, conf.int, conf.level, exponentiate, crit, trans, frm) {
+  se_rep <- as.list(x$sd_report, "Std. Error", report = TRUE)
+  est_rep <- as.list(x$sd_report, "Estimate", report = TRUE)
+
+  if (!"b_j_prime" %in% names(est_rep)) {
+    cli_abort(c(
+      "RSR coefficients were not computed for this fit.",
+      i = "Refit with {.code control = sdmTMBcontrol(get_rsr = TRUE)}."
+    ))
+  }
+
+  if (model == 1) {
+    rsr_coef <- est_rep$b_j_prime
+    rsr_se <- se_rep$b_j_prime
+  } else if (model == 2) {
+    if (!"b_j2_prime" %in% names(est_rep)) {
+      cli_abort("RSR coefficients for model 2 not available. Is this a delta model?")
+    }
+    rsr_coef <- est_rep$b_j2_prime
+    rsr_se <- se_rep$b_j2_prime
+  } else {
+    cli_abort("`model` must be 1 or 2.")
+  }
+
+  .formula <- x$split_formula[[model]]$form_no_bars
+  .formula <- remove_s_and_t2(.formula)
+  if (!"mgcv" %in% names(x)) x[["mgcv"]] <- FALSE
+  fe_names <- colnames(model.matrix(.formula, x$data))
+  fe_names <- fe_names[!fe_names == "offset"]
+
+  out_rsr <- data.frame(
+    term = fe_names,
+    estimate = rsr_coef,
+    std.error = rsr_se,
+    stringsAsFactors = FALSE
+  )
+
+  if (conf.int) {
+    out_rsr$conf.low <- as.numeric(trans(out_rsr$estimate - crit * out_rsr$std.error))
+    out_rsr$conf.high <- as.numeric(trans(out_rsr$estimate + crit * out_rsr$std.error))
+  }
+  out_rsr$estimate <- as.numeric(trans(out_rsr$estimate))
+  if (exponentiate) out_rsr$std.error <- NULL
+
+  frm(out_rsr)
 }
 
 # Convert anisotropic ranges list to a data frame
@@ -729,8 +813,8 @@ get_anisotropic_ranges <- function(x, m = 1L) {
 # Extract and format random effect estimates from sdmTMB model output
 #
 # This function extracts random effect estimates, including individual random intercepts
-# and slopes, as well as covariance matrices, from an `sdmTMB` model output. It formats
-# them into a structured list for further analysis.
+# and slopes, as well as standard deviation and correlation parameters, from an
+# `sdmTMB` model output. It formats them into a structured list for further analysis.
 #
 # @param x An `sdmTMB` model object containing estimated random effects.
 # @param crit The critical value for confidence interval computation,
@@ -744,10 +828,10 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
   names(re_b_df)[names(re_b_df) == "group_indices"] <- "group_id"
 
   # this function just expands each row from start: end
-  expand_row <- function(level_id, start, end, group_id, model) {
+  expand_row <- function(level, start, end, group_id, model) {
     seq_len <- end - start + 1
     data.frame(
-      level_ids = rep(level_id, seq_len),
+      level_ids = rep(level, seq_len),
       index = seq(from = start, to = end),
       group_id = rep(group_id, seq_len),
       model = rep(model, seq_len)
@@ -756,7 +840,7 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
 
   # apply to each row and combine the results
   expanded_rows <- Map(
-    expand_row, re_b_df$level_ids,
+    expand_row, re_b_df$level,
     re_b_df$start, re_b_df$end,
     re_b_df$group_id, re_b_df$model
   )
@@ -792,8 +876,6 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
   } else {
     re_b_df <- re_b_df[, c("group_name", "term", "level_ids", "estimate", "std.error", "conf.low", "conf.high")]
   }
-  # remove ":" in the level_ids
-  re_b_df$level_ids <- sapply(strsplit(re_b_df$level_ids, ":"), function(x) x[2])
   out_ranef <- re_b_df
   row.names(out_ranef) <- NULL
 
@@ -804,7 +886,7 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
     df
   })
   re_cov_df <- do.call(rbind, re_cov_dfs)
-  re_cov_df$rows <- re_cov_df$rows + 1 # increement rows/cols from 1, not 0
+  re_cov_df$rows <- re_cov_df$rows + 1 # increment rows/cols from 1, not 0
   re_cov_df$cols <- re_cov_df$cols + 1
   row.names(re_cov_df) <- NULL
 
@@ -815,18 +897,81 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
   }
 
   re_indx <- grep("re_cov_pars", names(x$sd_report$value), fixed = TRUE)
-  non_nas <- which(x$sd_report$value[re_indx] != 0) # remove parameter that gets mapped off
+  non_nas <- !is.na(x$tmb_map$re_cov_pars) # remove parameters that get mapped off
   re_cov_df$estimate <- x$sd_report$value[re_indx][non_nas]
   re_cov_df$std.error <- x$sd_report$sd[re_indx][non_nas]
   re_cov_df$conf.low <- re_cov_df$estimate - crit * re_cov_df$std.error
   re_cov_df$conf.high <- re_cov_df$estimate + crit * re_cov_df$std.error
   # the SD parameters are returned in log space -- calculate CIs in log space then transform
   sds <- which(re_cov_df$is_sd == 1) # index which elements are SDs
+  corr_pars <- which(re_cov_df$is_sd == 0) # assume elements which are not SDs can be transformed
+  # to obtain correlations
   # Calculate CIs in log space first
   re_cov_df$conf.low[sds] <- exp(re_cov_df$estimate[sds] - crit * re_cov_df$std.error[sds])
   re_cov_df$conf.high[sds] <- exp(re_cov_df$estimate[sds] + crit * re_cov_df$std.error[sds])
   # Transform estimates to natural space
   re_cov_df$estimate[sds] <- exp(re_cov_df$estimate[sds])
+
+  # TMB fills the unit-diagonal correlation factor row by row. Convert each
+  # internal covariance block before combining separately specified terms.
+  theta_to_cor <- function(theta, n) {
+    m <- matrix(0, n, n)
+    m[upper.tri(m)] <- theta
+    l <- t(m)
+    diag(l) <- 1
+    s <- l %*% t(l)
+    d <- sqrt(diag(s))
+    s / outer(d, d)
+  }
+  raw_conf_low <- re_cov_df$conf.low
+  raw_conf_high <- re_cov_df$conf.high
+  re_cov_df$conf.low[corr_pars] <- NA_real_
+  re_cov_df$conf.high[corr_pars] <- NA_real_
+  for (m in unique(re_cov_df$model)) {
+    model_rows <- which(re_cov_df$model == m)
+    for (g in unique(re_cov_df$group_indices[model_rows])) {
+      block <- which(re_cov_df$model == m & re_cov_df$group_indices == g)
+      block_corr <- block[re_cov_df$is_sd[block] == 0]
+      if (length(block_corr) > 0) {
+        n <- max(re_cov_df$rows[block])
+        cor_matrix <- theta_to_cor(re_cov_df$estimate[block_corr], n)
+        re_cov_df$estimate[block_corr] <- mapply(
+          function(row, col) cor_matrix[row, col],
+          re_cov_df$rows[block_corr], re_cov_df$cols[block_corr]
+        )
+        # For a 2-by-2 block, the correlation is a monotone scalar transform
+        # of one unconstrained parameter. Larger blocks require a multivariate
+        # delta method because correlations depend on multiple parameters.
+        if (n == 2L) {
+          re_cov_df$conf.low[block_corr] <- theta_to_cor(
+            raw_conf_low[block_corr], n
+          )[2, 1]
+          re_cov_df$conf.high[block_corr] <- theta_to_cor(
+            raw_conf_high[block_corr], n
+          )[2, 1]
+        }
+      }
+    }
+  }
+
+  # Terms such as (1 | group) + (0 + slope | group) are separate covariance
+  # blocks internally but should be displayed in one matrix. Offset each block
+  # by the cumulative dimensions of earlier blocks with the same display name.
+  display_keys <- unique(re_cov_df[, c("model", "group")])
+  for (i in seq_len(nrow(display_keys))) {
+    display_rows <- which(
+      re_cov_df$model == display_keys$model[i] &
+        re_cov_df$group == display_keys$group[i]
+    )
+    offset <- 0L
+    for (g in unique(re_cov_df$group_indices[display_rows])) {
+      block <- display_rows[re_cov_df$group_indices[display_rows] == g]
+      block_dim <- max(re_cov_df$rows[block], re_cov_df$cols[block])
+      re_cov_df$rows[block] <- re_cov_df$rows[block] + offset
+      re_cov_df$cols[block] <- re_cov_df$cols[block] + offset
+      offset <- offset + block_dim
+    }
+  }
 
   re_cov_df <- re_cov_df[, c("rows", "cols", "model", "group", "estimate", "std.error", "conf.low", "conf.high")]
   cov_matrices_lo = create_cov_matrices(re_cov_df, col_name = "conf.low", model = model)
@@ -906,7 +1051,7 @@ flatten_cov_output <- function(v, cnms) {
     model <- as.integer(split_name[2])
     group_name <- split_name[4]
 
-    term_names <- cnms[[group_name]]
+    term_names <- unlist(cnms[names(cnms) == group_name], use.names = FALSE)
     n <- nrow(est_mat)  # number of coefficients being estimated
 
     # Extract diagonal values only

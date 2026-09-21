@@ -118,7 +118,7 @@ test_that("Model with random intercepts fits appropriately.", {
   expect_equal(as.numeric(attr(summary(lmer_fit)$varcor[[1]], "stddev")),
                as.numeric(exp(REs[c(1,3)])), tolerance = 1.0e-4)
   expect_equal(as.numeric(attr(summary(lmer_fit)$varcor[[1]], "correlation")[1,2]),
-               as.numeric(REs[2]), tolerance = 1.0e-2)
+               as.numeric(REs[2])/sqrt(1+as.numeric(REs[2])^2), tolerance = 1.0e-4)
 
   # Check that ranef() returns the same thing
   expect_equal(mean(diag(cor(ranef(sdmTMB_fit)[[1]]$Subject, ranef(lmer_fit)$Subject))), 1)
@@ -175,13 +175,17 @@ test_that("Model with random intercepts fits appropriately.", {
 
 
   sdmTMB_fit <- sdmTMB(Reaction ~ Days + (1 + Days | Subject) + (1 | age), sleepstudy, spatial="off")
-
+  glmmtmb_fit <- glmmTMB::glmmTMB(Reaction ~ Days + (Days | Subject) + (1|age), sleepstudy, REML = FALSE)
 
   expect_equal(glmmTMB::fixef(glmmTMB_fit)$cond[1], coef(sdmTMB_fit)[1], tolerance = 1e-2)
   expect_equal(glmmTMB::fixef(glmmTMB_fit)$cond[2], coef(sdmTMB_fit)[2], tolerance = 1e-2)
   REs <- sdmTMB_fit$sd_report$value[grep("cov_pars", names(sdmTMB_fit$sd_report$value))]
   expect_equal(as.numeric(attr(summary(glmmTMB_fit)$varcor$cond$Subject, 'stddev')),
                as.numeric(exp(REs[c(1,3)])), tolerance = 1.0e-3)
+
+  # Check uncorrelated random intercept and slope
+  sdmTMB_fit <- sdmTMB(Reaction ~ Days + (1 + Days || Subject) + (1 | age), sleepstudy, spatial="off")
+  expect_equal(tidy(sdmTMB_fit, "ran_vcov")$est[[1]][2,1], NA_real_)
 
   # Add in spatial field
   set.seed(1)
@@ -290,10 +294,16 @@ test_that("Model with random intercepts fits appropriately.", {
     tolerance = 1e-5
   )
 #
-  # predicting with new levels throws error for now:
+  # predicting with new levels uses population-level predictions:
   m <- sdmTMB(data = s, formula = observed ~ 1 + (1 | g), spatial = "off")
-  nd <- data.frame(g = factor(c(1, 2, 3, 800)), observed=1)
-  expect_error(predict(m, newdata = nd), regexp = "Extra")
+  nd <- data.frame(g = factor(c(800)), observed = 1)
+  expect_warning(
+    p_warn <- predict(m, newdata = nd),
+    regexp = "Found new levels"
+  )
+  p_silent <- predict(m, newdata = nd, allow_new_levels = TRUE)
+  expect_equal(p_warn$est, p_silent$est)
+  expect_equal(p_silent$est, as.numeric(coef(m)))
 
   # predicting with missing factors works with the right re_form_iid
   m <- sdmTMB(data = s, formula = observed ~ 1 + (1 | g), spatial = "off")
@@ -302,6 +312,160 @@ test_that("Model with random intercepts fits appropriately.", {
   p2 <- predict(m, newdata = nd, re_form_iid = NA)
   # and this fails when not correct
   expect_error(predict(m, newdata = nd), regexp = "missing from `newdata`")
+})
+
+test_that("Interleaved random-effect groups retain covariance parameter order", {
+  skip_on_cran()
+  skip_if_not_installed("glmmTMB")
+  skip_if_not_installed("lme4")
+
+  data("sleepstudy", package = "lme4")
+  sleepstudy$age <- factor(rep(letters[1:5], 36))
+  set.seed(1)
+  devs <- stats::rnorm(5)
+  sleepstudy$Reaction <- sleepstudy$Reaction +
+    devs[rep(seq_along(devs), 36)] + stats::rnorm(nrow(sleepstudy), 0, 0.03)
+
+  form <- Reaction ~ Days + (1 | Subject) + (1 | age) + (0 + Days | Subject)
+  fit <- sdmTMB(form, sleepstudy, spatial = "off", silent = TRUE)
+  fit_glmmTMB <- glmmTMB::glmmTMB(form, sleepstudy, REML = FALSE)
+
+  vc <- tidy(fit, "ran_vcov")$est
+  subject <- vc[["Model 1 Group Subject"]]
+  age <- vc[["Model 1 Group age"]]
+  vc_glmmTMB <- glmmTMB::VarCorr(fit_glmmTMB)$cond
+  subject_glmmTMB <- vc_glmmTMB[grepl("^Subject", names(vc_glmmTMB))]
+
+  expect_equal(dim(subject), c(2L, 2L))
+  expect_true(all(is.na(subject[row(subject) != col(subject)])))
+  expect_equal(
+    diag(subject),
+    unname(vapply(
+      subject_glmmTMB,
+      function(x) unname(attr(x, "stddev")),
+      numeric(1)
+    )),
+    tolerance = 1e-3
+  )
+  expect_equal(age[1, 1], unname(attr(vc_glmmTMB$age, "stddev")), tolerance = 1e-3)
+
+  ran_pars <- tidy(fit, "ran_pars")
+  subject_terms <- ran_pars$term[
+    !is.na(ran_pars$group_name) & ran_pars$group_name == "Subject"
+  ]
+  expect_equal(subject_terms, c("sd__(Intercept)", "sd__Days"))
+
+  printed_matrix <- print_int_slope_re(fit)
+  expect_equal(unname(printed_matrix[, "Groups"]), c("Subject", "", "age"))
+  expect_equal(unname(printed_matrix[, "Name"]), c("(Intercept)", "Days", "(Intercept)"))
+  expect_equal(unname(printed_matrix[, "Std.Dev."]), mround(c(diag(subject), age[1, 1]), 2))
+  expect_equal(unname(printed_matrix[, "Corr"]), c("", "NA", ""))
+
+  printed <- capture.output(print(fit))
+  table_start <- grep("^ Groups", printed)
+  table_rows <- printed[table_start + seq_len(nrow(printed_matrix))]
+  expect_match(table_rows[1], "Subject.*\\(Intercept\\)")
+  expect_match(table_rows[2], "Days.*NA")
+  expect_match(table_rows[3], "age.*\\(Intercept\\)")
+})
+
+test_that("Random-slope interaction terms preserve random-effect level IDs", {
+  skip_on_cran()
+  skip_if_not_installed("lme4")
+
+  data("sleepstudy", package = "lme4")
+  sleepstudy$a <- sleepstudy$Days
+  sleepstudy$b <- sleepstudy$Days + 1
+  levels(sleepstudy$Subject)[1] <- "subject:308"
+
+  fit <- sdmTMB(
+    Reaction ~ Days + (1 + a:b | Subject),
+    sleepstudy,
+    spatial = "off",
+    silent = TRUE
+  )
+  re <- tidy(fit, "ran_vals")
+
+  expect_setequal(unique(re$level_ids), levels(sleepstudy$Subject))
+  expect_true("a:b" %in% re$term)
+})
+
+test_that("Tidy reports correlations for multivariate random-effect blocks", {
+  skip_on_cran()
+  skip_if_not_installed("glmmTMB")
+
+  set.seed(42)
+  n_group <- 40L
+  n_rep <- 12L
+  d <- data.frame(g = factor(rep(seq_len(n_group), each = n_rep)))
+  d$a <- stats::rnorm(nrow(d))
+  d$b <- stats::rnorm(nrow(d))
+  d$c <- stats::rnorm(nrow(d))
+  sigma <- matrix(c(
+    1, 0.25, -0.2, 0.15,
+    0.25, 0.7, 0.1, -0.1,
+    -0.2, 0.1, 0.8, 0.2,
+    0.15, -0.1, 0.2, 0.6
+  ), 4, 4)
+  u <- matrix(stats::rnorm(n_group * 4L), n_group, 4L) %*% chol(sigma)
+  group_index <- as.integer(d$g)
+  d$y <- 1 + 0.4 * d$a - 0.3 * d$b + 0.2 * d$c +
+    u[group_index, 1] + u[group_index, 2] * d$a +
+    u[group_index, 3] * d$b + u[group_index, 4] * d$c +
+    stats::rnorm(nrow(d), sd = 0.5)
+
+  formulas <- list(
+    y ~ a + (1 + a | g),
+    y ~ a + b + (1 + a + b | g),
+    y ~ a + b + c + (1 + a + b + c | g)
+  )
+  for (form in formulas) {
+    fit <- sdmTMB(form, d, spatial = "off", silent = TRUE)
+    fit_glmmTMB <- glmmTMB::glmmTMB(form, d, REML = FALSE)
+    vc <- tidy(fit, "ran_vcov", conf.int = TRUE)
+    correlation_glmmTMB <- attr(glmmTMB::VarCorr(fit_glmmTMB)$cond$g, "correlation")
+
+    expect_equal(
+      vc$est[[1]][lower.tri(vc$est[[1]])],
+      correlation_glmmTMB[lower.tri(correlation_glmmTMB)],
+      tolerance = 1e-3
+    )
+    if (nrow(correlation_glmmTMB) == 2L) {
+      re_indx <- grep("re_cov_pars", names(fit$sd_report$value), fixed = TRUE)
+      theta <- fit$sd_report$value[re_indx][2]
+      theta_se <- fit$sd_report$sd[re_indx][2]
+      crit <- stats::qnorm(0.975)
+      transform_cor <- function(x) x / sqrt(1 + x^2)
+      expect_equal(vc$lo[[1]][2, 1], unname(transform_cor(theta - crit * theta_se)))
+      expect_equal(vc$hi[[1]][2, 1], unname(transform_cor(theta + crit * theta_se)))
+
+      fit_zero <- fit
+      fit_zero$sd_report$value[re_indx[2]] <- 0
+      vc_zero <- tidy(fit_zero, "ran_vcov", conf.int = FALSE)
+      expect_equal(vc_zero$est[[1]][2, 1], 0)
+      expect_no_error(print_int_slope_re(fit_zero))
+    } else {
+      expect_true(all(is.na(vc$lo[[1]][lower.tri(vc$lo[[1]])])))
+      expect_true(all(is.na(vc$hi[[1]][lower.tri(vc$hi[[1]])])))
+    }
+
+    printed_matrix <- print_int_slope_re(fit)
+    expected_correlations <- c("", vapply(2:nrow(correlation_glmmTMB), function(i) {
+      paste(mround(correlation_glmmTMB[i, seq_len(i - 1L)], 2), collapse = " ")
+    }, character(1)))
+    expect_equal(unname(printed_matrix[, "Name"]), colnames(correlation_glmmTMB))
+    expect_equal(unname(printed_matrix[, "Corr"]), expected_correlations)
+
+    printed <- capture.output(print(fit))
+    table_start <- grep("^ Groups", printed)
+    table_rows <- printed[table_start + seq_len(nrow(printed_matrix))]
+    for (i in seq_len(nrow(printed_matrix))) {
+      expect_true(grepl(printed_matrix[i, "Name"], table_rows[i], fixed = TRUE))
+      if (nzchar(expected_correlations[i])) {
+        expect_true(grepl(expected_correlations[i], table_rows[i], fixed = TRUE))
+      }
+    }
+  }
 })
 
 test_that("Random intercepts and cross validation play nicely", {
@@ -458,84 +622,13 @@ test_that("Delta model works with random effects", {
   expect_equal(nrow(tidy(m_yrf_re, "ran_vals")), length(unique(pcod$year))*2)
 
 
-  # test 2 different RE intercepts
- m_yrf_re_1 <- sdmTMB(
+  # Explicit list formulas must use the same random-effect structure.
+  m_yrf_re_1 <- sdmTMB(
     data = pcod,
     formula = list(density ~ (1 | year_f), density ~ (1|year_f)),
     family = delta_gamma(),
     spatial = "off"
   )
-
-  # 2 diff intercepts, same number of levels
-  intcpts <- rnorm(9)
-  pcod$vessel <- sample(1:9, size = nrow(pcod), replace=T)
-  pcod$density[which(pcod$present==1)] <- exp(log(pcod$density[which(pcod$present==1)]) + intcpts[pcod$vessel[which(pcod$present==1)]])
-  pcod$vessel <- as.factor(pcod$vessel)
-  pcod$density[which(pcod$present==1)] <- exp(log(pcod$density[which(pcod$present==1)]) + intcpts[pcod$vessel[which(pcod$present==1)]])
-
-  m_yrf_re2 <- sdmTMB(
-    data = pcod,
-    formula = list(density ~ (1 | year_f), density ~ (1|vessel)),
-    family = delta_gamma(),
-    spatial = "off"
-  )
-  glmm_pres <- glmmTMB::glmmTMB(
-    data = pcod,
-    formula = present ~ (1 | year),
-    family = binomial()
-  )
-  log_vars <- m_yrf_re2$sd_report$value[grep("re_cov_pars", names(m_yrf_re2$sd_report$value))]
-  expect_equal(as.numeric(attr(summary(glmm_pres)$varcor[[1]]$year, "stddev")), as.numeric(exp(log_vars[1])),
-               tolerance = 1e-5)
-
-  # 2 diff intercepts, different number of levels
-  intcpts <- rnorm(10)
-  pcod$vessel <- sample(1:10, size = nrow(pcod), replace=T)
-  pcod$density[which(pcod$present==1)] <- exp(log(pcod$density[which(pcod$present==1)]) + intcpts[pcod$vessel[which(pcod$present==1)]])
-  pcod$vessel <- as.factor(pcod$vessel)
-  pcod$density[which(pcod$present==1)] <- exp(log(pcod$density[which(pcod$present==1)]) + intcpts[pcod$vessel[which(pcod$present==1)]])
-
-  m_yrf_re3 <- sdmTMB(
-    data = pcod,
-    formula = list(density ~ (-1+depth | year_f), density ~ (1|vessel)),
-    family = delta_gamma(),
-    spatial = "off"
-  )
-
-  # test 2 different numbers of random ints
-  m_yrf_re4 <- sdmTMB(
-    data = pcod,
-    formula = list(density ~ (1 | year_f) + (1|vessel), density ~ (1|vessel)),
-    family = delta_gamma(),
-    spatial = "off"
-  )
-
-
-  # test 2 different numbers of random ints, different number of levels
-  # m_yrf_re5 <- sdmTMB(
-  #   data = pcod,
-  #   formula = list(density ~ (depth | year_f) + (1|vessel), density ~ (1|vessel)),
-  #   family = delta_gamma(),
-  #   spatial = "off"
-  # )
-
-  # # Test same model with characters
-  # pcod$year_chr <- paste(pcod$year)
-  # m_yrf_re6 <- sdmTMB(
-  #   data = pcod,
-  #   formula = list(density ~ (depth | year_chr) + (1|vessel), density ~ (1|vessel)),
-  #   family = delta_gamma(),
-  #   spatial = "off"
-  # )
-  #
-  #
-  # # Test same model with integers
-  # m_yrf_re7 <- sdmTMB(
-  #   data = pcod,
-  #   formula = list(density ~ (depth | year) + (1|vessel), density ~ (1|vessel)),
-  #   family = delta_gamma(),
-  #   spatial = "off"
-  # )
 })
 
 test_that("issue breakpt() version of formula doesn't break random effect prediction #423", {

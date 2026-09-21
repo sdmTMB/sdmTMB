@@ -58,14 +58,12 @@ test_that("extra_time, newdata, get_index() work", {
   # missing one extra_time
   nd <- replicate_df(pcod, "year", sort(union(unique(pcod$year), m$extra_time)))
   nd <- subset(nd, year != 2018)
-  p <- predict(m, newdata = nd, return_tmb_object = TRUE)
-  ind <- get_index(p)
+  ind <- get_index(m, newdata = nd)
   ind
 
   # all:
   nd <- replicate_df(pcod, "year", sort(union(unique(pcod$year), m$extra_time)))
-  p <- predict(m, newdata = nd, return_tmb_object = TRUE)
-  ind2 <- get_index(p)
+  ind2 <- get_index(m, newdata = nd)
   ind2
   expect_identical(ind2$year, c(
     2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
@@ -76,8 +74,7 @@ test_that("extra_time, newdata, get_index() work", {
 
   # just original:
   nd <- replicate_df(pcod, "year", unique(pcod$year))
-  p <- predict(m, newdata = nd, return_tmb_object = TRUE)
-  ind3 <- get_index(p)
+  ind3 <- get_index(m, newdata = nd)
   ind3
 
   expect_equal(ind2[ind2$year %in% pcod$year, "est"], ind3[ind3$year %in% pcod$year, "est"])
@@ -89,8 +86,7 @@ test_that("extra_time, newdata, get_index() work", {
   # missing some original time:
   nd <- replicate_df(pcod, "year", unique(pcod$year))
   nd <- subset(nd, year != 2017)
-  p <- predict(m, newdata = nd, return_tmb_object = TRUE)
-  ind5 <- get_index(p)
+  ind5 <- get_index(m, newdata = nd)
   expect_equal(ind2[ind2$year %in% nd$year, "est"], ind5[ind5$year %in% nd$year, "est"])
 
   # with do_index = TRUE

@@ -363,9 +363,9 @@ test_that("Betabinomial can be used with index standardization", {
       time = "time"
     )
     nd <- data.frame(time = 1L)
-    p <- predict(m, newdata = nd, return_tmb_object = TRUE)
-    i <- get_index(p, area = n_trials, bias_correct = FALSE)
-    expected <- fam$linkinv(p$data$est) * n_trials
+    p <- predict(m, newdata = nd)
+    i <- get_index(m, newdata = nd, area = n_trials, bias_correct = FALSE)
+    expected <- fam$linkinv(p$est) * n_trials
     expect_equal(i$est, expected)
     expect_equal(i$log_est, log(expected))
   }

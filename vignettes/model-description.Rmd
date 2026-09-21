@@ -67,13 +67,13 @@ div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
 
 # Notation conventions
 
-This appendix uses the following notation conventions, which generally follow the guidance in @edwards2019:
+This vignette uses the following notation conventions, which generally follow the guidance in @edwards2019:
 
 -   Greek symbols for parameters,
 
 -   the Latin/Roman alphabet for data except for cases where another symbol is used by convention,
 
--   bold symbols for vectors or matrices (e.g., $\bomega$ is a vector and $\omega_{\s}$ is the value of $\bomega$ at point in space $\s$), with Latin/Roman symbols in non-italics (e.g., $\mathbf{X}$, $\mathbf{Q}$),
+-   bold symbols for vectors or matrices (e.g., $\bomega$ is a vector and $\omega_{\s}$ is the value of $\bomega$ at a point in space $\s$), with Latin/Roman symbols in non-italics (e.g., $\mathbf{X}$, $\mathbf{Q}$),
 
 -   $\phi$ for all distribution dispersion parameters for consistency with the code,
 
@@ -109,12 +109,12 @@ $$
 where
 
 -   $y_{\s,t}$ represents the response data at point $\s$ and time $t$;
--   $\eta$ represents the linear predictor (i.e., in link space)
+-   $\eta$ represents the linear predictor (i.e., in link space);
 -   $\mu$ represents the conditional mean on the response/data scale (after applying the inverse link);
 -   $f$ represents a link function (e.g., log or logit) and $f^{-1}$ represents its inverse, and $\eta$ represents the linear predictor before applying $f^{-1}$;
--   $\bX^{\RM{main}}$, $\bX^{\RM{tvc}}$, and $\bX^{\RM{svc}}$ represent design matrices (the superscript identifiers 'main' = main effects, 'tvc' = time varying coefficients, and 'svc' = spatially varying coefficients);
+-   $\bX^{\RM{main}}$, $\bX^{\RM{tvc}}$, and $\bX^{\RM{svc}}$ represent design matrices (the superscript identifiers 'main' = main effects, 'tvc' = time-varying coefficients, and 'svc' = spatially varying coefficients);
 -   $\bbeta$ represents a vector of fixed-effect coefficients;
--   $O_{\s,t}$ represents an offset: a covariate (usually log transformed) with a coefficient fixed at one that enters on the linear predictor scale (before the inverse link);
+-   $O_{\s,t}$ represents an offset: a covariate (usually log-transformed) with a coefficient fixed at one that enters on the linear predictor scale (before the inverse link);
 -   $\bZ_{g}$ represents the random-effect design row(s) for group $g$ (a subset of the matrix $\bZ$) corresponding to $\mathbf{b}_{g}$; these random effects enter on the linear predictor scale; the scalar special case is a random intercept $\alpha_{g}\sim \RM{N}(0,\sigma_\alpha^2)$, and more generally random slopes and intercepts are vector-valued with full covariance as described below;
 -   $\bgam_{t}$ represents a vector of time-varying coefficients, where each coefficient $\gamma_{p,t}$ can follow a random walk or AR(1) process;
 -   $\bzeta_{\s}$ represents a vector of spatially varying coefficients (random fields), where each coefficient $\zeta_{l,\s} \sim \RM{MVN}(\bs{0},\bSigma_{\zeta,l})$;
@@ -164,7 +164,7 @@ s(x)=\tau + \psi\ { \left[ 1+{ e }^{ -\ln \left(19\right) \cdot \left( x-s50 \ri
      / \left(s95 - s50 \right) } \right] }^{-1},
 $$
 
-where $s$ represents the logistic function, $\psi$ is a scaling parameter (controlling the height of the y-axis for the response; unconstrained), $\tau$ is an intercept, $s50$ is a parameter controlling the point at which the function reaches 50% of the maximum ($\psi$), and $s95$ is a parameter controlling the point at which the function reaches 95% of the maximum.
+where $s(x)$ denotes the threshold function, $\psi$ is a scaling parameter (controlling the height of the response curve; unconstrained), $\tau$ is an intercept, $s50$ is a parameter controlling the point at which the function reaches 50% of the maximum ($\psi$), and $s95$ is a parameter controlling the point at which the function reaches 95% of the maximum.
 The parameter $s50$ is unconstrained but $s95$ is constrained to be larger than $s50$.
 
 These models can be fit by including `+ logistic(x)` in the model formula, where `x` is a covariate.
@@ -209,7 +209,7 @@ $$
 \end{aligned}
 $$
 
-where $\epsilon_{\s,t}$ represent random field deviations at point $\s$ and time $t$.
+where $\epsilon_{\s,t}$ represents random field deviations at point $\s$ and time $t$.
 The random fields are assumed independent across time steps.
 
 Similarly to the spatial random fields, these spatiotemporal random fields (including all versions described below) are parameterized internally with a sparse precision matrix ($\bQ_\epsilon$)
@@ -220,7 +220,7 @@ $$
 
 ### AR(1) spatiotemporal random fields
 
-First-order auto regressive, AR(1), spatiotemporal random fields (`spatiotemporal = 'ar1'`) add a parameter defining the correlation between random field deviations from one time step to the next.
+First-order autoregressive, AR(1), spatiotemporal random fields (`spatiotemporal = 'ar1'`) add a parameter defining the correlation between random field deviations from one time step to the next.
 They are defined as
 
 $$
@@ -280,9 +280,9 @@ $$
 \end{aligned}
 $$
 
-In this case, the first time-step value is given an implicit uniform prior.
-I.e., the same variable should not appear in the fixed effect formula since the initial value is estimated as part of the time-varying formula.
-The formula `time_varying = ~ 1` implicitly represents a time-varying intercept (assuming the `time` argument has been supplied) and, this case, the intercept should be omitted from the main effects (`formula ~ + 0 + ...` or `formula ~ -1 + ...`).
+In this case, the first time-step value is treated as an unconstrained parameter (equivalent to an improper flat prior).
+That is, the same variable should not appear in the fixed-effects formula since the initial value is estimated as part of the time-varying formula.
+The formula `time_varying = ~ 1` implicitly represents a time-varying intercept (assuming the `time` argument has been supplied) and, in this case, the intercept should be omitted from the main-effects formula (e.g., `formula = y ~ 0 + ...` or `formula = y ~ -1 + ...`).
 
 For `time_varying_type = 'rw0'`, the first time step is estimated from a mean-zero prior:
 
@@ -318,7 +318,7 @@ $$
 
 where $\zeta_{l,\s}$ represents the $l$-th spatially varying coefficient field at location $\s$.
 When multiple spatially varying coefficients are specified, each is estimated as an independent spatial random field with its own marginal variance $\sigma_{\zeta,l}^2$.
-Usually, $\bX^{\RM{svc}}_{\s, t}$ would represent a prediction matrix that is constant spatially for a given time $t$ as defined by a one-sided formula supplied to `spatial_varying`.
+Usually, $\bX^{\RM{svc}}_{\s, t}$ represents the corresponding design matrix for the spatially varying coefficient terms, as defined by a one-sided formula supplied to `spatial_varying`.
 For example `spatial_varying = ~ 0 + x`, where `0` omits the intercept.
 
 The random fields are parameterized internally with a sparse precision matrix ($\bQ_\zeta$)
@@ -357,17 +357,19 @@ $$
 \end{aligned}
 $$
 
-where $O_{\s,t}$ is an offset term---a **log transformed** variable without a coefficient (assuming a log link).
+where $O_{\s,t}$ is an offset term---a **log-transformed** variable without a coefficient (assuming a log link).
 The offset is *not* included in the prediction.
 Therefore, if `offset` represents a measure of effort, for example, the prediction is for one unit of effort (`log(1) = 0`).
 
-## Covariate diffusion (distributed lags)
+## Nonlocal formula (covariate diffusion)
 
-Covariate diffusion terms [@lindmark2025; @thorson2026] can be added with the `covariate_diffusion` argument to `sdmTMB()` as a one-sided formula using `space()` and/or `time()` wrappers.
-For example: `~ space(x) + time(x)`.
-Conceptually, covariate diffusion lets the effect of a covariate be distributed over nearby locations and/or previous time steps, rather than acting only locally and instantaneously.
+Distributed lag terms [@lindmark2025; @thorson2026] can be added with the `nonlocal_formula` argument to `sdmTMB()` as a one-sided formula using `diffusion()` and/or `time_lag()` wrappers.
+For example: `~ diffusion(x) + time_lag(x)`.
+Conceptually, these nonlocal terms let the effect of a covariate be distributed over nearby locations and/or previous time steps, rather than acting only locally and instantaneously.
 This can be useful when ecological responses are delayed, transported, or accumulated through space and time.
 Users should consult (and cite) @lindmark2025 (spatial) and @thorson2026 (extension to time) for details on the model formulation and interpretation.
+
+Wrappers are grouped by covariate. If the same covariate appears in both wrappers, as in `~ diffusion(x) + time_lag(x)`, they select parts of one joint operator and produce one transformed predictor and one coefficient. If the covariates differ, as in `~ diffusion(x1) + time_lag(x2)`, the model has two separately transformed predictors and two coefficients. Covariates are ordered by their first appearance in the formula.
 
 These diffused terms enter the linear predictor as transformed covariates with estimated coefficients:
 
@@ -377,7 +379,7 @@ $$
 
 where each transformed covariate $\tilde{x}_{r,\s,t}$ is constructed from the corresponding observed covariate using one of the components below.
 
-For `space(x)`, each time slice is spatially smoothed:
+For `diffusion(x)`, each time slice is spatially smoothed:
 
 $$
 \left(\mathbf{M}_0 + \kappa_{S}^{-2}\mathbf{M}_1\right)\tilde{\mathbf{x}}_{t} = \mathbf{M}_0\mathbf{x}_{t},
@@ -385,23 +387,46 @@ $$
 
 where $\mathbf{x}_t$ is the covariate evaluated at mesh vertices at time $t$, and $\mathbf{M}_0$ and $\mathbf{M}_1$ are SPDE mass and stiffness matrices.
 
-For `time(x)`, the transformed covariate follows a temporal recursion at each vertex:
+For `time_lag(x)`, the transformed covariate follows the stationary temporal recursion at each vertex:
 
 $$
-\tilde{x}_{\s,1} = x_{\s,1}, \qquad
-\tilde{x}_{\s,t} = x_{\s,t} + \kappa_{T}\tilde{x}_{\s,t-1} \quad (t > 1).
+\tilde{x}_{\s,1} = \frac{x_{\s,1}}{1 + \kappa_T}, \qquad
+\tilde{x}_{\s,t} = \frac{x_{\s,t} + \kappa_T\tilde{x}_{\s,t-1}}{1 + \kappa_T} \quad (t > 1).
 $$
 
-Lag-scale parameters are estimated separately for each covariate included in `covariate_diffusion`.
-`time()` terms require a `time` argument in `sdmTMB()`.
+This initialization assumes a zero transformed state immediately before the first modeled time slice. Equivalently, with $\rho_T = \kappa_T/(1 + \kappa_T)$, the recursion is $\tilde{x}_{\s,1} = (1 - \rho_T)x_{\s,1}$ and $\tilde{x}_{\s,t} = (1 - \rho_T)x_{\s,t} + \rho_T\tilde{x}_{\s,t-1}$. Fitting constrains $\kappa_T \geq 0$, so $0 \leq \rho_T < 1$. Lag-scale parameters are estimated separately for each covariate included in `nonlocal_formula`.
+`time_lag()` terms require a `time` argument in `sdmTMB()`.
 
-For spatial diffusion terms, the model output also reports `MSD[...]` and `RMSD[...]`, the implied mean squared displacement and root mean squared displacement.
-With the current parameterization, `\mathrm{MSD} = 4/\kappa_S^2` and `\mathrm{RMSD} = 2/\kappa_S`; `RMSD` is a typical diffusion distance (a blur radius) in coordinate units, where larger values imply broader smoothing and smaller values imply more local diffusion.
+For a covariate with both wrappers, the stationary joint operator is
+
+$$
+\left[(1 + \kappa_T)\mathbf{M}_0 + \kappa_S^{-2}\mathbf{M}_1\right]\tilde{\mathbf{x}}_t
+= \mathbf{M}_0\mathbf{x}_t + \kappa_T\mathbf{M}_0\tilde{\mathbf{x}}_{t-1},
+$$
+
+where the final term is omitted for the first time slice. Thus spatial smoothing and temporal propagation act on the same evolving field, which enters the linear predictor once. The implementation corresponds to `kappaST = 0` in the formulation described by @thorson2026. At `kappaT = 0`, the joint operator reduces exactly to the spatial-only operator.
+
+For spatial-only terms, the model output reports `MSDK[...]` and `RMSDK[...]`, the mean-squared diffusion-kernel scale and its square root:
+
+$$
+\mathrm{MSDK} = 4\kappa_S^{-2}, \qquad
+\mathrm{RMSDK} = \sqrt{\mathrm{MSDK}}.
+$$
+
+For the stationary joint operator, with $\rho_T = \kappa_T/(1 + \kappa_T)$,
+
+$$
+\mathrm{MSDK} = 4\kappa_S^{-2}(1 - \rho_T)
+= \frac{4\kappa_S^{-2}}{1 + \kappa_T}, \qquad
+\mathrm{RMSDK} = \sqrt{\mathrm{MSDK}}.
+$$
+
+Temporal-only terms do not report MSDK or RMSDK. MSDK is the approximate slope of normalized point-response spatial MSD against time index in the stationary `kappaST = 0` formulation described by @thorson2026; it is not time-specific total MSD. The SR term in the relationship $\mathrm{MSD}(t^*) \approx \mathrm{SR} + t^*\mathrm{MSDK}$ depends on the FEM basis, impulse location, projection grid, cell-area weights, and boundaries, so sdmTMB does not report it.
 
 ## Areal autoregressive models (SAR/CAR)
 
 In addition to continuous-space SPDE random fields, sdmTMB can fit areal spatial autoregressive models with `spatial_model = "sar"` or `spatial_model = "car"`.
-These require an areal domain supplied to `mesh` with the help of `make_areal_domain()` or `make_areal_grid()`.
+These require an areal domain supplied to `mesh` with the help of `make_areal_domain()`.
 
 For both areal options, the latent spatial and spatiotemporal effects are Gaussian Markov random fields with precision defined by the areal weight matrix $\mathbf{W}$:
 
@@ -459,7 +484,7 @@ Example: `family = binomial(link = "logit")`
 
 $$
 \operatorname{BetaBinomial} \left(N, \mu, \phi \right)
-$$ where $N$ is the number of trials, $\mu$ is the mean success probability, and $\phi$ is a precision parameter that controls overdispersion relative to a Binomial.
+$$ where $N$ is the number of trials, $\mu$ is the mean success probability, and $\phi$ is a precision parameter that controls overdispersion relative to a Binomial distribution.
 The implied Beta parameters are $\alpha = \mu \phi$ and $\beta = (1 - \mu)\phi$, and the variance is
 $
 \mathrm{Var}[y] = N \mu (1 - \mu)\, \frac{\phi + N}{\phi + 1},
@@ -661,14 +686,14 @@ $$
 \operatorname{Student-t} \left( \mu, \phi, \nu \right)
 $$
 
-where $\nu$, the degrees of freedom (`df`), is a user-supplied fixed parameter.
+where $\nu$, the degrees of freedom (`df`), is estimated by default and can optionally be fixed by the user.
 Lower values of $\nu$ result in heavier tails compared to the Gaussian distribution.
 Above approximately `df = 20`, the distribution becomes very similar to the Gaussian.
 The Student-t distribution with a low degrees of freedom (e.g., $\nu \le 7$) can be helpful for modelling data that would otherwise be suitable for Gaussian but needs an approach that is robust to outliers [e.g., @anderson2017c].
 
 Code defined [within sdmTMB](https://github.com/sdmTMB/sdmTMB/blob/18a39eabc111e2179fa589f942c8820d87ad10df/src/utils.h#L37-L45) based on the `dt()` distribution in TMB.
 
-Example: `family = student(link = "log", df = 7)`
+Example: `family = student(link = "identity", df = 7)`
 
 ## Zero-inflated and hurdle structures
 
@@ -698,7 +723,7 @@ sdmTMB(
 )
 ```
 
-Or for we may want separate main-effects formulas. For example:
+Or we may want separate main-effects formulas. For example:
 
 ```r
 sdmTMB(
@@ -734,14 +759,14 @@ The spatially varying coefficient field always shares $\kappa$ with the spatial 
 
 ## Projection $\bA$ matrix
 
-The values of the spatial variables at the knots are multiplied by a projection matrix $\bA$ that bilinearly interpolates from the knot locations to the values at the locations of the observed or predicted data [@lindgren2015]
+The values of the spatial variables at the knots are multiplied by a projection matrix $\bA$ that linearly interpolates within mesh triangles from the knot locations to the locations of the observed or predicted data [@lindgren2015]
 
 $$
 \bomega^* = \bA \bomega,
 $$ where $\bomega^*$ represents the values of the spatial random fields at the observed locations or predicted data locations.
 The matrix $\bA$ has a row for each data point or prediction point and a column for each knot.
-Three non-zero elements on each row define the weight of the neighbouring 3 knot locations for location $\s$.
-The same bilinear interpolation happens for any spatiotemporal random fields
+Three non-zero elements on each row define the weights of the three neighbouring knot locations for location $\s$.
+The same interpolation happens for any spatiotemporal random fields
 
 $$
 \beps_t^* = \bA \beps_t.
@@ -749,7 +774,7 @@ $$
 
 ## Anisotropy
 
-TMB allows for anisotropy, where spatial covariance may be asymmetric with respect to latitude and longitude ([full details](https://kaskr.github.io/adcomp/namespaceR__inla.html)).
+TMB allows for anisotropy, where spatial covariance may depend on direction ([full details](https://kaskr.github.io/adcomp/namespaceR__inla.html)).
 Anisotropy can be turned on or off with the logical `anisotropy` argument to `sdmTMB()`.
 There are a number of ways to implement anisotropic covariance [@fuglstad2015a], and we adopt a 2-parameter rotation matrix $\bH$.
 The elements of $\bH$ are defined by the parameter vector $\boldsymbol{x}$ so that $H_{1,1} = x_{1}$, $H_{1,2} = H_{2,1} = x_{2}$ and $H_{2,2} = (1 + x_{2}^2) / x_{1}$.
@@ -761,7 +786,7 @@ If a barrier mesh is used, anisotropy is disabled.
 
 In some cases the spatial domain of interest may be complex and bounded by some barrier such as by land or water (e.g., coastlines, islands, lakes).
 SPDE models allow for physical barriers to be incorporated into the modelling [@bakka2019].
-With `sdmTMB()` models, the mesh construction occurs in two steps: the user (1) constructs a mesh with a call to `sdmTMBextra::make_mesh()`, and (2) passes the mesh to `sdmTMBextra::add_barrier_mesh()`.
+With `sdmTMB()` models, the mesh construction occurs in two steps: the user (1) constructs a mesh with a call to `sdmTMB::make_mesh()`, and (2) passes the mesh to `sdmTMBextra::add_barrier_mesh()`.
 The barriers must be constructed as `sf` objects [@pebesma2018] with polygons defining the barriers.
 See `?sdmTMBextra::add_barrier_mesh` for an example.
 
@@ -771,7 +796,7 @@ That makes correlation decay much faster through the barrier than around it, whi
 From experimentation, values around 0.1 or 0.2 seem to work well but values much lower than 0.1 can result in convergence issues.
 
 [This website](https://haakonbakkagit.github.io/btopic128.html) by Francesco Serafini and Haakon Bakka provides an illustration with INLA.
-The implementation within TMB was borrowed from code written by Olav Nikolai Breivik and Hans Skaug at the [TMB Case Studies](https://github.com/skaug/tmb-case-studies) Github site.
+The implementation within TMB was borrowed from code written by Olav Nikolai Breivik and Hans Skaug at the [TMB Case Studies](https://github.com/skaug/tmb-case-studies) GitHub site.
 
 # Optimization
 
@@ -787,7 +812,7 @@ In sdmTMB, phased estimation proceeds by first estimating all fixed-effect param
 In the second phase, the random-effect parameters (and their variances) are also estimated.
 Fixed-effect parameters are also estimated in the second phase and are initialized at their estimates from the first phase.
 
-In some cases, a single call to `stats::nlminb()` may not be result in convergence (e.g., the maximum gradient of the marginal likelihood with respect to fixed-effect parameters is not small enough yet), and the algorithm may need to be run multiple times.
+In some cases, a single call to `stats::nlminb()` may not result in convergence (e.g., the maximum gradient of the marginal likelihood with respect to fixed-effect parameters is not small enough yet), and the algorithm may need to be run multiple times.
 In the `sdmTMB::sdmTMBcontrol()` function, we include an argument `nlminb_loops` that will restart the optimization at the previous best values.
 The number of `nlminb_loops` should generally be small (e.g., 2 or 3), and defaults to 1.
 For some sdmTMB models, the Hessian may also be unstable and need to be re-evaluated.
@@ -803,7 +828,7 @@ Much of the guidance around diagnostics and glmmTMB also applies to sdmTMB, e.g.
 Optimization with `stats::nlminb()` involves specifying the number of iterations and evaluations (`eval.max` and `iter.max`) and the tolerances (`abs.tol`, `rel.tol`, `x.tol`, `xf.tol`)---a greater number of iterations and smaller tolerance thresholds increase the chance that the optimal solution is found, but more evaluations translates into longer computation time.
 Warnings of non-positive-definite Hessian matrices (accompanied by parameters with `NA`s for standard errors) often mean models are improperly specified given the data.
 Standard errors can be observed in the output of `print.sdmTMB()` or by checking `fit$sd_report`.
-The maximum gradient of the marginal likelihood with respect to fixed-effect parameters can be checked by inspecting (`fit$gradients`).
+The maximum gradient of the marginal likelihood with respect to fixed-effect parameters can be checked by inspecting `fit$gradients`.
 Guidance varies, but gradients should be very close to zero (e.g., on the order of $10^{-3}$ or smaller after reasonable parameter scaling) before assuming the fitting routine is consistent with convergence.
 If maximum gradients are already relatively small, they can sometimes be reduced further with additional optimization calls beginning at the previous best parameter vector as described above with `sdmTMB::run_extra_optimization()`.
 

@@ -148,4 +148,4 @@ plot_map_raster(pred, se) +
   scale_fill_viridis_c()
 ```
 
-We can see a visual pattern of the SPDE mesh in this plot. The uncertainty standard error is most accurate at the nodes (vertices, knots) of the mesh.
+We can see a visual pattern of the SPDE mesh in this plot. The uncertainty standard error is [most accurately computed](https://github.com/sdmTMB/sdmTMB/discussions/529#discussioncomment-16855394) (i.e., most correct) at the vertices (or knots) of the mesh. In between the vertices, bilinear interpolation results in less apparent uncertainty, but this is a product of the bilinear interpolation.

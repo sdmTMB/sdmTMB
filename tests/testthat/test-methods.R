@@ -42,6 +42,48 @@ test_that("coef works with delta models and informs as needed", {
   expect_equal(round(sigma(fit), 3), 1.261)
 })
 
+test_that("set_delta_model is respected by model methods", {
+  skip_on_cran()
+  fit <- sdmTMB(
+    density ~ depth,
+    data = pcod_2011, spatial = "off",
+    family = delta_gamma()
+  )
+  fit1 <- set_delta_model(fit, model = 1)
+  fit2 <- set_delta_model(fit, model = 2)
+
+  expect_equal(suppressMessages(coef(fit1)), suppressMessages(coef(fit, model = 1)))
+  expect_equal(suppressMessages(coef(fit2)), suppressMessages(coef(fit, model = 2)))
+  expect_equal(vcov(fit1), vcov(fit, model = 1))
+  expect_equal(vcov(fit2), vcov(fit, model = 2))
+  expect_equal(fixef(fit1), fixef(fit, model = 1))
+  expect_equal(fixef(fit2), fixef(fit, model = 2))
+
+  fit$formula[[2]] <- density ~ year
+  fit$terms[[2]] <- stats::terms(fit$formula[[2]])
+  fit1 <- set_delta_model(fit, model = 1)
+  fit2 <- set_delta_model(fit, model = 2)
+  expect_equal(formula(fit1), fit$formula[[1]])
+  expect_equal(formula(fit2), fit$formula[[2]])
+  expect_equal(terms(fit1), fit$terms[[1]])
+  expect_equal(terms(fit2), fit$terms[[2]])
+  expect_equal(model.matrix(fit1), model.matrix(fit, model = 1))
+  expect_equal(model.matrix(fit2), model.matrix(fit, model = 2))
+
+  newdata <- fit$data[seq_len(5), , drop = FALSE]
+  newdata$depth <- seq(min(fit$data$depth), max(fit$data$depth), length.out = nrow(newdata))
+  expect_equal(nrow(model.matrix(fit, data = newdata)), nrow(newdata))
+  expect_equal(
+    model.matrix(fit, data = newdata),
+    stats::model.matrix(
+      fit$terms[[1]], data = newdata,
+      contrasts.arg = fit$contrasts[[1]]
+    )
+  )
+
+  expect_equal(vcov(fit1, model = 2), vcov(fit, model = 2))
+})
+
 test_that("various methods work", {
   skip_on_cran()
   fit <- sdmTMB(

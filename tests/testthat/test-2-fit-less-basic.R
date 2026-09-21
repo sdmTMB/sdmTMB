@@ -56,8 +56,8 @@ test_that("A time-varying model fits and predicts appropriately", {
     spatiotemporal = "off")
   expect_equal(exp(m$model$par["ln_tau_V"])[[1]], 0.5971512, tolerance = 0.001)
   tidy(m, effects = "ran_par")
-  # b_t <- dplyr::group_by(s, time) %>%
-  #   dplyr::summarize(b_t = unique(b), .groups = "drop") %>%
+  # b_t <- dplyr::group_by(s, time) |>
+  #   dplyr::summarize(b_t = unique(b), .groups = "drop") |>
   #   dplyr::pull(b_t)
   # r <- m$tmb_obj$report()
   # b_t_fit <- r$b_rw_t[,,1]
@@ -368,6 +368,109 @@ test_that("update() works", {
   expect_equal(fit$model, fit2$model)
 })
 
+test_that("update() handles cbind binomial responses with random effects", {
+  set.seed(1)
+  data <- data.frame(
+    town = factor(rep(letters[1:6], each = 25L)),
+    x = rnorm(150L),
+    trials = 10L
+  )
+  town_intercept <- rnorm(nlevels(data$town), sd = 0.8)
+  town_slope <- rnorm(nlevels(data$town), sd = 0.4)
+  data$success <- rbinom(
+    nrow(data), data$trials,
+    plogis(qlogis(0.3) + 0.5 * data$x + town_intercept[data$town] +
+      town_slope[data$town] * data$x)
+  )
+  data$failure <- data$trials - data$success
+
+  fit <- sdmTMB(
+    cbind(success, failure) ~ 1,
+    data = data, spatial = "off", family = binomial()
+  )
+  updated <- update(fit, formula. = . ~ . + (1 | town))
+  direct <- sdmTMB(
+    cbind(success, failure) ~ 1 + (1 | town),
+    data = data, spatial = "off", family = binomial()
+  )
+  expect_equal(logLik(updated), logLik(direct))
+
+  updated_slope <- update(fit, formula. = . ~ . + x + (1 + x | town))
+  direct_slope <- sdmTMB(
+    cbind(success, failure) ~ 1 + x + (1 + x | town),
+    data = data, spatial = "off", family = binomial()
+  )
+  expect_equal(logLik(updated_slope), logLik(direct_slope))
+
+  updated_no_intercept <- update(
+    fit, formula. = . ~ . - 1 + x + (0 + x | town)
+  )
+  direct_no_intercept <- sdmTMB(
+    cbind(success, failure) ~ 0 + x + (0 + x | town),
+    data = data, spatial = "off", family = binomial()
+  )
+  expect_equal(logLik(updated_no_intercept), logLik(direct_no_intercept))
+
+  external_formula <- stats::update.formula(
+    cbind(success, failure) ~ 1, . ~ . + (1 | town)
+  )
+  external_update <- sdmTMB(
+    external_formula, data = data, spatial = "off",
+    family = betabinomial(link = "cloglog")
+  )
+  external_direct <- sdmTMB(
+    cbind(success, failure) ~ 1 + (1 | town),
+    data = data, spatial = "off", family = betabinomial(link = "cloglog")
+  )
+  expect_equal(logLik(external_update), logLik(external_direct))
+})
+
+test_that("externally updated random-effect formulas work in delta formula lists", {
+  data <- pcod_2011
+  data$fyear <- factor(data$year)
+  updated_formula <- stats::update.formula(
+    density ~ 1, . ~ . + depth_scaled + (1 + depth_scaled | fyear)
+  )
+
+  updated <- sdmTMB(
+    formula = list(updated_formula, updated_formula),
+    data = data, mesh = pcod_mesh_2011, spatial = "off",
+    family = delta_gamma(), do_fit = FALSE
+  )
+  direct_formula <- density ~ 1 + depth_scaled + (1 + depth_scaled | fyear)
+  direct <- sdmTMB(
+    formula = list(direct_formula, direct_formula),
+    data = data, mesh = pcod_mesh_2011, spatial = "off",
+    family = delta_gamma(), do_fit = FALSE
+  )
+
+  expect_equal(updated$model, direct$model)
+  expect_equal(updated$tmb_params, direct$tmb_params)
+
+  expect_error(
+    sdmTMB(
+      formula = list(
+        density ~ 1 + (1 | fyear),
+        density ~ 1 + (1 + depth_scaled | fyear)
+      ),
+      data = data, mesh = pcod_mesh_2011, spatial = "off",
+      family = delta_gamma(), do_fit = FALSE
+    ),
+    "Random-effect terms must be identical"
+  )
+  expect_error(
+    sdmTMB(
+      formula = list(
+        density ~ 1 + (1 | fyear),
+        density ~ 1 + (1 | year)
+      ),
+      data = data, mesh = pcod_mesh_2011, spatial = "off",
+      family = delta_gamma(), do_fit = FALSE
+    ),
+    "Random-effect terms must be identical"
+  )
+})
+
 test_that("Irregular time gets detected", {
   skip_on_cran()
 
@@ -532,4 +635,3 @@ test_that("Prediction outside fitted coordinates gets warned about #285", {
   nd$Y <- nd$Y * 10
   expect_warning(p <- predict(fit, newdata = nd), regexp = "coordinates")
 })
-

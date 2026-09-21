@@ -57,6 +57,3 @@ fit <- sdmTMB(
 }
 \dontshow{\}) # examplesIf}
 }
-\seealso{
-\code{\link[=make_areal_grid]{make_areal_grid()}}
-}

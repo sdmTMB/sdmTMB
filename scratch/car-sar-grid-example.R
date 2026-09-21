@@ -7,22 +7,35 @@ library(ggplot2)
 theme_set(theme_light())
 library(dplyr)
 
-dogfish_points <- sf::st_as_sf(dogfish, coords = c("X", "Y"), crs = NA)
+dogfish_points <- sf::st_as_sf(dogfish, coords = c("X", "Y"), crs = NA, remove = FALSE)
 
 dogfish_boundary <- sf::st_union(dogfish_points) |>
-  sf::st_convex_hull() |>
-  sf::st_as_sf()
+  sf::st_convex_hull()
 
-dogfish_grid_obj <- make_areal_grid(
-  dogfish,
-  xy_cols = c("X", "Y"),
-  spatial_domain = dogfish_boundary,
+areal_grid <- sf::st_make_grid(
+  dogfish_boundary,
   n = c(25L, 20L),
-  space_column = "cell_id"
+  square = TRUE
 )
-plot(dogfish_grid_obj$grid[[1]])
+areal_grid <- sf::st_intersection(areal_grid, dogfish_boundary)
+if (any(sf::st_geometry_type(areal_grid) == "GEOMETRYCOLLECTION")) {
+  areal_grid <- sf::st_collection_extract(areal_grid, "POLYGON")
+}
+areal_grid <- sf::st_sf(geometry = areal_grid)
 
-raw_points <- dogfish_grid_obj$data
+cell_centres <- sf::st_coordinates(sf::st_centroid(sf::st_geometry(areal_grid)))
+areal_grid$X <- cell_centres[, 1L]
+areal_grid$Y <- cell_centres[, 2L]
+areal_grid$cell_id <- sprintf("cell_%03d", seq_len(nrow(areal_grid)))
+
+hits <- sf::st_intersects(dogfish_points, areal_grid)
+stopifnot(all(lengths(hits) > 0L))
+
+areal_domain <- make_areal_domain(areal_grid, id_column = "cell_id")
+plot(areal_grid[[1]])
+
+raw_points <- dogfish
+raw_points$cell_id <- areal_grid$cell_id[vapply(hits, `[[`, integer(1), 1L)]
 
 # Aggregate the raw tow-level data to one row per cell and year.
 cell_data <- raw_points |>
@@ -39,7 +52,7 @@ cell_data$log_depth <- log(cell_data$depth)
 fit_dogfish <- sdmTMB(
   catch_weight ~ log_depth,
   data = cell_data,
-  mesh = dogfish_grid_obj$domain,
+  mesh = areal_domain,
   spatial_model = "car",
   time = "year",
   family = tweedie(link = "log"),
@@ -62,7 +75,7 @@ cell_covariates <- raw_points |>
   )
 
 pred_data <- tidyr::crossing(
-  cell_id = dogfish_grid_obj$grid$cell_id,
+  cell_id = areal_grid$cell_id,
   year = sort(unique(raw_points$year))
 ) |>
   left_join(cell_covariates, by = "cell_id") |>
@@ -79,7 +92,7 @@ pred_dogfish <- predict(
 )
 
 pred_dogfish_grid <- left_join(
-  dogfish_grid_obj$grid,
+  areal_grid,
   mutate(pred_data,
     est = pred_dogfish$est,
     omega_s = pred_dogfish$omega_s,

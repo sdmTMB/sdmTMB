@@ -7,10 +7,10 @@
 get_pars(object)
 }
 \arguments{
-\item{object}{Fit from \code{\link[=sdmTMB]{sdmTMB()}}}
+\item{object}{Fit from \code{\link[=sdmTMB]{sdmTMB()}}.}
 }
 \value{
-A named list of parameter values
+A named list of parameter values.
 }
 \description{
 Get TMB parameter list

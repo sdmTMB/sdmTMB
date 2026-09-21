@@ -38,9 +38,9 @@ spatial data.}
 
 \item{k_folds}{Number of folds.}
 
-\item{fold_ids}{Optional vector containing user fold IDs. Can also be a
-single string, e.g. \code{"fold_id"} representing the name of the variable in
-\code{data}. Ignored if \code{lfo} is TRUE}
+\item{fold_ids}{Optional vector of user-supplied fold IDs. Can also be a
+single string, e.g. \code{"fold_id"}, naming a variable in \code{data}.
+Ignored if \code{lfo = TRUE}.}
 
 \item{lfo}{Logical. Use leave-future-out (LFO) cross validation? If \code{TRUE},
 data from earlier time steps are used to predict future time steps. The
@@ -68,9 +68,9 @@ When \code{FALSE}, functions that require access to the fitted models (e.g.,
 
 \item{future_globals}{A character vector of global variables used within
 arguments if an error is returned that \pkg{future.apply} can't find an
-object. This vector is appended to \code{TRUE} and passed to the argument
+object. This vector is appended to \code{TRUE} and passed to the
 \code{future.globals} in \code{\link[future.apply:future_lapply]{future.apply::future_lapply()}}. Useful if global
-objects are used to specify arguments like priors, families, etc.}
+objects are used to specify arguments such as priors or families.}
 
 \item{...}{All other arguments required to run the \code{\link[=sdmTMB]{sdmTMB()}} model. The
 \code{weights} argument is supported and will be combined with the internal
@@ -87,7 +87,7 @@ residuals (\code{cv_deviance_resid}).
 predictive density per fold). More positive values indicate better
 out-of-sample prediction.
 \item \code{sum_loglik}: Sum of \code{fold_loglik} across all folds (total log predictive
-density). Use this to compare models—more positive values are better.
+density). Use this to compare models; larger values are better.
 \item \code{pdHess}: Logical vector: was the Hessian positive definite for each fold?
 \item \code{converged}: Logical: did all folds converge (all \code{pdHess} \code{TRUE})?
 \item \code{max_gradients}: Maximum absolute gradient for each fold.
@@ -131,10 +131,10 @@ An example of LFOCV with 9 time steps, \code{lfo_forecast = 2}, and
 \item Fit data to time steps 1 to 7, predict and validate step 9.
 }
 
-Note these are time steps as they are presented in order in the data.
-For example, in the \code{pcod} data example below steps between data points
-are not always one year but an \code{lfo_forecast = 2} forecasts 2 time
-steps as presented not two years.
+Note that these are time steps in the order they appear in the data.
+For example, in the \code{pcod} data example below, steps between observations
+are not always one year, so \code{lfo_forecast = 2} forecasts two observed time
+steps ahead, not necessarily two calendar years.
 
 See example below.
 }

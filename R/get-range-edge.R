@@ -33,7 +33,7 @@
 #'   (e.g., latitude, coastal distance values). This should align with
 #'   the rows of the prediction matrix.
 #' @param quantiles Numeric vector of quantiles to calculate. Default is
-#'   `c(0.025, 0.975)` for lower and upper 1% range edges. Common alternatives
+#'   `c(0.025, 0.975)` for lower and upper 2.5% range edges. Common alternatives
 #'   include `c(0.01, 0.99)` for 1% edges or `c(0.05, 0.5, 0.95)` to
 #'   include the median.
 #' @param level The confidence level for uncertainty intervals.

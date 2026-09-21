@@ -4,35 +4,45 @@
 
 #' Predict from an sdmTMB model
 #'
-#' Make predictions from an \pkg{sdmTMB} model; can predict on the original or
-#' new data.
+#' Make predictions from an \pkg{sdmTMB} model. Predictions can be made on the
+#' original data or on new data.
 #'
 #' @param object A model fitted with [sdmTMB()].
-#' @param newdata A data frame to make predictions on. This should be a data
-#'   frame with the same predictor columns as in the fitted data and a time
-#'   column (if this is a spatiotemporal model) with the same name as in the
-#'   fitted data.
-#' @param type Should the `est` column be in link (default) or response space?
+#' @param newdata A data frame to make predictions on. It should contain the
+#'   same predictor columns as the fitted data and, for spatiotemporal models,
+#'   a time column with the same name as in the fitted data.
+#' @param type Should predictions be returned in link space (default) or
+#'   response space?
 #' @param se_fit Should standard errors on predictions be calculated? Warning:
 #'   can be slow for large datasets or high-resolution projections when random
 #'   fields are included. For faster uncertainty estimation, either use
 #'   `re_form = NA` to exclude random fields or use the `nsim` argument to
 #'   simulate from the joint precision matrix.
-#' @param return_tmb_object Logical. If `TRUE`, will include the TMB object in a
-#'   list format output. Necessary for the [get_index()] or [get_cog()]
-#'   functions.
+#' @param return_tmb_object `r lifecycle::badge("deprecated")` Logical. If
+#'   `TRUE`, include the TMB object in a list-format output. Instead, pass the
+#'   fitted model and `newdata` directly to [get_index()] or [get_cog()].
 #' @param re_form `NULL` to include all spatial/spatiotemporal random fields in
 #'   predictions. `~0` or `NA` for population-level predictions (predictions
-#'   from fixed effects only, marginalizing over random fields). Often used with
+#'   excluding spatial/spatiotemporal random fields). Often used with
 #'   `se_fit = TRUE` to visualize marginal effects. Does not affect
 #'   [get_index()] calculations.
-#' @param re_form_iid `NULL` to specify including all random intercepts in the
+#' @param re_form_iid `NULL` to include all IID random intercepts/slopes in the
 #'   predictions. `~0` or `NA` for population-level predictions. No other
-#'   options (e.g., some but not all random intercepts) are implemented yet.
-#'   Only affects predictions with `newdata`. This *does* affects [get_index()].
+#'   options (e.g., some but not all random intercepts) are not yet implemented.
+#'   Only affects predictions with `newdata`. This *does* affect [get_index()].
+#' @param allow_new_levels Logical or `NULL`. Similar to \pkg{glmmTMB}'s
+#'   `allow.new.levels`.
+#'   Allows predictions for previously unobserved levels in random effect
+#'   grouping variables. If `NULL` (default), new levels are allowed when
+#'   `re_form_iid = NA` or `re_form_iid = ~0` and a warning is issued
+#'   otherwise. If `TRUE`, new levels are explicitly allowed. If `FALSE`, a
+#'   warning is issued if new levels are found. New levels are always treated
+#'   as population-level predictions for the IID random effects
+#'   (i.e., random effect value = 0).
 #' @param nsim If `> 0`, simulate from the joint precision matrix with `nsim`
-#'   draws. Returns a matrix of `nrow(newdata)` by `nsim` with each column
-#'   representing one draw of the linear predictor (in link space). Simulating
+#'   draws. Returns a matrix with one row per prediction location and one column
+#'   per draw. By default, each column represents one draw of the linear predictor
+#'   in link space; use `type = "response"` for response-space draws. Simulating
 #'   from the joint precision matrix accounts for uncertainty in both fixed and
 #'   random effects. Use this to derive uncertainty on predictions (e.g.,
 #'   `apply(x, 1, sd)`) or propagate uncertainty to derived quantities. This is
@@ -49,6 +59,16 @@
 #'   If specified, the predict function will return a matrix of a similar form
 #'   as if `nsim > 0` but representing Bayesian posterior samples from the Stan
 #'   model.
+#' @param nonlocal_newdata An optional data frame overriding the
+#'   `nonlocal_formula` covariate field used for prediction (e.g., for a
+#'   counterfactual/scenario surface), with the same requirements as
+#'   `nonlocal_data` in [sdmTMB()]. `newdata`'s x/y and time columns
+#'   always determine *where* predictions are projected to; this argument only
+#'   controls where the underlying diffused covariate values come from.
+#'   Defaults to `NULL`: if a grid was supplied at fit time, the fitted field
+#'   is reused as-is (so `newdata` need not contain the diffusion covariate
+#'   columns); otherwise the field is rebuilt from `newdata`'s own covariate
+#'   columns, as before.
 #' @param model Which component to predict from delta/hurdle models when `nsim >
 #'   0` or `mcmc_samples` is supplied. `NA` (default) returns the combined
 #'   prediction from both components; `1` returns the binomial component only; `2`
@@ -56,29 +76,37 @@
 #'   scale depending on `type`. For regular predictions (without simulation),
 #'   both components are returned. See the [delta-model
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html).
-#' @param offset A numeric vector of optional offset values. If left at default
-#'   `NULL`, the offset is implicitly left at 0.
+#' @param offset A numeric vector of optional offset values. When predictions
+#'   are made with `newdata` or with options that internally rebuild prediction
+#'   data (e.g., `type = "response"`, `se_fit = TRUE`, or `nsim > 0`), the
+#'   default `NULL` uses an offset of 0. The simplest `predict(object)` call on
+#'   the original data uses the offset from the fitted model.
 #' @param return_tmb_report Logical: return the output from the TMB
 #'   report? For regular prediction, this is all the reported variables
 #'   at the MLE parameter values. For `nsim > 0` or when `mcmc_samples`
-#'   is supplied, this is a list where each element is a sample and the
-#'   contents of each element is the output of the report for that sample.
+#'   is supplied, this is a list with one element per sample; each element
+#'   contains the report output for that sample.
 #' @param return_tmb_data Logical: return formatted data for TMB? Used
 #'   internally.
-#' @param ... Not implemented.
+#' @param ... Unused.
 #'
 #' @return
 #' If `return_tmb_object = FALSE` (and `nsim = 0` and `mcmc_samples = NULL`):
 #'
 #' A data frame:
-#' * `est`: Estimate in link space (everything included)
-#' * `est_non_rf`: Estimate from everything except random fields (fixed effects, random intercepts, time-varying effects, etc.)
+#' * `est`: Estimate in link or response space, depending on `type`
+#' * `est_non_rf`: Estimate from everything except spatial/spatiotemporal random fields (fixed effects, random intercepts, time-varying effects, etc.)
 #' * `est_rf`: Estimate from all random fields combined
 #' * `omega_s`: Spatial random field (models consistent spatial patterns)
 #' * `zeta_s`: Spatially varying coefficient field (models how effects vary across space)
 #' * `epsilon_st`: Spatiotemporal random field (models spatial patterns that vary over time)
-#' * `diffusion_cov_*`: Covariate diffusion transformed covariate values (one column per
-#'   covariate-diffusion term; available when `covariate_diffusion` were fitted)
+#' * `nl_*`: Nonlocal transformed covariate values (one column per
+#'   nonlocal term; available when `nonlocal_formula` terms were fitted)
+#'
+#' Delta/hurdle models return component-specific columns with `1` and `2`
+#' suffixes for the binomial and positive components, respectively (e.g.,
+#' `est1`, `est2`, `omega_s1`, `omega_s2`). With `type = "response"`,
+#' `est` is the combined response-scale prediction.
 #'
 #' If `return_tmb_object = TRUE` (and `nsim = 0` and `mcmc_samples = NULL`):
 #'
@@ -96,7 +124,7 @@
 #' A matrix:
 #'
 #' * Columns represent samples
-#' * Rows represent predictions with one row per row of `newdata`
+#' * Rows represent predictions, with one row per row of `newdata`
 #'
 #' @export
 #'
@@ -120,15 +148,15 @@
 #' ggplot(predictions, aes(X, Y, col = resids)) + scale_colour_gradient2() +
 #'   geom_point() + facet_wrap(~year)
 #' hist(predictions$resids)
-#' qqnorm(predictions$resids);abline(a = 0, b = 1)
+#' qqnorm(predictions$resids); abline(a = 0, b = 1)
 #'
-#' # Predictions onto new data --------------------------------------------
+#' # Predictions on new data ----------------------------------------------
 #'
 #' qcs_grid_2011 <- replicate_df(qcs_grid, "year", unique(pcod_2011$year))
 #' predictions <- predict(m, newdata = qcs_grid_2011)
 #'
 #' \donttest{
-#' # A short function for plotting our predictions:
+#' # A short function for plotting predictions:
 #' plot_map <- function(dat, column = est) {
 #'   ggplot(dat, aes(X, Y, fill = {{ column }})) +
 #'     geom_raster() +
@@ -167,7 +195,8 @@
 #' nd$depth_scaled2 <- nd$depth_scaled^2
 #'
 #' # Because this is a spatiotemporal model, you'll need at least one time
-#' # element. If time isn't also a fixed effect then it doesn't matter what you pick:
+#' # value. For these population-level predictions, if time isn't also a fixed
+#' # effect, it doesn't matter what you pick:
 #' nd$year <- 2011L # L: integer to match original data
 #' p <- predict(m, newdata = nd, se_fit = TRUE, re_form = NA)
 #' ggplot(p, aes(depth_scaled, exp(est),
@@ -199,7 +228,7 @@
 #' unique(d$year)
 #' m <- sdmTMB(
 #'   data = d, formula = density ~ 1,
-#'   spatiotemporal = "AR1", # using an AR1 to have something to forecast with
+#'   spatiotemporal = "AR1", # using AR(1) to have something to forecast with
 #'   extra_time = 2019L, # `L` for integer to match our data
 #'   spatial = "off",
 #'   time = "year", mesh = mesh, family = tweedie(link = "log")
@@ -250,16 +279,31 @@ predict.sdmTMB <- function(object, newdata = NULL,
   se_fit = FALSE,
   re_form = NULL,
   re_form_iid = NULL,
+  allow_new_levels = NULL,
   nsim = 0,
   sims_var = "est",
   model = c(NA, 1, 2),
   offset = NULL,
   mcmc_samples = NULL,
-  return_tmb_object = FALSE,
+  nonlocal_newdata = NULL,
+  return_tmb_object = deprecated(),
   return_tmb_report = FALSE,
   return_tmb_data = FALSE,
   ...) {
 
+  dots <- list(...)
+  if (is_present(return_tmb_object)) {
+    lifecycle::deprecate_soft(
+      "1.2.0",
+      "predict.sdmTMB(return_tmb_object = )",
+      details = paste(
+        "Pass the fitted model and `newdata` directly to `get_index()`,",
+        "`get_cog()`, `get_eao()`, or `get_weighted_average()`."
+      )
+    )
+  } else {
+    return_tmb_object <- FALSE
+  }
   if ("version" %in% names(object)) {
     check_sdmTMB_version(object$version)
   } else {
@@ -307,9 +351,9 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
   if (is.null(re_form) && isTRUE(se_fit)) {
     msg <- paste0("Prediction can be slow when `se_fit = TRUE` and random fields ",
-      "are included (i.e., `re_form = NA`). Consider using the `nsim` argument ",
+      "are included (i.e., `re_form = NULL`). Consider using the `nsim` argument ",
       "to take draws from the joint precision matrix and summarizing the standard ",
-      "devation of those draws.")
+      "deviation of those draws.")
     cli_inform(msg)
   }
 
@@ -330,35 +374,42 @@ predict.sdmTMB <- function(object, newdata = NULL,
   visreg_df <- vr$visreg_df
   if (visreg_df) {
     re_form <- vr$re_form
-    se_fit <- vr$se_fit
+    se_fit <- vr$se_fit || isTRUE(dots$se.fit)
   }
 
   # from glmmTMB:
   pop_pred <- (!is.null(re_form) && ((re_form == ~0) || identical(re_form, NA)))
   pop_pred_iid <- (!is.null(re_form_iid) && ((re_form_iid == ~0) || identical(re_form_iid, NA)))
+  if (is.null(allow_new_levels)) {
+    allow_new_levels <- pop_pred_iid
+  }
 
   exclude_RE <- if (pop_pred_iid) 1L else object$tmb_data$exclude_RE
 
   tmb_data <- object$tmb_data
+  if (is.null(tmb_data$link_pred) && !is.null(tmb_data$link)) {
+    tmb_data$link_pred <- tmb_data$link
+  }
   tmb_data$do_predict <- 1L
   no_spatial <- as.logical(object$tmb_data$no_spatial)
-  has_covariate_diffusion <- !is.null(object$covariate_diffusion_data)
+  has_nonlocal <- !is.null(object$nonlocal_parsed)
+  nonlocal_uses_external_grid <- .nonlocal_uses_external_grid(object, nonlocal_newdata)
 
   if (!is.null(newdata)) {
-    needs_xy <- if (has_covariate_diffusion) TRUE else isFALSE(pop_pred) && !no_spatial && !is_areal
+    needs_xy <- if (has_nonlocal) TRUE else isFALSE(pop_pred) && !no_spatial && !is_areal
     if (any(!xy_cols %in% names(newdata)) && needs_xy)
       cli_abort(c("`xy_cols` (the column names for the x and y coordinates) are not in `newdata`.",
           "Did you miss specifying the argument `xy_cols` to match your data?",
           "The newer `make_mesh()` (vs. `make_spde()`) takes care of this for you."))
 
-    if (isFALSE(pop_pred) && !is_areal && (!no_spatial || has_covariate_diffusion)) {
+    if (isFALSE(pop_pred) && !is_areal && (!no_spatial || has_nonlocal)) {
       xy_orig <- object$data[,xy_cols]
       xy_nd <- newdata[,xy_cols]
       all_outside <- function(x1, x2) {
         min(x1) > max(x2) || max(x1) < min(x2)
       }
       if (all_outside(xy_orig[,1], xy_nd[,1]) || all_outside(xy_orig[,2], xy_nd[,2])) {
-        cli_warn(c("`newdata` prediction coordinates appear to be ouside the fitted coordinates.",
+        cli_warn(c("`newdata` prediction coordinates appear to be outside the fitted coordinates.",
           "This will likely cause all your random field values to be returned as 0.",
           "Check your coordinates including any conversions between projections.",
           "If working with UTMs, are both in km or m?"))
@@ -377,16 +428,15 @@ predict.sdmTMB <- function(object, newdata = NULL,
     new_data_time <- unique(newdata[[object$time]])
 
     if (!all(new_data_time %in% original_time))
-      cli_abort(c("Some new time elements were found in `newdata`. ",
-        "If you would like to predict on new time elements,",
+      cli_abort(c("Some new time values were found in `newdata`. ",
+        "If you would like to predict on new time values,",
         "see the `extra_time` argument in `?sdmTMB`.")
       )
-    if (has_covariate_diffusion &&
-      !is.null(object$covariate_diffusion_parsed) &&
-      isTRUE(object$covariate_diffusion_parsed$needs_time) &&
+    nonlocal_time_indexed <- .nonlocal_time_indexed_from_object(object)
+    if (.nonlocal_prediction_requires_full_time(object, nonlocal_newdata) &&
       !setequal(new_data_time, original_time)) {
       cli_abort(c(
-        "Temporal covariate-diffusion prediction currently requires full time coverage in `newdata`.",
+        "Temporal nonlocal prediction currently requires full time coverage in `newdata`.",
         "i" = "Include exactly the same time values used in the fitted model."
       ))
     }
@@ -429,7 +479,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
           dims = c(nrow(newdata), object$spde$n_s)
         )
       }
-    } else if (!no_spatial || has_covariate_diffusion) {
+    } else if (!no_spatial || has_nonlocal) {
       if (requireNamespace("dplyr", quietly = TRUE)) { # faster
         unique_newdata <- dplyr::distinct(newdata[, xy_cols, drop = FALSE])
       } else {
@@ -485,10 +535,10 @@ predict.sdmTMB <- function(object, newdata = NULL,
         .formula_list(object$time_varying),
         list(object$dispformula)
       ),
-      required_columns = if (is.null(object$covariate_diffusion_parsed)) {
+      required_columns = if (is.null(object$nonlocal_formula_parsed)) {
         threshold_columns
       } else {
-        c(object$covariate_diffusion_parsed$covariates, threshold_columns)
+        c(object$nonlocal_formula_parsed$covariates, threshold_columns)
       },
       stage = "prediction"
     )
@@ -515,24 +565,47 @@ predict.sdmTMB <- function(object, newdata = NULL,
             "i" = "Use `re_form_iid = NA` or `re_form_iid = ~0` to exclude random effects in prediction."
           ))
         }
+        new_level_rows <- integer(0)
         for (i in seq_along(RE_names)) {
           assert_that(is.factor(newdata[[RE_names[i]]]),
             msg = sprintf("Random effect group column `%s` in newdata is not a factor.", RE_names[i]))
           levels_fit <- levels(object$data[[RE_names[i]]])
-          levels_nd <- levels(newdata[[RE_names[i]]])
-          if (sum(!levels_nd %in% levels_fit)) {
-            msg <- paste0("Extra levels found in random intercept factor levels for `", RE_names[i],
-              "`. Please remove them.")
-            cli_abort(msg)
+          values_nd <- as.character(newdata[[RE_names[i]]])
+          is_new_level <- !is.na(values_nd) & !values_nd %in% levels_fit
+          if (any(is_new_level)) {
+            new_level_rows <- union(new_level_rows, which(is_new_level))
+            if (isFALSE(allow_new_levels)) {
+              cli_warn(c(
+                "Found new levels in random effect grouping variable {.field {RE_names[i]}}.",
+                "i" = "These rows will use population-level IID random effect predictions (`re_form_iid = NA`).",
+                "i" = "Set `allow_new_levels = TRUE` to suppress this warning."
+              ))
+            }
           }
         }
 
         # now do with a joint data frame to ensure factor levels match
         common_cols <- intersect(colnames(object$data), colnames(nd))
-        joint_df <- rbind(object$data[,common_cols,drop=FALSE], nd[,common_cols,drop=FALSE])
+        nd_aligned <- nd[, common_cols, drop = FALSE]
+        for (col_name in common_cols) {
+          if (is.factor(object$data[[col_name]]) && is.factor(nd_aligned[[col_name]])) {
+            nd_aligned[[col_name]] <- factor(
+              as.character(nd_aligned[[col_name]]),
+              levels = levels(object$data[[col_name]])
+            )
+            if (anyNA(nd_aligned[[col_name]])) {
+              nd_aligned[[col_name]][is.na(nd_aligned[[col_name]])] <-
+                levels(object$data[[col_name]])[1]
+            }
+          }
+        }
+        joint_df <- rbind(object$data[, common_cols, drop = FALSE], nd_aligned)
         xx <- parse_formula(re_formula_no_response, joint_df)
         # drop the original data:
-        Zt <- xx$re_cov_terms$Zt[,seq(nrow(object$data) + 1, nrow(object$data) + nrow(nd))]
+        Zt <- xx$re_cov_terms$Zt[, seq(nrow(object$data) + 1, nrow(object$data) + nrow(nd)), drop = FALSE]
+        if (length(new_level_rows) > 0) {
+          Zt[, new_level_rows] <- 0
+        }
         Zt_list[[ii]] <- Zt
       }
     }
@@ -568,15 +641,15 @@ predict.sdmTMB <- function(object, newdata = NULL,
       mf <- model.frame(Terms, newdata, xlev = object$xlevels[[i]])
       proj_X_ij[[i]] <- model.matrix(Terms, mf, contrasts.arg = object$contrasts[[i]])
     }
-    if (has_covariate_diffusion) {
-      proj_X_ij[[1]] <- .append_covariate_diffusion_coef_columns(
+    if (has_nonlocal) {
+      proj_X_ij[[1]] <- .append_nonlocal_coef_columns(
         X = proj_X_ij[[1]],
-        coef_names = object$covariate_diffusion_data$term_coef_name
+        coef_names = object$nonlocal_parsed$term_coef_name
       )
-      if (has_two_components) {
-        proj_X_ij[[2]] <- .append_covariate_diffusion_coef_columns(
+      if (isTRUE(object$family$delta)) {
+        proj_X_ij[[2]] <- .append_nonlocal_coef_columns(
           X = proj_X_ij[[2]],
-          coef_names = object$covariate_diffusion_data$term_coef_name
+          coef_names = object$nonlocal_parsed$term_coef_name
         )
       }
     }
@@ -609,10 +682,36 @@ predict.sdmTMB <- function(object, newdata = NULL,
     sm <- parse_smoothers(object$smoothers$formula_no_bars, data = object$data,
       newdata = nd, basis_prev = object$smoothers$basis_out)
 
-    if (!is.null(object$time_varying))
-      proj_X_rw_ik <- model.matrix(object$time_varying, data = nd)
-    else
+    if (!is.null(object$time_varying)) {
+      tv_terms <- stats::terms(object$time_varying)
+      mf_tv_orig <- stats::model.frame(
+        tv_terms,
+        object$data,
+        na.action = stats::na.pass
+      )
+      tv_xlevels <- stats::.getXlevels(tv_terms, mf_tv_orig)
+      X_tv_orig <- stats::model.matrix(tv_terms, mf_tv_orig)
+      tv_contrasts <- attr(X_tv_orig, "contrasts")
+      mf_tv_new <- stats::model.frame(
+        tv_terms,
+        nd,
+        xlev = tv_xlevels,
+        na.action = stats::na.pass
+      )
+      proj_X_rw_ik <- stats::model.matrix(
+        tv_terms,
+        mf_tv_new,
+        contrasts.arg = tv_contrasts
+      )
+      if (!identical(colnames(proj_X_rw_ik), colnames(X_tv_orig))) {
+        cli::cli_abort(c(
+          "The time-varying prediction matrix has different columns than the fitted model.",
+          "This may be caused by changed factor levels, contrasts, or transformed covariates in `newdata`."
+        ))
+      }
+    } else {
       proj_X_rw_ik <- matrix(0, ncol = 1, nrow = 1) # dummy
+    }
 
     if (length(area) != nrow(proj_X_ij[[1]]) && length(area) != 1L) {
       cli_abort("`area` should be of the same length as `nrow(newdata)` or of length 1.")
@@ -663,16 +762,46 @@ predict.sdmTMB <- function(object, newdata = NULL,
     tmb_data$exclude_RE <- exclude_RE
     tmb_data$proj_spatial_index <- newdata$sdm_spatial_id
     tmb_data$covariate_diffusion$proj_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
-    if (has_covariate_diffusion) {
-      proj_dl_data <- .build_covariate_diffusion_tmb_data(
-        covariate_diffusion = object$covariate_diffusion_parsed,
-        data = nd,
-        A_st = proj_mesh,
-        A_spatial_index = nd$sdm_spatial_id,
-        year_i = tmb_data$proj_year,
-        n_t = tmb_data$n_t
-      )
-      tmb_data$covariate_diffusion$proj_covariate_vertex_time <- proj_dl_data$covariate_vertex_time
+    if (has_nonlocal) {
+      if (!is.null(nonlocal_newdata)) {
+        # override grid: rebuild the field from the supplied nonlocal_newdata
+        override_grid_inputs <- .prepare_nonlocal_grid_inputs(
+          grid = nonlocal_newdata,
+          nonlocal_formula = object$nonlocal_formula_parsed,
+          mesh = object$spde$mesh,
+          xy_cols = object$spde$xy_cols,
+          time = object$time,
+          time_df = object$time_lu,
+          full_time_vec = object$time_lu$time_from_data,
+          time_indexed = nonlocal_time_indexed
+        )
+        proj_nonlocal_data <- .build_nonlocal_tmb_data(
+          nonlocal_formula = object$nonlocal_formula_parsed,
+          data = override_grid_inputs$data,
+          A_st = override_grid_inputs$A_st,
+          A_spatial_index = override_grid_inputs$A_spatial_index,
+          year_i = override_grid_inputs$year_i,
+          n_t = tmb_data$n_t,
+          time_values = object$time_lu$time_from_data
+        )
+        tmb_data$covariate_diffusion$proj_covariate_vertex_time <- proj_nonlocal_data$covariate_vertex_time
+      } else if (nonlocal_uses_external_grid) {
+        # reuse the fitted field: same mesh vertices, all time slices already present
+        tmb_data$covariate_diffusion$proj_covariate_vertex_time <-
+          object$nonlocal_parsed$covariate_vertex_time
+      } else {
+        # no grid was used at fit: rebuild the field from newdata, as before
+        proj_nonlocal_data <- .build_nonlocal_tmb_data(
+          nonlocal_formula = object$nonlocal_formula_parsed,
+          data = nd,
+          A_st = proj_mesh,
+          A_spatial_index = nd$sdm_spatial_id,
+          year_i = tmb_data$proj_year,
+          n_t = tmb_data$n_t,
+          time_values = object$time_lu$time_from_data
+        )
+        tmb_data$covariate_diffusion$proj_covariate_vertex_time <- proj_nonlocal_data$covariate_vertex_time
+      }
     }
     tmb_data$proj_Zs <- sm$Zs
     tmb_data$proj_Xs <- sm$Xs
@@ -711,19 +840,24 @@ predict.sdmTMB <- function(object, newdata = NULL,
       return(tmb_data)
     }
 
+    has_saved_fit <- !is.null(object$parlist) && !is.null(object$last.par.best)
     new_tmb_obj <- TMB::MakeADFun(
       data = tmb_data,
       profile = object$control$profile,
-      parameters = get_pars(object),
+      parameters = if (has_saved_fit) object$parlist else get_pars(object),
       map = object$tmb_map,
       random = object$tmb_random,
       DLL = "sdmTMB",
       silent = TRUE
     )
 
-    old_par <- object$model$par
-    # need to initialize the new TMB object once:
-    new_tmb_obj$fn(old_par)
+    if (has_saved_fit) {
+      lp <- object$last.par.best
+    } else {
+      old_par <- object$model$par
+      new_tmb_obj$fn(old_par)
+      lp <- new_tmb_obj$env$last.par.best
+    }
 
     if (sims > 0 && is.null(mcmc_samples)) {
       if (!"jointPrecision" %in% names(object$sd_report) && !has_no_random_effects(object)) {
@@ -737,7 +871,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
           sigma = sd_report$cov.fixed))
         row.names(t_draws) <- NULL
       } else {
-        t_draws <- rmvnorm_prec(mu = new_tmb_obj$env$last.par.best,
+        t_draws <- rmvnorm_prec(mu = lp,
           tmb_sd = sd_report, n_sims = sims)
       }
       r <- apply(t_draws, 2L, new_tmb_obj$report)
@@ -837,19 +971,15 @@ predict.sdmTMB <- function(object, newdata = NULL,
       return(out)
     }
 
-    lp <- new_tmb_obj$env$last.par.best
     r <- new_tmb_obj$report(lp)
     if (return_tmb_report) return(r)
     pred_row_family_id <- tmb_data$proj_family_id + 1L
-    if (has_covariate_diffusion) {
-      nd <- .append_covariate_diffusion_term_values(
-        nd, object, new_tmb_obj, lp,
-        covariate_vertex_time = tmb_data$covariate_diffusion$proj_covariate_vertex_time,
-        A_st = tmb_data$proj_mesh,
-        A_spatial_index = tmb_data$proj_spatial_index,
-        year_i = tmb_data$proj_year,
-        n_t = tmb_data$n_t
-      )
+    pred_row_family_id <- tmb_data$proj_family_id + 1L
+    if (has_nonlocal) {
+      nl_term_values <- r$proj_covariate_diffusion_values
+      colnames(nl_term_values) <- .nonlocal_predict_colnames(
+        object$nonlocal_parsed$term_coef_name)
+      nd <- cbind(nd, as.data.frame(nl_term_values))
     }
     component_scale <- if (type == "response" && !se_fit) "response" else "link"
 
@@ -1035,15 +1165,11 @@ predict.sdmTMB <- function(object, newdata = NULL,
     lp <- object$tmb_obj$env$last.par.best
     # object$tmb_obj$fn(lp) # call once to update internal structures?
     r <- object$tmb_obj$report(lp)
-    if (has_covariate_diffusion) {
-      nd <- .append_covariate_diffusion_term_values(
-        nd, object, object$tmb_obj, lp,
-        covariate_vertex_time = object$tmb_data$covariate_diffusion$covariate_vertex_time,
-        A_st = object$tmb_data$A_st,
-        A_spatial_index = object$tmb_data$A_spatial_index,
-        year_i = object$tmb_data$year_i,
-        n_t = object$tmb_data$n_t
-      )
+    if (has_nonlocal) {
+      nl_term_values <- r$covariate_diffusion_values
+      colnames(nl_term_values) <- .nonlocal_predict_colnames(
+        object$nonlocal_parsed$term_coef_name)
+      nd <- cbind(nd, as.data.frame(nl_term_values))
     }
 
     nd$est <- r$eta_i[,1] # DELTA FIXME
@@ -1153,7 +1279,11 @@ check_visreg <- function(sys_calls) {
   visreg_df <- FALSE
   re_form <- NULL
   se_fit <- FALSE
-  if (any(grepl("setupV", substr(sys_calls, 1, 7)))) {
+  visreg_call <- grepl(
+    "setupV|visregPred|build_visreg|build_visreg2d|visreg_pred",
+    sys_calls
+  )
+  if (any(visreg_call)) {
     visreg_df <- TRUE
     re_form <- NA
     if (any(sys_calls == "residuals(fit)")) visreg_df <- FALSE

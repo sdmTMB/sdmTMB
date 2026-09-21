@@ -36,8 +36,9 @@ add_to_family <- function(x) {
 #' elements `delta` (logical) and `type` (standard vs. Poisson-link).
 #'
 #' @details
-#' The default `link1` for delta models of `type = "standard"` is `"logit"`.
-#' The default `link1` for delta models of `type = "poisson-link"` is `"log"`.
+#' The default first-component link (`link1`) for delta models of
+#' `type = "standard"` is `"logit"`. For `type = "poisson-link"`, the
+#' default `link1` is `"log"`.
 #'
 #' `delta_poisson_link_gamma()` and `delta_poisson_link_lognormal()` have been
 #' deprecated in favour of `delta_gamma(type = "poisson-link")` and
@@ -164,7 +165,7 @@ gengamma <- function(link = "log") {
 }
 
 #' @details The families ending in `_mix()` are 2-component mixtures where each
-#'   distribution has its own mean but a shared scale parameter.
+#'   distribution has its own mean but they share a scale parameter.
 #'   (Thorson et al. 2011). See the model-description vignette for details.
 #'   The parameter `p_extreme = plogis(logit_p_extreme)` is the probability of the extreme (larger)
 #'   mean and `exp(log_ratio_mix) + 1` is the ratio of the larger extreme
@@ -610,7 +611,7 @@ delta_truncated_nbinom1 <- function(link1 = "logit", link2 = "log") {
 delta_poisson_link_gamma <- function(link1 = "log", link2 = "log") {
   assert_that(link1 == "log")
   assert_that(link2 == "log")
-  lifecycle::deprecate_warn("0.4.2.9000", "delta_poisson_link_gamma()", "delta_gamma(type)")
+  lifecycle::deprecate_stop("1.0.0.9019", "delta_poisson_link_gamma()", "delta_gamma(type)")
   delta_gamma(link1 = "logit", link2 = "log", type = "poisson-link")
 }
 
@@ -620,7 +621,7 @@ delta_poisson_link_gamma <- function(link1 = "log", link2 = "log") {
 delta_poisson_link_lognormal <- function(link1 = "log", link2 = "log") {
   assert_that(link1 == "log")
   assert_that(link2 == "log")
-  lifecycle::deprecate_warn("0.4.2.9000", "delta_poisson_link_lognormal()", "delta_lognormal(type)")
+  lifecycle::deprecate_stop("1.0.0.9019", "delta_poisson_link_lognormal()", "delta_lognormal(type)")
   delta_lognormal(link1 = "logit", link2 = "log", type = "poisson-link")
 }
 

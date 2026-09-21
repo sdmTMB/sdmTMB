@@ -25,7 +25,7 @@ make_mesh(
 \item{data}{A data frame.}
 
 \item{xy_cols}{A character vector of x and y column names contained in
-\code{data}. These should likely be in an equal distance projection. For
+\code{data}. These should generally be in a projected CRS with distance-based units. For
 a helper function to convert to UTMs, see \code{\link[=add_utm_columns]{add_utm_columns()}}.}
 
 \item{type}{Method to create the mesh. Also see \code{mesh} argument to supply
@@ -43,8 +43,8 @@ locations if \code{type = "kmeans"}.}
 convenience options.}
 
 \item{fmesher_func}{Which \pkg{fmesher} function to use. Options include
-\code{\link[fmesher:fm_rcdt_2d_inla]{fmesher::fm_rcdt_2d_inla()}} and \code{\link[fmesher:fm_mesh_2d_inla]{fmesher::fm_mesh_2d_inla()}} along with
-version without the \verb{_inla} on the end.}
+\code{\link[fmesher:fm_rcdt_2d_inla]{fmesher::fm_rcdt_2d_inla()}} and \code{\link[fmesher:fm_mesh_2d_inla]{fmesher::fm_mesh_2d_inla()}}, along with
+versions without the \verb{_inla} suffix.}
 
 \item{convex}{If specified, passed to \code{\link[fmesher:fm_nonconvex_hull]{fmesher::fm_nonconvex_hull()}}.
 Distance to extend non-convex hull from data.}

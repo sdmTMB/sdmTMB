@@ -6,6 +6,15 @@ barnames <- function(bars) {
   vapply(bars, function(x) safe_deparse(x[[3]]), "")
 }
 
+# termnames is an internal function to return the names of the intercept and/or
+# slope terms before a bar in a formula, e.g. (1|group), (1+slope|group),
+# or (0+slope|group)
+# @param bars The character string representing the random effects, e.g. `1 |
+#   group`
+termnames <- function(bars) {
+  vapply(bars, function(x) safe_deparse(x[[2]]), "")
+}
+
 # make_indices is an internal function to build lower triangular matrices for
 # correlated random effects
 # @param vec Vector of indices to generate row and col positions for
@@ -33,13 +42,16 @@ make_indices <- function(vec) {
 parse_formula <- function(f, data) {
   b <- reformulas::findbars(f) # find expressions separated by |, NULL if no RE
   bn <- barnames(b) # names of groups
+  tn <- termnames(b) # names of terms
   fe_form <- reformulas::nobars(f) # fixed effect formula, no bars
   re_cov_terms <- NULL
 
   re_cov_terms <- list(
-    Zt = NULL, theta = NULL, Lind = NULL, Gp = NULL,
-    lower = NULL, Lambdat = NULL, flist = NULL,
-    cnms = NULL, Ztlist = NULL, nl = NULL
+    Zt = NULL, theta = NULL,
+    Lind = NULL, Gp = NULL,
+    lower = NULL, Lambdat = NULL,
+    flist = NULL, cnms = NULL,
+    Ztlist = NULL, nl = NULL
   )
   re_cov_terms$re_df <- data.frame(
     group_indices = integer(0),
@@ -53,7 +65,8 @@ parse_formula <- function(f, data) {
     end = integer(0)
   )
   re_cov_terms$re_b_df <- data.frame(
-    level_ids = integer(0),
+    level_ids = character(0),
+    level = character(0),
     start = integer(0), # index of beta vec in TMB
     end = integer(0), # index of beta vec in TMB
     group_indices = integer(0), # which group are these levels associated with
@@ -73,8 +86,10 @@ parse_formula <- function(f, data) {
     re_cov_terms <- reformulas::mkReTrms(b, mf,
       drop.unused.levels = TRUE,
       reorder.terms = FALSE, # default is true, reorder based on dec levels
-      reorder.vars = FALSE
-    ) # keep not alphabetical
+      reorder.vars = FALSE, # keep not alphabetical
+      calc.lambdat = FALSE # Lambdat and Lind needed for lme4, but not glmmTMB (according to Bolker),
+      # so probably not needed for sdmTMB
+    )
     # re_cov_terms$theta gives the total number of params across v-cov matrices
     # see lme4 vignettes for construction details. These are indexes with
     # Lind which maps elements of theta to the VCov matrices.
@@ -102,20 +117,22 @@ parse_formula <- function(f, data) {
 
     # index the level / group of the elements of Zt
     for (i in seq_len(length(re_cov_terms$Ztlist))) {
-      levels <- levels(data[, bn[[i]]])
-      # Add the group and ":" to the name for each -- otherwise the level names might be the
-      # same, especially if the levels ids are integers for 2+ groups
-      level_ids <- paste0(bn[[i]], ":", rownames(re_cov_terms$Ztlist[[i]]))
+      # Add the term(s) and group to the name for each (separated by ":") -- otherwise
+      # the level names might be the same, especially if the levels ids are integers for 2+ groups.
+      levels <- rownames(re_cov_terms$Ztlist[[i]])
+      level_ids <- paste0(tn[[i]], ":", bn[[i]], ":", levels)
       if (i == 1) {
         df <- data.frame(
           index = seq_len(length(level_ids)),
           level_ids = level_ids,
+          level = levels,
           group_indices = i
         )
       } else {
         df <- rbind(df, data.frame(
           index = seq_len(length(level_ids)),
           level_ids = level_ids,
+          level = levels,
           group_indices = i
         ))
       }
@@ -123,6 +140,7 @@ parse_formula <- function(f, data) {
     df$index <- seq(1, nrow(df))
     re_cov_terms$re_b_df <- data.frame(
       level_ids = unique(df$level_ids),
+      level = df$level[!duplicated(df$level_ids)],
       start = NA, end = NA, group_indices = NA
     )
     for (i in seq_len(nrow(re_cov_terms$re_b_df))) {
@@ -157,7 +175,7 @@ parse_formula <- function(f, data) {
         to = re_cov_terms$re_b_df$var_end, SIMPLIFY = FALSE
       )
     )
-    re_cov_terms$re_b_df <- re_cov_terms$re_b_df[, c("level_ids", "start", "end", "group_indices")]
+    re_cov_terms$re_b_df <- re_cov_terms$re_b_df[, c("level_ids", "level", "start", "end", "group_indices")]
     # index the groups
     # also need to map these indices to the vector of estimated covariance parameters
     re_cov_terms$re_b_map <- data.frame(

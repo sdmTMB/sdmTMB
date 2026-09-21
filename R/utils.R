@@ -50,12 +50,12 @@
 #'   setting limits.
 #' @param upper An optional named list of upper bounds within the optimization.
 #' @param censored_upper An optional vector of upper bounds for
-#'   [sdmTMBcontrol()]. Values of `NA` indicate an unbounded right-censored to
-#'   distribution, values greater that the observation indicate and upper bound,
+#'   [sdmTMBcontrol()]. Values of `NA` indicate an unbounded right-censored
+#'   distribution, values greater than the observation indicate an upper bound,
 #'   and values equal to the observation indicate no censoring.
 #' @param get_joint_precision Logical. Passed to `getJointPrecision` in
 #'   [TMB::sdreport()]. Must be `TRUE` to use simulation-based methods in
-#'   [predict.sdmTMB()] or `[get_index_sims()]`. If not needed, setting this
+#'   [predict.sdmTMB()] or [get_index_sims()]. If not needed, setting this to
 #'   `FALSE` will reduce object size.
 #' @param parallel Argument currently ignored. For parallel processing with 3
 #'   cores, as an example, use `TMB::openmp(n = 3, DLL = "sdmTMB")`. But be
@@ -66,25 +66,43 @@
 #'   are then replaced with `Inf` and avoided during estimation?
 #' @param collapse_spatial_variance Logical: should spatial and/or spatiotemporal
 #'   random fields be automatically dropped if their estimated standard deviation
-#'   is effectively zero (i.e., below `collapse_threshold`)? This helps prevent
-#'   overfitting and numerical instability when the data provide little evidence
-#'   for spatial or spatiotemporal variation. I.e., when the variance parameter is
-#'   estimated on or near the boundary of zero. When enabled, the model will be
-#'   automatically refitted via [update.sdmTMB()] with the corresponding field(s)
-#'   disabled. This adds a computational cost (a single model refit if
-#'   collapsing occurs) but can yield a simpler, more stable model and more
-#'   reliable inference. Default is `FALSE` for backwards compatibility.
-#' @param collapse_threshold Numeric: the standard deviation threshold below which random
-#'   fields are considered to be collapsing to zero. Only used when
-#'   `collapse_spatial_variance = TRUE`. Values are on the standard deviation
-#'   scale (i.e., square root of variance). Default is 0.01.
+#'   is effectively zero (i.e., below `collapse_spatial_variance_threshold`)?
+#'   This helps prevent overfitting and numerical instability when the data
+#'   provide little evidence for spatial or spatiotemporal variation, i.e.,
+#'   when the variance parameter is estimated on or near the boundary of zero.
+#'   When enabled, the model will be automatically refitted via
+#'   [update.sdmTMB()] with the corresponding field(s) disabled. This adds the
+#'   computational cost of one or more model refits if collapsing occurs but can
+#'   yield a simpler, more stable model and more reliable inference. Default is
+#'   `FALSE` for backward compatibility.
+#' @param collapse_spatial_variance_threshold Numeric: the standard deviation
+#'   threshold below which random fields are considered to be collapsing to zero.
+#'   Only used when `collapse_spatial_variance = TRUE`. Values are on the
+#'   standard deviation scale (i.e., square root of variance). Default is 0.01.
+#' @param collapse_threshold Deprecated alias for
+#'   `collapse_spatial_variance_threshold`. It will be removed in a future
+#'   release.
+#' @param collapse_spatiotemporal_ar1 Logical: should spatiotemporal AR1 fields
+#'   be automatically simplified when the estimated correlation (`rho`) is near
+#'   zero or one? Fields with `abs(rho) <= collapse_ar1_threshold` are refitted
+#'   as `"iid"`; fields with `rho >= 1 - collapse_ar1_threshold` are refitted as
+#'   `"rw"`. This does not apply to `time_varying` effects. Default is `FALSE`.
+#' @param collapse_ar1_threshold Numeric: distance from zero or one at which a
+#'   spatiotemporal AR1 correlation is considered to be collapsing. Must be
+#'   greater than zero and less than 0.5. Only used when
+#'   `collapse_spatiotemporal_ar1 = TRUE`. Default is 0.01.
 #' @param sar_weight_style Weight matrix to use for areal SAR models. `"row"`
 #'   uses row-normalized weights and is the default. `"raw"` uses the raw
 #'   adjacency/weight matrix for direct comparisons to packages that do so.
+#' @param get_rsr Experimental option, whether to calculate the restricted
+#'   spatial regression (RSR) adjusted estimator for covariate responses. If
+#'   `get_rsr = TRUE`, these will be available via
+#'   `tidy(fit, effects = "rsr")`. See Hanks et al. (2015) and
+#'   Diaz and Thorson (2025).
 #' @param ... Anything else. See the 'Control parameters' section of
 #'   [stats::nlminb()].
 #'
-#' @return A list of control arguments
+#' @return A list of control arguments.
 #' @export
 #' @details
 #' Usually used within [sdmTMB()]. For example:
@@ -92,6 +110,18 @@
 #' ```
 #' sdmTMB(..., control = sdmTMBcontrol(newton_loops = 2))
 #' ```
+#'
+#' @references
+#' Restricted Spatial Regression (`get_rsr`):
+#'
+#' Diaz, R.R., and Thorson, J.T. 2025. When and How to Use Restricted Spatial
+#' Regression to Separate Environmental Effects from Spatial Confounding.
+#' EcoEvoRxiv. \doi{10.32942/X28351}.
+#'
+#' Hanks, E.M., Schliep, E.M., Hooten, M.B., and Hoeting, J.A. 2015. Restricted
+#' spatial regression in practice: geostatistical models, confounding, and
+#' robustness under model misspecification. Environmetrics 26(4): 243--254.
+#' \doi{10.1002/env.2331}.
 #' @examples
 #' sdmTMBcontrol()
 sdmTMBcontrol <- function(
@@ -113,8 +143,12 @@ sdmTMBcontrol <- function(
   parallel = getOption("sdmTMB.cores", 1L),
   suppress_nlminb_warnings = TRUE,
   collapse_spatial_variance = FALSE,
-  collapse_threshold = 0.01,
+  collapse_threshold = deprecated(),
+  collapse_spatial_variance_threshold = 0.01,
+  collapse_spatiotemporal_ar1 = FALSE,
+  collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
+  get_rsr = FALSE,
   ...) {
 
   assert_that(is.numeric(nlminb_loops), is.numeric(newton_loops))
@@ -130,8 +164,35 @@ sdmTMBcontrol <- function(
   }
 
   assert_that(is.logical(profile) || is.character(profile))
+  assert_that(is.logical(get_rsr))
   assert_that(is.logical(collapse_spatial_variance))
-  assert_that(is.numeric(collapse_threshold), collapse_threshold > 0)
+  threshold_supplied <- !missing(collapse_spatial_variance_threshold)
+  if (is_present(collapse_threshold)) {
+    deprecate_warn(
+      "1.1.0.9004",
+      "sdmTMBcontrol(collapse_threshold = )",
+      "sdmTMBcontrol(collapse_spatial_variance_threshold = )"
+    )
+    if (!threshold_supplied) {
+      collapse_spatial_variance_threshold <- collapse_threshold
+    }
+  }
+  assert_that(
+    is.numeric(collapse_spatial_variance_threshold),
+    collapse_spatial_variance_threshold > 0
+  )
+  assert_that(
+    is.logical(collapse_spatiotemporal_ar1),
+    length(collapse_spatiotemporal_ar1) == 1L,
+    !is.na(collapse_spatiotemporal_ar1)
+  )
+  assert_that(
+    is.numeric(collapse_ar1_threshold),
+    length(collapse_ar1_threshold) == 1L,
+    is.finite(collapse_ar1_threshold),
+    collapse_ar1_threshold > 0,
+    collapse_ar1_threshold < 0.5
+  )
   sar_weight_style <- match.arg(sar_weight_style)
 
   out <- named_list(
@@ -152,8 +213,11 @@ sdmTMBcontrol <- function(
     parallel,
     get_joint_precision,
     collapse_spatial_variance,
-    collapse_threshold,
-    sar_weight_style
+    collapse_spatial_variance_threshold,
+    collapse_spatiotemporal_ar1,
+    collapse_ar1_threshold,
+    sar_weight_style,
+    get_rsr
   )
   c(out, list(...))
 }
@@ -434,15 +498,24 @@ remove_s_and_t2 <- function(formula) {
   formula
 }
 
+normalize_bar_only_formula <- function(formula) {
+  if (inherits(formula, "formula") &&
+      length(reformulas::findbars(formula)) > 0L &&
+      !inherits(reformulas::nobars(formula), "formula")) {
+    formula[[3L]] <- call("+", 1, formula[[3L]])
+  }
+  formula
+}
+
 has_no_random_effects <- function(obj) {
   length(obj$tmb_random) == 0L
 }
 
 #' Get TMB parameter list
 #'
-#' @param object Fit from [sdmTMB()]
+#' @param object Fit from [sdmTMB()].
 #'
-#' @return A named list of parameter values
+#' @return A named list of parameter values.
 #'
 #' @examples
 #' fit <- sdmTMB(present ~ 1, data = pcod_2011, family = binomial(), spatial = "off")
@@ -908,8 +981,9 @@ make_category_svc <- function(data,
   # Expand data
   data_expanded <- cbind(data, combined_matrix)
 
-  # Create formula
-  svc_formula <- as.formula(paste0("~ `", paste(colnames_combined, collapse = "` + `"), "`"))
+  # Create formula (0 + suppresses the implicit intercept so model.matrix()
+  # returns exactly n_spatial + n_spatiotemporal columns, matching svc_map)
+  svc_formula <- as.formula(paste0("~ 0 + `", paste(colnames_combined, collapse = "` + `"), "`"))
 
   # Create info summary
   info <- list(

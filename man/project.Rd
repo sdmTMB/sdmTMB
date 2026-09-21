@@ -8,10 +8,12 @@ project(
   object,
   newdata,
   nsim = 1,
-  uncertainty = c("both", "random", "none"),
+  sample_fe = TRUE,
+  sample_historical_re = TRUE,
+  sample_future_re = TRUE,
+  future_re = c("include", "zero", "fix"),
   silent = FALSE,
-  sims_var = "eta_i",
-  sim_re = c(0, 1, 0, 0, 1, 0),
+  sims_var = NULL,
   return_tmb_report = FALSE,
   ...
 )
@@ -19,31 +21,42 @@ project(
 \arguments{
 \item{object}{A fitted model from \code{\link[=sdmTMB]{sdmTMB()}}.}
 
-\item{newdata}{A new data frame to predict on. Should contain both historical
-and any new time elements to predict on.}
+\item{newdata}{A new data frame to predict on. It should contain both the
+historical time elements and any new time elements to project to. Time
+values must be numeric and align with the constant cadence in the fitted
+model. Missing intermediate future time elements are simulated.}
 
-\item{nsim}{Number of simulations.}
+\item{nsim}{Number of projection simulations.}
 
-\item{uncertainty}{How to sample uncertainty for the fitted parameters:
-\code{"both"} for the joint fixed and random effect precision matrix,
-\code{"random"} for the random effect precision matrix (holding the fixed
-effects at their MLE), or \code{"none"} for neither.}
+\item{sample_fe}{Logical. Sample uncertainty in the estimated model
+parameters, including regression coefficients, covariance parameters, and
+dispersion parameters.}
 
-\item{silent}{Silent?}
+\item{sample_historical_re}{Logical. Sample uncertainty in random effects
+associated with the fitted historical period.}
 
-\item{sims_var}{Element to extract from the \pkg{TMB} report. Also see
-\code{return_tmb_report}.}
+\item{sample_future_re}{Logical. Simulate random effects in the projection
+period. When \code{FALSE}, dynamic effects are propagated at their conditional
+means. Ignored when \code{future_re} is \code{"zero"} or \code{"fix"}.}
 
-\item{sim_re}{A vector of \code{0}s and \code{1}s representing which random effects to
-simulate in the projection. Generally, leave this untouched. Order is:
-spatial fields, spatiotemporal fields, spatially varying coefficient
-fields, random intercepts, time-varying coefficients, smoothers.
-The default is to simulate spatiotemporal fields and time-varying
-coefficients, if present.}
+\item{future_re}{Treatment of spatiotemporal random effects and time-varying
+coefficients in the projection period. \code{"include"} preserves the usual
+process dynamics, \code{"zero"} sets them to zero, and \code{"fix"} holds them at
+their value in the final historical time step. Historical effects are
+unchanged.}
+
+\item{silent}{Logical. Suppress progress messages?}
+
+\item{sims_var}{Optional single element to extract from the \pkg{TMB}
+simulation report. If \code{NULL}, the default, the usual named projection list
+is returned. If supplied, use a native projection report name such as
+\code{"proj_eta"} or \code{"proj_epsilon_st_A_vec"}; the simulation dimension is
+last. See also \code{return_tmb_report}.}
 
 \item{return_tmb_report}{Return the \pkg{TMB} report from \code{simulate()}? This
 lets you parse out whatever elements you want from the simulation including
-grabbing multiple elements from one set of simulations. See examples.}
+grabbing multiple elements from one set of simulations. Prediction-path
+elements retain their native \verb{proj_*} names. See examples.}
 
 \item{...}{Passed to \code{\link[=predict.sdmTMB]{predict.sdmTMB()}}.}
 }
@@ -55,14 +68,18 @@ components are \code{est1}, \code{est2}, \code{epsilon_st}, and \code{epsilon_st
 and 2nd linear predictors. In all cases, these returned values are in \emph{link}
 space.
 
-If \code{return_tmb_report = TRUE}, a list of \pkg{TMB} reports from \code{simulate()}.
-Run \code{names()} on the output to see the options.
+If \code{sims_var} is supplied, an array containing that report element, with the
+simulation dimension last. If \code{return_tmb_report = TRUE}, a list of
+\pkg{TMB} reports returned by \code{simulate()}. Run \code{names()} on an element of the
+output to see the available \code{sims_var} options. Unprefixed observation-path
+reports such as \code{eta_i} describe the historical fitting data; projected
+\code{newdata} values are in the corresponding \verb{proj_*} reports.
 }
 \description{
 \ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}}
 
-The function enables projecting forward in time from an
-\pkg{sdmTMB} model using a simulation approach for computational efficiency.
+Project forward in time from an \pkg{sdmTMB} model using a
+simulation approach for computational efficiency.
 This can be helpful for calculating predictive intervals for long
 projections where including those time elements in \code{extra_time} during model
 estimation can be slow.
@@ -71,8 +88,8 @@ Inspiration for this approach comes from the \pkg{VAST} function
 \code{project_model()}.
 }
 \examples{
-\dontshow{if (ggplot2_installed()) withAutoprint(\{ # examplesIf}
 \donttest{
+if (ggplot2_installed()) {
 library(ggplot2)
 
 mesh <- make_mesh(dogfish, c("X", "Y"), cutoff = 25)
@@ -121,6 +138,12 @@ names(out)
 est_mean <- apply(out$est, 1, mean) # summarize however you'd like
 est_se <- apply(out$est, 1, sd)
 
+# Keep parameter and historical-state uncertainty, while propagating future
+# dynamic effects at their conditional means:
+out_mean_future <- project(
+  fit2, newdata = proj_grid, nsim = 20, sample_future_re = FALSE
+)
+
 # visualize:
 proj_grid$est_mean <- est_mean
 ggplot(subset(proj_grid, year > 2021), aes(X, Y, fill = est_mean)) +
@@ -147,7 +170,7 @@ ggplot(subset(proj_grid, year > 2021), aes(X, Y, fill = eps_se)) +
   coord_fixed() +
   ggtitle("Projection simulation\n(spatiotemporal fields standard error)")
 }
-\dontshow{\}) # examplesIf}
+}
 }
 \references{
 \code{project_model()} in the \pkg{VAST} package.

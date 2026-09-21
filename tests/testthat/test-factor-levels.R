@@ -64,11 +64,8 @@ test_that("Test that droplevels matches glmmTMB on (1 | factor)", {
     "2017", "9999", "9998"
   ))
   p1 <- predict(fit_glmmTMB, newdata = nd, re.form = NULL)
-
-  expect_error({
-    p2 <- predict(fit_sdmTMB, newdata = nd)$est
-  }, regexp = "levels")
-  # expect_equal(p1, p2, tolerance = 1e-3)
+  p2 <- predict(fit_sdmTMB, newdata = nd)$est
+  expect_equal(p1, p2, tolerance = 1e-3)
 
   # drop level on predict
   nd <- d
@@ -79,10 +76,8 @@ test_that("Test that droplevels matches glmmTMB on (1 | factor)", {
   ))
 
   p1 <- predict(fit_glmmTMB, newdata = nd, re.form = NULL)
-  expect_error({
-    p2 <- predict(fit_sdmTMB, newdata = nd)$est
-  }, regexp = "levels")
-  # expect_equal(p1, p2, tolerance = 1e-3)
+  p2 <- predict(fit_sdmTMB, newdata = nd)$est
+  expect_equal(p1, p2, tolerance = 1e-3)
 })
 
 test_that("re_form_iid is not specified but new levels in newdata doesn't blow up", {
@@ -98,10 +93,14 @@ test_that("re_form_iid is not specified but new levels in newdata doesn't blow u
   )
   d <- pcod
   d$fyear <- as.factor(d$year)
-  p <- predict(fit, newdata = d, re_form_iid = NA) # works
-  expect_error({
-    predict(fit, newdata = d) # blows up
-  }, regexp = "levels")
+  p <- predict(fit, newdata = d, re_form_iid = NA)
+  expect_warning(
+    p1 <- predict(fit, newdata = d),
+    regexp = "Found new levels"
+  )
+  p2 <- predict(fit, newdata = d, allow_new_levels = TRUE)
+  expect_equal(p1$est, p2$est)
+  expect_equal(p1$est[d$fyear == "2017"], p$est[d$fyear == "2017"])
 
   # what about just with 1 level?
   fit_glmmTMB <- glmmTMB::glmmTMB(density ~ 1 + (1 | fyear),
@@ -114,3 +113,52 @@ test_that("re_form_iid is not specified but new levels in newdata doesn't blow u
   expect_equal(p_glmmTMB, p, tolerance = 1e-4)
 })
 
+test_that("predict handles dropped factor levels in time_varying factors", {
+  set.seed(1)
+
+  dat <- data.frame(
+    year = rep(2010:2014, each = 30),
+    X = runif(150),
+    Y = runif(150),
+    substrate = factor(
+      sample(c("mud", "sand", "gravel"), 150, replace = TRUE),
+      levels = c("mud", "sand", "gravel")
+    )
+  )
+  year_effect <- setNames(seq(-0.6, 0.6, length.out = 5), 2010:2014)
+  substrate_effect <- c(mud = -0.4, sand = 0.3, gravel = 0.8)
+  dat$y <- 1 +
+    0.5 * dat$X -
+    0.4 * dat$Y +
+    year_effect[as.character(dat$year)] * substrate_effect[as.character(dat$substrate)] +
+    rnorm(nrow(dat), sd = 0.1)
+
+  for (tv_formula in list(~ substrate, ~ 0 + substrate)) {
+    fit <- sdmTMB(
+      y ~ X + Y,
+      time_varying = tv_formula,
+      data = dat,
+      time = "year",
+      spatial = "off",
+      spatiotemporal = "off",
+      family = gaussian(),
+      control = sdmTMBcontrol(newton_loops = 0L, getsd = FALSE),
+      priors = sdmTMBpriors(sigma_V = gamma_cv(0.2, 0.5))
+    )
+
+    nd <- dat[dat$substrate == "sand", ]
+    nd <- nd[1:10, ]
+    nd$substrate <- droplevels(nd$substrate)
+
+    expect_equal(levels(nd$substrate), "sand")
+    expect_no_error(predict(fit, newdata = nd))
+
+    nd_char <- nd
+    nd_char$substrate <- as.character(nd_char$substrate)
+    expect_no_error(predict(fit, newdata = nd_char))
+
+    nd_new_level <- nd
+    nd_new_level$substrate <- factor("shell", levels = "shell")
+    expect_error(predict(fit, newdata = nd_new_level), regexp = "new level")
+  }
+})

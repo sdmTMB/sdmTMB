@@ -2,7 +2,7 @@
 % Please edit documentation in R/dharma.R
 \name{dharma_residuals}
 \alias{dharma_residuals}
-\title{DHARMa residuals}
+\title{DHARMa residual diagnostics}
 \usage{
 dharma_residuals(
   simulated_response,
@@ -16,9 +16,9 @@ dharma_residuals(
 )
 }
 \arguments{
-\item{simulated_response}{Output from \code{\link[=simulate.sdmTMB]{simulate.sdmTMB()}}. It is recommended
-to set \code{type = "mle-mvn"} in the call to \code{\link[=simulate.sdmTMB]{simulate.sdmTMB()}} for the
-residuals to have the expected distribution.}
+\item{simulated_response}{Output from \code{\link[=simulate.sdmTMB]{simulate.sdmTMB()}}. We recommend
+setting \code{type = "mle-mvn"} in the call to \code{\link[=simulate.sdmTMB]{simulate.sdmTMB()}} so the
+residuals have the expected distribution.}
 
 \item{object}{Output from \code{\link[=sdmTMB]{sdmTMB()}}.}
 
@@ -35,27 +35,27 @@ residuals to have the expected distribution.}
 \item{...}{Other arguments to pass to \code{\link[DHARMa:createDHARMa]{DHARMa::createDHARMa()}}.}
 }
 \value{
-A data frame of observed and expected values is invisibly returned
-so you can assign the output to an object and
-plot the residuals yourself. See the examples.
+A data frame of observed and expected values is invisibly returned so you can
+assign the output to an object and plot the residuals yourself. See the
+examples.
 
 If \code{return_DHARMa = TRUE}, the object from \code{DHARMa::createDHARMa()}
 is returned and any subsequent \pkg{DHARMa} functions can be applied.
 }
 \description{
-Plot (and possibly return) \pkg{DHARMa} residuals. This is a wrapper function
-around \code{\link[DHARMa:createDHARMa]{DHARMa::createDHARMa()}} to facilitate its use with \code{\link[=sdmTMB]{sdmTMB()}} models.
-\strong{Note:} It is recommended to set \code{type = "mle-mvn"} in
-\code{\link[=simulate.sdmTMB]{simulate.sdmTMB()}} for the resulting residuals to have the
-expected distribution. This is \emph{not} the default.
+Plot (and optionally return) \pkg{DHARMa} residual diagnostics. This is a
+wrapper around \code{\link[DHARMa:createDHARMa]{DHARMa::createDHARMa()}} for use with \code{\link[=sdmTMB]{sdmTMB()}} models.
+\strong{Note:} We recommend setting \code{type = "mle-mvn"} in
+\code{\link[=simulate.sdmTMB]{simulate.sdmTMB()}} so the resulting residuals have the expected
+distribution. This is \emph{not} the default.
 }
 \details{
 See the \href{https://sdmTMB.github.io/sdmTMB/articles/residual-checking.html}{residuals vignette}.
 
-Advantages to these residuals over the ones from the \code{\link[=residuals.sdmTMB]{residuals.sdmTMB()}}
+Advantages of these residuals relative to the \code{\link[=residuals.sdmTMB]{residuals.sdmTMB()}}
 method are (1) they work with delta/hurdle models for the combined
-predictions, not the just the two parts separately, (2) they should work for
-all families, not the just the families where we have worked out the
+predictions, not just the two parts separately, (2) they should work for
+all families, not just the families where we have worked out the
 analytical quantile function, and (3) they can be used with the various
 diagnostic tools and plots from the \pkg{DHARMa} package.
 

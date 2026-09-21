@@ -1,8 +1,12 @@
-make_dl_mesh <- function(dat) {
+make_nl_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
 }
 
-test_that("covariate_diffusion parses valid terms", {
+make_nl_parse_grid <- function(mesh, covariates, years = NULL) {
+  make_nl_covariate_grid(mesh, years, covariates)
+}
+
+test_that("nonlocal_formula parses valid terms", {
   dat <- data.frame(
     y = rnorm(8),
     x_num = rnorm(8),
@@ -11,7 +15,8 @@ test_that("covariate_diffusion parses valid terms", {
     X = rep(1:4, each = 2),
     Y = rep(c(0, 1), 4)
   )
-  mesh <- make_dl_mesh(dat)
+  mesh <- make_nl_mesh(dat)
+  grid <- make_nl_parse_grid(mesh, c("x_num", "x_lag"), sort(unique(dat$year)))
 
   fit <- sdmTMB(
     y ~ 1,
@@ -20,32 +25,49 @@ test_that("covariate_diffusion parses valid terms", {
     time = "year",
     spatial = "off",
     spatiotemporal = "off",
-    covariate_diffusion = ~ space(x_num) + time(x_lag) + spacetime(x_num),
+    nonlocal_formula = ~ diffusion(x_num) + time_lag(x_lag),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
   expect_equal(
-    fit$covariate_diffusion_parsed$terms$component,
-    c("space", "time", "spacetime")
+    fit$nonlocal_formula_parsed$terms$component,
+    c("diffusion", "time_lag")
   )
   expect_equal(
-    fit$covariate_diffusion_parsed$terms$variable,
-    c("x_num", "x_lag", "x_num")
+    fit$nonlocal_formula_parsed$terms$variable,
+    c("x_num", "x_lag")
   )
   expect_equal(
-    fit$covariate_diffusion_parsed$terms$coef_name,
-    c("cov_diff_space_x_num", "cov_diff_time_x_lag", "cov_diff_spacetime_x_num")
+    fit$nonlocal_formula_parsed$terms$coef_name,
+    c("nl_diffusion_x_num", "nl_time_lag_x_lag")
   )
 })
 
-test_that("covariate_diffusion covariates do not need to be in the main formula", {
+test_that("same-covariate wrappers form one joint operator", {
+  parsed <- .parse_nonlocal_formula(
+    ~ time_lag(x1) + diffusion(x1) + diffusion(x2)
+  )
+
+  expect_equal(parsed$terms$variable, c("x1", "x2"))
+  expect_equal(parsed$terms$component, c("combined", "diffusion"))
+  expect_equal(parsed$terms$has_space, c(TRUE, TRUE))
+  expect_equal(parsed$terms$has_time, c(TRUE, FALSE))
+  expect_equal(
+    parsed$terms$coef_name,
+    c("nl_diffusion_time_lag_x1", "nl_diffusion_x2")
+  )
+})
+
+test_that("nonlocal_formula covariates do not need to be in the main formula", {
   dat <- data.frame(
     y = rnorm(8),
     x_only_lag = rnorm(8),
     X = rep(1:4, each = 2),
     Y = rep(c(0, 1), 4)
   )
-  mesh <- make_dl_mesh(dat)
+  mesh <- make_nl_mesh(dat)
+  grid <- make_nl_parse_grid(mesh, "x_only_lag")
 
   fit <- sdmTMB(
     y ~ 1,
@@ -53,15 +75,16 @@ test_that("covariate_diffusion covariates do not need to be in the main formula"
     mesh = mesh,
     spatial = "off",
     spatiotemporal = "off",
-    covariate_diffusion = ~ space(x_only_lag),
+    nonlocal_formula = ~ diffusion(x_only_lag),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
 
-  expect_equal(fit$covariate_diffusion_parsed$covariates, "x_only_lag")
+  expect_equal(fit$nonlocal_formula_parsed$covariates, "x_only_lag")
   expect_false("x_only_lag" %in% colnames(fit$tmb_data$X_ij[[1]]))
 })
 
-test_that("covariate_diffusion errors clearly for unsupported specs", {
+test_that("nonlocal_formula errors clearly for unsupported specs", {
   dat <- data.frame(
     y = rnorm(8),
     x_num = rnorm(8),
@@ -69,7 +92,7 @@ test_that("covariate_diffusion errors clearly for unsupported specs", {
     X = rep(1:4, each = 2),
     Y = rep(c(0, 1), 4)
   )
-  mesh <- make_dl_mesh(dat)
+  mesh <- make_nl_mesh(dat)
 
   expect_error(
     sdmTMB(
@@ -78,7 +101,7 @@ test_that("covariate_diffusion errors clearly for unsupported specs", {
       mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
-      covariate_diffusion = ~ banana(x_num),
+      nonlocal_formula = ~ banana(x_num),
       do_fit = FALSE
     ),
     regexp = "Unsupported wrapper"
@@ -91,7 +114,7 @@ test_that("covariate_diffusion errors clearly for unsupported specs", {
       mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
-      covariate_diffusion = ~ space(scale(x_num)),
+      nonlocal_formula = ~ diffusion(scale(x_num)),
       do_fit = FALSE
     ),
     regexp = "bare variable"
@@ -104,10 +127,10 @@ test_that("covariate_diffusion errors clearly for unsupported specs", {
       mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
-      covariate_diffusion = ~ space(not_in_data),
+      nonlocal_formula = ~ diffusion(not_in_data),
       do_fit = FALSE
     ),
-    regexp = "Missing covariate diffusion covariate"
+    regexp = "Missing nonlocal covariate"
   )
 
   expect_error(
@@ -117,7 +140,7 @@ test_that("covariate_diffusion errors clearly for unsupported specs", {
       mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
-      covariate_diffusion = ~ space(x_chr),
+      nonlocal_formula = ~ diffusion(x_chr),
       do_fit = FALSE
     ),
     regexp = "must be numeric"
@@ -130,21 +153,21 @@ test_that("covariate_diffusion errors clearly for unsupported specs", {
       mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
-      covariate_diffusion = ~ space(x_num) + space(x_num),
+      nonlocal_formula = ~ diffusion(x_num) + diffusion(x_num),
       do_fit = FALSE
     ),
     regexp = "Duplicate"
   )
 })
 
-test_that("covariate_diffusion time terms require time", {
+test_that("nonlocal_formula time terms require time", {
   dat <- data.frame(
     y = rnorm(8),
     x_num = rnorm(8),
     X = rep(1:4, each = 2),
     Y = rep(c(0, 1), 4)
   )
-  mesh <- make_dl_mesh(dat)
+  mesh <- make_nl_mesh(dat)
 
   expect_error(
     sdmTMB(
@@ -153,7 +176,7 @@ test_that("covariate_diffusion time terms require time", {
       mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
-      covariate_diffusion = ~ time(x_num),
+      nonlocal_formula = ~ time_lag(x_num),
       do_fit = FALSE
     ),
     regexp = "require a `time` argument"
@@ -166,14 +189,14 @@ test_that("covariate_diffusion time terms require time", {
       mesh = mesh,
       spatial = "off",
       spatiotemporal = "off",
-      covariate_diffusion = ~ spacetime(x_num),
+      nonlocal_formula = ~ spacetime(x_num),
       do_fit = FALSE
     ),
-    regexp = "require a `time` argument"
+    regexp = "Unsupported wrapper"
   )
 })
 
-test_that("covariate_diffusion supports single-family delta", {
+test_that("nonlocal_formula supports single-family delta", {
   dat <- data.frame(
     y = c(0, 1, 0, 2, 0.5, 1.2),
     x_num = rnorm(6),
@@ -181,7 +204,8 @@ test_that("covariate_diffusion supports single-family delta", {
     X = rep(1:3, each = 2),
     Y = rep(c(0, 1), 3)
   )
-  mesh <- make_dl_mesh(dat)
+  mesh <- make_nl_mesh(dat)
+  grid <- make_nl_parse_grid(mesh, "x_num")
 
   fit_delta <- sdmTMB(
     y ~ 1,
@@ -190,15 +214,16 @@ test_that("covariate_diffusion supports single-family delta", {
     spatial = "off",
     spatiotemporal = "off",
     family = delta_gamma(),
-    covariate_diffusion = ~ space(x_num),
+    nonlocal_formula = ~ diffusion(x_num),
+    nonlocal_data = grid,
     do_fit = FALSE
   )
-  expect_true(all(c("cov_diff_space_x_num") %in% colnames(fit_delta$tmb_data$X_ij[[1]])))
-  expect_true(all(c("cov_diff_space_x_num") %in% colnames(fit_delta$tmb_data$X_ij[[2]])))
+  expect_true(all(c("nl_diffusion_x_num") %in% colnames(fit_delta$tmb_data$X_ij[[1]])))
+  expect_true(all(c("nl_diffusion_x_num") %in% colnames(fit_delta$tmb_data$X_ij[[2]])))
 
 })
 
-test_that("covariate_diffusion requires an explicit mesh", {
+test_that("nonlocal_formula requires an explicit mesh", {
   dat <- data.frame(
     y = rnorm(8),
     x_num = rnorm(8)
@@ -210,14 +235,14 @@ test_that("covariate_diffusion requires an explicit mesh", {
       data = dat,
       spatial = "off",
       spatiotemporal = "off",
-      covariate_diffusion = ~ space(x_num),
+      nonlocal_formula = ~ diffusion(x_num),
       do_fit = FALSE
     ),
-    regexp = "mesh.*covariate_diffusion"
+    regexp = "mesh.*nonlocal_formula"
   )
 })
 
-test_that("covariate_diffusion time terms detect irregular time spacing", {
+test_that("nonlocal_formula time terms detect irregular time spacing", {
   dat <- data.frame(
     y = rnorm(6),
     x_num = rnorm(6),
@@ -225,7 +250,7 @@ test_that("covariate_diffusion time terms detect irregular time spacing", {
     X = rep(1:3, each = 2),
     Y = rep(c(0, 1), 3)
   )
-  mesh <- make_dl_mesh(dat)
+  mesh <- make_nl_mesh(dat)
 
   expect_error(
     sdmTMB(
@@ -235,7 +260,7 @@ test_that("covariate_diffusion time terms detect irregular time spacing", {
       time = "year",
       spatial = "off",
       spatiotemporal = "off",
-      covariate_diffusion = ~ time(x_num),
+      nonlocal_formula = ~ time_lag(x_num),
       extra_time = 2,
       do_fit = FALSE
     ),

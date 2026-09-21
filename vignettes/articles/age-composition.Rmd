@@ -239,11 +239,9 @@ ind_list <- lapply(ages, function(age) {
   # Subset prediction data for this age
   nd_age <- nd_setup$data_expanded[nd_setup$data_expanded$age == age, ]
 
-  # Get predictions
-  pred <- predict(fit_sdmTMB, newdata = nd_age, return_tmb_object = TRUE)
-
   # Calculate area-weighted index
-  ind <- get_index(pred, area = cell_area, bias_correct = TRUE)
+  ind <- get_index(fit_sdmTMB, newdata = nd_age,
+    area = cell_area, bias_correct = TRUE)
   data.frame(ind, age = age)
 })
 

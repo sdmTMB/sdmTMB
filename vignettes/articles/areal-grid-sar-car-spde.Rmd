@@ -44,32 +44,85 @@ This vignette illustrates converting point-based observations into an areal grid
 The original `dogfish` data are survey tow-level points. To fit a CAR or SAR model, we first define polygon areal units (grid cells) and assign each tow to a cell. We keep the tow-level observations for model fitting so that the model sees the original catch, effort, and tow-specific covariates.
 
 ```{r grid-build}
-# draw a boundary around our points
-dogfish_boundary <- st_as_sf(dogfish, coords = c("X", "Y"), crs = NA) |> 
+# convert to an sf object while keeping X and Y columns in the data
+dogfish_points <- st_as_sf(dogfish, coords = c("X", "Y"), crs = NA, remove = FALSE)
+
+# draw a boundary around the points
+dogfish_boundary <- dogfish_points |>
   st_union() |>
   st_convex_hull()
 
-# pass our data and our spatial boundary to make an areal grid:
-dogfish_grid_obj <- make_areal_grid(
-  dogfish,
-  xy_cols = c("X", "Y"),
-  spatial_domain = dogfish_boundary,
-  n = c(25L, 20L), # make a grid with 25 cells by 20 cells
-  space_column = "cell_id" # optionally rename the output column
+# create and clip a grid with 25 cells by 20 cells
+areal_grid <- st_make_grid(
+  dogfish_boundary,
+  n = c(25L, 20L),
+  square = TRUE
 )
+areal_grid <- st_intersection(areal_grid, dogfish_boundary)
+if (any(st_geometry_type(areal_grid) == "GEOMETRYCOLLECTION")) {
+  areal_grid <- st_collection_extract(areal_grid, "POLYGON")
+}
+areal_grid <- st_sf(geometry = areal_grid)
 
-ggplot(dogfish_grid_obj$grid) + geom_sf() + 
-  geom_point(data = dogfish_grid_obj$data, aes(X, Y), alpha = 0.2)
+# add stable IDs and grid-cell centre coordinates
+cell_centres <- st_coordinates(st_centroid(st_geometry(areal_grid)))
+areal_grid$X <- cell_centres[, 1L]
+areal_grid$Y <- cell_centres[, 2L]
+areal_grid$cell_id <- sprintf("cell_%03d", seq_len(nrow(areal_grid)))
+
+# assign each observation to a grid cell
+hits <- st_intersects(dogfish_points, areal_grid)
+stopifnot(all(lengths(hits) > 0L))
+
+areal_data <- dogfish
+areal_data$cell_id <- areal_grid$cell_id[vapply(hits, `[[`, integer(1), 1L)]
+
+# create the areal domain for sdmTMB
+areal_domain <- make_areal_domain(areal_grid, id_column = "cell_id")
+
+ggplot(areal_grid) + geom_sf() +
+  geom_point(data = areal_data, aes(X, Y), alpha = 0.2)
 ```
 
-For very large datasets, one could aggregate observations to one row per `cell_id` and `year`, for example by summing catch and effort and averaging or summing covariates. That can reduce computation substantial, but it changes the observation support and loses within-cell tow-level variation in covariates, catches, zeros, and effort.
+Once you are happy with those choices, you can wrap the same idea in a small helper for your own analysis. You may need to adapt this for your data, especially CRS handling, clipping, aggregation, and points that fall exactly on grid-cell boundaries.
+
+```{r grid-helper, eval=FALSE}
+make_grid_domain <- function(data, xy_cols, boundary, n, space_column = "cell_id") {
+  points <- st_as_sf(data, coords = xy_cols, crs = st_crs(boundary), remove = FALSE)
+  grid <- st_make_grid(boundary, n = n, square = TRUE)
+  grid <- st_intersection(grid, boundary)
+  if (any(st_geometry_type(grid) == "GEOMETRYCOLLECTION")) {
+    grid <- st_collection_extract(grid, "POLYGON")
+  }
+  grid <- st_sf(geometry = grid)
+
+  centres <- st_coordinates(st_centroid(st_geometry(grid)))
+  grid[[xy_cols[1L]]] <- centres[, 1L]
+  grid[[xy_cols[2L]]] <- centres[, 2L]
+  grid[[space_column]] <- sprintf("cell_%03d", seq_len(nrow(grid)))
+
+  hits <- st_intersects(points, grid)
+  stopifnot(all(lengths(hits) > 0L))
+
+  out_data <- data
+  out_data[[space_column]] <- grid[[space_column]][vapply(hits, `[[`, integer(1), 1L)]
+
+  list(
+    data = out_data,
+    grid = grid,
+    domain = make_areal_domain(grid, id_column = space_column)
+  )
+}
+```
+
+For very large datasets, one could aggregate observations to one row per `cell_id` and `year`, for example by summing catch and effort and averaging or summing covariates. That can reduce computation substantially, but it changes the observation support and loses within-cell tow-level variation in covariates, catches, zeros, and effort.
 Instead, here we will fit the raw observation data:
 
 ```{r areal-data}
-areal_data <- dogfish_grid_obj$data |>
+areal_data <- areal_data |>
   mutate(log_depth = log(depth))
 
-cell_centres <- dogfish_grid_obj$grid |>
+cell_centres <- areal_grid |>
   st_drop_geometry() |>
   select(cell_id, X_cell = X, Y_cell = Y)
 
@@ -86,7 +139,7 @@ system.time(
   fit_car <- sdmTMB(
     catch_weight ~ log_depth,
     data = areal_data,
-    mesh = dogfish_grid_obj$domain,
+    mesh = areal_domain,
     spatial_model = "car",
     time = "year",
     family = tweedie(link = "log"),
@@ -99,7 +152,7 @@ system.time(
   fit_sar <- sdmTMB(
     catch_weight ~ log_depth,
     data = areal_data,
-    mesh = dogfish_grid_obj$domain,
+    mesh = areal_domain,
     spatial_model = "sar",
     time = "year",
     family = tweedie(link = "log"),
@@ -161,7 +214,7 @@ pred_cell_year <- pred_areal |>
   )
 
 pred_grid <- left_join(
-  dogfish_grid_obj$grid,
+  areal_grid,
   pred_cell_year,
   by = "cell_id"
 ) |> 
@@ -206,7 +259,7 @@ Next we fit a continuous-space geostatistical SPDE model to the original tow loc
 ```{r spde-fit}
 spde_mesh <- make_mesh(dogfish, c("X", "Y"), cutoff = 8.5)
 spde_mesh$mesh$n
-dogfish_grid_obj$domain$n_s
+areal_domain$n_s
 plot(spde_mesh)
 
 system.time(

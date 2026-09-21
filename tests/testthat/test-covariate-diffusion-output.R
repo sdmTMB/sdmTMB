@@ -1,4 +1,4 @@
-make_dl_output_data <- function() {
+make_nl_output_data <- function() {
   set.seed(101)
   n_t <- 5L
   n_s <- 6L
@@ -18,14 +18,19 @@ make_dl_output_data <- function() {
   )
 }
 
-make_dl_output_mesh <- function(dat) {
+make_nl_output_mesh <- function(dat) {
   make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
+}
+
+make_nl_output_grid <- function(mesh, years) {
+  make_nl_covariate_grid(mesh, years, c("x1", "x2"))
 }
 
 test_that("covariate diffusion fixed effects are named consistently in tidy/coef/vcov", {
   skip_on_cran()
-  dat <- make_dl_output_data()
-  mesh <- make_dl_output_mesh(dat)
+  dat <- make_nl_output_data()
+  mesh <- make_nl_output_mesh(dat)
+  grid <- make_nl_output_grid(mesh, sort(unique(dat$year)))
 
   fit <- suppressWarnings(sdmTMB(
     y ~ x1 + x2,
@@ -35,11 +40,12 @@ test_that("covariate diffusion fixed effects are named consistently in tidy/coef
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1) + time(x2),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 
-  lag_terms <- fit$covariate_diffusion_data$term_coef_name
+  lag_terms <- fit$nonlocal_parsed$term_coef_name
   td <- tidy(fit, effects = "fixed", silent = TRUE)
   expect_true(all(lag_terms %in% td$term))
   expect_equal(length(unique(td$term)), nrow(td))
@@ -54,8 +60,9 @@ test_that("covariate diffusion fixed effects are named consistently in tidy/coef
 
 test_that("covariate diffusion ran_pars include lag scales and derived diagnostics", {
   skip_on_cran()
-  dat <- make_dl_output_data()
-  mesh <- make_dl_output_mesh(dat)
+  dat <- make_nl_output_data()
+  mesh <- make_nl_output_mesh(dat)
+  grid <- make_nl_output_grid(mesh, sort(unique(dat$year)))
 
   fit <- suppressWarnings(sdmTMB(
     y ~ x1 + x2,
@@ -65,42 +72,70 @@ test_that("covariate diffusion ran_pars include lag scales and derived diagnosti
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1) + time(x1) + spacetime(x2),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 
   td <- tidy(fit, effects = "ran_pars", silent = TRUE)
   expected_terms <- c(
-    "kappaS_cov_diff[x1]", "kappaS_cov_diff[x2]",
-    "kappaT_cov_diff[x1]",
-    "kappaST_cov_diff[x2]",
+    "kappaS_nl[x1]",
+    "kappaT_nl[x1]",
     "rhoT[x1]",
-    "MSD[x1]", "MSD[x2]",
-    "RMSD[x1]", "RMSD[x2]"
+    "MSDK[x1]",
+    "RMSDK[x1]"
   )
   expect_true(all(expected_terms %in% td$term), info = paste(setdiff(expected_terms, td$term), collapse = ", "))
-  expect_false("kappaT_cov_diff[x2]" %in% td$term)
 
   rep_est <- as.list(fit$sd_report, "Estimate", report = TRUE)
   rep_se <- as.list(fit$sd_report, "Std. Error", report = TRUE)
-  expect_length(rep_est$kappaS_dl, 2L)
-  expect_length(rep_est$kappaT_dl, 1L)
-  expect_length(rep_est$kappaST_dl, 1L)
+  expect_length(rep_est$kappaS_nl, 1L)
+  expect_length(rep_est$kappaT_nl, 1L)
   expect_length(rep_est$rhoT, 1L)
-  expect_length(rep_est$MSD, 2L)
-  expect_length(rep_est$RMSD, 2L)
-  expect_length(rep_se$kappaS_dl, 2L)
-  expect_length(rep_se$kappaT_dl, 1L)
-  expect_length(rep_se$kappaST_dl, 1L)
+  expect_length(rep_est$MSDK, 1L)
+  expect_length(rep_est$RMSDK, 1L)
+  expect_length(rep_est$log_MSDK, 1L)
+  expect_length(rep_est$log_RMSDK, 1L)
+  expect_length(rep_se$kappaS_nl, 1L)
+  expect_length(rep_se$kappaT_nl, 1L)
   expect_length(rep_se$rhoT, 1L)
-  expect_length(rep_se$MSD, 2L)
-  expect_length(rep_se$RMSD, 2L)
+  expect_length(rep_se$MSDK, 1L)
+  expect_length(rep_se$RMSDK, 1L)
+  expect_length(rep_se$log_MSDK, 1L)
+  expect_length(rep_se$log_RMSDK, 1L)
+  expect_gt(rep_est$MSDK, 0)
+  expect_gt(rep_est$RMSDK, 0)
+  expect_true(all(c(rep_se$MSDK, rep_se$RMSDK) >= 0))
+  expect_null(rep_est[["MSD", exact = TRUE]])
+  expect_null(rep_est[["RMSD", exact = TRUE]])
+  expect_equal(
+    rep_est$MSDK,
+    4 / (rep_est$kappaS_nl^2 * (1 + rep_est$kappaT_nl)),
+    tolerance = 1e-6
+  )
+  expect_equal(rep_est$RMSDK^2, rep_est$MSDK, tolerance = 1e-6)
+
+  td_msd <- td[td$term == "MSDK[x1]", , drop = FALSE]
+  td_rmsd <- td[td$term == "RMSDK[x1]", , drop = FALSE]
+  expect_gt(td_msd$conf.low, 0)
+  expect_gt(td_rmsd$conf.low, 0)
+  expect_equal(
+    td_msd$conf.low,
+    as.numeric(exp(rep_est$log_MSDK - stats::qnorm(0.975) * rep_se$log_MSDK)),
+    tolerance = 1e-6
+  )
+  expect_equal(
+    td_rmsd$conf.low,
+    as.numeric(exp(rep_est$log_RMSDK - stats::qnorm(0.975) * rep_se$log_RMSDK)),
+    tolerance = 1e-6
+  )
 })
 
 test_that("print output reports covariate diffusion structure and diagnostics", {
   skip_on_cran()
-  dat <- make_dl_output_data()
-  mesh <- make_dl_output_mesh(dat)
+  dat <- make_nl_output_data()
+  mesh <- make_nl_output_mesh(dat)
+  grid <- make_nl_output_grid(mesh, sort(unique(dat$year)))
 
   fit <- suppressWarnings(sdmTMB(
     y ~ x1 + x2,
@@ -110,12 +145,13 @@ test_that("print output reports covariate diffusion structure and diagnostics", 
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    covariate_diffusion = ~ space(x1) + time(x1) + spacetime(x2),
+    nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
+    nonlocal_data = grid,
     control = sdmTMBcontrol(newton_loops = 0)
   ))
 
   out <- paste(capture.output(print(fit)), collapse = "\n")
-  expect_match(out, "Covariate diffusion: space\\(x1\\) \\+ time\\(x1\\) \\+ spacetime\\(x2\\)")
+  expect_match(out, "Nonlocal formula: diffusion\\(x1\\) \\+ time_lag\\(x1\\)")
   expect_match(out, "rhoT\\[x1\\]=")
-  expect_match(out, "RMSD\\[x1\\]=")
+  expect_match(out, "RMSDK\\[x1\\]=")
 })

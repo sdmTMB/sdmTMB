@@ -4,7 +4,7 @@
 #'
 #' @param data A data frame.
 #' @param xy_cols A character vector of x and y column names contained in
-#'   `data`. These should likely be in an equal distance projection. For
+#'   `data`. These should generally be in a projected CRS with distance-based units. For
 #'   a helper function to convert to UTMs, see [add_utm_columns()].
 #' @param type Method to create the mesh. Also see `mesh` argument to supply
 #'   your own mesh.
@@ -16,8 +16,8 @@
 #' @param mesh An optional mesh created via \pkg{fmesher} instead of using the above
 #'   convenience options.
 #' @param fmesher_func Which \pkg{fmesher} function to use. Options include
-#'   [fmesher::fm_rcdt_2d_inla()] and [fmesher::fm_mesh_2d_inla()] along with
-#'   version without the `_inla` on the end.
+#'   [fmesher::fm_rcdt_2d_inla()] and [fmesher::fm_mesh_2d_inla()], along with
+#'   versions without the `_inla` suffix.
 #' @param convex If specified, passed to [fmesher::fm_nonconvex_hull()].
 #'   Distance to extend non-convex hull from data.
 #' @param concave If specified, passed to [fmesher::fm_nonconvex_hull()].
@@ -291,4 +291,3 @@ make_barrier_spde <- function(spde) {
   }
   list(C0 = C0, C1 = C1, D0 = D0, D1 = D1, I = .I)
 }
-

@@ -43,19 +43,20 @@ print_model_info <- function(x) {
 
   mesh <- paste0("Mesh: ", extract_call_name(x$call$mesh), " (", covariance, " covariance)\n")
   data <- paste0("Data: ", extract_call_name(x$call$data), "\n")
-  covariate_diffusion <- NULL
-  if (!is.null(x$covariate_diffusion_parsed) &&
-      !is.null(x$covariate_diffusion_parsed$terms) &&
-      nrow(x$covariate_diffusion_parsed$terms) > 0L) {
-    dl_terms <- x$covariate_diffusion_parsed$terms
-    dl_labels <- paste0(dl_terms$component, "(", dl_terms$variable, ")")
-    covariate_diffusion <- paste0("Covariate diffusion: ", paste(dl_labels, collapse = " + "), "\n")
-  } else if ("covariate_diffusion" %in% names(x$call)) {
-    dl_name <- extract_call_name(x$call$covariate_diffusion)
-    if (!is.null(dl_name) && dl_name != "NULL") {
-      covariate_diffusion <- paste0("Covariate diffusion: ", dl_name, "\n")
-      covariate_diffusion <- gsub('\\"', "", covariate_diffusion)
-      covariate_diffusion <- gsub("\\'", "", covariate_diffusion)
+  nonlocal_formula <- NULL
+  if (!is.null(x$nonlocal_formula_parsed) &&
+      !is.null(x$nonlocal_formula_parsed$terms) &&
+      nrow(x$nonlocal_formula_parsed$terms) > 0L) {
+    nl_terms <- x$nonlocal_formula_parsed$source_terms
+    if (is.null(nl_terms)) nl_terms <- x$nonlocal_formula_parsed$terms
+    nl_labels <- paste0(nl_terms$component, "(", nl_terms$variable, ")")
+    nonlocal_formula <- paste0("Nonlocal formula: ", paste(nl_labels, collapse = " + "), "\n")
+  } else if ("nonlocal_formula" %in% names(x$call)) {
+    nl_name <- extract_call_name(x$call$nonlocal_formula)
+    if (!is.null(nl_name) && nl_name != "NULL") {
+      nonlocal_formula <- paste0("Nonlocal formula: ", nl_name, "\n")
+      nonlocal_formula <- gsub('\\"', "", nonlocal_formula)
+      nonlocal_formula <- gsub("\\'", "", nonlocal_formula)
     }
   }
 
@@ -93,7 +94,7 @@ print_model_info <- function(x) {
     family1,
     family2,
     overall_family,
-    covariate_diffusion,
+    nonlocal_formula,
     criterion,
     covariance
   )
@@ -283,27 +284,25 @@ print_int_slope_re <- function(x, m = 1) {
   if (sum(x$tmb_data$n_re_groups)) {
     v <- tidy(x, effects = "ran_vcov", model = m)
     cnms <- x$split_formula[[m]]$re_cov_terms$cnms
-    ll <- vapply(cnms, length, FUN.VALUE = 1L)
-    mmc2 <- unlist(cnms, use.names = FALSE)
-    mmc1 <- lapply(names(ll), \(na) rep(na, ll[[na]])) |> unlist()
-    mmc1[duplicated(mmc1)] <- ""
-    mmsd <- lapply(v[[1]], \(x) {
-      if (ncol(x) == 2L) {
-        c(x[1,1], x[2,2])
-      } else {
-        c(x[1,1])
-      }
+    display_groups <- unique(names(cnms))
+    terms <- lapply(display_groups, function(group) {
+      unlist(cnms[names(cnms) == group], use.names = FALSE)
     })
-    mmsd <- unlist(mmsd, use.names = FALSE)
+    mmc1 <- unlist(Map(function(group, term) {
+      c(group, rep("", length(term) - 1L))
+    }, display_groups, terms), use.names = FALSE)
+    mmc2 <- unlist(terms, use.names = FALSE)
+    mmsd <- unlist(lapply(v[[1]], diag), use.names = FALSE)
     mmvar <- mmsd^2
-    mmcor <- lapply(v[[1]], \(x) {
-      if (ncol(x) == 2L) {
-        c("", mround(x[2,1], 2))
-      } else {
-        ""
+    mmcor <- unlist(lapply(v[[1]], function(mat) {
+      out <- rep("", nrow(mat))
+      if (nrow(mat) > 1L) {
+        for (i in 2:nrow(mat)) {
+          out[i] <- paste(mround(mat[i, seq_len(i - 1L)], 2), collapse = " ")
+        }
       }
-    })
-    mmcor <- unlist(mmcor, use.names = FALSE)
+      out
+    }), use.names = FALSE)
     mm <- cbind(mmc1, mmc2, mround(mmvar, 2), mround(mmsd, 2), mmcor)
     colnames(mm) <- c("Groups", "Name", "Variance", "Std.Dev.", "Corr")
     rownames(mm) <- rep("", nrow(mm))
@@ -474,7 +473,7 @@ print_other_parameters <- function(x, m = 1L) {
     }
     a
   }
-  covariate_diffusion_term_text <- function(term_prefix = "", pretext = "") {
+  nonlocal_term_text <- function(term_prefix = "", pretext = "") {
     idx <- grepl(paste0("^", term_prefix, "\\["), b$term)
     if (!any(idx)) {
       return("")
@@ -511,8 +510,8 @@ print_other_parameters <- function(x, m = 1L) {
   rho <- get_term_text("rho", "Spatiotemporal AR1 correlation (rho)")
   rho_sar <- get_term_text("rho_sar", "SAR spatial dependence")
   alpha_car <- get_term_text("alpha_car", "CAR spatial dependence")
-  rhoT <- covariate_diffusion_term_text("rhoT", "Covariate diffusion temporal persistence")
-  RMSD <- covariate_diffusion_term_text("RMSD", "Covariate diffusion RMSD")
+  rhoT <- nonlocal_term_text("rhoT", "Nonlocal temporal persistence")
+  RMSDK <- nonlocal_term_text("RMSDK", "Nonlocal RMSDK")
 
   if ("sigma_Z" %in% b$term) {
     # tidy() takes sigma_Z from the sdreport,
@@ -536,7 +535,7 @@ print_other_parameters <- function(x, m = 1L) {
     sigma_Z <- ""
   }
 
-  named_list(phi, tweedie_p, student_df, sigma_O, sigma_E, sigma_Z, rho, rho_sar, alpha_car, rhoT, RMSD, gengamma_par, ordbeta_cuts, mm_disp)
+  named_list(phi, tweedie_p, student_df, sigma_O, sigma_E, sigma_Z, rho, rho_sar, alpha_car, rhoT, RMSDK, gengamma_par, ordbeta_cuts, mm_disp)
 }
 
 print_multi_family_summary <- function(x) {
@@ -593,7 +592,7 @@ print_header <- function(x) {
   cat(info$mesh)
   cat(info$time)
   cat(info$data)
-  cat(info$covariate_diffusion)
+  cat(info$nonlocal_formula)
   cat(info$overall_family)
 }
 
@@ -657,7 +656,7 @@ print_one_model <- function(x, m = 1, edf = FALSE, silent = FALSE) {
   cat(other$sigma_O)
   cat(other$sigma_Z)
   cat(other$sigma_E)
-  cat(other$RMSD)
+  cat(other$RMSDK)
 }
 print_footer <- function(x) {
   info <- print_model_info(x)

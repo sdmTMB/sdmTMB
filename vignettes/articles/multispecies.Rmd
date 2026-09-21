@@ -200,7 +200,7 @@ map_list2 <- list(ln_tau_Z = factor(
 map_list2
 
 # hack together a model formula based on our hand constructed model matrix:
-svc_formula <- as.formula(paste0("~ `", paste(colnames(mm), collapse = "` + `"), "`"))
+svc_formula <- as.formula(paste0("~ 0 + `", paste(colnames(mm), collapse = "` + `"), "`"))
 svc_formula
 
 fit_svc <- sdmTMB(

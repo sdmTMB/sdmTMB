@@ -80,56 +80,22 @@ test_that("make_areal_domain works with labelled sf polygon input", {
   expect_equal(as.numeric(Matrix::rowSums(d$W)), c(1, 1))
 })
 
-test_that("make_areal_grid overlays point data on an existing sf grid", {
-  skip_if_not_installed("sf")
-
-  grid <- sf::st_make_grid(
-    sf::st_as_sfc(sf::st_bbox(c(xmin = 0, ymin = 0, xmax = 2, ymax = 2))),
-    n = c(2, 2),
-    square = TRUE
-  )
-  dat <- data.frame(
-    x = c(0.25, 1.25, 0.25, 1.25),
-    y = c(0.25, 0.25, 1.25, 1.25),
-    z = 1:4
-  )
-
-  out <- make_areal_grid(
-    data = dat,
-    xy_cols = c("x", "y"),
-    spatial_domain = grid,
-    space_column = "cell"
-  )
-
-  expect_true("cell" %in% names(out$data))
-  expect_s3_class(out$domain, "sdmTMBareal")
-  expect_s3_class(out$grid, "sf")
-  expect_equal(out$domain$n_s, 4L)
-  expect_equal(sort(unique(out$data$cell)), sort(out$domain$unit_names))
-  expect_equal(as.numeric(Matrix::rowSums(out$domain$W)), rep(1, 4))
-})
-
-test_that("make_areal_grid can create and clip a grid from an sf boundary", {
+test_that("make_areal_domain works with an sf grid and stable IDs", {
   skip_if_not_installed("sf")
 
   boundary <- sf::st_as_sf(sf::st_as_sfc(sf::st_bbox(c(xmin = 0, ymin = 0, xmax = 2, ymax = 2))))
-  dat <- data.frame(
-    x = c(0.25, 1.25, 0.25, 1.25),
-    y = c(0.25, 0.25, 1.25, 1.25)
-  )
-
-  out <- make_areal_grid(
-    data = dat,
-    xy_cols = c("x", "y"),
-    spatial_domain = boundary,
+  grid <- sf::st_make_grid(
+    boundary,
     n = c(2, 2),
     square = TRUE
   )
+  grid <- sf::st_sf(cell_id = sprintf("cell_%03d", seq_along(grid)), geometry = grid)
+  domain <- make_areal_domain(grid, id_column = "cell_id")
 
-  expect_s3_class(out$domain, "sdmTMBareal")
-  expect_equal(out$domain$n_s, 4L)
-  expect_equal(nrow(out$grid), 4L)
-  expect_true("grid_cell" %in% names(out$data))
+  expect_s3_class(domain, "sdmTMBareal")
+  expect_equal(domain$n_s, 4L)
+  expect_equal(domain$unit_names, grid$cell_id)
+  expect_equal(as.numeric(Matrix::rowSums(domain$W)), rep(1, 4))
 })
 
 test_that("prepare_spatial_domain validates data memberships", {
@@ -151,7 +117,7 @@ test_that("prepare_spatial_domain validates data memberships", {
       data = data.frame(region = c("a", "x")),
       mesh_missing = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "no match in the areal domain"
@@ -179,7 +145,7 @@ test_that("prepare_spatial_domain validates required membership column and missi
       data = data.frame(x = 1:2),
       mesh_missing = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "areal domain was not found in `data`"
@@ -190,7 +156,7 @@ test_that("prepare_spatial_domain validates required membership column and missi
       data = data.frame(region = c("a", NA)),
       mesh_missing = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "contains missing values"
@@ -269,7 +235,7 @@ test_that("prepare_spatial_domain returns areal domain pieces", {
     data = dat,
     mesh_missing = FALSE,
     anisotropy = FALSE,
-    covariate_diffusion = NULL,
+    nonlocal_formula = NULL,
     spatial_model = "sar"
   )
 
@@ -305,7 +271,7 @@ test_that("prepare_spatial_domain returns raw adjacency for CAR", {
     data = dat,
     mesh_missing = FALSE,
     anisotropy = FALSE,
-    covariate_diffusion = NULL,
+    nonlocal_formula = NULL,
     spatial_model = "car"
   )
 
@@ -334,7 +300,7 @@ test_that("prepare_spatial_domain can return raw adjacency for SAR", {
     data = dat,
     mesh_missing = FALSE,
     anisotropy = FALSE,
-    covariate_diffusion = NULL,
+    nonlocal_formula = NULL,
     spatial_model = "sar",
     sar_weight_style = "raw"
   )
@@ -364,7 +330,7 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
       mesh_missing = FALSE,
       share_range = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "share_range = FALSE"
@@ -376,7 +342,7 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
       data = dat,
       mesh_missing = FALSE,
       anisotropy = TRUE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "anisotropy.*not supported"
@@ -388,10 +354,10 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
       data = dat,
       mesh_missing = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = list(dummy = 1),
+      nonlocal_formula = list(dummy = 1),
       spatial_model = "sar"
     ),
-    "covariate_diffusion.*not supported"
+    "nonlocal_formula.*not supported"
   )
 
   expect_error(
@@ -400,7 +366,7 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
       data = dat["x"],
       mesh_missing = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "areal domain was not found in `data`"
@@ -414,7 +380,7 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
       mesh_missing = FALSE,
       anisotropy = FALSE,
       priors = pri,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "PC Matern priors.*not supported"
@@ -428,7 +394,7 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
       data = dat,
       mesh_missing = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       spatial_model = "sar"
     ),
     "Barrier models are not supported"
@@ -440,7 +406,7 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
       data = dat,
       mesh_missing = FALSE,
       anisotropy = FALSE,
-      covariate_diffusion = NULL,
+      nonlocal_formula = NULL,
       experimental = list(epsilon_model = ~x),
       spatial_model = "sar"
     ),
