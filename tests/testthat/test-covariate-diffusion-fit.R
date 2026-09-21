@@ -160,5 +160,8 @@ test_that("covariate diffusion derived quantities are conditionally reported", {
   expect_true(is.numeric(rep_space$RMSDK))
   expect_true(is.finite(rep_space$MSDK))
   expect_true(is.finite(rep_space$RMSDK))
+  expect_gt(rep_space$MSDK, 0)
+  expect_gt(rep_space$RMSDK, 0)
+  expect_equal(rep_space$MSDK, 4 / rep_space$kappaS_nl^2, tolerance = 1e-6)
   expect_equal(rep_space$RMSDK^2, rep_space$MSDK, tolerance = 1e-6)
 })

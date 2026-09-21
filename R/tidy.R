@@ -373,7 +373,8 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
 
   add_nonlocal_parameter <- function(term_name, covariate_mask_name,
-                                                display_name = term_name) {
+                                                display_name = term_name,
+                                                log_ci_term_name = NULL) {
     if (is.null(x$nonlocal_parsed) || !length(x$nonlocal_parsed$covariates)) {
       return(NULL)
     }
@@ -392,12 +393,26 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     if (!is.null(se[[term_name]])) {
       ses[keep_idx] <- se[[term_name]]
     }
+    conf_low <- estimates - crit * ses
+    conf_high <- estimates + crit * ses
+    if (!is.null(log_ci_term_name) &&
+        !is.null(est[[log_ci_term_name]]) &&
+        !is.null(se[[log_ci_term_name]])) {
+      log_estimates <- rep(NA_real_, length(covariates))
+      log_ses <- rep(NA_real_, length(covariates))
+      log_estimates[keep_idx] <- est[[log_ci_term_name]]
+      log_ses[keep_idx] <- se[[log_ci_term_name]]
+      valid <- keep_idx[is.finite(log_estimates[keep_idx]) &
+        is.finite(log_ses[keep_idx])]
+      conf_low[valid] <- exp(log_estimates[valid] - crit * log_ses[valid])
+      conf_high[valid] <- exp(log_estimates[valid] + crit * log_ses[valid])
+    }
     out <- data.frame(
       term = paste0(display_name, "[", covariates, "]"),
       estimate = estimates,
       std.error = ses,
-      conf.low = estimates - crit * ses,
-      conf.high = estimates + crit * ses,
+      conf.low = conf_low,
+      conf.high = conf_high,
       stringsAsFactors = FALSE
     )
     out[keep_idx, , drop = FALSE]
@@ -406,14 +421,15 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     list(term_name = "kappaS_nl", display_name = "kappaS_nl", covariate_mask_name = "covariate_has_spatial"),
     list(term_name = "kappaT_nl", display_name = "kappaT_nl", covariate_mask_name = "covariate_has_temporal"),
     list(term_name = "rhoT", display_name = "rhoT", covariate_mask_name = "covariate_has_temporal"),
-    list(term_name = "MSDK", display_name = "MSDK", covariate_mask_name = "covariate_has_spatial"),
-    list(term_name = "RMSDK", display_name = "RMSDK", covariate_mask_name = "covariate_has_spatial")
+    list(term_name = "MSDK", display_name = "MSDK", covariate_mask_name = "covariate_has_spatial", log_ci_term_name = "log_MSDK"),
+    list(term_name = "RMSDK", display_name = "RMSDK", covariate_mask_name = "covariate_has_spatial", log_ci_term_name = "log_RMSDK")
   )
   for (term_info in nonlocal_term_masks) {
     term_df <- add_nonlocal_parameter(
       term_info$term_name,
       term_info$covariate_mask_name,
-      term_info$display_name
+      term_info$display_name,
+      term_info$log_ci_term_name
     )
     if (!is.null(term_df)) {
       out_re[[paste0("nonlocal_", term_info$display_name)]] <- term_df

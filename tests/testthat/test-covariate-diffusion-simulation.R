@@ -150,6 +150,11 @@ test_that("simulate_new supports a joint operator for one covariate", {
 
   expect_s3_class(sim, "data.frame")
   expect_true("nl_truth_diffusion_time_lag_x_s" %in% names(sim))
+  expect_equal(
+    sim$eta,
+    0.2 + 0.5 * sim$nl_truth_diffusion_time_lag_x_s,
+    tolerance = 1e-8
+  )
   expect_false(any(names(sim) %in% c(
     "nl_truth_diffusion_x_s",
     "nl_truth_time_lag_x_s"

@@ -256,12 +256,100 @@ test_that("joint R solver uses the stationary space-time recursion", {
   ))
 
   expect_equal(actual, expected)
+
+  # This is the stationary operator used by spacetime_lag.cpp with
+  # options_z(0) = 1 and kappaST = 0:
+  # P = kappaS^-2 (I_T x P_S) + kappaT ((L - I_T) x I_S),
+  # where P_S = -M0^-1 M1. R matrices are column-major, so the vectorized
+  # ordering is time slices of spatial vertices, as in the C++ template.
+  P_s <- -as.matrix(Matrix::solve(M0, M1))
+  L <- matrix(0, nrow = ncol(x), ncol = ncol(x))
+  L[row(L) == col(L) + 1L] <- 1
+  P <- kappaS^(-2) * kronecker(diag(ncol(x)), P_s) +
+    kappaT * kronecker(L - diag(ncol(x)), diag(nrow(x)))
+  authoritative <- matrix(
+    solve(diag(length(x)) - P, as.vector(x)),
+    nrow = nrow(x)
+  )
+  expect_equal(actual, authoritative, tolerance = 1e-12)
+
+  old_sum <- .solve_nonlocal_vertex_time(
+    "diffusion", x, M0, M1, kappaS, kappaT,
+    has_space = TRUE, has_time = FALSE
+  ) + .solve_nonlocal_vertex_time(
+    "time_lag", x, M0, M1, kappaS, kappaT,
+    has_space = FALSE, has_time = TRUE
+  )
+  expect_gt(max(abs(actual - old_sum)), 1e-6)
+
   expect_error(
     .solve_nonlocal_vertex_time(
       "combined", x, M0, M1, kappaS, kappaT,
       has_space = TRUE, has_time = FALSE
     ),
     "requires both"
+  )
+})
+
+test_that("fitted and prediction C++ paths use the joint operator", {
+  skip_on_cran()
+  dat <- data.frame(
+    y = rnorm(8),
+    x = rnorm(8),
+    year = rep(1:4, each = 2),
+    X = rep(1:4, each = 2),
+    Y = rep(c(0, 1), 4)
+  )
+  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
+  grid <- make_nl_covariate_grid(mesh, sort(unique(dat$year)), "x")
+
+  fit <- suppressWarnings(sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = mesh,
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    nonlocal_formula = ~ diffusion(x) + time_lag(x),
+    nonlocal_data = grid,
+    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+  ))
+
+  fitted_params <- fit$tmb_obj$env$parList(fit$model$par)
+  kappaS <- exp(fitted_params$log_kappaS_nl[[1L]])
+  kappaT <- fitted_params$kappaT_nl_raw[[1L]]
+  expected_vertex_time <- .solve_nonlocal_vertex_time(
+    component = "combined",
+    vertex_time_input = fit$nonlocal_parsed$covariate_vertex_time[, , 1L],
+    M0 = fit$tmb_data$spde$M0,
+    M1 = fit$tmb_data$spde$M1,
+    kappaS = kappaS,
+    kappaT = kappaT,
+    has_space = TRUE,
+    has_time = TRUE
+  )
+  expected <- .project_nonlocal_vertex_time(
+    transformed_vertex_time = expected_vertex_time,
+    A_st = fit$tmb_data$A_st,
+    A_spatial_index = fit$tmb_data$A_spatial_index,
+    year_i = fit$tmb_data$year_i,
+    n_t = fit$tmb_data$n_t
+  )
+  fit_report <- fit$tmb_obj$report()
+  expect_equal(
+    as.numeric(fit_report$covariate_diffusion_values[, 1L]),
+    expected,
+    tolerance = 1e-8
+  )
+
+  prediction_report <- predict(
+    fit, newdata = dat, return_tmb_report = TRUE
+  )
+  expect_equal(
+    as.numeric(prediction_report$proj_covariate_diffusion_values[, 1L]),
+    expected,
+    tolerance = 1e-6
   )
 })
 

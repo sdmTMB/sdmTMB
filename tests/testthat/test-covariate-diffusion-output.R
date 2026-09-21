@@ -94,16 +94,39 @@ test_that("covariate diffusion ran_pars include lag scales and derived diagnosti
   expect_length(rep_est$rhoT, 1L)
   expect_length(rep_est$MSDK, 1L)
   expect_length(rep_est$RMSDK, 1L)
+  expect_length(rep_est$log_MSDK, 1L)
+  expect_length(rep_est$log_RMSDK, 1L)
   expect_length(rep_se$kappaS_nl, 1L)
   expect_length(rep_se$kappaT_nl, 1L)
   expect_length(rep_se$rhoT, 1L)
   expect_length(rep_se$MSDK, 1L)
   expect_length(rep_se$RMSDK, 1L)
+  expect_length(rep_se$log_MSDK, 1L)
+  expect_length(rep_se$log_RMSDK, 1L)
+  expect_gt(rep_est$MSDK, 0)
+  expect_gt(rep_est$RMSDK, 0)
+  expect_true(all(c(rep_se$MSDK, rep_se$RMSDK) >= 0))
   expect_null(rep_est[["MSD", exact = TRUE]])
   expect_null(rep_est[["RMSD", exact = TRUE]])
   expect_equal(
     rep_est$MSDK,
-    4 / rep_est$kappaS_nl^2 * (1 - rep_est$rhoT),
+    4 / (rep_est$kappaS_nl^2 * (1 + rep_est$kappaT_nl)),
+    tolerance = 1e-6
+  )
+  expect_equal(rep_est$RMSDK^2, rep_est$MSDK, tolerance = 1e-6)
+
+  td_msd <- td[td$term == "MSDK[x1]", , drop = FALSE]
+  td_rmsd <- td[td$term == "RMSDK[x1]", , drop = FALSE]
+  expect_gt(td_msd$conf.low, 0)
+  expect_gt(td_rmsd$conf.low, 0)
+  expect_equal(
+    td_msd$conf.low,
+    as.numeric(exp(rep_est$log_MSDK - stats::qnorm(0.975) * rep_se$log_MSDK)),
+    tolerance = 1e-6
+  )
+  expect_equal(
+    td_rmsd$conf.low,
+    as.numeric(exp(rep_est$log_RMSDK - stats::qnorm(0.975) * rep_se$log_RMSDK)),
     tolerance = 1e-6
   )
 })

@@ -1804,6 +1804,7 @@ Type objective_function<Type>::operator()()
     }
     vector<Type> kappaS_nl(n_S), kappaT_nl(n_T);
     vector<Type> rhoT(n_T), MSDK(n_S), RMSDK(n_S);
+    vector<Type> log_MSDK(n_S), log_RMSDK(n_S);
     int iS = 0, iT = 0;
     for (int i = 0; i < covariate_diffusion.n_covariates; i++) {
       if (covariate_diffusion.has(i, sdmTMB::nl_time) == 1) {
@@ -1820,10 +1821,18 @@ Type objective_function<Type>::operator()()
         }
         MSDK(iS) = m;
         RMSDK(iS) = sqrt(m);
+        log_MSDK(iS) = log(m);
+        log_RMSDK(iS) = log(RMSDK(iS));
         iS++;
       }
     }
-    if (n_S > 0)  { REPORT(kappaS_nl);  ADREPORT(kappaS_nl); REPORT(MSDK); REPORT(RMSDK); ADREPORT(MSDK); ADREPORT(RMSDK); }
+    if (n_S > 0)  {
+      REPORT(kappaS_nl);  ADREPORT(kappaS_nl);
+      REPORT(MSDK);       ADREPORT(MSDK);
+      REPORT(RMSDK);      ADREPORT(RMSDK);
+      REPORT(log_MSDK);   ADREPORT(log_MSDK);
+      REPORT(log_RMSDK);  ADREPORT(log_RMSDK);
+    }
     if (n_T > 0)  { REPORT(kappaT_nl);  ADREPORT(kappaT_nl); REPORT(rhoT); ADREPORT(rhoT); }
   }
 
