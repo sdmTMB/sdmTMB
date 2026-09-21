@@ -82,7 +82,10 @@ Delta/hurdle models (for data with zeros) include:
 \code{\link[sdmTMB:families]{delta_truncated_nbinom2()}}.
 See the \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-model vignette} for
 details. For binomial family options, see 'Binomial families' in the Details
-section below.}
+section below. Experimental multi-family models use a named list of family
+objects; \code{distribution_column} then maps each row to an entry in that list.
+See the \href{https://sdmTMB.github.io/sdmTMB/articles/multi-family.html}{multi-family vignette} for
+supported family combinations and post-fit methods.}
 
 \item{distribution_column}{For experimental multi-family models, the name of
 the column in \code{data} mapping each row to a family in the named \code{family}

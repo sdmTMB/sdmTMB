@@ -58,7 +58,11 @@ NULL
 #'   See the [delta-model
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html) for
 #'   details. For binomial family options, see 'Binomial families' in the Details
-#'   section below.
+#'   section below. Experimental multi-family models use a named list of family
+#'   objects; `distribution_column` then maps each row to an entry in that list.
+#'   See the [multi-family
+#'   vignette](https://sdmTMB.github.io/sdmTMB/articles/multi-family.html) for
+#'   supported family combinations and post-fit methods.
 #' @param distribution_column For experimental multi-family models, the name of
 #'   the column in `data` mapping each row to a family in the named `family`
 #'   list. See the multi-family vignette for the supported family and method

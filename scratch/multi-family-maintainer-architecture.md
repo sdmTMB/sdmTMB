@@ -17,6 +17,12 @@ The canonical metadata is `family_spec`; do not route internals through
 `object$family`. That public field preserves the complete user input, including
 the named family list in multi-family fits.
 
+`R/family-spec.R` compiles, validates, and serializes that metadata for TMB.
+`R/family-response.R` prepares row-aligned responses. `R/family-prediction.R`
+maps prediction rows to families, formats component outputs, and combines
+realized simulation draws. TMB remains authoritative for combined prediction
+reports.
+
 To add a supported family safely:
 
 1. Update the central registry in `R/family-spec.R`.
