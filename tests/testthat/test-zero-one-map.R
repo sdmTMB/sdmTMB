@@ -221,10 +221,13 @@ test_that("returned map/start can be used in sdmTMBcontrol() and sdmTMB() fits",
   expect_equal(unname(fit$tmb_obj$env$parList()$b_j[i_zero]), -20)
 
   # index?
-  p <- predict(
-    fit,
-    newdata = replicate_df(qcs_grid, "year", unique(pcod$year)),
-    return_tmb_object = TRUE
+  lifecycle::expect_deprecated(
+    p <- predict(
+      fit,
+      newdata = replicate_df(qcs_grid, "year", unique(pcod$year)),
+      return_tmb_object = TRUE
+    ),
+    "return_tmb_object"
   )
   ind <- get_index(p, bias_correct = FALSE)
   expect_true(ind$est[ind$year == 2003] < 0.0001)

@@ -91,7 +91,7 @@
   for (component in seq_len(family_spec$n_m)) {
     formula_no_smooths <- remove_s_and_t2(formulas[[component]])
     mf <- stats::model.frame(
-      formula_no_smooths,
+      response_formula,
       data = data,
       na.action = stats::na.pass
     )

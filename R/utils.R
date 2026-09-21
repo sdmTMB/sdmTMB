@@ -268,33 +268,8 @@ sdmTMBcontrol <- function(
 
 .process_binomial_response <- function(mf, weights = NULL, weights_arg = "`weights`") {
   y_i <- model.response(mf, type = "any")
-  size <- rep(1, length(y_i))
-
-  if (is.character(y_i)) {
-    y_i <- model.response(mf, type = "factor")
-    if (nlevels(y_i) > 2) {
-      cli_abort("More than 2 levels detected for response")
-    }
-  }
-  if (is.factor(y_i)) {
-    if (nlevels(y_i) > 2) {
-      cli_abort("More than 2 levels detected for response")
-    }
-    y_i <- pmin(as.numeric(y_i) - 1, 1)
-  } else if (is.matrix(y_i)) {
-    size <- y_i[, 1] + y_i[, 2]
-    y_i <- y_i[, 1]
-  } else if (!all(y_i[!is.na(y_i)] %in% c(0, 1))) {
-    if (is.null(weights)) {
-      cli_abort(c(
-        "Proportion data were supplied to the binomial or betabinomial family without trial sizes.",
-        "i" = paste0("Please supply ", weights_arg, " with the number of trials per event.")
-      ))
-    }
-    y_i <- weights * y_i
-    size <- weights
-    weights <- rep(1, length(y_i))
-  }
+  spec <- .compile_family_spec(stats::binomial(), data = data.frame(.row = seq_len(NROW(y_i))))
+  out <- .prepare_family_response(y_i, weights, spec)
 
   if (is.logical(y_i)) {
     msg <- paste0(
@@ -305,7 +280,7 @@ sdmTMBcontrol <- function(
     cli_warn(msg)
   }
 
-  list(y_i = y_i, size = size, weights = weights)
+  out[c("y_i", "size", "weights")]
 }
 
 set_par_value <- function(opt, par) {

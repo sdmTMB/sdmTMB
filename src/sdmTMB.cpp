@@ -192,6 +192,8 @@ struct family_resolver_t {
   const vector<Type>& student_df_by_family;
   const vector<Type>& gengamma_Q_by_family;
 
+  // This returns a value object only. In particular, do not cache a resolved
+  // component in static storage: this resolver is used inside PARALLEL_REGION.
   resolved_family_component_t<Type> resolve_family_component(int family_i, int m) const {
     resolved_family_component_t<Type> out;
     out.combine_kind = combine_kind(family_i);
@@ -371,6 +373,8 @@ Type objective_function<Type>::operator()()
   DATA_IMATRIX(component_active);
   DATA_IMATRIX(family_code);
   DATA_IMATRIX(link_code);
+  // Link used only when calculating derived prediction quantities.
+  DATA_INTEGER(link_pred);
   DATA_IVECTOR(combine_kind);
   DATA_IVECTOR(ln_phi_slot);
   DATA_IVECTOR(thetaf_slot);
@@ -473,7 +477,6 @@ Type objective_function<Type>::operator()()
   int n_i = y_i.rows();   // number of observations
   int n_m = y_i.cols();   // number of linear-predictor components
   int n_f = component_active.rows(); // number of observation families
-  bool multi_family = n_f > 1;
 
   // DELTA TODO
   // ------------------ Derived variables -------------------------------------------------
@@ -501,7 +504,7 @@ Type objective_function<Type>::operator()()
   vector<Type> ln_phi_i(1);
   vector<Type> phi_i(1);
   if (has_dispersion_model) {
-    if (multi_family) {
+    if (n_f > 1) {
       error("dispersion formulas are not supported in multi-family models.");
     }
     if (Xdisp_ij.rows() != n_i) {
@@ -564,17 +567,6 @@ Type objective_function<Type>::operator()()
     student_df_by_family,
     gengamma_Q_by_family
   };
-  vector<int> fit_family(n_m);
-  for (int m = 0; m < n_m; m++) {
-    resolved_family_component_t<Type> resolved = family_resolver.resolve_family_component(0, m);
-    if (resolved.active) {
-      fit_family(m) = resolved.family_code;
-    } else {
-      fit_family(m) = gaussian_family;
-    }
-  }
-  bool fit_has_two_components = n_m > 1;
-
   // Covariate diffusion
   // Transform distributed-lag parameters onto the scales used by the solvers
   if (log_kappaS_nl.size() != covariate_diffusion.n_covariates ||
@@ -1226,15 +1218,20 @@ Type objective_function<Type>::operator()()
   Type s1, s2, s3, lognzprob, tmp_ll, ll_1, ll_2, p_extreme, mix_ratio, s2_large;
 
   // calcs for mix distr. first:
-  int pos_model = fit_has_two_components ? 1 : 0;
+  int pos_model = n_m > 1 ? 1 : 0;
+  resolved_family_component_t<Type> positive_component =
+    family_resolver.resolve_family_component(0, pos_model);
   vector<Type> mu_i_large(n_i);
-  switch (fit_family(pos_model)) {
+  switch (positive_component.family_code) {
   case gamma_mix_family:
   case lognormal_mix_family:
   case nbinom2_mix_family: {
     p_extreme = invlogit(logit_p_extreme); // probability of larger event
     mix_ratio = exp(log_ratio_mix) + Type(1.); // ratio of large:small values, constrained > 1.0
     for (int i = 0; i < n_i; i++) {
+      resolved_family_component_t<Type> resolved =
+        family_resolver.resolve_row_component(i, pos_model);
+      if (!resolved.active) continue;
       mu_i_large(i) = exp(log(mu_i(i, pos_model)) + log(mix_ratio));  // mean of large component = mean of smaller * ratio
     }
     ADREPORT(logit_p_extreme);
@@ -1264,11 +1261,29 @@ Type objective_function<Type>::operator()()
   vector<Type> jnll_obs(n_i); // for cross validation
   jnll_obs.setZero();
 
+  // A prior is a parameter-level contribution and must be evaluated once,
+  // never once for every observation. Tweedie-p priors remain deliberately
+  // unsupported, but fail before entering the observation likelihood loop.
+  if (!sdmTMB::isNA(priors(12))) {
+    for (int f = 0; f < n_f; f++) {
+      for (int m = 0; m < n_m; m++) {
+        resolved_family_component_t<Type> resolved =
+          family_resolver.resolve_family_component(f, m);
+        if (resolved.active && resolved.family_code == tweedie_family) {
+          error("Priors not enabled for Tweedie p currently");
+        }
+      }
+    }
+  }
+
   for (int m = 0; m < n_m; m++) PARALLEL_REGION {
     for (int i = 0; i < n_i; i++) {
       resolved_family_component_t<Type> resolved = family_resolver.resolve_row_component(i, m);
       if (!resolved.active) continue;
-      if (!multi_family && has_dispersion_model && (n_m == 1 || m == (n_m - 1))) {
+      // Multi-family dispersion formulas are rejected above. This explicit
+      // row-level override is the only auxiliary-parameter exception to the
+      // resolver's family-slot lookup.
+      if (has_dispersion_model && (n_m == 1 || m == (n_m - 1))) {
         resolved.ln_phi = ln_phi_i(i);
         resolved.phi = phi_i(i);
       }
@@ -1281,13 +1296,6 @@ Type objective_function<Type>::operator()()
             break;
           }
           case tweedie_family: {
-            // FIXME! move this out of loop!!!!!!!!
-            if (!sdmTMB::isNA(priors(12))) {
-              error("Priors not enabled for Tweedie p currently");
-              jnll -= dnorm(s1, priors(12), priors(13), true);
-              // derivative: https://www.wolframalpha.com/input?i=e%5Ex%2F%281%2Be%5Ex%29+%2B+1
-              if (stan_flag) jnll -= resolved.thetaf_raw - 2 * log(1 + exp(resolved.thetaf_raw)); // Jacobian adjustment
-            }
             if (notNA) tmp_ll = dtweedie(y_i(i,m), mu_i(i,m), resolved.phi, resolved.tweedie_p, true);
             if (sim_obs) SIMULATE{y_i(i,m) = rtweedie(mu_i(i,m), resolved.phi, resolved.tweedie_p);}
             if (notNA) devresid(i,m) = sdmTMB::devresid_tweedie(y_i(i,m), mu_i(i,m), resolved.tweedie_p);
@@ -1816,39 +1824,58 @@ Type objective_function<Type>::operator()()
     // for families that implement mixture models, adjust proj_eta by
     // proportion and ratio of means
     // (1 - p_extreme) * mu_i(i,m) + p_extreme * (mu(i,m) * mix_ratio);
-    switch (fit_family(pos_model)) {
+    switch (positive_component.family_code) {
       case gamma_mix_family:
       case lognormal_mix_family:
       case nbinom2_mix_family:
-        proj_eta.col(pos_model) = log((1. - p_extreme) * exp(proj_eta.col(pos_model)) + // regular part
-               p_extreme * exp(proj_eta.col(pos_model)) * mix_ratio); //large part
+        for (int i = 0; i < n_p; i++) {
+          resolved_family_component_t<Type> resolved =
+            family_resolver.resolve_family_component(proj_family_id(i), pos_model);
+          if (!resolved.active) continue;
+          proj_eta(i, pos_model) = log(
+            (1. - p_extreme) * exp(proj_eta(i, pos_model)) +
+            p_extreme * exp(proj_eta(i, pos_model)) * mix_ratio
+          );
+        }
         break;
       default:
         break;
     }
 
-    if (n_m > 1 && pop_pred) {
-      vector<Type> proj_fe_combined(n_p);
+    // C++ is the authoritative source for combined predictions. Keep both
+    // link-scale reports because `pop_pred` only chooses which one receives
+    // standard errors; ordinary reports are also used by R prediction and
+    // simulation formatting.
+    vector<Type> proj_fe_combined(n_p), proj_eta_combined(n_p),
+      proj_response_combined(n_p);
+    if (n_m > 1) {
       for (int i = 0; i < n_p; i++) {
-        resolved_family_component_t<Type> component1 = family_resolver.resolve_family_component(proj_family_id(i), 0);
-        resolved_family_component_t<Type> component2 = family_resolver.resolve_family_component(proj_family_id(i), 1);
+        resolved_family_component_t<Type> component1 =
+          family_resolver.resolve_family_component(proj_family_id(i), 0);
+        resolved_family_component_t<Type> component2 =
+          family_resolver.resolve_family_component(proj_family_id(i), 1);
         proj_fe_combined(i) = combined_link_value(
           proj_fe(i,0), proj_fe(i,1), component1, component2
         );
-      }
-      if (calc_se) ADREPORT(proj_fe_combined);
-    }
-
-    if (n_m > 1 && !pop_pred) {
-      vector<Type> proj_eta_combined(n_p);
-      for (int i = 0; i < n_p; i++) {
-        resolved_family_component_t<Type> component1 = family_resolver.resolve_family_component(proj_family_id(i), 0);
-        resolved_family_component_t<Type> component2 = family_resolver.resolve_family_component(proj_family_id(i), 1);
         proj_eta_combined(i) = combined_link_value(
           proj_eta(i,0), proj_eta(i,1), component1, component2
         );
+        proj_response_combined(i) = combined_response_value(
+          pop_pred ? proj_fe(i,0) : proj_eta(i,0),
+          pop_pred ? proj_fe(i,1) : proj_eta(i,1),
+          component1, component2
+        );
       }
-      if (calc_se) ADREPORT(proj_eta_combined);
+      REPORT(proj_fe_combined);
+      REPORT(proj_eta_combined);
+      REPORT(proj_response_combined);
+      if (calc_se) {
+        if (pop_pred) {
+          ADREPORT(proj_fe_combined);
+        } else {
+          ADREPORT(proj_eta_combined);
+        }
+      }
     }
 
     // FIXME save memory by not reporting all these or optionally so for MVN/Bayes?
@@ -1883,18 +1910,17 @@ Type objective_function<Type>::operator()()
       PARAMETER_VECTOR(eps_index);
 
       for (int i = 0; i < n_p; i++) {
-        resolved_family_component_t<Type> component1 =
-          family_resolver.resolve_family_component(proj_family_id(i), 0);
-        resolved_family_component_t<Type> component2;
         if (n_m > 1) {
-          component2 = family_resolver.resolve_family_component(proj_family_id(i), 1);
+          mu_combined(i) = proj_response_combined(i);
+        } else {
+          resolved_family_component_t<Type> component1 =
+            family_resolver.resolve_family_component(proj_family_id(i), 0);
+          component1.link_code = link_pred;
+          resolved_family_component_t<Type> component2;
+          mu_combined(i) = combined_response_value(
+            proj_eta(i,0), Type(0.0), component1, component2
+          );
         }
-        mu_combined(i) = combined_response_value(
-          proj_eta(i,0),
-          n_m > 1 ? proj_eta(i,1) : Type(0.0),
-          component1,
-          component2
-        );
 
         total(proj_year(i)) += mu_combined(i) * area_i(i);
       }

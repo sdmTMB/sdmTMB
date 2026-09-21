@@ -115,7 +115,10 @@ test_that("dispformula works with simulation and index prediction pathways", {
   sims <- simulate(fit, nsim = 2L, newdata = nd, silent = TRUE)
   expect_equal(dim(sims), c(nrow(nd), 2L))
 
-  pred <- predict(fit, newdata = nd, return_tmb_object = TRUE)
+  lifecycle::expect_deprecated(
+    pred <- predict(fit, newdata = nd, return_tmb_object = TRUE),
+    "return_tmb_object"
+  )
   idx <- get_index(pred, bias_correct = FALSE, area = 1)
   expect_true(all(c("year", "est", "lwr", "upr") %in% names(idx)))
   expect_true(nrow(idx) >= 1L)

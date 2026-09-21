@@ -535,7 +535,10 @@ predict.sdmTMB <- function(object, newdata = NULL,
         .formula_list(object$time_varying),
         list(object$dispformula)
       ),
-      required_columns = if (is.null(object$nonlocal_formula_parsed)) {
+      # A supplied (or stored) nonlocal grid provides its own covariates. The
+      # prediction locations therefore need not duplicate those columns.
+      # `.prepare_nonlocal_grid_inputs()` validates an overriding grid below.
+      required_columns = if (is.null(object$nonlocal_formula_parsed) || nonlocal_uses_external_grid) {
         threshold_columns
       } else {
         c(object$nonlocal_formula_parsed$covariates, threshold_columns)
@@ -900,16 +903,25 @@ predict.sdmTMB <- function(object, newdata = NULL,
       out <- lapply(r, `[[`, .var)
 
       if (sims_var == "est") {
-        out <- lapply(out, function(.x) {
-          .family_spec_prediction_output(
-            x = .x,
-            family_spec = family_spec,
-            row_family_id = pred_row_family_id,
-            type = type,
-            model = model,
-            family_list = family_spec$family_list
-          )$est
-        })
+        if (has_two_components && is.na(model)) {
+          combined_name <- if (type == "response") {
+            "proj_response_combined"
+          } else {
+            "proj_eta_combined"
+          }
+          out <- lapply(r, `[[`, combined_name)
+        } else {
+          out <- lapply(out, function(.x) {
+            .family_spec_component_prediction_output(
+              x = .x,
+              family_spec = family_spec,
+              row_family_id = pred_row_family_id,
+              type = type,
+              model = model,
+              family_list = family_spec$family_list
+            )$est
+          })
+        }
         out <- do.call("cbind", out)
       } else { # not sims_var = "est"
 
@@ -985,7 +997,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
     if (isFALSE(pop_pred)) {
       if (has_two_components) {
-        pred_eta <- .family_spec_prediction_output(
+        pred_eta <- .family_spec_component_prediction_output(
           x = r$proj_eta,
           family_spec = family_spec,
           row_family_id = pred_row_family_id,
@@ -993,35 +1005,39 @@ predict.sdmTMB <- function(object, newdata = NULL,
           model = model,
           family_list = family_spec$family_list
         )
-        pred_fe <- .family_spec_prediction_output(
+        pred_fe <- .family_spec_component_prediction_output(
           x = r$proj_fe,
           family_spec = family_spec,
           row_family_id = pred_row_family_id,
           type = "link",
           model = model
         )
-        pred_rf <- .family_spec_prediction_output(
+        pred_rf <- .family_spec_component_prediction_output(
           x = r$proj_rf,
           family_spec = family_spec,
           row_family_id = pred_row_family_id,
           type = "link",
           model = model
         )
-        pred_omega <- .family_spec_prediction_output(
+        pred_omega <- .family_spec_component_prediction_output(
           x = r$proj_omega_s_A,
           family_spec = family_spec,
           row_family_id = pred_row_family_id,
           type = "link",
           model = model
         )
-        pred_epsilon <- .family_spec_prediction_output(
+        pred_epsilon <- .family_spec_component_prediction_output(
           x = r$proj_epsilon_st_A_vec,
           family_spec = family_spec,
           row_family_id = pred_row_family_id,
           type = "link",
           model = model
         )
-        nd$est <- pred_eta$est
+        nd$est <- if (is.na(model)) {
+          r[[if (component_scale == "response") "proj_response_combined" else "proj_eta_combined"]]
+        } else {
+          pred_eta$est
+        }
         nd$est1 <- pred_eta$est1
         nd$est2 <- pred_eta$est2
         nd$est_non_rf1 <- pred_fe$est1
@@ -1039,7 +1055,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
         nd$epsilon_st1 <- pred_epsilon$est1
         nd$epsilon_st2 <- pred_epsilon$est2
       } else {
-        nd$est <- .family_spec_prediction_output(
+        nd$est <- .family_spec_component_prediction_output(
           x = r$proj_eta,
           family_spec = family_spec,
           row_family_id = pred_row_family_id,
@@ -1102,7 +1118,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
     if (pop_pred) {
       if (has_two_components) {
-        pred_fe <- .family_spec_prediction_output(
+        pred_fe <- .family_spec_component_prediction_output(
           x = r$proj_fe,
           family_spec = family_spec,
           row_family_id = pred_row_family_id,
@@ -1110,7 +1126,11 @@ predict.sdmTMB <- function(object, newdata = NULL,
           model = model,
           family_list = family_spec$family_list
         )
-        nd$est <- pred_fe$est
+        nd$est <- if (is.na(model)) {
+          r[[if (component_scale == "response") "proj_response_combined" else "proj_fe_combined"]]
+        } else {
+          pred_fe$est
+        }
         nd$est1 <- pred_fe$est1
         nd$est2 <- pred_fe$est2
         if (se_fit && is.na(model) && "proj_fe_combined" %in% names(sr_est_rep)) {
@@ -1118,7 +1138,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
           nd$est_se <- as.numeric(sr_se_rep[["proj_fe_combined"]])
         }
       } else {
-        nd$est <- .family_spec_prediction_output(
+        nd$est <- .family_spec_component_prediction_output(
           x = r$proj_fe,
           family_spec = family_spec,
           row_family_id = pred_row_family_id,
@@ -1130,13 +1150,14 @@ predict.sdmTMB <- function(object, newdata = NULL,
     }
 
     if (pop_pred && visreg_df) {
-      nd$est <- .family_spec_prediction_output(
+      pred_fe <- .family_spec_component_prediction_output(
         x = r$proj_fe,
         family_spec = family_spec,
         row_family_id = pred_row_family_id,
         type = "link",
         model = model
-      )$est # FIXME re_form_iid??
+      )
+      nd$est <- if (has_two_components && is.na(model)) r$proj_fe_combined else pred_fe$est # FIXME re_form_iid??
     }
 
     orig_dat <- object$tmb_data$y_i

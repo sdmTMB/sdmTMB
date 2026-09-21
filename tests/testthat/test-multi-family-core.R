@@ -1,16 +1,15 @@
 test_that("family_spec normalizes ordinary single-family fits", {
   dat <- data.frame(y = c(1.2, 2.4, 3.6))
 
-  spec <- .build_family_spec(gaussian(), data = dat)
+  spec <- .compile_family_spec(gaussian(), data = dat)
 
   expect_identical(spec$n_f, 1L)
   expect_identical(spec$n_m, 1L)
   expect_identical(spec$distribution_column, NULL)
   expect_equal(spec$family_id_i, rep(1L, nrow(dat)))
-  expect_true(spec$active[1, 1])
-  expect_equal(spec$family_code[1, 1], unname(.valid_family["gaussian"]))
-  expect_equal(spec$link_code[1, 1], unname(.valid_link["identity"]))
-  expect_identical(unname(spec$combine_kind), "single")
+  expect_equal(spec$families$combine_kind, "single")
+  expect_equal(spec$components$family_code, unname(.valid_family["gaussian"]))
+  expect_equal(spec$components$link_code, unname(.valid_link["identity"]))
   expect_equal(spec$param_slot$ln_phi, 1L)
   expect_true(is.na(spec$param_slot$thetaf))
 
@@ -30,7 +29,7 @@ test_that("family_spec normalizes mixed family metadata", {
     dist = c("gauss", "delta", "delta", "stud", "gauss")
   )
 
-  spec <- .build_family_spec(
+  spec <- .compile_family_spec(
     family = fam,
     data = dat,
     distribution_column = "dist"
@@ -39,13 +38,15 @@ test_that("family_spec normalizes mixed family metadata", {
   expect_identical(spec$n_f, 3L)
   expect_identical(spec$n_m, 2L)
   expect_equal(spec$family_id_i, c(1L, 2L, 2L, 3L, 1L))
-  expect_equal(unname(spec$combine_kind), c("single", "poisson_link_delta", "single"))
-  expect_equal(spec$family_code[1, 1], unname(.valid_family["gaussian"]))
-  expect_equal(spec$family_code[2, 1], unname(.valid_family["binomial"]))
-  expect_equal(spec$family_code[2, 2], unname(.valid_family["Gamma"]))
-  expect_equal(spec$link_code[2, 1], unname(.valid_link["log"]))
-  expect_equal(spec$link_code[2, 2], unname(.valid_link["log"]))
-  expect_true(is.na(spec$family_code[1, 2]))
+  expect_equal(spec$families$combine_kind, c("single", "poisson_link_delta", "single"))
+  expect_equal(
+    spec$components[, c("family_id", "component", "family_name", "link_name")],
+    data.frame(
+      family_id = c(1L, 2L, 2L, 3L), component = c(1L, 1L, 2L, 1L),
+      family_name = c("gaussian", "binomial", "Gamma", "student"),
+      link_name = c("identity", "log", "log", "identity")
+    )
+  )
   expect_equal(spec$param_slot$ln_phi, c(1L, 2L, 3L))
   expect_equal(spec$param_slot$ln_student_df, c(NA_integer_, NA_integer_, 1L))
 
@@ -64,7 +65,7 @@ test_that("family_spec processes rowwise binomial-like responses regardless of f
   weights <- c(10, NA, 5, 5, 12, 7, 1)
 
   run_case <- function(fam) {
-    spec <- .build_family_spec(
+    spec <- .compile_family_spec(
       family = fam,
       data = dat,
       distribution_column = "dist"
@@ -753,7 +754,10 @@ test_that("mixed-family weighted-average and EAO helpers use rowwise families", 
   area <- c(1, 2, 1, 3, 2)
 
   pred_resp <- predict(fixture$fit, newdata = fixture$newdata, type = "response")
-  pred_obj <- predict(fixture$fit, newdata = fixture$newdata, return_tmb_object = TRUE)
+  lifecycle::expect_deprecated(
+    pred_obj <- predict(fixture$fit, newdata = fixture$newdata, return_tmb_object = TRUE),
+    "return_tmb_object"
+  )
 
   wa <- get_weighted_average(
     pred_obj,
@@ -945,19 +949,36 @@ test_that("delta sdreport exposes generic combined prediction names", {
 
   nd <- data.frame(x = seq(-0.8, 0.8, length.out = 10))
 
-  pred_obj <- predict(fit, newdata = nd, se_fit = TRUE, return_tmb_object = TRUE)
+  lifecycle::expect_deprecated(
+    pred_obj <- predict(fit, newdata = nd, se_fit = TRUE, return_tmb_object = TRUE),
+    "return_tmb_object"
+  )
   pred_sr <- TMB::sdreport(pred_obj$obj, bias.correct = FALSE)
   pred_rep <- as.list(pred_sr, "Estimate", report = TRUE)
 
   expect_true("proj_eta_combined" %in% names(pred_rep))
   expect_false("proj_eta_delta" %in% names(pred_rep))
 
-  pop_pred_obj <- predict(
-    fit,
-    newdata = nd,
-    se_fit = TRUE,
-    re_form = NA,
-    return_tmb_object = TRUE
+  report <- predict(fit, newdata = nd, return_tmb_report = TRUE)
+  expect_true("proj_response_combined" %in% names(report))
+  expect_equal(
+    predict(fit, newdata = nd, type = "link")$est,
+    as.numeric(report$proj_eta_combined)
+  )
+  expect_equal(
+    predict(fit, newdata = nd, type = "response")$est,
+    as.numeric(report$proj_response_combined)
+  )
+
+  lifecycle::expect_deprecated(
+    pop_pred_obj <- predict(
+      fit,
+      newdata = nd,
+      se_fit = TRUE,
+      re_form = NA,
+      return_tmb_object = TRUE
+    ),
+    "return_tmb_object"
   )
   pop_pred_sr <- TMB::sdreport(pop_pred_obj$obj, bias.correct = FALSE)
   pop_pred_rep <- as.list(pop_pred_sr, "Estimate", report = TRUE)
@@ -1011,18 +1032,27 @@ test_that("poisson-link delta ordinary se_fit uses generic combined report", {
   )
   expect_equal(as.numeric(pred$est), as.numeric(pred$est1 + pred$est2), tolerance = 1e-6)
 
-  pred_obj <- predict(
-    fixture$fit,
-    newdata = nd,
-    type = "link",
-    se_fit = TRUE,
-    return_tmb_object = TRUE
+  lifecycle::expect_deprecated(
+    pred_obj <- predict(
+      fixture$fit,
+      newdata = nd,
+      type = "link",
+      se_fit = TRUE,
+      return_tmb_object = TRUE
+    ),
+    "return_tmb_object"
   )
   pred_sr <- TMB::sdreport(pred_obj$obj, bias.correct = FALSE)
   pred_rep <- as.list(pred_sr, "Estimate", report = TRUE)
 
   expect_true("proj_eta_combined" %in% names(pred_rep))
   expect_false("proj_eta_delta" %in% names(pred_rep))
+
+  report <- predict(fixture$fit, newdata = nd, return_tmb_report = TRUE)
+  expect_equal(
+    predict(fixture$fit, newdata = nd, type = "response")$est,
+    as.numeric(report$proj_response_combined)
+  )
 })
 
 test_that("poisson-link delta population se_fit uses generic combined report", {
@@ -1041,13 +1071,16 @@ test_that("poisson-link delta population se_fit uses generic combined report", {
   )
   expect_equal(as.numeric(pred$est), as.numeric(pred$est1 + pred$est2), tolerance = 1e-6)
 
-  pred_obj <- predict(
-    fixture$fit,
-    newdata = nd,
-    type = "link",
-    se_fit = TRUE,
-    re_form = NA,
-    return_tmb_object = TRUE
+  lifecycle::expect_deprecated(
+    pred_obj <- predict(
+      fixture$fit,
+      newdata = nd,
+      type = "link",
+      se_fit = TRUE,
+      re_form = NA,
+      return_tmb_object = TRUE
+    ),
+    "return_tmb_object"
   )
   pred_sr <- TMB::sdreport(pred_obj$obj, bias.correct = FALSE)
   pred_rep <- as.list(pred_sr, "Estimate", report = TRUE)
@@ -1063,10 +1096,13 @@ test_that("poisson-link delta get_index matches constant-grid response predictio
     year = 1L
   )
 
-  pred_obj <- predict(
-    fixture$fit,
-    newdata = nd,
-    return_tmb_object = TRUE
+  lifecycle::expect_deprecated(
+    pred_obj <- predict(
+      fixture$fit,
+      newdata = nd,
+      return_tmb_object = TRUE
+    ),
+    "return_tmb_object"
   )
   ind <- get_index(
     pred_obj,

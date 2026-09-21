@@ -670,13 +670,12 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
   if (!return_tmb_report) {
     if (has_two_components) {
       ret <- lapply(ret, function(.x) {
-        .family_spec_prediction_output(
+        .family_spec_combine_simulated(
           x = .x,
           family_spec = family_spec,
           row_family_id = row_family_id,
-          model = as.integer(model[[1]]),
-          simulated = TRUE
-        )$est
+          model = as.integer(model[[1]])
+        )
       })
     } else {
       ret <- lapply(ret, function(.x) .x[, 1L])

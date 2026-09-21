@@ -545,14 +545,20 @@ print_multi_family_summary <- function(x) {
   }
   out <- data.frame(
     family = family_spec$family_labels,
-    kind = family_spec$combine_kind,
-    component1 = paste0(family_spec$family_name[, 1L], "(", family_spec$link_name[, 1L], ")"),
+    kind = family_spec$families$combine_kind,
+    component1 = paste0(
+      .family_spec_component_value(family_spec, family_spec$families$family_id, 1L, "family_name"),
+      "(", .family_spec_component_value(family_spec, family_spec$families$family_id, 1L, "link_name"), ")"
+    ),
     stringsAsFactors = FALSE
   )
   if (family_spec$n_m > 1L) {
     out$component2 <- ifelse(
-      family_spec$active[, 2L],
-      paste0(family_spec$family_name[, 2L], "(", family_spec$link_name[, 2L], ")"),
+      .family_spec_component_active(family_spec, family_spec$families$family_id)[, 2L],
+      paste0(
+        .family_spec_component_value(family_spec, family_spec$families$family_id, 2L, "family_name"),
+        "(", .family_spec_component_value(family_spec, family_spec$families$family_id, 2L, "link_name"), ")"
+      ),
       NA_character_
     )
   }

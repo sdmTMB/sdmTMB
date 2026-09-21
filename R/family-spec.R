@@ -31,6 +31,40 @@
   as.integer(codes)
 }
 
+# Family subsystem architecture:
+# user input -> .compile_family_spec() -> .establish_analysis_rows() ->
+# .prepare_family_response() -> .as_tmb_family_data() -> TMB resolver.
+#
+# Invariants: family IDs are one-based in R and zero-based only at the TMB
+# boundary; a fit has one or two latent components; single families use LP1;
+# delta families use LP1 and LP2; auxiliary parameters belong to families;
+# and every analysis row has exactly one family ID. `families` and `components`
+# are the sole declarative representation. Dense matrices and -1 sentinels are
+# constructed only by `.as_tmb_family_data()`.
+
+.family_registry <- local({
+  registry <- data.frame(
+    family_name = names(.valid_family),
+    uses_phi = !names(.valid_family) %in% c("binomial", "poisson", "censored_poisson"),
+    auxiliary = NA_character_,
+    stringsAsFactors = FALSE
+  )
+  registry$auxiliary[registry$family_name == "tweedie"] <- "thetaf"
+  registry$auxiliary[registry$family_name == "student"] <- "ln_student_df"
+  registry$auxiliary[registry$family_name == "gengamma"] <- "gengamma_Q"
+  function() registry
+})
+
+.family_metadata <- function(family_name) {
+  registry <- .family_registry()
+  out <- registry[match(family_name, registry$family_name), , drop = FALSE]
+  if (anyNA(out$family_name)) {
+    bad <- unique(family_name[is.na(out$family_name)])
+    cli_abort("Unsupported family supplied in `family`: {paste(bad, collapse = ', ')}")
+  }
+  out
+}
+
 .make_family_param_slots <- function(family_names) {
   slot_index <- function(uses) {
     out <- rep(NA_integer_, length(uses))
@@ -40,13 +74,14 @@
     out
   }
 
-  uses_phi <- !family_names %in% c("binomial", "poisson", "censored_poisson")
+  metadata <- .family_metadata(family_names)
+  uses_phi <- metadata$uses_phi
 
   list(
     ln_phi = slot_index(uses_phi),
-    thetaf = slot_index(family_names == "tweedie"),
-    ln_student_df = slot_index(family_names == "student"),
-    gengamma_Q = slot_index(family_names == "gengamma")
+    thetaf = slot_index(metadata$auxiliary == "thetaf" & !is.na(metadata$auxiliary)),
+    ln_student_df = slot_index(metadata$auxiliary == "ln_student_df" & !is.na(metadata$auxiliary)),
+    gengamma_Q = slot_index(metadata$auxiliary == "gengamma_Q" & !is.na(metadata$auxiliary))
   )
 }
 
@@ -58,7 +93,7 @@
   as.integer(max(used))
 }
 
-.family_spec_tmb_data <- function(family_spec) {
+.as_tmb_family_data <- function(family_spec) {
   zero_based_slot <- function(slot) {
     out <- rep(-1L, length(slot))
     used <- !is.na(slot)
@@ -66,10 +101,12 @@
     out
   }
 
-  family_code <- matrix(0L, nrow = family_spec$n_f, ncol = family_spec$n_m)
-  link_code <- matrix(0L, nrow = family_spec$n_f, ncol = family_spec$n_m)
-  family_code[family_spec$active] <- family_spec$family_code[family_spec$active]
-  link_code[family_spec$active] <- family_spec$link_code[family_spec$active]
+  component_active <- matrix(0L, nrow = family_spec$n_f, ncol = family_spec$n_m)
+  family_code <- link_code <- component_active
+  index <- cbind(family_spec$components$family_id, family_spec$components$component)
+  component_active[index] <- 1L
+  family_code[index] <- family_spec$components$family_code
+  link_code[index] <- family_spec$components$link_code
 
   combine_kind_codes <- c(
     single = 0L,
@@ -79,19 +116,50 @@
 
   list(
     obs_family_id = family_spec$family_id_i - 1L,
-    component_active = matrix(
-      as.integer(family_spec$active),
-      nrow = family_spec$n_f,
-      ncol = family_spec$n_m
-    ),
+    component_active = component_active,
     family_code = family_code,
     link_code = link_code,
-    combine_kind = unname(as.integer(combine_kind_codes[family_spec$combine_kind])),
+    combine_kind = unname(as.integer(combine_kind_codes[family_spec$families$combine_kind])),
     ln_phi_slot = zero_based_slot(family_spec$param_slot$ln_phi),
     thetaf_slot = zero_based_slot(family_spec$param_slot$thetaf),
     ln_student_df_slot = zero_based_slot(family_spec$param_slot$ln_student_df),
     gengamma_Q_slot = zero_based_slot(family_spec$param_slot$gengamma_Q)
   )
+}
+
+.family_parameter_values <- function(family_spec, estimate_student_df,
+  student_df_fixed) {
+  n <- lapply(family_spec$param_slot, .family_spec_slot_length)
+  has_ordbeta <- any(family_spec$components$family_name == "ordbeta")
+  list(
+    thetaf = rep(0, n$thetaf),
+    ln_student_df = if (n$ln_student_df > 0L) {
+      rep(if (estimate_student_df) log(2) else log(student_df_fixed - 1), n$ln_student_df)
+    } else {
+      numeric(0)
+    },
+    gengamma_Q = rep(0.5, n$gengamma_Q),
+    psi = if (has_ordbeta) c(-1, 1) else numeric(0),
+    ln_phi = rep(0, n$ln_phi)
+  )
+}
+
+.map_family_parameters <- function(tmb_map, tmb_params, has_dispformula,
+  estimate_student_df) {
+  if (length(tmb_params$thetaf)) tmb_map$thetaf <- NULL
+  if (length(tmb_params$ln_student_df) && estimate_student_df) {
+    tmb_map$ln_student_df <- NULL
+  }
+  if (length(tmb_params$gengamma_Q)) tmb_map$gengamma_Q <- NULL
+  if (length(tmb_params$psi)) tmb_map$psi <- NULL
+  if (length(tmb_params$ln_phi)) {
+    tmb_map$ln_phi <- if (has_dispformula) {
+      factor(rep(NA, length(tmb_params$ln_phi)))
+    } else {
+      NULL
+    }
+  }
+  tmb_map
 }
 
 .family_spec_response_family_id <- function(family_spec, y_i) {
@@ -116,7 +184,14 @@
   if (anyNA(row_family_id) || any(row_family_id < 1L | row_family_id > family_spec$n_f)) {
     cli_abort("Internal family spec error: row-wise family ids are out of bounds.")
   }
-  family_spec$active[row_family_id, , drop = FALSE]
+  out <- matrix(FALSE, nrow = length(row_family_id), ncol = family_spec$n_m)
+  for (component in seq_len(family_spec$n_m)) {
+    active_families <- family_spec$components$family_id[
+      family_spec$components$component == component
+    ]
+    out[, component] <- row_family_id %in% active_families
+  }
+  out
 }
 
 .family_spec_observed_response <- function(response, family_spec, model = NA_integer_) {
@@ -147,39 +222,6 @@
   as.numeric(out)
 }
 
-.family_spec_validate_response <- function(y_i, family_spec, upr = NULL) {
-  row_family <- .family_spec_response_family_id(family_spec, y_i)
-  single_rows <- family_spec$combine_kind[row_family] == "single"
-  family_name <- family_spec$family_name[cbind(row_family, 1L)]
-  link_name <- family_spec$link_name[cbind(row_family, 1L)]
-
-  positive_rows <- single_rows & family_name %in% c("Gamma", "lognormal")
-  if (any(y_i[positive_rows] <= 0, na.rm = TRUE)) {
-    cli_abort("Gamma and lognormal must have response values > 0.")
-  }
-
-  ordbeta_rows <- single_rows & family_name == "ordbeta"
-  if (any(ordbeta_rows)) {
-    if (any(y_i[ordbeta_rows] < 0 | y_i[ordbeta_rows] > 1, na.rm = TRUE)) {
-      cli_abort("Ordered beta requires response values in [0, 1].")
-    }
-  }
-
-  log_link_rows <- single_rows & link_name == "log"
-  if (any(y_i[log_link_rows] < 0, na.rm = TRUE)) {
-    cli_abort("`link = 'log'` but the response data include values < 0.")
-  }
-
-  if (!is.null(upr)) {
-    censored_rows <- single_rows & family_name == "censored_poisson"
-    if (any(y_i[censored_rows] > upr[censored_rows], na.rm = TRUE)) {
-      cli_abort("Observed values must be <= `control$censored_upper` for censored Poisson rows.")
-    }
-  }
-
-  invisible(NULL)
-}
-
 .validate_distribution_column <- function(data, distribution_column, family_labels) {
   if (is.null(data)) {
     cli_abort("`data` must be supplied when `distribution_column` is used.")
@@ -204,7 +246,7 @@
   match(dist_values, family_labels)
 }
 
-.build_family_spec <- function(family, data = NULL, distribution_column = NULL) {
+.compile_family_spec <- function(family, data = NULL, distribution_column = NULL) {
   if (inherits(family, "family")) {
     if (!is.null(distribution_column)) {
       cli_abort("`distribution_column` is only supported for named `family` lists.")
@@ -259,19 +301,17 @@
   }
 
   n_m <- max(components_per_family)
-  active <- matrix(FALSE, nrow = n_f, ncol = n_m)
-  family_name <- matrix(NA_character_, nrow = n_f, ncol = n_m)
-  link_name <- matrix(NA_character_, nrow = n_f, ncol = n_m)
-  for (i in seq_len(n_f)) {
-    active[i, seq_len(components_per_family[i])] <- TRUE
-    family_name[i, seq_len(components_per_family[i])] <- family_list[[i]]$family
-    link_name[i, seq_len(components_per_family[i])] <- family_list[[i]]$link
-  }
-
-  family_code <- matrix(NA_integer_, nrow = n_f, ncol = n_m)
-  link_code <- matrix(NA_integer_, nrow = n_f, ncol = n_m)
-  family_code[active] <- .map_family_codes(family_name[active], .valid_family, "family")
-  link_code[active] <- .map_family_codes(link_name[active], .valid_link, "link")
+  components <- do.call(rbind, lapply(seq_len(n_f), function(i) {
+    data.frame(
+      family_id = i,
+      component = seq_len(components_per_family[[i]]),
+      family_name = family_list[[i]]$family,
+      link_name = family_list[[i]]$link,
+      stringsAsFactors = FALSE
+    )
+  }))
+  components$family_code <- .map_family_codes(components$family_name, .valid_family, "family")
+  components$link_code <- .map_family_codes(components$link_name, .valid_link, "link")
 
   combine_kind <- ifelse(
     has_two_components,
@@ -283,7 +323,9 @@
     "single"
   )
 
-  target_family <- ifelse(has_two_components, family_name[, 2], family_name[, 1])
+  target_family <- vapply(seq_len(n_f), function(i) {
+    tail(components$family_name[components$family_id == i], 1L)
+  }, character(1))
   fixed_student_df <- vapply(
     family_list,
     function(x) {
@@ -313,139 +355,64 @@
     family_id_i <- if (is.null(data)) integer(0) else rep.int(1L, nrow(data))
   }
 
-  list(
+  families <- data.frame(
+    family_id = seq_len(n_f),
+    label = family_labels,
+    combine_kind = unname(combine_kind),
+    stringsAsFactors = FALSE
+  )
+  spec <- list(
+    version = 1L,
     n_f = n_f,
     n_m = n_m,
     family_list = family_list,
     family_labels = family_labels,
     distribution_column = if (n_f > 1L) distribution_column else NULL,
     family_id_i = as.integer(family_id_i),
-    active = active,
-    family_name = family_name,
-    link_name = link_name,
-    family_code = family_code,
-    link_code = link_code,
-    combine_kind = combine_kind,
+    families = families,
+    components = components,
     param_slot = param_slot,
     family = family_list[[1]],
     family_input = user_family
   )
+  .validate_family_spec(spec)
+  spec
 }
 
-.family_spec_process_response <- function(y_i, size, weights, family_spec) {
-  row_family <- .family_spec_response_family_id(family_spec, y_i)
-  family_name <- family_spec$family_name[cbind(row_family, 1L)]
-  non_delta_rows <- family_spec$combine_kind[row_family] == "single"
-  binom_rows <- non_delta_rows & family_name == "binomial"
-  betabinom_rows <- non_delta_rows & family_name == "betabinomial"
-
-  process_binomial_like <- function(rows, family_label, allow_counts,
-    weighted_binary_counts = FALSE) {
-    if (!any(rows)) {
-      return(list(y_i = y_i, size = size, weights = weights))
-    }
-    y_vals <- y_i[rows]
-    y_vals <- y_vals[!is.na(y_vals)]
-    if (!is.numeric(y_vals)) {
-      cli_abort("{family_label} rows must have numeric response values in multi-family models.")
-    }
-    if (any(y_vals < 0)) {
-      cli_abort("{family_label} rows must have non-negative response values in multi-family models.")
-    }
-    response_rows <- .classify_binomial_like_numeric_rows(
-      y_i = y_i,
-      weights = weights,
-      allow_counts = allow_counts,
-      weighted_binary_counts = weighted_binary_counts
-    )
-    counts_rows <- rows & response_rows$count_rows
-    bernoulli_rows <- rows & response_rows$bernoulli_rows
-    prop_rows <- rows & response_rows$proportion_rows
-
-    if (!allow_counts && any(rows & !is.na(y_i) & y_i > 1)) {
-      cli_abort("Binomial rows must have values between 0 and 1 in multi-family models.")
-    }
-    if (allow_counts && any(prop_rows & !(y_i > 0 & y_i < 1))) {
-      cli_abort("{family_label} rows must be integer counts or proportions in (0, 1) in multi-family models.")
-    }
-
-    # Bernoulli rows do not require explicit trial sizes. If a shared
-    # `weights` vector is present, default missing Bernoulli entries to 1.
-    if (any(bernoulli_rows) && !is.null(weights)) {
-      weights_vec <- weights
-      missing_bernoulli_weights <- bernoulli_rows & is.na(weights_vec)
-      if (any(missing_bernoulli_weights)) {
-        weights_vec[missing_bernoulli_weights] <- 1
-      }
-      weights <- weights_vec
-    }
-
-    if (any(counts_rows) || any(prop_rows)) {
-      if (is.null(weights)) {
-        suffix <- if (allow_counts) "proportions or counts" else "proportions"
-        cli_abort(
-          "{family_label} rows with {suffix} require `weights` to supply the binomial size in multi-family models."
-        )
-      }
-      weights_vec <- weights
-      if (anyNA(weights_vec[counts_rows | prop_rows])) {
-        cli_abort("`weights` must not contain missing values for {tolower(family_label)} rows in multi-family models.")
-      }
-      if (any(weights_vec[counts_rows | prop_rows] <= 0)) {
-        cli_abort("`weights` must be > 0 for {tolower(family_label)} rows in multi-family models.")
-      }
-      if (any(counts_rows)) {
-        if (any(weights_vec[counts_rows] < y_i[counts_rows], na.rm = TRUE)) {
-          cli_abort("{family_label} counts must be <= `weights` (binomial size) in multi-family models.")
-        }
-        size[counts_rows] <- weights_vec[counts_rows]
-        weights_vec[counts_rows] <- 1
-      }
-      if (any(prop_rows)) {
-        size[prop_rows] <- weights_vec[prop_rows]
-        y_i[prop_rows] <- y_i[prop_rows] * weights_vec[prop_rows]
-        weights_vec[prop_rows] <- 1
-      }
-      weights <- weights_vec
-    }
-
-    list(y_i = y_i, size = size, weights = weights)
+.validate_family_spec <- function(family_spec) {
+  required <- c("version", "n_f", "n_m", "families", "components", "family_id_i")
+  if (!all(required %in% names(family_spec))) cli_abort("Internal family spec error: incomplete specification.")
+  if (!family_spec$n_m %in% 1:2) cli_abort("Internal family spec error: fits require one or two components.")
+  if (!identical(family_spec$families$family_id, seq_len(family_spec$n_f))) {
+    cli_abort("Internal family spec error: family IDs must be consecutive and one-based.")
   }
-
-  res <- process_binomial_like(binom_rows, family_label = "Binomial", allow_counts = FALSE)
-  y_i <- res$y_i
-  size <- res$size
-  weights <- res$weights
-
-  res <- process_binomial_like(
-    betabinom_rows,
-    family_label = "Betabinomial",
-    allow_counts = TRUE,
-    weighted_binary_counts = TRUE
-  )
-  y_i <- res$y_i
-  size <- res$size
-  weights <- res$weights
-
-  list(y_i = y_i, size = size, weights = weights)
+  if (anyNA(family_spec$family_id_i) || any(!family_spec$family_id_i %in% family_spec$families$family_id)) {
+    cli_abort("Internal family spec error: every row must have one valid family ID.")
+  }
+  counts <- tabulate(family_spec$components$family_id, nbins = family_spec$n_f)
+  if (any(!counts %in% 1:2) || any(family_spec$components$component < 1L | family_spec$components$component > 2L)) {
+    cli_abort("Internal family spec error: every family must have one or two active components.")
+  }
+  single <- family_spec$families$combine_kind == "single"
+  if (any(counts[single] != 1L) || any(counts[!single] != 2L)) {
+    cli_abort("Internal family spec error: combine kind does not match active components.")
+  }
+  invisible(family_spec)
 }
 
-.family_spec_build_response <- function(y_i, family_spec) {
-  row_family <- .family_spec_response_family_id(family_spec, y_i)
-  y_out <- matrix(NA_real_, nrow = length(y_i), ncol = family_spec$n_m)
+.family_spec_component <- function(family_spec, family_id, component) {
+  key <- family_spec$components$family_id %in% family_id &
+    family_spec$components$component == component
+  family_spec$components[key, , drop = FALSE]
+}
 
-  single_rows <- family_spec$combine_kind[row_family] == "single"
-  if (any(single_rows)) {
-    y_out[single_rows, 1L] <- y_i[single_rows]
-  }
-
-  two_component_rows <- !single_rows
-  if (any(two_component_rows)) {
-    y_out[two_component_rows, 1L] <- ifelse(y_i[two_component_rows] > 0, 1, 0)
-    y_out[two_component_rows, 2L] <- ifelse(y_i[two_component_rows] > 0, y_i[two_component_rows], NA_real_)
-  }
-
-  y_out
+.family_spec_component_value <- function(family_spec, family_id, component, column) {
+  rows <- .family_spec_component(family_spec, family_id, component)
+  out <- rep(NA, length(family_id))
+  matched <- match(family_id, rows$family_id)
+  present <- !is.na(matched)
+  out[present] <- rows[[column]][matched[present]]
+  out
 }
 
 .object_family_spec <- function(object, caller = "This method") {
@@ -459,7 +426,7 @@
     )
   }
 
-  .build_family_spec(object$family, data = object$data)
+  .compile_family_spec(object$family, data = object$data)
 }
 
 .family_spec_is_multi_family <- function(family_spec) {
@@ -531,9 +498,8 @@
   out
 }
 
-.family_spec_prediction_output <- function(x, family_spec, row_family_id,
-  type = c("link", "response"), model = NA_integer_, simulated = FALSE,
-  family_list = NULL) {
+.family_spec_component_prediction_output <- function(x, family_spec, row_family_id,
+  type = c("link", "response"), model = NA_integer_, family_list = NULL) {
 
   type <- match.arg(type)
   x <- as.matrix(x)
@@ -543,22 +509,13 @@
     cli_abort("Internal family spec error: prediction matrix has fewer components than expected.")
   }
   active <- .family_spec_component_active(family_spec, row_family_id)
-  combine_kind <- family_spec$combine_kind[row_family_id]
-  link1 <- family_spec$link_name[cbind(row_family_id, 1L)]
-  link2 <- if (n_m > 1L) family_spec$link_name[cbind(row_family_id, 2L)] else rep(NA_character_, n)
+  combine_kind <- family_spec$families$combine_kind[row_family_id]
+  link1 <- .family_spec_component_value(family_spec, row_family_id, 1L, "link_name")
+  link2 <- if (n_m > 1L) .family_spec_component_value(family_spec, row_family_id, 2L, "link_name") else rep(NA_character_, n)
   raw1 <- x[, 1L]
   raw2 <- if (n_m > 1L) x[, 2L] else rep(NA_real_, n)
 
-  if (simulated) {
-    est1 <- raw1
-    est2 <- if (n_m > 1L) raw2 else rep(NA_real_, n)
-    if (n_m > 1L) est2[!active[, 2L]] <- NA_real_
-    combined <- est1
-    if (n_m > 1L) {
-      two_component_rows <- combine_kind %in% c("delta", "poisson_link_delta")
-      combined[two_component_rows] <- est1[two_component_rows] * est2[two_component_rows]
-    }
-  } else if (type == "response") {
+  if (type == "response") {
     if (!is.null(family_list)) {
       # Use each family's own linkinv (handles families like truncated_nbinom1/2
       # whose linkinv includes a truncation correction with phi in the closure)
@@ -595,40 +552,15 @@
       est1[poisson_link_rows] <- p_encounter
       est2[poisson_link_rows] <- (n_groups * pos_mean) / p_encounter
     }
-    combined <- est1
-    if (n_m > 1L) {
-      delta_rows <- combine_kind == "delta"
-      if (any(delta_rows)) {
-        combined[delta_rows] <- est1[delta_rows] * est2[delta_rows]
-      }
-      if (any(poisson_link_rows)) {
-        combined[poisson_link_rows] <- exp(raw1[poisson_link_rows] + raw2[poisson_link_rows])
-      }
-    }
   } else {
     est1 <- raw1
     est2 <- rep(NA_real_, n)
     if (n_m > 1L && any(active[, 2L])) {
       est2[active[, 2L]] <- raw2[active[, 2L]]
     }
-    combined <- est1
-    if (n_m > 1L) {
-      delta_rows <- combine_kind == "delta"
-      if (any(delta_rows)) {
-        mu_prod <- .family_spec_apply_link(raw1[delta_rows], link1[delta_rows], inverse = TRUE) *
-          .family_spec_apply_link(raw2[delta_rows], link2[delta_rows], inverse = TRUE)
-        combined[delta_rows] <- .family_spec_apply_link(mu_prod, link2[delta_rows], inverse = FALSE)
-      }
-      poisson_link_rows <- combine_kind == "poisson_link_delta"
-      if (any(poisson_link_rows)) {
-        combined[poisson_link_rows] <- raw1[poisson_link_rows] + raw2[poisson_link_rows]
-      }
-    }
   }
 
-  est <- if (is.na(model)) {
-    combined
-  } else if (isTRUE(model == 1L)) {
+  est <- if (is.na(model) || isTRUE(model == 1L)) {
     est1
   } else if (isTRUE(model == 2L)) {
     est2
@@ -639,16 +571,41 @@
   list(est = est, est1 = est1, est2 = est2)
 }
 
+# TMB simulations return realized component responses rather than prediction
+# reports. Combining those draws is intentionally separate from prediction
+# formatting and is limited to multiplication of realized two-part outcomes.
+.family_spec_combine_simulated <- function(x, family_spec, row_family_id,
+  model = NA_integer_) {
+
+  x <- as.matrix(x)
+  est1 <- x[, 1L]
+  if (family_spec$n_m == 1L) {
+    return(est1)
+  }
+  active2 <- .family_spec_component_active(family_spec, row_family_id)[, 2L]
+  est2 <- x[, 2L]
+  est2[!active2] <- NA_real_
+  if (is.na(model)) {
+    combine_kind <- family_spec$families$combine_kind[row_family_id]
+    est1[combine_kind != "single"] <- est1[combine_kind != "single"] *
+      est2[combine_kind != "single"]
+    return(est1)
+  }
+  if (isTRUE(model == 1L)) return(est1)
+  if (isTRUE(model == 2L)) return(est2)
+  cli_abort("`model` argument isn't valid; should be `NA`, `1`, or `2`.")
+}
+
 .family_spec_prediction_link_name <- function(family_spec, row_family_id, model = NA_integer_, simulated = FALSE) {
   if (simulated) {
     return("response")
   }
-  link1 <- family_spec$link_name[cbind(row_family_id, 1L)]
+  link1 <- .family_spec_component_value(family_spec, row_family_id, 1L, "link_name")
   if (family_spec$n_m == 1L) {
     links <- link1
   } else if (is.na(model)) {
-    link2 <- family_spec$link_name[cbind(row_family_id, 2L)]
-    combine_kind <- family_spec$combine_kind[row_family_id]
+    link2 <- .family_spec_component_value(family_spec, row_family_id, 2L, "link_name")
+    combine_kind <- family_spec$families$combine_kind[row_family_id]
     links <- ifelse(
       combine_kind == "single",
       link1,
@@ -658,7 +615,7 @@
     links <- link1
   } else if (isTRUE(model == 2L)) {
     active2 <- .family_spec_component_active(family_spec, row_family_id)[, 2L]
-    link2 <- family_spec$link_name[cbind(row_family_id, 2L)]
+    link2 <- .family_spec_component_value(family_spec, row_family_id, 2L, "link_name")
     links <- link2[active2]
   } else {
     cli_abort("`model` argument isn't valid; should be `NA`, `1`, or `2`.")

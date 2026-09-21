@@ -293,6 +293,7 @@ test_that("joint R solver uses the stationary space-time recursion", {
 
 test_that("fitted and prediction C++ paths use the joint operator", {
   skip_on_cran()
+  set.seed(1)
   dat <- data.frame(
     y = rnorm(8),
     x = rnorm(8),
@@ -313,7 +314,17 @@ test_that("fitted and prediction C++ paths use the joint operator", {
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x) + time_lag(x),
     nonlocal_data = grid,
-    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+    # Fix the operator scales so this tests the R/C++ implementations rather
+    # than numerical differences from an ill-conditioned, tiny-data fit.
+    control = sdmTMBcontrol(
+      newton_loops = 0,
+      getsd = FALSE,
+      start = list(log_kappaS_nl = log(2), kappaT_nl_raw = 0.5),
+      map = list(
+        log_kappaS_nl = factor(NA),
+        kappaT_nl_raw = factor(NA)
+      )
+    )
   ))
 
   fitted_params <- fit$tmb_obj$env$parList(fit$model$par)
