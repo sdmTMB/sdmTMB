@@ -200,10 +200,80 @@ test_that("multi-family fits build family-based TMB data", {
   expect_length(fit$tmb_params$ln_phi, 2L)
 })
 
-test_that("NA-dropped fits keep row-aligned family and offset data", {
+test_that("missing covariates are rejected before fitting", {
   dat_single <- data.frame(
     y = c(1.2, 2.4, 3.6, 4.8, 6.0),
     x = c(-1, NA, 0, 0.5, 1)
+  )
+
+  expect_error(
+    sdmTMB(
+      y ~ x,
+      data = dat_single,
+      spatial = "off",
+      spatiotemporal = "off",
+      family = gaussian(),
+      do_fit = FALSE
+    ),
+    regexp = "Rows with missing covariates: 2"
+  )
+
+  fit_complete <- sdmTMB(
+    y ~ x,
+    data = transform(dat_single, x = seq(-1, 1, length.out = 5)),
+    spatial = "off",
+    spatiotemporal = "off",
+    family = gaussian(),
+    do_fit = FALSE
+  )
+  expect_error(
+    predict(
+      fit_complete,
+      newdata = transform(dat_single, x = c(-1, NA, 0, 0.5, 1))
+    ),
+    regexp = "Rows with missing covariates: 2"
+  )
+
+  dat_multi <- data.frame(
+    y = c(1.2, 0.0, 2.1),
+    x1 = c(-1, 0, 1),
+    x2 = c(NA, -0.2, 0.3),
+    dist = c("gauss", "delta", "delta")
+  )
+
+  expect_error(
+    sdmTMB(
+      formula = list(y ~ x1, y ~ x2),
+      data = dat_multi,
+      spatial = "off",
+      spatiotemporal = "off",
+      family = list(gauss = gaussian(), delta = delta_gamma()),
+      distribution_column = "dist",
+      do_fit = FALSE
+    ),
+    regexp = "Rows with missing covariates: 1"
+  )
+  dat_multi$x2[1] <- 0.1
+  dat_multi$x2[2] <- NA
+
+  expect_error(
+    sdmTMB(
+      formula = list(y ~ x1, y ~ x2),
+      data = dat_multi,
+      spatial = "off",
+      spatiotemporal = "off",
+      family = list(gauss = gaussian(), delta = delta_gamma()),
+      distribution_column = "dist",
+      do_fit = FALSE
+    ),
+    regexp = "Rows with missing covariates: 2"
+  )
+})
+
+test_that("response omissions use one explicit row map for all row-level data", {
+  dat_single <- data.frame(
+    y = c(1.2, NA, 3.6, 4.8, 6.0),
+    x = c(-1, -0.3, 0, 0.5, 1)
   )
 
   fit_single <- sdmTMB(
@@ -213,20 +283,29 @@ test_that("NA-dropped fits keep row-aligned family and offset data", {
     spatiotemporal = "off",
     family = gaussian(),
     offset = c(10, 20, 30, 40, 50),
-    do_fit = FALSE
+    control = sdmTMBcontrol(getsd = FALSE, newton_loops = 0)
   )
 
+  expect_equal(fit_single$analysis_rows$used, c(1L, 3L, 4L, 5L))
+  expect_equal(fit_single$analysis_rows$omitted, 2L)
+  expect_equal(fit_single$analysis_rows$original_to_analysis, c(1L, NA, 2L, 3L, 4L))
   expect_equal(fit_single$tmb_data$offset_i, c(10, 30, 40, 50))
   expect_equal(fit_single$tmb_data$obs_family_id, rep(0L, 4L))
-  expect_equal(fit_single$family_spec$family_id_i, rep(1L, 5L))
+  expect_equal(fit_single$family_spec$family_id_i, rep(1L, 4L))
   expect_equal(fit_single$tmb_data$y_i[, 1], c(1.2, 3.6, 4.8, 6.0))
-
-  dat_multi <- data.frame(
-    y = c(1.2, 0.0, 2.1, 0.0, 3.5),
-    x = c(-1, NA, -0.1, 0.4, 1),
-    dist = c("gauss", "delta", "delta", "gauss", "delta")
+  expect_equal(fit_single$offset, c(10, 20, 30, 40, 50))
+  expect_length(fitted(fit_single), nrow(dat_single))
+  expect_equal(
+    fitted(fit_single),
+    predict(fit_single, type = "response")$est,
+    tolerance = 1e-6
   )
 
+  dat_multi <- data.frame(
+    y = c(1.2, NA, 2.1, 0.0, 3.5),
+    x = c(-1, -0.3, -0.1, 0.4, 1),
+    dist = c("gauss", "delta", "delta", "gauss", "delta")
+  )
   fit_multi <- sdmTMB(
     y ~ x,
     data = dat_multi,
@@ -238,13 +317,47 @@ test_that("NA-dropped fits keep row-aligned family and offset data", {
     do_fit = FALSE
   )
 
+  expect_equal(fit_multi$analysis_rows$used, c(1L, 3L, 4L, 5L))
   expect_equal(fit_multi$tmb_data$offset_i, c(5, 7, 8, 9))
   expect_equal(fit_multi$tmb_data$obs_family_id, c(0L, 1L, 0L, 1L))
-  expect_equal(fit_multi$family_spec$family_id_i, c(1L, 2L, 2L, 1L, 2L))
+  expect_equal(fit_multi$family_spec$family_id_i, c(1L, 2L, 1L, 2L))
   expect_equal(fit_multi$tmb_data$y_i[1, ], c(1.2, NA_real_))
   expect_equal(fit_multi$tmb_data$y_i[2, ], c(1.0, 2.1))
   expect_equal(fit_multi$tmb_data$y_i[3, ], c(0.0, NA_real_))
   expect_equal(fit_multi$tmb_data$y_i[4, ], c(1.0, 3.5))
+
+  fit_multi_reversed <- sdmTMB(
+    y ~ x,
+    data = dat_multi,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = list(delta = delta_gamma(), gauss = gaussian()),
+    distribution_column = "dist",
+    offset = c(5, 6, 7, 8, 9),
+    do_fit = FALSE
+  )
+
+  expect_equal(fit_multi_reversed$tmb_data$offset_i, c(5, 7, 8, 9))
+  expect_equal(fit_multi_reversed$tmb_data$obs_family_id, c(1L, 0L, 1L, 0L))
+  expect_equal(fit_multi_reversed$family_spec$family_id_i, c(2L, 1L, 2L, 1L))
+  expect_equal(fit_multi_reversed$tmb_data$y_i, fit_multi$tmb_data$y_i)
+
+  dat_binomial <- data.frame(
+    y = c(0.2, NA, 0.4),
+    x = c(-1, 0, 1)
+  )
+  fit_binomial <- sdmTMB(
+    y ~ x,
+    data = dat_binomial,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = binomial(),
+    weights = c(10, 20, 30),
+    do_fit = FALSE
+  )
+
+  expect_equal(as.numeric(fit_binomial$tmb_data$y_i), c(2, 12))
+  expect_equal(fit_binomial$tmb_data$size, c(10, 30))
 })
 
 test_that("mixed gaussian plus delta fits reach the unified TMB path", {

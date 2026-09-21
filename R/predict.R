@@ -464,6 +464,10 @@ predict.sdmTMB <- function(object, newdata = NULL,
         check_and_parse_thresh_params(object$formula[[2]], newdata))
       formula <- list(thresh[[1]]$formula, thresh[[2]]$formula)
     }
+    threshold_columns <- unique(unlist(
+      lapply(thresh, `[[`, "threshold_parameter"),
+      use.names = FALSE
+    ))
 
     nd <- newdata
     response <- get_response(object$formula[[1]])
@@ -472,6 +476,22 @@ predict.sdmTMB <- function(object, newdata = NULL,
       nd[[response]] <- 0 # fake for model.matrix
       sdmTMB_fake_response <- TRUE
     }
+
+    .check_no_missing_covariates(
+      data = newdata,
+      formulas = lapply(formula, reformulas::nobars),
+      shared_formulas = c(
+        .formula_list(object$spatial_varying_formula),
+        .formula_list(object$time_varying),
+        list(object$dispformula)
+      ),
+      required_columns = if (is.null(object$covariate_diffusion_parsed)) {
+        threshold_columns
+      } else {
+        c(object$covariate_diffusion_parsed$covariates, threshold_columns)
+      },
+      stage = "prediction"
+    )
 
     if (!"mgcv" %in% names(object)) object[["mgcv"]] <- FALSE
 
@@ -614,7 +634,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     tmb_data$proj_offset_i <- if (!is.null(offset)) {
       offset
     } else if (nd_arg_was_null) {
-      tmb_data$offset_i
+      if (length(object$offset) == nrow(newdata)) object$offset else tmb_data$offset_i
     } else {
       rep(0, nrow(proj_X_ij[[1]]))
     }

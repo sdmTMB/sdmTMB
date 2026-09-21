@@ -938,9 +938,49 @@ sdmTMB <- function(
     )
     formula <- list(thresh[[1]]$formula, thresh[[2]]$formula)
   }
+  threshold_columns <- unique(unlist(
+    lapply(thresh, `[[`, "threshold_parameter"),
+    use.names = FALSE
+  ))
 
   if (is.character(offset)) {
     offset <- data[[offset]]
+  }
+  offset_original <- if (is.null(offset)) rep(0, nrow(data)) else offset
+
+  .check_no_missing_covariates(
+    data = data,
+    formulas = formula,
+    shared_formulas = c(
+      .formula_list(spatial_varying),
+      .formula_list(time_varying),
+      list(dispformula)
+    ),
+    required_columns = if (is.null(covariate_diffusion_parsed)) {
+      threshold_columns
+    } else {
+      c(covariate_diffusion_parsed$covariates, threshold_columns)
+    },
+    stage = "fitting"
+  )
+  analysis_rows <- .establish_analysis_rows(
+    data = data,
+    formulas = formula,
+    family_spec = family_spec
+  )
+  has_omitted_rows <- length(analysis_rows$omitted) > 0L
+  analysis_data <- if (has_omitted_rows) {
+    data[analysis_rows$used, , drop = FALSE]
+  } else {
+    data
+  }
+  if (has_omitted_rows) {
+    family_spec <- .family_spec_subset_rows(family_spec, analysis_rows$used)
+    weights <- .subset_analysis_rows(weights, analysis_rows, name = "weights")
+    offset <- .subset_analysis_rows(offset, analysis_rows, name = "offset")
+    if (length(upr) > 1L) {
+      upr <- .subset_analysis_rows(upr, analysis_rows, name = "censored_upper")
+    }
   }
 
   check_irregalar_time(
@@ -956,7 +996,7 @@ sdmTMB <- function(
 
   spatial_varying_formula <- spatial_varying # save it
   if (!is.null(spatial_varying)) {
-    mf1 <- model.frame(spatial_varying, data)
+    mf1 <- model.frame(spatial_varying, analysis_data)
     for (i in seq_len(ncol(mf1))) {
       if (is.character(mf1[[i]])) {
         cli_warn(paste0(
@@ -966,7 +1006,7 @@ sdmTMB <- function(
         ))
       }
     }
-    z_i <- model.matrix(spatial_varying, data)
+    z_i <- model.matrix(spatial_varying, analysis_data)
     .int <- grep("(Intercept)", colnames(z_i))
     has_intercept <- length(.int) > 0L
     svc_omega_is_intercept <- has_intercept && !omit_spatial_intercept
@@ -993,7 +1033,7 @@ sdmTMB <- function(
     spatial_varying <- colnames(z_i)
     svc_contrasts <- attr(z_i, which = "contrasts")
   } else {
-    z_i <- matrix(0, nrow(data), 0L)
+    z_i <- matrix(0, nrow(analysis_data), 0L)
     svc_contrasts <- NULL
   }
   n_z <- ncol(z_i)
@@ -1003,7 +1043,7 @@ sdmTMB <- function(
   }
   contains_offset <- check_offset(formula[[1]]) # deprecated check
 
-  mf_disp <- model.frame(dispformula, data = data, na.action = stats::na.pass)
+  mf_disp <- model.frame(dispformula, data = analysis_data, na.action = stats::na.pass)
   if (any(!stats::complete.cases(mf_disp))) {
     cli_abort("NAs are not allowed in variables used by `dispformula`.")
   }
@@ -1024,13 +1064,13 @@ sdmTMB <- function(
     # smoothers removed, but random effects remain:
     formula_no_sm <- remove_s_and_t2(formula[ii][[1]])
     # random effects parsed into data structures:
-    split_formula[[ii]] <- parse_formula(formula_no_sm, data)
+    split_formula[[ii]] <- parse_formula(formula_no_sm, analysis_data)
 
     # save formula with no bars (but with smoothers)
     formula_no_bars <- reformulas::nobars(formula[ii][[1]])
     formula_no_bars_no_sm <- remove_s_and_t2(formula_no_bars)
-    X_ij[[ii]] <- model.matrix(formula_no_bars_no_sm, data)
-    mf[[ii]] <- model.frame(formula_no_bars_no_sm, data)
+    X_ij[[ii]] <- model.matrix(formula_no_bars_no_sm, analysis_data)
+    mf[[ii]] <- model.frame(formula_no_bars_no_sm, analysis_data)
     vars <- colnames(mf[[ii]])
     for (g in seq_along(vars)) {
       if (any(is.infinite(mf[[ii]][, g, drop = TRUE]))) {
@@ -1040,7 +1080,7 @@ sdmTMB <- function(
 
     mt[[ii]] <- attr(mf[[ii]], "terms")
     # parse everything mgcv + smoothers:
-    sm[[ii]] <- parse_smoothers(formula = formula_no_bars, data = data, knots = knots)
+    sm[[ii]] <- parse_smoothers(formula = formula_no_bars, data = analysis_data, knots = knots)
     sm[[ii]]$split_formula <- split_formula
     sm[[ii]]$formula_no_sm <- formula_no_sm
     sm[[ii]]$formula_no_bars <- formula_no_bars
@@ -1102,18 +1142,6 @@ sdmTMB <- function(
   sm <- sm[[1]]
 
   y_i <- model.response(mf[[1]], "numeric")
-  response_family_spec <- family_spec
-
-  # Filter weights and offset to match NA-filtered response
-  # model.frame() removes NAs by default; external vectors need same filtering
-  na_action <- attr(mf[[1]], "na.action")
-  if (!is.null(na_action)) {
-    weights <- .subset_by_na_action(weights, na_action)
-    offset <- .subset_by_na_action(offset, na_action)
-    upr <- if (length(upr) > 1L) .subset_by_na_action(upr, na_action) else upr
-    Xdisp_ij <- .subset_by_na_action(Xdisp_ij, na_action, drop = FALSE)
-    response_family_spec <- .family_spec_subset_rows(family_spec, -na_action)
-  }
 
   if (delta) {
     y_i2 <- model.response(mf[[2]], "numeric")
@@ -1142,13 +1170,13 @@ sdmTMB <- function(
       y_i = y_i,
       size = size,
       weights = weights,
-      family_spec = response_family_spec
+      family_spec = family_spec
     )
     y_i <- result$y_i
     size <- result$size
     weights <- result$weights
   }
-  .family_spec_validate_response(y_i, family_spec = response_family_spec, upr = upr)
+  .family_spec_validate_response(y_i, family_spec = family_spec, upr = upr)
 
   if (is.null(offset)) offset <- rep(0, length(y_i))
   assert_that(length(offset) == length(y_i), msg = "Offset doesn't match length of data")
@@ -1157,9 +1185,9 @@ sdmTMB <- function(
   }
 
   if (!is.null(time_varying)) {
-    X_rw_ik <- model.matrix(time_varying, data)
+    X_rw_ik <- model.matrix(time_varying, analysis_data)
   } else {
-    X_rw_ik <- matrix(0, nrow = nrow(data), ncol = 1)
+    X_rw_ik <- matrix(0, nrow = nrow(analysis_data), ncol = 1)
   }
 
   n_s <- domain$n_s
@@ -1249,19 +1277,34 @@ sdmTMB <- function(
   }
 
   A_st <- domain$A_st
+  if (has_omitted_rows && nrow(A_st) == nrow(data)) {
+    A_st <- A_st[analysis_rows$used, , drop = FALSE]
+  }
   A_spatial_index <- domain$A_spatial_index
-  y_i <- .family_spec_build_response(y_i, response_family_spec)
-  family_tmb <- .family_spec_tmb_data(response_family_spec)
+  if (has_omitted_rows && length(A_spatial_index) == nrow(data)) {
+    A_spatial_index <- A_spatial_index[analysis_rows$used]
+  }
+  X_threshold <- if (has_omitted_rows) {
+    .subset_analysis_rows(
+      thresh[[1]]$X_threshold,
+      analysis_rows,
+      name = "threshold covariate"
+    )
+  } else {
+    thresh[[1]]$X_threshold
+  }
+  y_i <- .family_spec_build_response(y_i, family_spec)
+  family_tmb <- .family_spec_tmb_data(family_spec)
   fit_poisson_link_delta <- identical(family_spec$combine_kind[[1]], "poisson_link_delta") &&
     family_spec$n_f == 1L
 
   time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
   n_t <- nrow(time_df)
-  year_i_data <- time_df$year_i[match(data[[time]], time_df$time_from_data)]
+  year_i_data <- time_df$year_i[match(analysis_data[[time]], time_df$time_from_data)]
 
   covariate_diffusion_data <- .build_covariate_diffusion_tmb_data(
     covariate_diffusion = covariate_diffusion_parsed,
-    data = data,
+    data = analysis_data,
     A_st = A_st,
     A_spatial_index = A_spatial_index,
     year_i = year_i_data,
@@ -1397,7 +1440,7 @@ sdmTMB <- function(
     spatial_only = as.integer(spatial_only),
     spatial_covariate = as.integer(!is.null(spatial_varying)),
     calc_quadratic_range = as.integer(quadratic_roots),
-    X_threshold = thresh[[1]]$X_threshold, # TODO: don't hardcode index thresh[[1]]
+    X_threshold = X_threshold, # TODO: don't hardcode index thresh[[1]]
     proj_X_threshold = 0, # dummy
     threshold_func = thresh[[1]]$threshold_func, # TODO: don't hardcode index thresh[[1]]
     est_epsilon_model = as.integer(est_epsilon_model),
@@ -1782,7 +1825,7 @@ sdmTMB <- function(
   out_structure <- structure(
     list(
       data = data,
-      offset = offset,
+      offset = offset_original,
       spde = spde,
       formula = original_formula,
       dispformula = dispformula,
@@ -1796,6 +1839,7 @@ sdmTMB <- function(
       time_lu = time_df,
       family = family,
       family_spec = family_spec,
+      analysis_rows = analysis_rows,
       distribution_column = family_spec$distribution_column,
       smoothers = sm,
       response = y_i,

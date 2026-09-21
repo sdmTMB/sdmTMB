@@ -15,7 +15,10 @@ mround <- function(x, digits) {
 #' @export
 #' @noRd
 nobs.sdmTMB <- function(object, ...) {
-    sum(!is.na(object$data[all.vars(object$formula[[1]])[1]]))
+  if (!is.null(object$analysis_rows)) {
+    return(length(object$analysis_rows$used))
+  }
+  sum(!is.na(object$data[all.vars(object$formula[[1]])[1]]))
 }
 
 #' Get fitted values from an sdmTMB model
