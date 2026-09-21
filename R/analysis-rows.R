@@ -90,6 +90,13 @@
 
   for (component in seq_len(family_spec$n_m)) {
     formula_no_smooths <- remove_s_and_t2(formulas[[component]])
+    # We only need the response here. `model.frame()` evaluates every term in
+    # the formula, including random-effect terms such as `(1 | group)`, where
+    # `|` is otherwise an arithmetic operator. Replace the RHS before making
+    # the frame so establishing the common response-row set neither evaluates
+    # random effects nor considers predictor completeness.
+    response_formula <- formula_no_smooths
+    response_formula[[3L]] <- quote(1)
     mf <- stats::model.frame(
       response_formula,
       data = data,
