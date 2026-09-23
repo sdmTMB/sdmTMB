@@ -109,6 +109,9 @@
     ))
   }
   year_i <- time_df$year_i[match(grid[[time]], time_df$time_from_data)]
+  if (anyNA(year_i)) {
+    cli_abort("`preferential_grid` contains time value(s) not present in the fitted (+ `extra_time`) time slices.")
+  }
 
   A_pref <- fmesher::fm_basis(mesh, loc = as.matrix(grid[, xy_cols, drop = FALSE]))
 
