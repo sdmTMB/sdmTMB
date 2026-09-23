@@ -393,9 +393,12 @@ get_cog <- function(obj, newdata = NULL, bias_correct = FALSE, level = 0.95,
   fit_obj <- if (is_fit_obj) obj else obj$fit_obj
   pred_tmb_data <- if (is_fit_obj) obj$tmb_data else obj$pred_tmb_data
   xy_cols <- fit_obj$spde$xy_cols
+  if (is.null(xy_cols)) {
+    cli_abort("`get_cog()` requires x/y coordinates and isn't available for areal models.")
+  }
   # for a bare `do_index = TRUE` fit, `obj$data` is the *observation* data, so
   # coordinates must come from the stored prediction TMB data instead
-  if (!is_fit_obj && !is.null(xy_cols) && all(xy_cols %in% names(obj$data))) {
+  if (!is_fit_obj && all(xy_cols %in% names(obj$data))) {
     x_vec <- obj$data[[xy_cols[[1]]]]
     y_vec <- obj$data[[xy_cols[[2]]]]
   } else if (!is.null(pred_tmb_data$proj_lon) &&
