@@ -294,6 +294,7 @@
   invisible(family_list)
 }
 
+#' @importFrom utils tail
 .compile_family_spec <- function(family, data = NULL, distribution_column = NULL) {
   if (inherits(family, "family")) {
     if (!is.null(distribution_column)) {
@@ -353,7 +354,7 @@
   )
 
   target_family <- vapply(seq_len(n_f), function(i) {
-    tail(components$family_name[components$family_id == i], 1L)
+    utils::tail(components$family_name[components$family_id == i], 1L)
   }, character(1))
 
   param_slot <- .make_family_param_slots(target_family)
