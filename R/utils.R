@@ -35,6 +35,14 @@
 #'   likelihood using the Laplace approximation? Can result in a substantial
 #'   speed boost in some cases. This used to default to `FALSE` prior to
 #'   May 2021. Currently not working for models fit with REML or random intercepts.
+#' @param backend Model backend. `"tmb"` is the default; set
+#'   `options(sdmTMB.backend = "rtmb")` to use RTMB by default. The experimental
+#'   `"rtmb"` backend currently supports all families, including delta and
+#'   multi-family models, with SPDE (isotropic, anisotropic, or barrier) and
+#'   areal SAR/CAR spatial and spatiotemporal fields, spatially and
+#'   time-varying coefficients, IID random effects, smoothers, threshold
+#'   terms, covariate diffusion, restricted spatial regression, priors, and
+#'   derived indices.
 #' @param multiphase Logical: estimate the fixed and random effects in phases?
 #'   Phases are usually faster and more stable.
 #' @param profile Logical: should population-level/fixed effects be profiled
@@ -149,6 +157,7 @@ sdmTMBcontrol <- function(
   collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
   get_rsr = FALSE,
+  backend = getOption("sdmTMB.backend", "tmb"),
   ...) {
 
   assert_that(is.numeric(nlminb_loops), is.numeric(newton_loops))
@@ -194,11 +203,13 @@ sdmTMBcontrol <- function(
     collapse_ar1_threshold < 0.5
   )
   sar_weight_style <- match.arg(sar_weight_style)
+  backend <- match.arg(backend, c("tmb", "rtmb"))
 
   out <- named_list(
     eval.max,
     iter.max,
     normalize,
+    backend,
     nlminb_loops,
     newton_loops,
     getsd,
@@ -796,12 +807,12 @@ get_fitted_time <- function(x) {
 reload_model <- function(object) {
   if ("parlist" %in% names(object)) {
     # tinyVAST does this to be extra sure... I've found one case where it was needed
-    obj <- TMB::MakeADFun(
+    obj <- make_sdmTMB_adfun(
       data = object$tmb_data,
       parameters = object$parlist, #!! important part
       map = object$tmb_map,
       random = object$tmb_random,
-      DLL = "sdmTMB",
+      backend = backend_sdmTMB(object),
       profile = object$control$profile
     )
     obj$env$beSilent()

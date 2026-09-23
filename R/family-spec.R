@@ -353,7 +353,7 @@
   )
 
   target_family <- vapply(seq_len(n_f), function(i) {
-    tail(components$family_name[components$family_id == i], 1L)
+    utils::tail(components$family_name[components$family_id == i], 1L)
   }, character(1))
 
   param_slot <- .make_family_param_slots(target_family)

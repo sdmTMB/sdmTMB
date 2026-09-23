@@ -1,5 +1,86 @@
 # sdmTMB (development version)
 
+* Remove the experimental `epsilon_model = "re"` and `"trend-re"` options
+  (random year effects on the spatiotemporal SD). They did not recover
+  simulated year-to-year variation in the field SD. The `"trend"` option is
+  unchanged.
+
+* `sdmTMB_simulate()` now errors if `sigma_E` has more than one value. Only
+  the first value was used, so a time-varying `sigma_E` silently simulated a
+  constant SD. Simulation now also always uses the RTMB backend so a given
+  seed produces the same data regardless of `sdmTMBcontrol(backend)` or the
+  `sdmTMB.backend` option.
+
+* Compute `censored_poisson()` log likelihoods on the log scale in both the
+  TMB and RTMB backends. Censored probabilities were formed on the ordinary
+  scale before taking logs, so observations far in either tail (e.g., right
+  censored at 100 with a mean of 1) gave `-Inf` log likelihoods and
+  unusable gradients, which could derail optimization from poor parameter
+  values. Log probabilities are now computed from the tail that avoids
+  cancellation, with exact derivatives of all orders.
+
+* Fix `ordbeta()` simulation in both the TMB and RTMB backends. A one was
+  drawn only after a zero was not, so the probability of a one was
+  `(1 - p0) * p1` rather than `p1`; the missing mass went to the continuous
+  component. Simulated responses from `simulate()`, `sdmTMB_simulate()`, and
+  simulation-based residuals (e.g., DHARMa) therefore understated ones and
+  the mean. The likelihood was unaffected.
+
+* Check that `mesh` matches `nrow(data)` when `nonlocal_formula` is used, even
+  with spatial and spatiotemporal fields off. Covariate diffusion maps each
+  observation to the mesh by row, so a mesh built from a different data frame
+  silently used the wrong locations.
+
+* Fix `breakpt()` likelihoods and gradients after the estimated cutpoint
+  moves from its starting value. The C++ backend now evaluates the threshold
+  branch on the current parameter, matching the RTMB backend.
+
+* Add an experimental `sdmTMBcontrol(backend = "rtmb")` path. It supports all
+  observation families, delta (hurdle) and Poisson-link delta models, and
+  row-wise multi-family models with SPDE (isotropic, anisotropic, or
+  barrier) and areal SAR/CAR spatial and spatiotemporal fields (IID, AR1, or
+  RW), spatially and time-varying coefficients, correlated IID effects,
+  penalized smooths, threshold terms, nonstationary spatiotemporal variance,
+  dispersion formulas, covariate diffusion, restricted spatial regression,
+  priors, REML, and profiled fixed effects, plus `get_index()`, `get_cog()`,
+  `get_eao()`, and `get_weighted_average()` with bias correction. Post-fit
+  methods work on RTMB fits, including `simulate()`, `sdmTMB_simulate()`,
+  `project()`, `cAIC()`, residuals, and tmbstan sampling with
+  `bayesian = TRUE`. The default remains the TMB backend while the RTMB model
+  is migrated in stages.
+
+* Fix `time_varying` models with more than one column (e.g., `~ 1 + x` or a
+  factor with several levels). Each term's contribution was previously
+  re-added to the linear predictor once per later column, so term `k` of `K`
+  entered `K - k + 1` times. Maximized likelihoods, fitted values, and
+  predictions are unchanged, but estimated `b_rw_t` and `sigma_V` for every
+  term except the last were shrunk by `1 / (K - k + 1)`. These estimates, and
+  fits using a `sigma_V` prior, now change. Single-column `time_varying`
+  models are unaffected.
+
+* Fix `sigma_V` priors being applied twice in delta models.
+
+* Fix `censored_poisson()` likelihoods and gradients. Since sdmTMB 0.4.0
+  (2023), the censored Poisson CDF terms were evaluated as constants at the
+  starting values, so objective values and gradients were wrong elsewhere.
+  With the default `multiphase = TRUE`, the terms were fixed at the
+  phase-one Poisson estimates. Censored Poisson fits may change.
+
+* Fix binomial deviance residuals for responses with more than one trial
+  (e.g., proportions with `weights`). These were previously `NaN` or
+  incorrect because the calculation assumed 0/1 responses.
+
+* Use one default likelihood weight and index area per observation in delta
+  models. Previously these vectors included unused entries for the second
+  response component. Default binomial sizes follow the same row count.
+
+* Report each AR1 spatiotemporal `rho` once in delta models. The standard
+  error report previously repeated the full `rho` vector for each AR1 field.
+
+* Simulate correlated IID random effects with the RTMB backend when
+  `re_form = NA`. The TMB backend continues to retain their fitted modes
+  during simulation.
+
 * Add `make_zero_one_map()` to address #386. This is useful for categories
   (e.g., year factors) where the response is all zeros or ones.
 

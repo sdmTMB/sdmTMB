@@ -133,7 +133,7 @@
       response = .family_spec_build_response(y_i, family_spec)
     ))
   }
-  size <- rep(1, length(y_i))
+  size <- rep(1, NROW(y_i))
   processed <- .family_spec_process_response(y_i, size, weights, family_spec)
   .family_spec_validate_response(processed$y_i, family_spec, upr)
   processed$response <- .family_spec_build_response(processed$y_i, family_spec)

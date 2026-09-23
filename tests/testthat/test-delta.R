@@ -10,7 +10,7 @@ test_that("Delta-Gamma family fits", {
     time = "year", family = delta_gamma()
   )
   fit_dg$sd_report
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod$year))
 
   expect_equal(
     round(tidy(fit_dg, "ran_pars", model = 1)$estimate, 3),
@@ -199,7 +199,7 @@ test_that("Delta-Gengamma family fits", {
     c(4.418)
   )
 
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod$year))
   # check
   fit_bin <- sdmTMB(present ~ 1,
     data = pcod, mesh = pcod_spde,

@@ -208,10 +208,7 @@ NULL
 #   used to model effects on the standard deviation, e.g. `log(sd(i)) = B0 + B1
 #   * epsilon_predictor(i)`. The 'epsilon_model' argument may also be
 #   specified. This is the name of the model to use for modeling time-varying
-#   epsilon. This can be one of the following: "trend" (default, fits a linear
-#   model without random effects), "re" (fits a model with random effects in
-#   epsilon_st, but no trend), and "trend-re" (a model that includes both the
-#   trend and random effects)
+#   epsilon. Currently only "trend" (a log-linear model) is available.
 #' @importFrom methods as is
 #' @importFrom cli cli_abort cli_warn cli_inform
 #' @importFrom mgcv s t2
@@ -826,6 +823,10 @@ sdmTMB <- function(
   }
 
   normalize <- control$normalize
+  backend <- control$backend
+  if (backend == "rtmb" && isTRUE(normalize)) {
+    cli_abort("`normalize = TRUE` is unavailable with the RTMB backend; its densities are fully normalized.")
+  }
   nlminb_loops <- control$nlminb_loops
   newton_loops <- control$newton_loops
   quadratic_roots <- control$quadratic_roots
@@ -852,7 +853,7 @@ sdmTMB <- function(
     "suppress_nlminb_warnings", "collapse_spatial_variance",
     "collapse_spatial_variance_threshold",
     "collapse_spatiotemporal_ar1", "collapse_ar1_threshold",
-    "sar_weight_style", "get_rsr"
+    "sar_weight_style", "get_rsr", "backend"
   )
   .control <- control
   # FIXME; automate this from sdmTMcontrol args?
@@ -978,7 +979,9 @@ sdmTMB <- function(
   )
   is_areal <- identical(domain$type, "areal")
 
-  if (!no_spatial && !is_areal) {
+  # Covariate diffusion also maps observations to the mesh by row
+  uses_mesh_rows <- !no_spatial || !is.null(nonlocal_formula_parsed)
+  if (uses_mesh_rows && !is_areal) {
     if (!identical(nrow(spde$loc_xy), nrow(data))) {
       msg <- c(
         "Number of x-y coordinates in `mesh` does not match `nrow(data)`.",
@@ -1268,7 +1271,7 @@ sdmTMB <- function(
   size <- response$size
   weights <- response$weights
 
-  likelihood_weights <- if (!is.null(weights)) weights else rep(1, length(y_i))
+  likelihood_weights <- if (!is.null(weights)) weights else rep(1, NROW(y_i))
   if (!is.null(cv_fold_weights)) {
     weights <- likelihood_weights * cv_fold_weights
   }
@@ -1299,10 +1302,13 @@ sdmTMB <- function(
   }
   estimate_student_df <- has_student_family && is.null(student_df_fixed)
 
+  if (!is.null(epsilon_model) && !identical(epsilon_model, "trend")) {
+    cli_abort("`experimental$epsilon_model` must be \"trend\".")
+  }
   est_epsilon_model <- 0L
   epsilon_covariate <- rep(0, length(unique(data[[time]])))
   if (!is.null(epsilon_predictor) & !is.null(epsilon_model)) {
-    if (epsilon_model %in% c("trend", "trend-re")) {
+    if (epsilon_model == "trend") {
       # covariate vector dimensioned by number of time steps
       time_steps <- unique(data[[time]])
       for (i in seq_along(time_steps)) {
@@ -1314,20 +1320,10 @@ sdmTMB <- function(
       est_epsilon_model <- 1L
     }
   }
-  # flags for turning off the trend and random effects
   est_epsilon_slope <- 0
   if (!is.null(epsilon_model)) {
-    if (epsilon_model %in% c("trend", "trend-re")) {
-      est_epsilon_slope <- 1L
-      est_epsilon_model <- 1L
-    }
-  }
-  est_epsilon_re <- 0
-  if (!is.null(epsilon_model)) {
-    if (epsilon_model[1] %in% c("re", "trend-re")) {
-      est_epsilon_re <- 1L
-      est_epsilon_model <- 1L
-    }
+    est_epsilon_slope <- 1L
+    est_epsilon_model <- 1L
   }
 
   priors_b <- priors$b
@@ -1381,6 +1377,11 @@ sdmTMB <- function(
   A_spatial_index <- domain$A_spatial_index
   if (has_omitted_rows && length(A_spatial_index) == nrow(data)) {
     A_spatial_index <- A_spatial_index[analysis_rows$used]
+    # `A_st` rows were subset above, so index the retained rows.
+    if (nrow(domain$A_st) == nrow(data)) {
+      A_spatial_index <-
+        analysis_rows$original_to_analysis[A_spatial_index + 1L] - 1L
+    }
   }
   X_threshold <- if (has_omitted_rows) {
     .subset_analysis_rows(
@@ -1489,8 +1490,8 @@ sdmTMB <- function(
     calc_se = 0L,
     pop_pred = 0L,
     short_newdata = 0L,
-    weights_i = if (!is.null(weights)) weights else rep(1, length(y_i)),
-    area_i = rep(1, length(y_i)),
+    weights_i = if (!is.null(weights)) weights else rep(1, NROW(y_i)),
+    area_i = rep(1, NROW(y_i)),
     normalize_in_r = 0L, # not used first time
     flag = 1L, # part of TMB::normalize()
     calc_index_totals = 0L,
@@ -1537,7 +1538,6 @@ sdmTMB <- function(
     est_epsilon_model = as.integer(est_epsilon_model),
     epsilon_predictor = epsilon_covariate,
     est_epsilon_slope = as.integer(est_epsilon_slope),
-    est_epsilon_re = as.integer(est_epsilon_re),
     has_smooths = as.integer(sm$has_smooths),
     has_dispersion_model = as.integer(has_dispformula),
     upr = upr,
@@ -1596,8 +1596,6 @@ sdmTMB <- function(
     epsilon_st = array(0, dim = c(n_s, tmb_data$n_t, n_m)),
     b_threshold = if (thresh[[1]]$threshold_func == 2L) matrix(0, 3L, n_m) else matrix(0, 2L, n_m),
     b_epsilon = rep(0, n_m),
-    ln_epsilon_re_sigma = rep(0, n_m),
-    epsilon_re = matrix(0, tmb_data$n_t, n_m),
     b_smooth = if (sm$has_smooths) matrix(0, sum(sm$sm_dims), n_m) else array(0),
     ln_smooth_sigma = if (sm$has_smooths) matrix(0, length(sm$sm_dims), n_m) else array(0)
   )
@@ -1632,9 +1630,6 @@ sdmTMB <- function(
   )
   if (!is.null(thresh[[1]]$threshold_parameter)) tmb_map$b_threshold <- NULL
 
-  if (est_epsilon_re == 1L) {
-    tmb_map <- unmap(tmb_map, c("ln_epsilon_re_sigma", "epsilon_re"))
-  }
   if (est_epsilon_slope == 1L) {
     tmb_map <- unmap(tmb_map, "b_epsilon")
   }
@@ -1653,10 +1648,10 @@ sdmTMB <- function(
       tmb_data$family_code[tmb_data$component_active == 1L & tmb_data$family_code == censored_code] <- unname(.valid_family["poisson"])
     }
 
-    tmb_obj1 <- TMB::MakeADFun(
+    tmb_obj1 <- make_sdmTMB_adfun(
       data = tmb_data, parameters = tmb_params,
       profile = control$profile,
-      map = tmb_map, DLL = "sdmTMB", silent = silent
+      map = tmb_map, backend = backend, silent = silent
     )
     lim <- set_limits(tmb_obj1, lower = lower, upper = upper,
       spatial_model = tmb_data$spatial_model,
@@ -1699,10 +1694,6 @@ sdmTMB <- function(
     if (time_varying_type == "ar1") {
       tmb_map <- unmap(tmb_map, "rho_time_unscaled")
     }
-  }
-  if (est_epsilon_re) {
-    tmb_random <- c(tmb_random, "epsilon_re")
-    tmb_map <- unmap(tmb_map, c("epsilon_re"))
   }
 
   tmb_map$ar1_phi <- as.numeric(tmb_map$ar1_phi) # strip factors
@@ -1939,6 +1930,7 @@ sdmTMB <- function(
       tmb_params = tmb_params,
       tmb_map = tmb_map,
       tmb_random = tmb_random,
+      backend = backend,
       spatial_varying = spatial_varying,
       nonlocal_formula = nonlocal_formula,
       nonlocal_formula_parsed = nonlocal_formula_parsed,
@@ -2002,10 +1994,10 @@ sdmTMB <- function(
     out_structure$do_index <- FALSE
   }
 
-  tmb_obj <- TMB::MakeADFun(
+  tmb_obj <- make_sdmTMB_adfun(
     data = tmb_data, parameters = tmb_params, map = tmb_map,
     profile = control$profile,
-    random = tmb_random, DLL = "sdmTMB", silent = silent
+    random = tmb_random, backend = backend, silent = silent
   )
   lim <- set_limits(tmb_obj,
     lower = lower, upper = upper,
@@ -2108,7 +2100,7 @@ sdmTMB <- function(
 
   if (!silent && getsd) cli_inform("running TMB sdreport\n")
   if (getsd) {
-    sd_report <- TMB::sdreport(tmb_obj, getJointPrecision = get_joint_precision)
+    sd_report <- sdreport_sdmTMB(tmb_obj, getJointPrecision = get_joint_precision)
     conv <- get_convergence_diagnostics(sd_report)
   } else {
     sd_report <- NULL

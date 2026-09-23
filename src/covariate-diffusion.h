@@ -87,7 +87,7 @@ bool nl_solve_transformed_vertex_time(
     Type kappaS_scale,
     Type kappaT_nl,
     bool has_system_solver,
-    Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> >& lu_system,
+    Eigen::SimplicialLDLT< Eigen::SparseMatrix<Type> >& lu_system,
     Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic>& transformed_vertex_time) {
   transformed_vertex_time.setZero();
   if (!nl_is_valid_component(component)) return false;
@@ -201,8 +201,13 @@ void add_covariate_diffusion_to_eta_fixed(
     }
   }
 
-  // Factorize each spatial or joint system once per covariate
-  std::vector< Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> > >
+  // Factorize each spatial or joint system once per covariate. `system` below
+  // (temporal_scale * M0 + kappaS_scale * M1) is a positive combination of the
+  // SPD SPDE mass/stiffness matrices and is therefore itself SPD, so a sparse
+  // Cholesky (LDLT) factorization is used rather than a general LU: it is
+  // faster and, unlike a non-symmetric LU with column-only (COLAMD) pivoting,
+  // uses numerically stable symmetric pivoting for this system.
+  std::vector< Eigen::SimplicialLDLT< Eigen::SparseMatrix<Type> > >
     lu_system_by_covariate(ctx.n_covariates);
   for (int cov_i = 0; cov_i < ctx.n_covariates; cov_i++) {
     if (!cov_needs_system_solver[cov_i]) continue;

@@ -435,6 +435,20 @@ test_that("response omissions use one explicit row map for all row-level data", 
   expect_equal(fit_binomial$tmb_data$size, c(10, 30))
 })
 
+test_that("response omissions keep spatial indices within the retained rows", {
+  set.seed(1)
+  d <- data.frame(X = runif(30), Y = runif(30), x = rnorm(30),
+    time = rep(1:3, each = 10))
+  d$y <- 1 + d$x + rnorm(30)
+  d$y[c(4, 30)] <- NA
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.1)
+  fit <- sdmTMB(y ~ x, data = d, mesh = mesh, time = "time",
+    spatiotemporal = "iid", do_fit = FALSE)
+  expect_equal(nrow(fit$tmb_data$A_st), 28L)
+  expect_equal(fit$tmb_data$A_spatial_index, 0:27)
+  expect_true(is.finite(fit$tmb_obj$fn()))
+})
+
 test_that("mixed gaussian plus delta fits reach the unified TMB path", {
   set.seed(13)
   x <- seq(-1, 1, length.out = 90)
@@ -1083,7 +1097,7 @@ test_that("delta sdreport exposes generic combined prediction names", {
     pred_obj <- predict(fit, newdata = nd, se_fit = TRUE, return_tmb_object = TRUE),
     "return_tmb_object"
   )
-  pred_sr <- TMB::sdreport(pred_obj$obj, bias.correct = FALSE)
+  pred_sr <- sdreport_sdmTMB(pred_obj$obj, bias.correct = FALSE)
   pred_rep <- as.list(pred_sr, "Estimate", report = TRUE)
 
   expect_true("proj_eta_combined" %in% names(pred_rep))
@@ -1110,7 +1124,7 @@ test_that("delta sdreport exposes generic combined prediction names", {
     ),
     "return_tmb_object"
   )
-  pop_pred_sr <- TMB::sdreport(pop_pred_obj$obj, bias.correct = FALSE)
+  pop_pred_sr <- sdreport_sdmTMB(pop_pred_obj$obj, bias.correct = FALSE)
   pop_pred_rep <- as.list(pop_pred_sr, "Estimate", report = TRUE)
 
   expect_true("proj_fe_combined" %in% names(pop_pred_rep))
@@ -1172,7 +1186,7 @@ test_that("poisson-link delta ordinary se_fit uses generic combined report", {
     ),
     "return_tmb_object"
   )
-  pred_sr <- TMB::sdreport(pred_obj$obj, bias.correct = FALSE)
+  pred_sr <- sdreport_sdmTMB(pred_obj$obj, bias.correct = FALSE)
   pred_rep <- as.list(pred_sr, "Estimate", report = TRUE)
 
   expect_true("proj_eta_combined" %in% names(pred_rep))
@@ -1212,7 +1226,7 @@ test_that("poisson-link delta population se_fit uses generic combined report", {
     ),
     "return_tmb_object"
   )
-  pred_sr <- TMB::sdreport(pred_obj$obj, bias.correct = FALSE)
+  pred_sr <- sdreport_sdmTMB(pred_obj$obj, bias.correct = FALSE)
   pred_rep <- as.list(pred_sr, "Estimate", report = TRUE)
 
   expect_true("proj_fe_combined" %in% names(pred_rep))

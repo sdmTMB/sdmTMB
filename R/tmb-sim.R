@@ -33,7 +33,7 @@
 #' @param rho Spatiotemporal correlation between years; should be between -1 and
 #'   1.
 #' @param sigma_O SD of spatial process (Omega).
-#' @param sigma_E SD of spatiotemporal process (Epsilon).
+#' @param sigma_E SD of spatiotemporal process (Epsilon). A single value.
 #' @param sigma_Z SD of spatially varying coefficient field (Zeta).
 #' @param sigma_V SD(s) of the time-varying process. Provide a single value or a
 #'   vector matching the number of time-varying coefficients.
@@ -161,7 +161,11 @@ simulate_new <- function(formula,
   assert_that((rho >= -1 && rho <= 1) || is.null(rho))
   assert_that(phi > 0 || is.null(phi))
   assert_that(sigma_O >= 0 || is.null(sigma_O))
-  assert_that(all(sigma_E >= 0) || is.null(sigma_E))
+  if (length(sigma_E) > 1L) {
+    cli::cli_abort(c("`sigma_E` must be a single value.",
+      "i" = "For a spatiotemporal SD that varies by time, simulate each time step separately."))
+  }
+  assert_that(sigma_E >= 0 || is.null(sigma_E))
   assert_that(all(sigma_Z >= 0) || is.null(sigma_Z))
 
   dots <- list(...)
@@ -415,10 +419,11 @@ simulate_new <- function(formula,
     params$zeta_s <- fixed_re$zeta_s
   }
 
-  newobj <- TMB::MakeADFun(
+  # Always simulate with the RTMB backend so a given seed yields the same data
+  # regardless of the `sdmTMB.backend` option (RTMB draws differ from TMB's).
+  newobj <- make_sdmTMB_adfun(
     data = tmb_data, map = fit$tmb_map,
-    random = fit$tmb_random, parameters = params, DLL = "sdmTMB",
-    checkParameterOrder = FALSE
+    random = fit$tmb_random, parameters = params, backend = "rtmb"
   )
 
   set.seed(seed)
@@ -623,9 +628,10 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
 
   tmb_dat$sim_obs <- as.integer(observation_error)
 
-  newobj <- TMB::MakeADFun(
+  newobj <- make_sdmTMB_adfun(
     data = tmb_dat, map = object$tmb_map,
-    random = object$tmb_random, parameters = object$tmb_obj$env$parList(), DLL = "sdmTMB"
+    random = object$tmb_random, parameters = object$tmb_obj$env$parList(),
+    backend = backend_sdmTMB(object)
   )
 
   # params MLE/MVN stuff

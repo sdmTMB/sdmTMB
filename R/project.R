@@ -274,10 +274,6 @@ project <- function(
   new_b_rw_t <- array(0, c(nproj, n_time_varying, n_m))
   pars$epsilon_st <- abind::abind(pars$epsilon_st, new_eps, along = 2)
   pars$b_rw_t <- abind::abind(pars$b_rw_t, new_b_rw_t, along = 1)
-  new_epsilon_re <- matrix(0, nrow = nproj, ncol = n_m)
-  if (length(pars$epsilon_re)) {
-    pars$epsilon_re <- rbind(pars$epsilon_re, new_epsilon_re)
-  }
 
   map <- object$tmb_map
   if ("b_rw_t" %in% names(map)) {
@@ -285,12 +281,6 @@ project <- function(
       cli_abort("Function not set up yet for non-NA mapping of `b_rw_t`.")
     }
     map$b_rw_t <- factor(rep(NA, length(as.numeric(pars$b_rw_t))))
-  }
-  if ("epsilon_re" %in% names(map) && length(pars$epsilon_re)) {
-    if (any(!is.na(map$epsilon_re))) {
-      cli_abort("Function not set up yet for non-NA mapping of `epsilon_re`.")
-    }
-    map$epsilon_re <- factor(rep(NA, length(as.numeric(pars$epsilon_re))))
   }
 
   delta <- is_delta(object)
@@ -309,13 +299,13 @@ project <- function(
 
   ## rebuild TMB object
   if (!silent) cli::cli_inform("Rebuilding TMB object with TMB::MakeADFun()")
-  obj <- TMB::MakeADFun(
+  obj <- make_sdmTMB_adfun(
     data = p,
     profile = object$control$profile,
     parameters = pars,
     map = map,
     random = object$tmb_random,
-    DLL = "sdmTMB",
+    backend = backend_sdmTMB(object),
     silent = TRUE
   )
 
@@ -337,12 +327,6 @@ project <- function(
         lpx, "epsilon_st", .n = sum(epsilon_future_active),
         n_groups = n_active_st,
         fill = as.vector(new_eps)[epsilon_future_active]
-      )
-    }
-    if ("epsilon_re" %in% names(lpx)) {
-      lpx <- insert_pars(
-        lpx, "epsilon_re", .n = length(as.vector(new_epsilon_re)),
-        n_groups = n_m, fill = as.vector(new_epsilon_re)
       )
     }
     if (future_re != "include" || !sample_future_re ||
@@ -397,7 +381,7 @@ project <- function(
 project_sd_report <- function(object) {
   sd_report <- object$sd_report
   if (!"jointPrecision" %in% names(sd_report) && length(object$tmb_random)) {
-    sd_report <- TMB::sdreport(object$tmb_obj, getJointPrecision = TRUE)
+    sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
   }
   sd_report
 }
@@ -407,8 +391,7 @@ project_historical_re_indices <- function(lp) {
   ## internal random block also contains b_j (and bs for smoothers), which are
   ## still estimated model parameters for project()'s API.
   historical_re <- c(
-    "omega_s", "epsilon_st", "zeta_s", "re_b_pars", "b_rw_t",
-    "epsilon_re", "b_smooth"
+    "omega_s", "epsilon_st", "zeta_s", "re_b_pars", "b_rw_t", "b_smooth"
   )
   which(names(lp) %in% historical_re)
 }

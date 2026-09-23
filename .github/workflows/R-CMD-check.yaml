@@ -1,8 +1,8 @@
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, rtmb]
   pull_request:
-    branches: [main, dev]
+    branches: [main, dev, rtmb]
 
 name: R-CMD-check
 
@@ -11,21 +11,24 @@ jobs:
     if: "! contains(github.event.head_commit.message, '[skip ci]')"
     runs-on: ${{ matrix.config.os }}
 
-    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
+    name: ${{ matrix.config.os }} (${{ matrix.config.r }}, ${{ matrix.config.backend }})
 
     strategy:
       fail-fast: false
       matrix:
         config:
-          - {os: windows-latest, r: 'release'}
+          - {os: windows-latest, r: 'release', backend: tmb}
         #  - {os: macOS-latest, r: 'release'}
         # - {os: ubuntu-latest,   r: 'devel', http-user-agent: 'release'}
-          - {os: ubuntu-latest,   r: 'release'}
+          - {os: ubuntu-latest,   r: 'release', backend: tmb}
+          - {os: ubuntu-latest,   r: 'release', backend: rtmb}
         # - {os: ubuntu-latest,   r: 'oldrel-1'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
       R_KEEP_PKG_SOURCE: yes
+      SDMTMB_TEST_BACKEND: ${{ matrix.config.backend }}
+      TESTTHAT_PARALLEL: ${{ matrix.config.os == 'windows-latest' && 'false' || 'true' }}
 
     steps:
       - uses: actions/checkout@v5
@@ -45,6 +48,7 @@ jobs:
             any::rcmdcheck
             any::textshaping
           needs: check
+          install-quarto: false
 
       - name: Install yaml with GitHub fallback
         run: |
@@ -56,6 +60,15 @@ jobs:
               remotes::install_github("r-lib/r-yaml")
             })
           }
+        shell: Rscript {0}
+
+      # sdmTMBextra is not in Suggests; one job installs it so the barrier and
+      # MCMC-residual tests run rather than skip
+      - name: Install sdmTMBextra
+        if: runner.os == 'Linux' && matrix.config.backend == 'rtmb'
+        run: |
+          install.packages("remotes")
+          remotes::install_github("sdmTMB/sdmTMBextra")
         shell: Rscript {0}
 
       - uses: r-lib/actions/check-r-package@v2

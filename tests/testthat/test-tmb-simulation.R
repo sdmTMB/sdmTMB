@@ -262,7 +262,6 @@ test_that("TMB breakpt sims work", {
     B = 0,
     threshold_coefs = c(0.3, 0)
   )
-  plot(predictor_dat$a1, sim_dat$observed)
   expect_lt(max(sim_dat$observed), 0.1)
   sim_dat$a1 <- predictor_dat$a1
   fit <- sdmTMB(observed ~ 1 + breakpt(a1), sim_dat, mesh = mesh, spatial = "off",
@@ -285,7 +284,6 @@ test_that("TMB breakpt sims work", {
     B = 0,
     threshold_coefs = c(0.2, 0.4, 0.5)
   )
-  plot(predictor_dat$a1, sim_dat$observed)
   expect_lt(max(sim_dat$observed), 0.53)
   expect_gt(min(sim_dat$observed), -0.05)
 })
@@ -362,7 +360,7 @@ test_that("simulate without observation error works for binomial likelihoods #43
   )
   s.dg <- simulate(
     fit.dg,
-    newdata = qcs_grid,
+    newdata = qcs_grid_small,
     type = "mle-mvn", # fixed effects at MLE values and random effect MVN draws
     mle_mvn_samples = "multiple", # take an MVN draw for each sample
     nsim = 50, # increase this for more stable results
@@ -371,7 +369,7 @@ test_that("simulate without observation error works for binomial likelihoods #43
   )
   expect_gt(min(s.dg), 0)
   m <- apply(s.dg, 1, mean)
-  p <- predict(fit.dg, newdata = qcs_grid)
+  p <- predict(fit.dg, newdata = qcs_grid_small)
   expect_gt(cor(plogis(p$est1) * exp(p$est2), m), 0.98)
 
   fit.b <- sdmTMB(present ~ 1,
@@ -379,7 +377,7 @@ test_that("simulate without observation error works for binomial likelihoods #43
   )
   s.b <- simulate(
     fit.b,
-    newdata = qcs_grid,
+    newdata = qcs_grid_small,
     type = "mle-mvn", # fixed effects at MLE values and random effect MVN draws
     mle_mvn_samples = "multiple", # take an MVN draw for each sample
     nsim = 50, # increase this for more stable results
@@ -388,23 +386,23 @@ test_that("simulate without observation error works for binomial likelihoods #43
   )
   expect_gt(min(s.dg), 0)
   m <- apply(s.b, 1, mean)
-  p <- predict(fit.b, newdata = qcs_grid)
+  p <- predict(fit.b, newdata = qcs_grid_small)
   expect_gt(cor(plogis(p$est), m), 0.95)
 
   # with size specified (but wrong length at first)
   expect_error({simulate(
     fit.b,
-    newdata = qcs_grid,
+    newdata = qcs_grid_small,
     nsim = 1,
     observation_error = FALSE,
     size = c(1, 2, 3)
   )}, regexp = "size")
 
   set.seed(1)
-  w <- sample(1:9, size = nrow(qcs_grid), replace = TRUE)
+  w <- sample(1:9, size = nrow(qcs_grid_small), replace = TRUE)
   s.b1 <- simulate(
     fit.b,
-    newdata = qcs_grid,
+    newdata = qcs_grid_small,
     type = "mle-mvn",
     mle_mvn_samples = "multiple",
     nsim = 50,
@@ -426,7 +424,7 @@ test_that("simulate without observation error works for binomial likelihoods and
   )
   s.dg <- simulate(
     fit.dg,
-    newdata = qcs_grid,
+    newdata = qcs_grid_small,
     type = "mle-mvn", # fixed effects at MLE values and random effect MVN draws
     mle_mvn_samples = "multiple", # take an MVN draw for each sample
     nsim = 200, # increase this for more stable results
@@ -435,6 +433,6 @@ test_that("simulate without observation error works for binomial likelihoods and
   )
   expect_gt(min(s.dg), 0)
   m <- apply(s.dg, 1, mean)
-  p <- predict(fit.dg, newdata = qcs_grid)
+  p <- predict(fit.dg, newdata = qcs_grid_small)
   expect_gt(cor(exp(p$est1) * exp(p$est2), m), 0.98)
 })

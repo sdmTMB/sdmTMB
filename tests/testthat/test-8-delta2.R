@@ -480,7 +480,7 @@ test_that("one spatial off in a delta model works", {
     data = pcod,
     spatial = list("off", "on"), #<
     spatiotemporal = list("off", "off"),
-    silent = FALSE,
+    silent = TRUE,
     time = "year",
     family = delta_gamma()
   )
@@ -504,7 +504,7 @@ test_that("one spatial off in a delta model works", {
     data = pos,
     spatial = "on", # <-
     spatiotemporal = "off",
-    silent = FALSE,
+    silent = TRUE,
     time = "year",
     family = Gamma(link = "log")
   )
@@ -535,7 +535,7 @@ test_that("one spatial off in a delta model works", {
     spatial = list("off", "off"), #<
     spatiotemporal = list("off", "iid"), #<
     share_range = FALSE,
-    silent = FALSE,
+    silent = TRUE,
     time = "year",
     control = sdmTMBcontrol(newton_loops = 0L),
     family = delta_gamma()
@@ -547,7 +547,7 @@ test_that("one spatial off in a delta model works", {
     spatial = "off", # <-
     spatiotemporal = "iid",
     share_range = FALSE,
-    silent = FALSE,
+    silent = TRUE,
     time = "year",
     control = sdmTMBcontrol(newton_loops = 0L),
     family = Gamma(link = "log")

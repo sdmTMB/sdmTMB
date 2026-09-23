@@ -136,11 +136,12 @@ test_that("AR1 time-varying works", {
   s <- tidy(fit, "ran_pars", model = 1)
   expect_equal(dim(s), c(1L, 6L))
   expect_equal(s$term, c("rho_time"))
-  expect_equal(s$estimate, c(0.888583727), tolerance = 0.001)
+  # values changed when the delta sigma_V prior stopped being applied twice
+  expect_equal(s$estimate, c(0.869430355), tolerance = 0.001)
 
   s <- tidy(fit, "ran_pars", model = 2)
   expect_equal(s$term, c("phi", "rho_time"))
-  expect_equal(s$estimate, c(0.65029, 0.70935), tolerance = 0.001)
+  expect_equal(s$estimate, c(0.651627427, 0.722630797), tolerance = 0.001)
 
 })
 

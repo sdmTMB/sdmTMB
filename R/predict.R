@@ -822,7 +822,9 @@ predict.sdmTMB <- function(object, newdata = NULL,
       mfsv_new <- model.frame(ttsv, newdata, xlev = xlevelssv)
       z_i <- model.matrix(ttsv, mfsv_new, contrasts.arg = svc_contrasts)
       .int <- grep("(Intercept)", colnames(z_i))
-      if (sum(.int) > 0) z_i <- z_i[,-.int,drop=FALSE]
+      if (length(.int) > 0L && isTRUE(object$svc_omega_is_intercept)) {
+        z_i <- z_i[, -.int, drop = FALSE]
+      }
     } else {
       z_i <- matrix(0, nrow(newdata), 0L)
     }
@@ -844,13 +846,13 @@ predict.sdmTMB <- function(object, newdata = NULL,
     }
 
     has_saved_fit <- !is.null(object$parlist) && !is.null(object$last.par.best)
-    new_tmb_obj <- TMB::MakeADFun(
+    new_tmb_obj <- make_sdmTMB_adfun(
       data = tmb_data,
       profile = object$control$profile,
       parameters = if (has_saved_fit) object$parlist else get_pars(object),
       map = object$tmb_map,
       random = object$tmb_random,
-      DLL = "sdmTMB",
+      backend = backend_sdmTMB(object),
       silent = TRUE
     )
 
@@ -865,7 +867,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     if (sims > 0 && is.null(mcmc_samples)) {
       if (!"jointPrecision" %in% names(object$sd_report) && !has_no_random_effects(object)) {
         message("Rerunning TMB::sdreport() with `getJointPrecision = TRUE`.")
-        sd_report <- TMB::sdreport(object$tmb_obj, getJointPrecision = TRUE)
+        sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
       } else {
         sd_report <- object$sd_report
       }
@@ -1086,7 +1088,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     }
 
     if (se_fit) {
-      sr <- TMB::sdreport(new_tmb_obj, bias.correct = FALSE)
+      sr <- sdreport_sdmTMB(new_tmb_obj, bias.correct = FALSE)
       sr_est_rep <- as.list(sr, "Estimate", report = TRUE)
       sr_se_rep <- as.list(sr, "Std. Error", report = TRUE)
       proj_name <- if (pop_pred) "proj_fe" else "proj_eta"

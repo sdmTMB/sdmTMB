@@ -93,7 +93,7 @@ and spatiotemporal ranges will be unique.}
 
 \item{sigma_O}{SD of spatial process (Omega).}
 
-\item{sigma_E}{SD of spatiotemporal process (Epsilon).}
+\item{sigma_E}{SD of spatiotemporal process (Epsilon). A single value.}
 
 \item{sigma_Z}{SD of spatially varying coefficient field (Zeta).}
 

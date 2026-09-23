@@ -132,7 +132,7 @@ logLik.sdmTMB <- function(object, ...) {
   val <- -object$model$objective
   nobs <- nobs.sdmTMB(object)
   lpb <- names(object$tmb_obj$env$last.par.best)
-  ran <- c("omega_s", "epsilon_st", "zeta_s", "b_rw_t", "epsilon_re", "RE", "b_smooth", "re_b_pars")
+  ran <- c("omega_s", "epsilon_st", "zeta_s", "b_rw_t", "RE", "b_smooth", "re_b_pars")
   df <- sum(!lpb %in% ran)
   structure(val,
     nobs = nobs, nall = nobs, df = df,
@@ -432,6 +432,12 @@ model.frame.sdmTMB <- function(formula, ...) {
 #' handling the mesh object to avoid environment issues when loading models
 #' from saved files.
 #'
+#' Unless `control` is supplied, the updated model reuses the fitted model's
+#' [sdmTMBcontrol()] settings, including its backend, regardless of the
+#' current `sdmTMB.backend` option. A supplied `control` replaces these
+#' settings, including the backend (e.g.,
+#' `update(fit, control = sdmTMBcontrol(backend = "rtmb"))`).
+#'
 #' @param object An sdmTMB model object.
 #' @param formula. Optional updated formula.
 #' @param ... Other arguments to update in the model call.
@@ -478,6 +484,17 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
   # if data is not provided, use the original data
   if (!"data" %in% names(new_args)) {
     call$data <- object$data
+  }
+
+  # keep the fitted controls and backend unless `control` is replaced;
+  # otherwise the backend would re-resolve from the current global option
+  if (!"control" %in% names(new_args)) {
+    control <- object$control
+    if (!is.list(control)) control <- sdmTMBcontrol(backend = "tmb")
+    control$backend <- backend_sdmTMB(object)
+    call$control <- control
+  } else if (is.list(new_args$control) && is.null(new_args$control$backend)) {
+    call$control$backend <- backend_sdmTMB(object)
   }
 
   # evaluate the updated call if requested

@@ -2,7 +2,7 @@
   if (!inherits(x, "sparseMatrix")) {
     x <- Matrix::Matrix(x, sparse = TRUE)
   }
-  methods::as(x, "dgCMatrix")
+  methods::as(methods::as(x, "generalMatrix"), "CsparseMatrix")
 }
 
 .extract_nonlocal_term_exprs <- function(expr) {

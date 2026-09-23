@@ -1,115 +1,18 @@
 # basic model fitting and prediction tests
 
-#
-# test_that("Test that non-stationary model works with random effects in epsilon works", {
-#   local_edition(2)
-#   skip_on_cran()
-#   skip_if_not_installed("INLA")
-#
-#   mesh <- make_mesh(predictor_dat, xy_cols = c("x", "y"), cutoff = 0.1)
-#   epsilons <- exp(rnorm(time_steps))
-#   s <- sdmTMB_simulate(
-#     formula = ~ 1,
-#     mesh = mesh, data = predictor_dat,
-#     B = c(0.2), rho = 0.5,
-#     phi = 0.2, range = 0.8, sigma_O = 0, sigma_E = epsilons[1],
-#     seed = 123, family = gaussian()
-#   )
-#   s$time <- predictor_dat$year
-#   s$year_centered <- s$time - mean(s$time)
-#
-#   # fit non-stationary model - iid
-#   m <- sdmTMB(
-#     data = s, formula = observed ~ 1,
-#     time = "time", mesh = mesh,
-#     spatiotemporal = "IID", spatial = "off",
-#     experimental = list(
-#       epsilon_predictor = "year_centered",
-#       epsilon_model = "re"
-#     ),
-#     control = sdmTMBcontrol(
-#       lower = list(b_epsilon = -1, ln_epsilon_re_sigma = -3),
-#       upper = list(b_epsilon = 1, ln_epsilon_re_sigma = 1)
-#     )
-#   )
-#   idx <- grep("ln_epsilon_re_sigma", names(m$sd_report$value))
-#
-#   expect_equal(as.numeric(m$sd_report$value[idx]), -1.054972, tolerance = 0.002)
-#
-#   m <- sdmTMB(
-#     data = s, formula = observed ~ 1,
-#     time = "time", mesh = mesh,
-#     spatiotemporal = "AR1", spatial = "off",
-#     experimental = list(
-#       epsilon_predictor = "year_centered",
-#       epsilon_model = "re"
-#     ),
-#     control = sdmTMBcontrol(
-#       lower = list(b_epsilon = -1, ln_epsilon_re_sigma = -3),
-#       upper = list(b_epsilon = 1, ln_epsilon_re_sigma = 1)
-#     )
-#   )
-#   idx <- grep("ln_epsilon_re_sigma", names(m$sd_report$value))
-#
-#   expect_equal(as.numeric(m$sd_report$value[idx]), -2.130359, tolerance = 0.002)
-# })
-
-
-## # test_that("Test that non-stationary model works with random effects in epsilon with trend works", {
-## #   local_edition(2)
-## #   skip_on_cran()
-## #   skip_if_not_installed("INLA")
-# ## #
-#   set.seed(42)
-#   mesh <- make_mesh(loc, xy_cols = c("x", "y"), cutoff = 0.1)
-#   epsilons <- exp(rnorm(time_steps))
-#   s <- sdmTMB_sim(
-#     x = x, y = y, mesh = mesh, X = X,
-#     betas = c(0.2), time_steps = time_steps, rho = 0.5,
-#     phi = 0.2, range = 0.8, sigma_O = 0, sigma_E = epsilons,
-#     seed = 123, family = gaussian()
-#   )
-#   s$year_centered <- s$time - mean(s$time)
-#   mesh <- make_mesh(s, xy_cols = c("x", "y"), cutoff = 0.1)
-
-## #   # fit non-stationary model - iid
-## #   m <- sdmTMB(
-## #     data = s, formula = observed ~ 1,
-## #     time = "time", mesh = mesh,
-## #     spatiotemporal = "IID", spatial = "off",
-## #     experimental = list(
-## #       epsilon_predictor = "year_centered",
-## #       epsilon_model = "trend-re"
-## #     ),
-## #     control = sdmTMBcontrol(
-## #       lower = list(b_epsilon = -1, ln_epsilon_re_sigma = -3),
-## #       upper = list(b_epsilon = 1, ln_epsilon_re_sigma = 1)
-## #     )
-## #   )
-## #   idx <- grep("ln_epsilon_re_sigma", names(m$sd_report$value))
-## #
-## #   expect_equal(as.numeric(m$sd_report$value[idx]), -2.537232, tolerance = 0.002)
-## #   expect_equal(as.numeric(m$sd_report$value[idx]), -2.537232, tolerance = 0.002)
-## #
-## #   m <- sdmTMB(
-## #     data = s, formula = observed ~ 1,
-## #     time = "time", mesh = mesh,
-## #     spatiotemporal = "AR1", spatial = "off",
-## #     experimental = list(
-## #       epsilon_predictor = "year_centered",
-## #       epsilon_model = "trend-re"
-## #     ),
-## #     control = sdmTMBcontrol(
-## #       lower = list(b_epsilon = -1, ln_epsilon_re_sigma = -3),
-## #       upper = list(b_epsilon = 1, ln_epsilon_re_sigma = 1)
-## #     )
-## #   )
-## #   idx <- grep("ln_epsilon_re_sigma", names(m$sd_report$value))
-## #
-## #   expect_equal(as.numeric(m$sd_report$value[idx]), -2.303735, tolerance = 0.002)
-## # })
-## #
-## #
+test_that("removed epsilon_model options and vector sigma_E error", {
+  d <- data.frame(X = runif(20), Y = runif(20), year = rep(1:2, each = 10))
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.2)
+  d$y <- rnorm(20)
+  for (x in c("re", "trend-re")) {
+    expect_error(sdmTMB(y ~ 1, data = d, mesh = mesh, time = "year",
+      experimental = list(epsilon_model = x), do_fit = FALSE),
+      regexp = "epsilon_model")
+  }
+  expect_error(sdmTMB_simulate(~ 1, data = d, mesh = mesh, time = "year",
+    range = 0.5, sigma_E = c(0.1, 0.2), phi = 0.1, B = 0),
+    regexp = "sigma_E")
+})
 
 test_that("Test that non-stationary model works without spatial field and epsilon trend works", {
   local_edition(2)
@@ -225,105 +128,5 @@ test_that("Test that non-stationary model works with epsilon trend and delta mod
 
   par <- fit$sd_report$value[which(names(fit$sd_report$value)=="b_epsilon")]
   expect_equal(as.numeric(par), c(-0.07908264, -0.09297464), tolerance = 0.002)
-
-})
-
-
-test_that("Test that non-stationary model works without spatial field and random effects in epsilon", {
-  local_edition(2)
-  skip_on_cran()
-  skip_on_ci()
-
-  set.seed(42)
-  time_steps <- 20
-
-  epsilons <- exp(rnorm(time_steps, mean = 0, sd = exp(-3)))
-  # make fake predictor(s) (a1) and sampling locations:
-  predictor_dat <- data.frame(
-    X = runif(length(epsilons)*50), Y = runif(length(epsilons)*50),
-    a1 = rnorm(length(epsilons)*50), year = rep(1:length(epsilons), each = 50)
-  )
-  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.1)
-
-  sim_dat <- sdmTMB_simulate(
-    formula = ~ 1 + a1,
-    data = predictor_dat,
-    time = "year",
-    mesh = mesh,
-    family = gaussian(),
-    range = 0.5,
-    sigma_E = epsilons,
-    phi = 0.01,
-    sigma_O = 0,
-    seed = 42,
-    B = c(0.2, -0.4) # B0 = intercept, B1 = a1 slope
-  )
-
-  sim_dat$time <- sim_dat$year
-  sim_dat$year_centered <- sim_dat$time - mean(sim_dat$time)
-
-  fit <- sdmTMB(
-    observed ~ a1,
-    data = sim_dat, mesh = mesh,
-    spatial="off",
-    time = "year",
-    spatiotemporal = "iid",
-    experimental = list(epsilon_model = "re"),
-    control = sdmTMBcontrol(lower = list(ln_epsilon_re_sigma = -20),
-                            upper = list(ln_epsilon_re_sigma = -1))
-  )
-
-  par <- fit$sd_report$value[which(names(fit$sd_report$value)=="ln_epsilon_re_sigma")]
-  expect_equal(as.numeric(par), -14.0, tolerance = 0.01) # unstable mac vs. windows/ubuntu
-  par <- fit$sd_report$par.fixed[1:2]
-  expect_equal(as.numeric(par), c(0.2579745,-0.40099), tolerance = 0.002)
-})
-
-
-test_that("Test that non-stationary model works without spatial field and trend and random effects in epsilon", {
-  local_edition(2)
-  skip_on_cran()
-
-  set.seed(42)
-  time_steps <- 20
-
-  epsilons <- exp(rnorm(time_steps, mean = 0, sd = exp(-3)))
-  # make fake predictor(s) (a1) and sampling locations:
-  predictor_dat <- data.frame(
-    X = runif(length(epsilons)*50), Y = runif(length(epsilons)*50),
-    a1 = rnorm(length(epsilons)*50), year = rep(1:length(epsilons), each = 50)
-  )
-  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.1)
-
-  sim_dat <- sdmTMB_simulate(
-    formula = ~ 1 + a1,
-    data = predictor_dat,
-    time = "year",
-    mesh = mesh,
-    family = gaussian(),
-    range = 0.8,
-    rho = 0.5,
-    sigma_E = epsilons,
-    phi = 0.2,
-    sigma_O = 0,
-    seed = 42,
-    B = c(0.2, -0.4) # B0 = intercept, B1 = a1 slope
-  )
-  sim_dat$time <- sim_dat$year
-  sim_dat$year_centered <- sim_dat$time - min(sim_dat$time)
-
-  fit <- sdmTMB(
-    observed ~ a1,
-    data = sim_dat, mesh = mesh,
-    spatial="off",
-    time = "year",
-    spatiotemporal = "iid",
-    experimental = list(epsilon_model = "trend-re",
-                        epsilon_predictor = "year_centered"),
-    control = sdmTMBcontrol(lower = list(ln_epsilon_re_sigma = -15, b_epsilon=-1),
-                            upper = list(ln_epsilon_re_sigma = -1, b_epsilon=1))
-  )
-  par <- fit$sd_report$value[which(names(fit$sd_report$value)=="b_epsilon")]
-  expect_equal(as.numeric(par), 0.01257052, tolerance = 0.05)
 
 })

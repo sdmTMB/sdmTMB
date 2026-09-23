@@ -468,12 +468,12 @@ sdmTMB_cv <- function(
     score_weights[validation_index] <- object$likelihood_weights[validation_index]
     tmb_data$weights_i <- score_weights
 
-    scoring_obj <- TMB::MakeADFun(
+    scoring_obj <- make_sdmTMB_adfun(
       data = tmb_data,
       parameters = get_pars(object),
       map = object$tmb_map,
       random = object$tmb_random,
-      DLL = "sdmTMB",
+      backend = backend_sdmTMB(object),
       silent = TRUE
     )
     r <- scoring_obj$report(object$tmb_obj$env$last.par.best)

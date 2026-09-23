@@ -25,6 +25,13 @@ This method updates an sdmTMB model with new arguments while automatically
 handling the mesh object to avoid environment issues when loading models
 from saved files.
 }
+\details{
+Unless \code{control} is supplied, the updated model reuses the fitted model's
+\code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}} settings, including its backend, regardless of the
+current \code{sdmTMB.backend} option. A supplied \code{control} replaces these
+settings, including the backend (e.g.,
+\code{update(fit, control = sdmTMBcontrol(backend = "rtmb"))}).
+}
 \examples{
 mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
 fit <- sdmTMB(density ~ 1, data = pcod_2011, mesh = mesh,

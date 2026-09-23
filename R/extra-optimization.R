@@ -55,7 +55,7 @@ run_extra_optimization <- function(object,
     silent = FALSE, lower = object$lower, upper = object$upper
   )
   new_obj$model <- tmb_opt
-  new_obj$sd_report <- TMB::sdreport(new_obj$tmb_obj,
+  new_obj$sd_report <- sdreport_sdmTMB(new_obj$tmb_obj,
     getJointPrecision = "jointPrecision" %in% names(object$sd_report))
   conv <- get_convergence_diagnostics(new_obj$sd_report)
   new_obj$gradients <- conv$final_grads

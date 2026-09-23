@@ -596,9 +596,13 @@ test_that("project() works with time-varying effects", {
     return_tmb_report = TRUE, silent = TRUE
   )
   expect_equal(dim(raw[[1]]$b_rw_t), c(length(all_years), 2L, 1L))
+  # `ignore_attr` drops a benign `dimnames` structural difference: the RTMB
+  # backend's `simulate()`/report() reconstructs arrays with an explicit
+  # (but all-NULL) `dimnames` list, whereas TMB's does not
   expect_equal(
     raw[[1]]$b_rw_t[seq_along(historical_years), , , drop = FALSE],
     get_pars(fit3)$b_rw_t,
+    ignore_attr = TRUE,
     tolerance = 1e-3
   )
   raw_mean <- project(
