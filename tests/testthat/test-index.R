@@ -505,3 +505,49 @@ test_that("get_index() etc. errors if the data have been subset after predicting
   p$data <- p$data[p$data$Y > 5700, , drop=FALSE]
   expect_error(get_index(p), regexp = "data")
 })
+
+test_that("index functions work directly on do_index = TRUE fits", {
+  skip_on_cran()
+
+  pcod_spde <- make_mesh(pcod, c("X", "Y"), n_knots = 50, type = "kmeans")
+  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
+  m <- sdmTMB(
+    data = pcod,
+    formula = density ~ 0 + as.factor(year),
+    spatiotemporal = "off", # speed
+    time = "year", mesh = pcod_spde,
+    family = tweedie(link = "log"),
+    do_index = TRUE,
+    predict_args = list(newdata = nd),
+    index_args = list(area = 1)
+  )
+
+  # precomputed fast path still used when nothing is overridden:
+  ind <- get_index(m, bias_correct = FALSE)
+  ind_nd <- get_index(m, newdata = nd, bias_correct = FALSE)
+  expect_equal(ind$est, ind_nd$est, tolerance = 1e-6)
+  expect_equal(ind$se, ind_nd$se, tolerance = 1e-6)
+
+  # an explicit `area` must be honoured, not silently ignored:
+  ind4 <- get_index(m, area = 4, bias_correct = FALSE)
+  expect_equal(ind4$est, 4 * ind$est, tolerance = 1e-6)
+  ind4_nd <- get_index(m, newdata = nd, area = 4, bias_correct = FALSE)
+  expect_equal(ind4$est, ind4_nd$est, tolerance = 1e-6)
+
+  # derived quantities on the bare fit match the newdata path:
+  eao <- get_eao(m, bias_correct = FALSE)
+  eao_nd <- get_eao(m, newdata = nd, bias_correct = FALSE)
+  expect_equal(eao$est, eao_nd$est, tolerance = 1e-6)
+
+  wa <- get_weighted_average(m, vector = nd$depth, bias_correct = FALSE)
+  wa_nd <- get_weighted_average(m, newdata = nd, vector = nd$depth,
+    bias_correct = FALSE)
+  expect_equal(wa$est, wa_nd$est, tolerance = 1e-6)
+
+  cog <- get_cog(m, bias_correct = FALSE)
+  cog_nd <- get_cog(m, newdata = nd, bias_correct = FALSE)
+  expect_equal(cog$est, cog_nd$est, tolerance = 1e-6)
+  cog_wide <- get_cog(m, bias_correct = FALSE, format = "wide")
+  expect_s3_class(cog_wide, "data.frame")
+  expect_true(all(c("est_x", "est_y", "year") %in% names(cog_wide)))
+})
