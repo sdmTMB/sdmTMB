@@ -165,6 +165,9 @@
       ))
     }
   )
+  if (anyNA(X_pref)) {
+    cli_abort("`preferential_grid` fixed-effect predictors cannot contain missing values.")
+  }
   if (!identical(colnames(X_pref), colnames(X_main))) {
     missing_cols <- setdiff(colnames(X_main), colnames(X_pref))
     extra_cols <- setdiff(colnames(X_pref), colnames(X_main))
