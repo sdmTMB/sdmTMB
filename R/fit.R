@@ -844,6 +844,9 @@ sdmTMB <- function(
   collapse_ar1_threshold <- control$collapse_ar1_threshold
   sar_weight_style <- control$sar_weight_style
   do_rsr <- as.integer(isTRUE(control$get_rsr))
+  preferential_grid_arg <- control$preferential_grid
+  preferential_response <- control$preferential_response
+  preferential_b_type <- control$preferential_b_type
 
   dot_checks <- c(
     "lower", "upper", "profile", "parallel", "censored_upper", "getsd",
@@ -852,7 +855,8 @@ sdmTMB <- function(
     "suppress_nlminb_warnings", "collapse_spatial_variance",
     "collapse_spatial_variance_threshold",
     "collapse_spatiotemporal_ar1", "collapse_ar1_threshold",
-    "sar_weight_style", "get_rsr"
+    "sar_weight_style", "get_rsr", "preferential_grid",
+    "preferential_response", "preferential_b_type"
   )
   .control <- control
   # FIXME; automate this from sdmTMcontrol args?
@@ -960,6 +964,31 @@ sdmTMB <- function(
       full_time_vec = time_df$time_from_data,
       time_indexed = nonlocal_time_indexed
     )
+  }
+
+  preferential_b_type <- .validate_preferential_args(
+    preferential_grid = preferential_grid_arg,
+    preferential_response = preferential_response,
+    preferential_b_type = preferential_b_type,
+    mesh_missing = mesh_missing
+  )
+  preferential_grid_arg <- .default_preferential_grid(
+    preferential_grid = preferential_grid_arg,
+    preferential_response = preferential_response,
+    data = data
+  )
+  preferential_grid_inputs <- if (!is.null(preferential_response)) {
+    .prepare_preferential_grid_inputs(
+      grid = preferential_grid_arg,
+      xy_cols = spde$xy_cols,
+      time = time,
+      time_df = time_df,
+      full_time_vec = time_df$time_from_data,
+      preferential_response = preferential_response,
+      mesh = spde$mesh
+    )
+  } else {
+    NULL
   }
 
   domain <- prepare_spatial_domain(
@@ -1163,6 +1192,18 @@ sdmTMB <- function(
     sm[[ii]]$formula_no_sm <- formula_no_sm
     sm[[ii]]$formula_no_bars <- formula_no_bars
     sm[[ii]]$formula_no_bars_no_sm <- formula_no_bars_no_sm
+  }
+
+  preferential_tmb <- .build_preferential_tmb_data(
+    grid_inputs = preferential_grid_inputs,
+    preferential_b_type = preferential_b_type,
+    formula_terms = mt[[1]],
+    xlev = stats::.getXlevels(mt[[1]], mf[[1]]),
+    contrasts = attr(X_ij[[1]], "contrasts"),
+    X_main = X_ij[[1]]
+  )
+  if (is.null(preferential_tmb)) {
+    preferential_tmb <- .default_preferential_tmb(n_b_j = ncol(X_ij[[1]]))
   }
 
   if (has_two_components) {
@@ -1470,6 +1511,7 @@ sdmTMB <- function(
     A_spatial_index = A_spatial_index,
     year_i = year_i_data,
     covariate_diffusion = nonlocal_tmb,
+    preferential = preferential_tmb,
     ar1_fields = ar1_fields,
     simulate_t = rep(1L, n_t),
     rw_fields = rw_fields,
@@ -1601,6 +1643,12 @@ sdmTMB <- function(
     b_smooth = if (sm$has_smooths) matrix(0, sum(sm$sm_dims), n_m) else array(0),
     ln_smooth_sigma = if (sm$has_smooths) matrix(0, length(sm$sm_dims), n_m) else array(0)
   )
+  tmb_params <- c(tmb_params, .preferential_init_params(
+    is_on = !is.null(preferential_response),
+    preferential_b_type = preferential_b_type,
+    n_s = n_s,
+    n_t = tmb_data$n_t
+  ))
   if (family_spec$n_f == 1L && identical(family$link, "inverse") && family$family[1] %in% c("Gamma", "gaussian", "student") && !has_two_components) {
     fam <- family
     if (family$family == "student") fam$family <- "gaussian"
@@ -1610,6 +1658,7 @@ sdmTMB <- function(
 
   # Map off parameters not needed
   tmb_map <- map_all_params(tmb_params)
+  tmb_map <- unmap(tmb_map, .preferential_map_names(!is.null(preferential_response)))
   tmb_map$b_j <- NULL
   if (!is_multi_family && has_dispformula) {
     tmb_map <- unmap(tmb_map, "b_disp_k")
@@ -1680,6 +1729,7 @@ sdmTMB <- function(
   tmb_map$kappaT_nl_raw <- .make_nonlocal_kappa_map(nonlocal_covariate_has_temporal)
 
   tmb_random <- c()
+  tmb_random <- c(tmb_random, .preferential_random_names(!is.null(preferential_response), preferential_b_type))
   if (any(spatial == "on") && !omit_spatial_intercept) {
     tmb_random <- c(tmb_random, "omega_s")
     tmb_map <- unmap(tmb_map, c("omega_s", "ln_tau_O"))

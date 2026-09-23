@@ -460,6 +460,39 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     }
   }
 
+  # Preferential-sampling sub-model parameters (see
+  # R/preferential-sampling.R and src/preferential-sampling.h). Only
+  # present when the model was fit with `preferential_response`.
+  if (!is.null(x$tmb_data$preferential) && x$tmb_data$preferential$n_pref > 0 &&
+      !is.null(est$gamma_0) && length(est$gamma_0)) {
+    b_pref_term <- if (length(est$b_pref) <= 1L) {
+      "b_pref"
+    } else {
+      paste0("b_pref:", x$time_lu$time_from_data)
+    }
+    pref_df <- data.frame(
+      term = c("gamma_0", b_pref_term, "range_xi", "sigma_xi"),
+      estimate = c(est$gamma_0, est$b_pref, est$range_xi, est$sigma_xi),
+      std.error = c(se$gamma_0, se$b_pref, se$range_xi, se$sigma_xi),
+      stringsAsFactors = FALSE
+    )
+    pref_df$conf.low <- pref_df$estimate - crit * pref_df$std.error
+    pref_df$conf.high <- pref_df$estimate + crit * pref_df$std.error
+    # delta-method CIs (via the log-scale duals) for the two
+    # naturally-positive quantities, so their CIs can't dip below zero
+    if (!is.null(est$log_range_xi) && !is.null(se$log_range_xi)) {
+      idx <- which(pref_df$term == "range_xi")
+      pref_df$conf.low[idx] <- exp(est$log_range_xi - crit * se$log_range_xi)
+      pref_df$conf.high[idx] <- exp(est$log_range_xi + crit * se$log_range_xi)
+    }
+    if (!is.null(est$log_sigma_xi) && !is.null(se$log_sigma_xi)) {
+      idx <- which(pref_df$term == "sigma_xi")
+      pref_df$conf.low[idx] <- exp(est$log_sigma_xi - crit * se$log_sigma_xi)
+      pref_df$conf.high[idx] <- exp(est$log_sigma_xi + crit * se$log_sigma_xi)
+    }
+    out_re[["preferential"]] <- pref_df
+  }
+
   if (all(!x$tmb_data$include_spatial) && all(x$tmb_data$spatial_only)) out_re$range <- NULL
   if (is_areal) out_re$range <- NULL
 

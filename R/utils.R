@@ -99,6 +99,36 @@
 #'   `get_rsr = TRUE`, these will be available via
 #'   `tidy(fit, effects = "rsr")`. See Hanks et al. (2015) and
 #'   Diaz and Thorson (2025).
+#' @param preferential_grid An optional data frame of grid-cell
+#'   presence/absence records used to fit a joint preferential-sampling
+#'   sub-model alongside the main catch/observation model: a Bernoulli model
+#'   for whether each grid cell was sampled, where the sampling log-odds
+#'   partly track the main model's own fitted (fixed-effect + spatial +
+#'   spatiotemporal) log-density surface, reprojected onto the grid. Must
+#'   contain the mesh `xy_cols`, the `time` column (pre-expanded by the user
+#'   to cover every fitted (+ `extra_time`) time slice -- one row per grid
+#'   cell per time slice), the `preferential_response` column, and every
+#'   fixed-effect predictor column used in `formula` (smooths, time-varying
+#'   effects, random effects/slopes, threshold effects, and spatially
+#'   varying coefficients are not supported in the grid-level predictor).
+#'   Factor predictors must use levels that are a subset of those observed
+#'   in `data`; a novel level triggers a hard error rather than being
+#'   silently reconciled. Defaults to `NULL`, in which case `data` is used
+#'   (only meaningful if `data` already has the shape described above).
+#'   Ignored unless `preferential_response` is also supplied.
+#' @param preferential_response Optional. The name of the column (in
+#'   `preferential_grid`, or in `data` if `preferential_grid` is `NULL`)
+#'   holding the 0/1 (or logical) "was this grid cell/row sampled" indicator.
+#'   Supplying this turns on the joint preferential-sampling sub-model;
+#'   leaving it `NULL` (the default) fits the main model exactly as if
+#'   `preferential_grid` had never been mentioned.
+#' @param preferential_b_type How the preferential-sampling coefficient
+#'   `b_pref` (which multiplies the projected log-density surface in the
+#'   sampling sub-model) is allowed to vary by time slice: `"constant"`
+#'   (one shared value), `"rw"` (a random walk, with the first value left
+#'   flat/unconstrained like other `"rw"` time-varying parameters in
+#'   \pkg{sdmTMB}), or `"iid"` (independent by time slice). Ignored unless
+#'   `preferential_response` is supplied.
 #' @param ... Anything else. See the 'Control parameters' section of
 #'   [stats::nlminb()].
 #'
@@ -149,6 +179,9 @@ sdmTMBcontrol <- function(
   collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
   get_rsr = FALSE,
+  preferential_grid = NULL,
+  preferential_response = NULL,
+  preferential_b_type = c("constant", "rw", "iid"),
   ...) {
 
   assert_that(is.numeric(nlminb_loops), is.numeric(newton_loops))
@@ -217,7 +250,10 @@ sdmTMBcontrol <- function(
     collapse_spatiotemporal_ar1,
     collapse_ar1_threshold,
     sar_weight_style,
-    get_rsr
+    get_rsr,
+    preferential_grid,
+    preferential_response,
+    preferential_b_type
   )
   c(out, list(...))
 }
