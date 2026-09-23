@@ -173,7 +173,8 @@ Factor predictors must use levels that are a subset of those observed
 in \code{data}; a novel level triggers a hard error rather than being
 silently reconciled. Defaults to \code{NULL}, in which case \code{data} is used
 (only meaningful if \code{data} already has the shape described above).
-Ignored unless \code{preferential_response} is also supplied.}
+Supplying \code{preferential_grid} without also supplying
+\code{preferential_response} is an error, not a silent no-op.}
 
 \item{preferential_response}{Optional. The name of the column (in
 \code{preferential_grid}, or in \code{data} if \code{preferential_grid} is \code{NULL})

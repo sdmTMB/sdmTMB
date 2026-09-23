@@ -115,7 +115,8 @@
 #'   in `data`; a novel level triggers a hard error rather than being
 #'   silently reconciled. Defaults to `NULL`, in which case `data` is used
 #'   (only meaningful if `data` already has the shape described above).
-#'   Ignored unless `preferential_response` is also supplied.
+#'   Supplying `preferential_grid` without also supplying
+#'   `preferential_response` is an error, not a silent no-op.
 #' @param preferential_response Optional. The name of the column (in
 #'   `preferential_grid`, or in `data` if `preferential_grid` is `NULL`)
 #'   holding the 0/1 (or logical) "was this grid cell/row sampled" indicator.
