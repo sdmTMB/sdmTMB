@@ -1,5 +1,15 @@
 # sdmTMB (development version)
 
+* Fix calling the index functions directly on a `do_index = TRUE` fit:
+  `get_index()` now honours an explicit `area` argument instead of silently
+  ignoring it, `get_eao()` and `get_weighted_average()` no longer fail with a
+  misleading error about TMB running out of memory, and `get_cog()` no longer
+  errors with a subscript error. The precomputed results are still used for
+  plain `get_index()` calls. #549
+
+* `get_cog()` now errors informatively for areal (SAR/CAR) models, which have
+  no x/y coordinates, instead of returning a centre of gravity of zero.
+
 * `diffusion(x) + time_lag(x)` in `nonlocal_formula` now fits one stationary
   joint space--time distributed-lag operator with one coefficient and one
   transformed prediction column (`nl_diffusion_time_lag_x`). Wrappers for
@@ -18,16 +28,6 @@
 * `get_index()`, `get_cog()`, `get_eao()`, and `get_weighted_average()` no
   longer make a redundant TMB objective-function evaluation when calculating
   standard errors.
-
-* Fix calling the index functions directly on a `do_index = TRUE` fit:
-  `get_index()` now honours an explicit `area` argument instead of silently
-  ignoring it, `get_eao()` and `get_weighted_average()` no longer fail with a
-  misleading error about TMB running out of memory, and `get_cog()` no longer
-  errors with a subscript error. The precomputed results are still used for
-  plain `get_index()` calls. #549
-
-* `get_cog()` now errors informatively for areal (SAR/CAR) models, which have
-  no x/y coordinates, instead of returning a centre of gravity of zero.
 
 * `update.sdmTMB()` now works with binomial `cbind()` responses and random
   effects. #544
