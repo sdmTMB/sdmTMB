@@ -109,6 +109,9 @@
     ))
   }
   year_i <- time_df$year_i[match(grid[[time]], time_df$time_from_data)]
+  if (anyNA(year_i)) {
+    cli_abort("`preferential_grid` contains time value(s) not present in the fitted (+ `extra_time`) time slices.")
+  }
 
   A_pref <- fmesher::fm_basis(mesh, loc = as.matrix(grid[, xy_cols, drop = FALSE]))
 
@@ -162,6 +165,9 @@
       ))
     }
   )
+  if (anyNA(X_pref)) {
+    cli_abort("`preferential_grid` fixed-effect predictors cannot contain missing values.")
+  }
   if (!identical(colnames(X_pref), colnames(X_main))) {
     missing_cols <- setdiff(colnames(X_main), colnames(X_pref))
     extra_cols <- setdiff(colnames(X_pref), colnames(X_main))
