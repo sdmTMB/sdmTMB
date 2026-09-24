@@ -846,6 +846,7 @@ sdmTMB <- function(
   do_rsr <- as.integer(isTRUE(control$get_rsr))
   preferential_grid_arg <- control$preferential_grid
   preferential_response <- control$preferential_response
+  preferential_formula_arg <- control$preferential_formula
   preferential_b_type <- control$preferential_b_type
 
   dot_checks <- c(
@@ -856,7 +857,7 @@ sdmTMB <- function(
     "collapse_spatial_variance_threshold",
     "collapse_spatiotemporal_ar1", "collapse_ar1_threshold",
     "sar_weight_style", "get_rsr", "preferential_grid",
-    "preferential_response", "preferential_b_type"
+    "preferential_response", "preferential_formula", "preferential_b_type"
   )
   .control <- control
   # FIXME; automate this from sdmTMcontrol args?
@@ -970,6 +971,7 @@ sdmTMB <- function(
     preferential_grid = preferential_grid_arg,
     preferential_response = preferential_response,
     preferential_b_type = preferential_b_type,
+    preferential_formula = preferential_formula_arg,
     mesh_missing = mesh_missing
   )
   preferential_grid_arg <- .default_preferential_grid(
@@ -1197,7 +1199,7 @@ sdmTMB <- function(
   preferential_tmb <- .build_preferential_tmb_data(
     grid_inputs = preferential_grid_inputs,
     preferential_b_type = preferential_b_type,
-    formula_terms = mt[[1]],
+    preferential_formula = preferential_formula_arg,
     xlev = stats::.getXlevels(mt[[1]], mf[[1]]),
     contrasts = attr(X_ij[[1]], "contrasts"),
     X_main = X_ij[[1]]

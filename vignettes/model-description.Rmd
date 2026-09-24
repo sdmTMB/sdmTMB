@@ -460,15 +460,15 @@ CAR requires a symmetric adjacency matrix.
 
 sdmTMB can fit a joint model that couples the main observation model to a second, auxiliary Bernoulli model describing whether each cell of a spatial sampling grid was sampled in a given time slice, letting the sampling probability itself depend on the modeled process.
 This is useful when sample locations are not independent of the process being measured (e.g., a fishery that preferentially returns to historically productive grounds), which can otherwise bias estimates of the underlying spatial process if ignored.
-This is a newer, experimental feature, enabled via the `preferential_grid`, `preferential_response`, and `preferential_b_type` arguments to `sdmTMBcontrol()`.
+This is a newer, experimental feature, enabled via the `preferential_grid`, `preferential_response`, `preferential_formula`, and `preferential_b_type` arguments to `sdmTMBcontrol()`.
 
-The sampling sub-model reuses a restricted version of the main model's linear predictor -- fixed effects plus the spatial and spatiotemporal random fields only (smooths, time-varying coefficients, spatially varying coefficients, random intercepts/slopes, and nonlocal covariate terms are not included) -- projected from mesh vertices onto the sampling grid with its own projection matrix $\bA_{\RM{pref}}$:
+The sampling sub-model reuses a restricted version of the main model's linear predictor -- a user-selected *subset* of the fixed effects, plus the spatial and spatiotemporal random fields (smooths, time-varying coefficients, spatially varying coefficients, random intercepts/slopes, and nonlocal covariate terms are not included, regardless of that subset) -- projected from mesh vertices onto the sampling grid with its own projection matrix $\bA_{\RM{pref}}$:
 
 $$
 \eta^{*}_{\s,t} = \bX^{\RM{pref}}_{\s,t} \bbeta + \bA_{\RM{pref}} \bomega + \bA_{\RM{pref}} \beps_t,
 $$
 
-where $\bX^{\RM{pref}}_{\s,t}$ is the fixed-effect design matrix built from the same `formula` but evaluated on the sampling grid, and $\bbeta$ is the same fixed-effect coefficient vector as the main model.
+where $\bX^{\RM{pref}}_{\s,t}$ is a fixed-effect design matrix evaluated on the sampling grid using only the term(s) named in `preferential_formula` (an ordinary one-sided formula, e.g. `~1` or `~ 0 + as.factor(year)`, defaulting to `~1`, the intercept only), with every other column set to zero; and $\bbeta$ is the *same* fixed-effect coefficient vector fitted by the main model -- `preferential_formula`'s terms must already appear in `formula`, since the sampling sub-model reuses those already-fitted coefficients rather than estimating new ones. This mirrors how a preferential-sampling model reprojects only a specific piece of the catch model's linear predictor (e.g. a year effect) onto the grid, rather than the model's entire fixed-effect structure, since most covariates (e.g. effort, gear, or day-of-year effects) have no meaningful value at an unsampled grid cell/time.
 
 Whether each grid cell was sampled is then modeled as
 

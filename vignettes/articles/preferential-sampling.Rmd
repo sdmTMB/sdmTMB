@@ -41,8 +41,9 @@ rates. Ignoring this can bias estimates of the underlying spatial process.
 sdmTMB can fit a joint model that couples the usual catch/observation model
 to a second, Bernoulli sub-model for whether each cell of a spatial grid was
 sampled in a given time slice. The sampling log-odds partly track the main
-model's own fitted log-density surface (fixed-effect + spatial + spatiotemporal), 
-reprojected onto the grid, plus an independent nuisance spatial field capturing 
+model's own fitted log-density surface (a user-selected subset of the
+fixed effects, plus the spatial and spatiotemporal fields), reprojected onto
+the grid, plus an independent nuisance spatial field capturing
 sampling-location structure the density surface doesn't explain:
 
 ```
@@ -53,16 +54,22 @@ logit(Pr(sampled)) = gamma_0 + b_pref * grid_eta + xi_grid
 constant across time, a random walk, or IID by time slice via
 `preferential_b_type`.
 
-Three arguments turn this on, all supplied through `sdmTMBcontrol()`:
+Four arguments turn this on, all supplied through `sdmTMBcontrol()`:
 
 * `preferential_response`: the name of a 0/1 (or logical) column indicating
   whether a grid cell/row was sampled. Supplying this is what turns the
   feature on.
 * `preferential_grid`: a data frame of grid cells, pre-expanded across every
   fitted time slice (one row per grid cell per time slice), containing the
-  mesh coordinates, the `preferential_response` column, and every
-  fixed-effect predictor column used in `formula`. Defaults to `data` itself
-  if left as `NULL` (only sensible if `data` already has that shape).
+  mesh coordinates, the `preferential_response` column, and whatever
+  predictor column(s) `preferential_formula` needs. Defaults to `data`
+  itself if left as `NULL` (only sensible if `data` already has that shape).
+* `preferential_formula`: an optional one-sided formula (e.g. `~1` or
+  `~ 0 + as.factor(year)`) selecting which term(s) of the main model's
+  *already-fitted* fixed effects are reprojected onto the grid. Every term
+  must already appear in `formula` -- the sampling sub-model reuses the main
+  model's own fitted coefficients rather than estimating new ones. Defaults
+  to `NULL`, treated as `~1` (the fitted intercept only).
 * `preferential_b_type`: `"constant"` (one shared value), `"rw"` (a random
   walk), or `"iid"` (independent by time slice).
 

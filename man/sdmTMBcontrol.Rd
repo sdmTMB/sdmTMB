@@ -31,6 +31,7 @@ sdmTMBcontrol(
   get_rsr = FALSE,
   preferential_grid = NULL,
   preferential_response = NULL,
+  preferential_formula = NULL,
   preferential_b_type = c("constant", "rw", "iid"),
   ...
 )
@@ -161,20 +162,22 @@ Diaz and Thorson (2025).}
 presence/absence records used to fit a joint preferential-sampling
 sub-model alongside the main catch/observation model: a Bernoulli model
 for whether each grid cell was sampled, where the sampling log-odds
-partly track the main model's own fitted (fixed-effect + spatial +
-spatiotemporal) log-density surface, reprojected onto the grid. Must
-contain the mesh \code{xy_cols}, the \code{time} column (pre-expanded by the user
-to cover every fitted (+ \code{extra_time}) time slice -- one row per grid
-cell per time slice), the \code{preferential_response} column, and every
-fixed-effect predictor column used in \code{formula} (smooths, time-varying
+partly track a (typically restricted, see \code{preferential_formula})
+subset of the main model's own fitted fixed effects, plus its spatial
+and spatiotemporal fields, reprojected onto the grid. Must contain the
+mesh \code{xy_cols}, the \code{time} column (pre-expanded by the user to cover
+every fitted (+ \code{extra_time}) time slice -- one row per grid cell per
+time slice), the \code{preferential_response} column, and whatever
+predictor column(s) \code{preferential_formula} needs (smooths, time-varying
 effects, random effects/slopes, threshold effects, and spatially
-varying coefficients are not supported in the grid-level predictor).
-Factor predictors must use levels that are a subset of those observed
-in \code{data}; a novel level triggers a hard error rather than being
-silently reconciled. Defaults to \code{NULL}, in which case \code{data} is used
-(only meaningful if \code{data} already has the shape described above).
-Supplying \code{preferential_grid} without also supplying
-\code{preferential_response} is an error, not a silent no-op.}
+varying coefficients are not supported in the grid-level predictor
+regardless of \code{preferential_formula}). Factor predictors must use
+levels that are a subset of those observed in \code{data}; a novel level
+triggers a hard error rather than being silently reconciled. Defaults
+to \code{NULL}, in which case \code{data} is used (only meaningful if \code{data}
+already has the shape described above). Supplying \code{preferential_grid}
+without also supplying \code{preferential_response} is an error, not a
+silent no-op.}
 
 \item{preferential_response}{Optional. The name of the column (in
 \code{preferential_grid}, or in \code{data} if \code{preferential_grid} is \code{NULL})
@@ -182,6 +185,19 @@ holding the 0/1 (or logical) "was this grid cell/row sampled" indicator.
 Supplying this turns on the joint preferential-sampling sub-model;
 leaving it \code{NULL} (the default) fits the main model exactly as if
 \code{preferential_grid} had never been mentioned.}
+
+\item{preferential_formula}{Optional one-sided formula (e.g. \code{~1} or
+\code{~ 0 + as.factor(year)}) selecting which term(s) of the main model's
+\emph{already-fitted} fixed effects (\code{b_j}) are reprojected onto
+\code{preferential_grid} and reused in the sampling sub-model's linear
+predictor. Every term must already appear in \code{formula} -- this reuses
+\code{b_j}'s existing columns rather than estimating new coefficients, so
+\code{preferential_grid} only needs to supply whatever predictor(s)
+\code{preferential_formula} actually uses, not every predictor in \code{formula}.
+Defaults to \code{NULL}, treated as \code{~1} (the fitted intercept only,
+reprojected onto every grid cell/time as a constant) -- or, if \code{formula}
+has no intercept, no fixed-effect contribution at all. Ignored unless
+\code{preferential_response} is supplied.}
 
 \item{preferential_b_type}{How the preferential-sampling coefficient
 \code{b_pref} (which multiplies the projected log-density surface in the

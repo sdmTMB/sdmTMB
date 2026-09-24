@@ -8,14 +8,25 @@
 # First-pass scope (deliberately excluded, matching the RTMB reference this
 # was ported from): smooths, time-varying effects, IID random effects/
 # slopes, threshold effects, and spatially varying coefficients do not
-# contribute to the grid-level linear predictor. Only the plain fixed-effect
-# design matrix (X_pref_ij %*% b_j, model column 0 only -- not delta-aware)
-# plus the spatial (omega_s) and spatiotemporal (epsilon_st) fields,
-# reprojected onto the grid via A_pref, are reused from the catch model.
+# contribute to the grid-level linear predictor. Only a user-selected
+# *subset* of the plain fixed-effect design matrix -- `preferential_formula`,
+# defaulting to `~1` (intercept only) -- plus the spatial (omega_s) and
+# spatiotemporal (epsilon_st) fields, reprojected onto the grid via
+# A_pref, are reused from the catch model (model column 0 only -- not
+# delta-aware). `preferential_formula`'s terms must already appear in
+# `formula`: the same fitted `b_j` coefficients are reused verbatim (no new
+# parameters are estimated for the grid), with every column of `b_j` not
+# selected by `preferential_formula` contributing zero. This mirrors the
+# RTMB reference, where the grid-level density (`log_dens_grid_t`) reuses
+# only `year_effects_pos` -- a single term from the full catch-model linear
+# predictor -- and deliberately excludes the rest (e.g. effort, tidal,
+# spline, and EM-instrument effects have no meaningful value at a grid
+# cell/time and were never part of it).
 
 #' @noRd
 .validate_preferential_args <- function(preferential_grid, preferential_response,
-                                         preferential_b_type, mesh_missing) {
+                                         preferential_b_type, preferential_formula,
+                                         mesh_missing) {
   if (!is.null(preferential_grid) && is.null(preferential_response)) {
     cli_abort("`preferential_grid` was supplied but `preferential_response` was not.")
   }
@@ -25,6 +36,10 @@
     }
     if (mesh_missing) {
       cli_abort("`mesh` must be supplied when using `preferential_response`.")
+    }
+    if (!is.null(preferential_formula) &&
+        (!inherits(preferential_formula, "formula") || length(preferential_formula) != 2L)) {
+      cli_abort("`preferential_formula` must be a one-sided formula (e.g. `~1` or `~ 0 + as.factor(year)`).")
     }
   }
   match.arg(preferential_b_type[1L], c("constant", "rw", "iid"))
@@ -126,63 +141,75 @@
 
 #' Build the preferential-sampling fixed-effect design matrix
 #'
-#' Reuses the fitted model's own `Terms`/`xlev`/`contrasts` (the same
-#' mechanism `predict.sdmTMB()` uses for `newdata`) so that `X_pref_ij` is
-#' guaranteed either to have identical columns to `X_ij[[1]]`, or to fail
-#' loudly. A factor level in `preferential_grid` that was never observed in
-#' `data` triggers R's standard "factor ... has new levels" error from
-#' `model.matrix()`, which is caught and re-raised as a `cli_abort()`; an
-#' exact column-name/order comparison is done afterward as defense in depth
-#' against any subtler mismatch. No attempt is
-#' made to pad, reorder, or otherwise reconcile a mismatch -- fitting stops.
+#' Builds a design matrix for `preferential_formula` (defaulting to `~1`,
+#' intercept only) from `preferential_grid`, then embeds it into a matrix
+#' with the *same* columns (names and order) as the fitted model's own
+#' `X_main` (`X_ij[[1]]`) -- every column not selected by
+#' `preferential_formula` is filled with zeros. `X_pref_ij %*% b_j` in
+#' `src/sdmTMB.cpp` therefore reuses exactly the fitted `b_j` coefficients
+#' for the selected terms and contributes nothing for the rest; no new
+#' parameters are introduced for the grid. `preferential_formula`'s terms
+#' must already be columns of `X_main` -- this reuses the main model's own
+#' `xlev`/`contrasts` (the same mechanism `predict.sdmTMB()` uses for
+#' `newdata`) so that a factor level in `preferential_grid` that was never
+#' observed in `data` triggers R's standard "factor ... has new levels"
+#' error from `model.matrix()`, caught and re-raised as a `cli_abort()`. No
+#' attempt is made to pad, reorder, or otherwise reconcile a mismatch --
+#' fitting stops.
 #' @noRd
-.build_preferential_X <- function(grid, formula_terms, xlev, contrasts, X_main) {
-  Terms_pref <- stats::delete.response(formula_terms)
-  required_vars <- all.vars(Terms_pref)
+.build_preferential_X <- function(grid, preferential_formula, xlev, contrasts, X_main) {
+  used_default <- is.null(preferential_formula)
+  pref_formula <- if (used_default) ~1 else preferential_formula
+
+  # Default (`~1`) is a no-op -- contributes nothing -- when the fitted
+  # model has no intercept column to reuse, rather than an error: this
+  # mirrors the RTMB reference case where the grid had no meaningful
+  # fixed-effect term at all, just the reused fields.
+  if (used_default && !"(Intercept)" %in% colnames(X_main)) {
+    return(matrix(0, nrow = nrow(grid), ncol = ncol(X_main), dimnames = list(NULL, colnames(X_main))))
+  }
+
+  pref_terms <- stats::terms(pref_formula)
+  required_vars <- all.vars(pref_terms)
   missing_vars <- setdiff(required_vars, names(grid))
   if (length(missing_vars)) {
     cli_abort(c(
-      "`preferential_grid` is missing fixed-effect predictor column(s) required by `formula`.",
+      "`preferential_grid` is missing predictor column(s) required by `preferential_formula`.",
       "x" = "Missing: {.code {paste(missing_vars, collapse = ', ')}}"
     ))
   }
   mf_pref <- tryCatch(
-    stats::model.frame(Terms_pref, grid, xlev = xlev, na.action = stats::na.pass),
+    stats::model.frame(pref_terms, grid, xlev = xlev, na.action = stats::na.pass),
     error = function(e) {
       cli_abort(c(
-        "Failed to build the preferential-sampling fixed-effect design matrix from `preferential_grid`.",
+        "Failed to build the preferential-sampling fixed-effect design matrix from `preferential_grid` using `preferential_formula`.",
         "x" = conditionMessage(e)
       ))
     }
   )
-  X_pref <- tryCatch(
-    stats::model.matrix(Terms_pref, mf_pref, contrasts.arg = contrasts),
+  X_pref_sub <- tryCatch(
+    stats::model.matrix(pref_terms, mf_pref, contrasts.arg = contrasts),
     error = function(e) {
       cli_abort(c(
-        "Failed to build the preferential-sampling fixed-effect design matrix from `preferential_grid`.",
-        "i" = "This usually means `preferential_grid` has a factor level for a fixed-effect predictor that was not present in `data` when the model was fit.",
+        "Failed to build the preferential-sampling fixed-effect design matrix from `preferential_grid` using `preferential_formula`.",
+        "i" = "This usually means `preferential_grid` has a factor level that was not present in `data` when the model was fit.",
         "x" = conditionMessage(e)
       ))
     }
   )
-  if (anyNA(X_pref)) {
-    cli_abort("`preferential_grid` fixed-effect predictors cannot contain missing values.")
+  if (anyNA(X_pref_sub)) {
+    cli_abort("`preferential_grid` predictor(s) used by `preferential_formula` cannot contain missing values.")
   }
-  if (!identical(colnames(X_pref), colnames(X_main))) {
-    missing_cols <- setdiff(colnames(X_main), colnames(X_pref))
-    extra_cols <- setdiff(colnames(X_pref), colnames(X_main))
-    msgs <- c(
-      "The fixed-effect design matrix built from `preferential_grid` does not match the fitted model's design matrix (`formula`).",
-      "i" = "Every fixed-effect predictor in `formula` must be present in `preferential_grid`, producing the same columns in the same order."
-    )
-    if (length(missing_cols)) {
-      msgs <- c(msgs, "x" = paste0("Column(s) missing from `preferential_grid`: ", paste(missing_cols, collapse = ", ")))
-    }
-    if (length(extra_cols)) {
-      msgs <- c(msgs, "x" = paste0("Extra/unexpected column(s) from `preferential_grid`: ", paste(extra_cols, collapse = ", ")))
-    }
-    cli_abort(msgs)
+  unmatched <- setdiff(colnames(X_pref_sub), colnames(X_main))
+  if (length(unmatched)) {
+    cli_abort(c(
+      "`preferential_formula` produced column(s) not present in the fitted model's fixed-effect design matrix (`formula`).",
+      "x" = "Unmatched column(s): {.code {paste(unmatched, collapse = ', ')}}",
+      "i" = "The preferential sub-model reuses the main model's own fitted `b_j` coefficients -- it does not estimate new ones -- so every term in `preferential_formula` must also appear in `formula`."
+    ))
   }
+  X_pref <- matrix(0, nrow = nrow(grid), ncol = ncol(X_main), dimnames = list(NULL, colnames(X_main)))
+  X_pref[, colnames(X_pref_sub)] <- X_pref_sub
   X_pref
 }
 
@@ -199,7 +226,7 @@
 #' @noRd
 .build_preferential_tmb_data <- function(grid_inputs,
                                           preferential_b_type,
-                                          formula_terms,
+                                          preferential_formula,
                                           xlev,
                                           contrasts,
                                           X_main) {
@@ -208,7 +235,7 @@
   }
   X_pref <- .build_preferential_X(
     grid = grid_inputs$data,
-    formula_terms = formula_terms,
+    preferential_formula = preferential_formula,
     xlev = xlev,
     contrasts = contrasts,
     X_main = X_main

@@ -21,7 +21,9 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
     g
   }))
 
-  # happy path
+  # happy path: preferential_formula explicitly asks for the full `region`
+  # term, matching the pre-`preferential_formula` behavior of reusing the
+  # whole fixed-effect design matrix.
   fit <- sdmTMB(
     catch ~ region,
     data = dat, mesh = mesh, time = "year",
@@ -29,6 +31,7 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
     control = sdmTMBcontrol(
       preferential_grid = pref_grid,
       preferential_response = "sampled",
+      preferential_formula = ~region,
       preferential_b_type = "rw"
     ),
     do_fit = FALSE
@@ -42,6 +45,43 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
   expect_identical(ncol(pref$A_pref), mesh$mesh$n)
   expect_length(pref$year_i_pref, nrow(pref_grid))
   expect_identical(pref$b_pref_type, 2L) # "rw"
+  # `preferential_formula = ~region` selected both columns, so neither is
+  # zeroed out.
+  expect_true(all(pref$X_pref_ij[, "(Intercept)"] == 1))
+  expect_identical(unname(pref$X_pref_ij[, "regionB"]), as.numeric(pref_grid$region == "B"))
+
+  # default `preferential_formula` (`NULL`, treated as `~1`): only the
+  # intercept column is reused, `regionB` is zeroed out even though
+  # `pref_grid` still has a `region` column.
+  fit_default <- sdmTMB(
+    catch ~ region,
+    data = dat, mesh = mesh, time = "year",
+    family = poisson(),
+    control = sdmTMBcontrol(
+      preferential_grid = pref_grid,
+      preferential_response = "sampled"
+    ),
+    do_fit = FALSE
+  )
+  pref_default <- fit_default$tmb_data$preferential
+  expect_identical(colnames(pref_default$X_pref_ij), colnames(fit_default$tmb_data$X_ij[[1]]))
+  expect_true(all(pref_default$X_pref_ij[, "(Intercept)"] == 1))
+  expect_true(all(pref_default$X_pref_ij[, "regionB"] == 0))
+
+  # default `preferential_formula` doesn't need `region` in the grid at all
+  pref_grid_no_region <- pref_grid
+  pref_grid_no_region$region <- NULL
+  fit_default2 <- sdmTMB(
+    catch ~ region,
+    data = dat, mesh = mesh, time = "year",
+    family = poisson(),
+    control = sdmTMBcontrol(
+      preferential_grid = pref_grid_no_region,
+      preferential_response = "sampled"
+    ),
+    do_fit = FALSE
+  )
+  expect_true(all(fit_default2$tmb_data$preferential$X_pref_ij[, "(Intercept)"] == 1))
 
   # preferential_grid defaults to `data` when NULL
   dat2 <- dat
@@ -82,7 +122,10 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
     regexp = "new levels"
   )
 
-  # hard error: preferential_grid missing a fixed-effect column
+  # hard error: preferential_grid missing a column required by an
+  # explicit `preferential_formula` (the default `~1` needs no covariate
+  # columns at all, see above, so this only errors once `region` is
+  # actually requested)
   bad_grid2 <- pref_grid
   bad_grid2$region <- NULL
   expect_error(
@@ -92,11 +135,48 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
       family = poisson(),
       control = sdmTMBcontrol(
         preferential_grid = bad_grid2,
-        preferential_response = "sampled"
+        preferential_response = "sampled",
+        preferential_formula = ~region
       ),
       do_fit = FALSE
     ),
     regexp = "Missing.*region"
+  )
+
+  # hard error: preferential_formula must be one-sided
+  expect_error(
+    sdmTMB(
+      catch ~ region,
+      data = dat, mesh = mesh, time = "year",
+      family = poisson(),
+      control = sdmTMBcontrol(
+        preferential_grid = pref_grid,
+        preferential_response = "sampled",
+        preferential_formula = catch ~ region
+      ),
+      do_fit = FALSE
+    ),
+    regexp = "one-sided"
+  )
+
+  # hard error: preferential_formula references a term not in `formula`'s
+  # own fixed-effect design matrix -- the sub-model reuses `b_j`, it can't
+  # invent a coefficient for a term the main model never fit
+  bad_grid5 <- pref_grid
+  bad_grid5$not_in_formula <- runif(nrow(bad_grid5))
+  expect_error(
+    sdmTMB(
+      catch ~ region,
+      data = dat, mesh = mesh, time = "year",
+      family = poisson(),
+      control = sdmTMBcontrol(
+        preferential_grid = bad_grid5,
+        preferential_response = "sampled",
+        preferential_formula = ~not_in_formula
+      ),
+      do_fit = FALSE
+    ),
+    regexp = "not present"
   )
 
   # hard error: preferential_grid missing a time slice

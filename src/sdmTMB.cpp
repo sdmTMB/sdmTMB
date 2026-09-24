@@ -1120,7 +1120,12 @@ Type objective_function<Type>::operator()()
   if (preferential.n_pref > 0) {
     int n_pref = preferential.n_pref;
 
-    // Grid-level fixed-effect contribution: same b_j, different (grid) design matrix.
+    // Grid-level fixed-effect contribution: same b_j, but X_pref_ij is
+    // zeroed out (on the R side, see .build_preferential_X()) in every
+    // column not selected by `preferential_formula` (default `~1`, i.e.
+    // the intercept only), so only that user-chosen subset of b_j actually
+    // contributes here -- no new parameters, and no other fixed effects
+    // leak into the grid the way they would from a naive full reuse.
     vector<Type> grid_fe = preferential.X_pref_ij * b_j;
 
     // Grid-level spatial field, projected via A_pref (model column 0 only).
