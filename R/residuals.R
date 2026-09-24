@@ -704,6 +704,9 @@ check_overdisp <- function(object) {
 # random effects sampled from the implied MVN posterior and the
 # fixed effects at their MLEs
 .one_sample_posterior <- function(object) {
+  if (!any(object$tmb_obj$env$lrandom())) {
+    return(object$tmb_obj$env$last.par.best)
+  }
   tmp <- object$tmb_obj$env$MC(n = 1L, keep = TRUE, antithetic = FALSE)
   re_samp <- as.vector(attr(tmp, "samples"))
   lp <- object$tmb_obj$env$last.par.best
