@@ -8,6 +8,10 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
+`sdmTMB` implements a preferential sampling model described in 
+
+Ward, E.J., K.L. Oken, Y.A. Chen, K.E. Richerson, C. Barnes, and D. Holland 2026. Correcting trend bias from preferential sampling in fishery-dependent indices. In review
+
 ```{r setup, include = FALSE, cache=FALSE}
 dplyr_installed <- require("dplyr", quietly = TRUE)
 ggplot_installed <- require("ggplot2", quietly = TRUE)

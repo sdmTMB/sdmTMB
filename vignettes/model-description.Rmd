@@ -55,6 +55,7 @@ div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
 \newcommand{\bomega}{\boldsymbol{\omega}}
 \newcommand{\bdelta}{\boldsymbol{\delta}}
 \newcommand{\bzeta}{\boldsymbol{\zeta}}
+\newcommand{\bxi}{\boldsymbol{\xi}}
 \newcommand{\bX}{\mathbf{X}}
 \newcommand{\bQ}{\mathbf{Q}}
 \newcommand{\bZ}{\mathbf{Z}}
@@ -454,6 +455,49 @@ $$
 
 where $\mathbf{D}$ is diagonal with elements $D_{ii} = \sum_j W_{ij}$ and $\alpha_{\mathrm{CAR}} \in (0, 1)$ is reported as `alpha_car`.
 CAR requires a symmetric adjacency matrix.
+
+## Preferential sampling
+
+sdmTMB can fit a joint model that couples the main observation model to a second, auxiliary Bernoulli model describing whether each cell of a spatial sampling grid was sampled in a given time slice, letting the sampling probability itself depend on the modeled process.
+This is useful when sample locations are not independent of the process being measured (e.g., a fishery that preferentially returns to historically productive grounds), which can otherwise bias estimates of the underlying spatial process if ignored.
+This is a newer, experimental feature, enabled via the `preferential_grid`, `preferential_response`, and `preferential_b_type` arguments to `sdmTMBcontrol()`.
+
+The sampling sub-model reuses a restricted version of the main model's linear predictor -- fixed effects plus the spatial and spatiotemporal random fields only (smooths, time-varying coefficients, spatially varying coefficients, random intercepts/slopes, and nonlocal covariate terms are not included) -- projected from mesh vertices onto the sampling grid with its own projection matrix $\bA_{\RM{pref}}$:
+
+$$
+\eta^{*}_{\s,t} = \bX^{\RM{pref}}_{\s,t} \bbeta + \bA_{\RM{pref}} \bomega + \bA_{\RM{pref}} \beps_t,
+$$
+
+where $\bX^{\RM{pref}}_{\s,t}$ is the fixed-effect design matrix built from the same `formula` but evaluated on the sampling grid, and $\bbeta$ is the same fixed-effect coefficient vector as the main model.
+
+Whether each grid cell was sampled is then modeled as
+
+$$
+\begin{aligned}
+\Pr(R_{\s,t} = 1) &= \mathrm{logit}^{-1}\left(\gamma_0 + b_{\RM{pref},t}\, \eta^{*}_{\s,t} + \xi_{\s}\right),\\
+\bxi &\sim \RM{MVNormal} \left( \bs{0}, \bSigma_\xi \right),
+\end{aligned}
+$$
+
+where $R_{\s,t}$ is a 0/1 indicator for whether grid cell $\s$ was sampled at time $t$ (the `preferential_response` column of `preferential_grid`); $\gamma_0$ is a sampling sub-model intercept; $b_{\RM{pref},t}$ is a coefficient controlling how strongly sampling probability tracks $\eta^*_{\s,t}$; and $\xi_{\s}$ is an independent spatial GMRF, parameterized internally the same way as $\bomega$ with its own decorrelation rate $\kappa_\xi$ and marginal standard deviation $\sigma_\xi$, capturing residual sampling-location structure not explained by $\eta^*_{\s,t}$.
+This field is local to the sampling sub-model only and does not enter the main observation model.
+
+$b_{\RM{pref},t}$ can be constant over time or time-varying, set via `preferential_b_type`.
+For `preferential_b_type = 'constant'`, $b_{\RM{pref},t} = b_{\RM{pref}}$ for all $t$ (a single shared coefficient).
+For `preferential_b_type = 'rw'`, it follows the same random-walk process as the [time-varying regression parameters](#time-varying-regression-parameters) described above, with the first time step left unconstrained:
+
+$$
+\begin{aligned}
+b_{\RM{pref},t=1} &\sim \RM{Uniform} \left(-\infty, \infty \right) \text{ (treated as an unconstrained parameter)},\\
+b_{\RM{pref},t>1} &\sim \RM{Normal} \left(b_{\RM{pref},t-1}, \sigma_{b}^2 \right).
+\end{aligned}
+$$
+
+For `preferential_b_type = 'iid'`, each time step is independent:
+
+$$
+b_{\RM{pref},t} \sim \RM{Normal} \left(0, \sigma_{b}^2 \right).
+$$
 
 # Observation model families
 
