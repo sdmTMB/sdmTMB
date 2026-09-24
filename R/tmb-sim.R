@@ -597,7 +597,7 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
   family_spec <- .object_family_spec(object, caller = "`simulate()`")
   has_two_components <- family_spec$n_m == 2L
 
-  if (is.null(object$tmb_random) && type == "mle-mvn") {
+  if (has_no_random_effects(object) && type == "mle-mvn") {
     type <- "mle-eb" # no random effects to sample from
   }
 
