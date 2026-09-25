@@ -250,21 +250,24 @@ $$
 (\mathbf{M}_0 + \kappa_S^{-2}\mathbf{M}_1)\mathbf{z}_t = \mathbf{M}_0\mathbf{x}_t.
 $$
 
-For a temporal lag only, the stationary recursion is
+For a temporal lag only, the recursion is
 
 $$
-z_1 = \frac{x_1}{1 + \kappa_T}, \qquad
-z_t = \frac{x_t + \kappa_T z_{t-1}}{1 + \kappa_T} \quad (t > 1).
+z_t = \frac{x_t + \kappa_T z_{t-1}}{1 + \kappa_T}.
 $$
 
 For the joint space--time operator,
 
 $$
 \left[(1 + \kappa_T)\mathbf{M}_0 + \kappa_S^{-2}\mathbf{M}_1\right]\mathbf{z}_t
-= \mathbf{M}_0\mathbf{x}_t + \kappa_T\mathbf{M}_0\mathbf{z}_{t-1},
+= \mathbf{M}_0\mathbf{x}_t + \kappa_T\mathbf{M}_0\mathbf{z}_{t-1}.
 $$
 
-where the final term is omitted for the first time slice. Temporal initialization assumes a zero transformed state immediately before the first modeled slice. Equivalently, with $\rho_T = \kappa_T/(1 + \kappa_T)$, the temporal-only recursion is $z_1 = (1 - \rho_T)x_1$ and $z_t = (1 - \rho_T)x_t + \rho_T z_{t-1}$. The temporal parameter is estimated as $\log \kappa_T$, which equals $\operatorname{logit} \rho_T$, so $0 < \rho_T < 1$ without bounds. As $\kappa_T \to 0$, the joint operator reduces to spatial diffusion; to fit no temporal lag, drop `time_lag()`. The implementation corresponds to `kappaST = 0` in the formulation described by @thorson2026.
+With $\rho_T = \kappa_T/(1 + \kappa_T)$, the temporal-only recursion is $z_t = (1 - \rho_T)x_t + \rho_T z_{t-1}$. The temporal parameter is estimated as $\log \kappa_T$, which equals $\operatorname{logit} \rho_T$, so $0 < \rho_T < 1$ without bounds. As $\kappa_T \to 0$, the joint operator reduces to spatial diffusion; to fit no temporal lag, drop `time_lag()`. The implementation corresponds to `kappaST = 0` in the formulation described by @thorson2026.
+
+Both recursions need a transformed state $\mathbf{z}_0$ before the first modeled slice. By default (`time_lag(x, start = "stationary")`), sdmTMB assumes the covariate held at its first slice $\mathbf{x}_1$ beforehand, so $\mathbf{z}_0$ is the recursion's steady state for $\mathbf{x}_1$. That is $\mathbf{z}_0 = \mathbf{x}_1$ for a temporal lag alone, and the spatial diffusion of $\mathbf{x}_1$, $(\mathbf{M}_0 + \kappa_S^{-2}\mathbf{M}_1)\mathbf{z}_0 = \mathbf{M}_0\mathbf{x}_1$, for the joint operator.
+
+@thorson2026 instead starts from $\mathbf{z}_0 = \mathbf{0}$, which you can select with `time_lag(x, start = "zero")`. With that start, the weights on past covariate values sum to $1 - \rho_T^t$ rather than 1, so early slices are shrunk towards zero. The fit then depends on where the covariate's zero is. For example, adding a constant $c$ to $x$ shifts $z_t$ by $c(1 - \rho_T^t)$ instead of by $c$. A single intercept cannot absorb that, so the fit can change with the covariate's units. A full set of time effects (e.g., `0 + factor(year)`) absorbs it, because the shift is the same everywhere in space within each slice. With the stationary start, adding $c$ to $x$ adds exactly $c$ to $z$.
 
 For a spatial-only operator,
 

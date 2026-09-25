@@ -162,7 +162,11 @@ lag terms with \code{diffusion()} or \code{time_lag()} wrappers.
 Example: \code{~ diffusion(x) + time_lag(x)}. When both wrappers use the same
 covariate, they select parts of one joint operator and produce one
 transformed predictor and coefficient. Different covariates produce
-separate transformed predictors and coefficients. Note that spatial-only
+separate transformed predictors and coefficients. \code{time_lag()} takes an
+optional \code{start} argument for the transformed state before the first time
+slice: \code{"stationary"} (default) assumes the covariate held at its first
+slice beforehand, and \code{"zero"} starts from zero as in Thorson et al.
+(2026), e.g. \code{~ time_lag(x, start = "zero")}. Note that spatial-only
 covariates will be held constant across time slices unless the \code{time}
 argument is specified. See the non-local covariates vignette for the
 MSDK and RMSDK definitions.

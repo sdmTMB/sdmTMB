@@ -19,6 +19,9 @@ test_that("RTMB covariate diffusion matches every TMB report and sdreport row", 
       spatiotemporal = "iid"),
     joint = list(y ~ x1, family = gaussian(),
       nonlocal_formula = ~ diffusion(x1) + time_lag(x1), spatial = "off"),
+    zero_start = list(y ~ x1, family = gaussian(),
+      nonlocal_formula = ~ diffusion(x1) + time_lag(x1, start = "zero") +
+        time_lag(x2, start = "zero"), spatial = "off"),
     delta = list(response ~ x1, family = delta_gamma(),
       nonlocal_formula = ~ diffusion(x1) + time_lag(x2), spatial = "off")
   )

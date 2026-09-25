@@ -59,6 +59,21 @@ test_that("same-covariate wrappers form one joint operator", {
   )
 })
 
+test_that("time_lag() start defaults to stationary and accepts zero", {
+  parsed <- .parse_nonlocal_formula(
+    ~ diffusion(x1) + time_lag(x1, start = "zero") + time_lag(x2)
+  )
+  expect_equal(parsed$terms$start, c("zero", "stationary"))
+  expect_equal(.nonlocal_start_code(parsed$terms$start), c(0L, 1L))
+
+  expect_error(.parse_nonlocal_formula(~ time_lag(x1, start = "one")),
+    "must be \"stationary\" or \"zero\"")
+  expect_error(.parse_nonlocal_formula(~ time_lag(x1, "zero")),
+    "Unsupported argument")
+  expect_error(.parse_nonlocal_formula(~ diffusion(x1, start = "zero")),
+    "Unsupported argument")
+})
+
 test_that("nonlocal_formula covariates do not need to be in the main formula", {
   dat <- data.frame(
     y = rnorm(8),

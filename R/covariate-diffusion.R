@@ -86,20 +86,39 @@
       ))
     }
 
-    if (length(expr) != 2L || !is.symbol(expr[[2]])) {
+    arg_names <- names(expr)
+    if (is.null(arg_names)) arg_names <- character(length(expr))
+    extra_args <- arg_names[-(1:2)]
+    if (length(expr) < 2L || !is.symbol(expr[[2]]) || nzchar(arg_names[[2]])) {
       cli_abort(c(
         "Unsupported `nonlocal_formula` term structure.",
         "i" = "Use a bare variable name inside each wrapper, e.g. `diffusion(x)`.",
         "x" = "Problematic term: {.code {term_label}}"
       ))
     }
+    if (length(extra_args) && !(wrapper == "time_lag" && identical(extra_args, "start"))) {
+      cli_abort(c(
+        "Unsupported argument in `nonlocal_formula` term.",
+        "i" = "Only `time_lag()` takes an extra argument: `start`.",
+        "x" = "Problematic term: {.code {term_label}}"
+      ))
+    }
+    start <- if (length(extra_args)) expr[["start"]] else "stationary"
+    if (!is.character(start) || length(start) != 1L ||
+        !start %in% c("stationary", "zero")) {
+      cli_abort(c(
+        "`start` in `time_lag()` must be \"stationary\" or \"zero\".",
+        "x" = "Problematic term: {.code {term_label}}"
+      ))
+    }
 
     variable <- as.character(expr[[2]])
-    list(component = wrapper, variable = variable)
+    list(component = wrapper, variable = variable, start = start)
   })
 
   terms_df <- do.call(rbind, lapply(parsed_terms, function(x) {
-    data.frame(component = x$component, variable = x$variable, stringsAsFactors = FALSE)
+    data.frame(component = x$component, variable = x$variable, start = x$start,
+      stringsAsFactors = FALSE)
   }))
 
   duplicated_terms <- duplicated(paste(terms_df$component, terms_df$variable, sep = "::"))
@@ -118,6 +137,8 @@
     components <- source_terms$component[source_terms$variable == variable]
     has_space <- "diffusion" %in% components
     has_time <- "time_lag" %in% components
+    time_term <- source_terms$variable == variable & source_terms$component == "time_lag"
+    start <- if (has_time) source_terms$start[time_term] else "stationary"
     component <- if (has_space && has_time) {
       "combined"
     } else if (has_space) {
@@ -131,6 +152,7 @@
       covariate_id = i,
       has_space = has_space,
       has_time = has_time,
+      start = start,
       coef_name = paste0(
         "nl_",
         if (component == "combined") "diffusion_time_lag" else component,
@@ -438,6 +460,12 @@
   )
 }
 
+# `time_lag(start = )` codes, matching `CovariateDiffusionStart` in
+# `src/covariate-diffusion.h`.
+.nonlocal_start_code <- function(start) {
+  as.integer(match(start, c("zero", "stationary")) - 1L)
+}
+
 .build_nonlocal_tmb_data <- function(nonlocal_formula,
                                                 data,
                                                 A_st,
@@ -478,6 +506,7 @@
     term_component_id = as.integer(component_id),
     term_covariate_index = as.integer(nonlocal_formula$terms$covariate_id),
     term_covariate_index0 = as.integer(nonlocal_formula$terms$covariate_id - 1L),
+    term_start = .nonlocal_start_code(nonlocal_formula$terms$start),
     term_coef_name = nonlocal_formula$terms$coef_name,
     n_vertices = vertex_cov$n_vertices,
     n_t = vertex_cov$n_t,
@@ -486,10 +515,15 @@
   )
 }
 
+# `start` is the state before the first slice: "zero", or "stationary" (the
+# recursion's fixed point if the covariate held at its first slice).
 .solve_nonlocal_vertex_time <- function(component, vertex_time_input, M0, M1,
                                                   kappaS, kappaT,
                                                   has_space = NULL,
-                                                  has_time = NULL) {
+                                                  has_time = NULL,
+                                                  start = c("stationary", "zero")) {
+  start <- match.arg(start)
+  stationary <- start == "stationary"
   n_vertices <- nrow(vertex_time_input)
   n_t <- ncol(vertex_time_input)
   out <- matrix(0, nrow = n_vertices, ncol = n_t)
@@ -515,12 +549,17 @@
       kappaS_scale <- 1 / (kappaS^2)
       kappaT_scale <- kappaT
       system_mat <- (1 + kappaT_scale) * M0 + kappaS_scale * M1
+      previous <- if (stationary) {
+        solve_sparse(M0 + kappaS_scale * M1,
+          as.numeric(M0 %*% vertex_time_input[, 1L, drop = TRUE]),
+          "stationary start system (M0 + kappaS^-2 * M1)")
+      } else {
+        numeric(n_vertices)
+      }
       for (tt in seq_len(n_t)) {
-        rhs <- as.numeric(M0 %*% vertex_time_input[, tt, drop = TRUE])
-        if (tt > 1L && kappaT_scale != 0) {
-          rhs <- rhs + as.numeric(kappaT_scale * (M0 %*% out[, tt - 1L, drop = TRUE]))
-        }
-        out[, tt] <- solve_sparse(system_mat, rhs, "combined system (space + time)")
+        rhs <- as.numeric(M0 %*% vertex_time_input[, tt, drop = TRUE]) +
+          kappaT_scale * as.numeric(M0 %*% previous)
+        out[, tt] <- previous <- solve_sparse(system_mat, rhs, "combined system (space + time)")
       }
       return(out)
     }
@@ -537,12 +576,9 @@
   }
 
   if (component == "time_lag") {
-    denom <- 1 + kappaT
-    out[, 1L] <- vertex_time_input[, 1L] / denom
-    if (n_t > 1L) {
-      for (tt in 2:n_t) {
-        out[, tt] <- (vertex_time_input[, tt] + kappaT * out[, tt - 1L]) / denom
-      }
+    previous <- if (stationary) vertex_time_input[, 1L] else numeric(n_vertices)
+    for (tt in seq_len(n_t)) {
+      out[, tt] <- previous <- (vertex_time_input[, tt] + kappaT * previous) / (1 + kappaT)
     }
     return(out)
   }
@@ -632,6 +668,7 @@
 
   term_out <- matrix(0, nrow = length(A_spatial_index), ncol = n_terms)
   colnames(term_out) <- .nonlocal_predict_colnames(nonlocal_parsed$term_coef_name)
+  term_start <- c("zero", "stationary")[nonlocal_parsed$term_start + 1L]
 
   for (term_i in seq_len(n_terms)) {
     component <- nonlocal_parsed$term_component[[term_i]]
@@ -651,7 +688,8 @@
       kappaS = kappaS,
       kappaT = kappaT,
       has_space = nonlocal_parsed$covariate_has_spatial[[cov_i]],
-      has_time = nonlocal_parsed$covariate_has_temporal[[cov_i]]
+      has_time = nonlocal_parsed$covariate_has_temporal[[cov_i]],
+      start = term_start[[term_i]]
     )
     term_out[, term_i] <- .project_nonlocal_vertex_time(
       transformed_vertex_time = transformed_vertex_time,
@@ -1152,6 +1190,7 @@ plot_nonlocal_covariate <- function(object,
   source_vertex_time <- matrix(0, nrow = nrow(original_vertex_time), ncol = ctx$time_info$n_t)
   source_vertex_time[, ctx$time_info$time_i] <- original_vertex_time[, ctx$time_info$time_i]
 
+  # Propagate the one source slice alone, so nothing precedes it
   transformed_vertex_time <- .solve_nonlocal_vertex_time(
     component = ctx$component,
     vertex_time_input = source_vertex_time,
@@ -1160,7 +1199,8 @@ plot_nonlocal_covariate <- function(object,
     kappaS = ctx$kappas$kappaS,
     kappaT = ctx$kappas$kappaT,
     has_space = ctx$has_space,
-    has_time = ctx$has_time
+    has_time = ctx$has_time,
+    start = "zero"
   )
 
   time_values <- ctx$time_info$time_values
@@ -1228,6 +1268,7 @@ plot_nonlocal_kernel <- function(object,
   impulse_vertex_time <- matrix(0, nrow = n_vertices, ncol = n_t)
   impulse_vertex_time[vertex_i, time_i] <- 1
 
+  # An impulse response, so nothing precedes the impulse
   transformed_vertex_time <- .solve_nonlocal_vertex_time(
     component = ctx$component,
     vertex_time_input = impulse_vertex_time,
@@ -1236,7 +1277,8 @@ plot_nonlocal_kernel <- function(object,
     kappaS = ctx$kappas$kappaS,
     kappaT = ctx$kappas$kappaT,
     has_space = ctx$has_space,
-    has_time = ctx$has_time
+    has_time = ctx$has_time,
+    start = "zero"
   )
 
   panels <- .nl_plot_time_panels(

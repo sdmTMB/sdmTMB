@@ -46,6 +46,16 @@
   `upper` entries for `kappaT_nl_raw` accordingly. `sdmTMB_simulate()` now
   requires `0 < lags_rhoT < 1`.
 
+* Start covariate diffusion's `time_lag()` recursion from a stationary state
+  by default: the covariate is assumed to have held at its first time slice
+  beforehand. Previously the state before the first slice was zero, which
+  shrank early slices towards zero and made fits depend on where the
+  covariate's zero was. For example, adding a constant to the covariate could
+  change estimates of `rhoT` and the coefficient under a single intercept.
+  `time_lag(x, start = "zero")` reproduces the previous behaviour, which
+  matches Thorson et al. (2026). Fits of `time_lag()` terms will differ from
+  earlier versions unless `start = "zero"` is used.
+
 * Check that `mesh` matches `nrow(data)` when `nonlocal_formula` is used, even
   with spatial and spatiotemporal fields off. Covariate diffusion maps each
   observation to the mesh by row, so a mesh built from a different data frame

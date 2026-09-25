@@ -59,7 +59,8 @@
 #' @param nonlocal_formula An optional one-sided formula describing
 #'   covariate-diffusion terms to pass to [sdmTMB()]. Supported wrappers are
 #'   `diffusion()` and `time_lag()`. Same-covariate wrappers select one joint
-#'   operator and coefficient.
+#'   operator and coefficient. See [sdmTMB()] for the `time_lag()` `start`
+#'   argument.
 #' @param lags_kappaS Spatial diffusion scale for `diffusion()` terms.
 #'   Must be positive and finite. Supply a single value or
 #'   one value per covariate needing a spatial scale.

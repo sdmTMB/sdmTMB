@@ -3,8 +3,11 @@
 # vertices by time:
 #
 # - spatial: (M0 + kappaS^-2 M1) z_t = M0 x_t
-# - time: z_t = (x_t + kappaT z_{t-1}) / (1 + kappaT), with z_{-1} = 0
+# - time: z_t = (x_t + kappaT z_{t-1}) / (1 + kappaT)
 # - joint: ((1 + kappaT) M0 + kappaS^-2 M1) z_t = M0 x_t + kappaT M0 z_{t-1}
+#
+# z_0 is zero, or with the stationary start, the fixed point for x held at
+# x_1: x_1 for time, and the spatial solve of x_1 for joint.
 #
 # The formula parser combines `diffusion(x)` and `time_lag(x)` into one joint
 # term, so each covariate has at most one term.
@@ -16,6 +19,7 @@ rtmb_diffusion_inputs <- function(data) {
   list(n_terms = cd$n_terms, n_covariates = cd$n_covariates,
     type = c("space", "time", "joint")[cd$term_component + 1L],
     covariate = cd$term_covariate + 1L,
+    stationary = cd$term_start == 1L,
     M0 = data$spde$M0, M1 = data$spde$M1)
 }
 
@@ -29,25 +33,27 @@ rtmb_diffusion_terms <- function(par, diffusion, rows) {
     k <- diffusion$covariate[[term]]
     X <- matrix(x[, , k], dim(x)[1L], dim(x)[2L])
     kappaT <- exp(par$log_kappaT_nl[[k]])
+    stationary <- diffusion$stationary[[term]]
     if (type == "time") {
       z <- vector("list", ncol(X))
-      z[[1L]] <- X[, 1L] / (1 + kappaT)
-      for (t in seq_len(ncol(X))[-1L]) {
-        z[[t]] <- (X[, t] + kappaT * z[[t - 1L]]) / (1 + kappaT)
+      previous <- if (stationary) X[, 1L] else 0
+      for (t in seq_len(ncol(X))) {
+        z[[t]] <- previous <- (X[, t] + kappaT * previous) / (1 + kappaT)
       }
     } else {
-      system <- (if (type == "joint") 1 + kappaT else 1) * M0 +
-        exp(-2 * par$log_kappaS_nl[[k]]) * M1
+      space_system <- M0 + exp(-2 * par$log_kappaS_nl[[k]]) * M1
       rhs <- as.matrix(M0 %*% X)
       if (type == "space") {
-        solved <- as.matrix(Matrix::solve(system, rhs))
+        solved <- as.matrix(Matrix::solve(space_system, rhs))
         z <- lapply(seq_len(ncol(X)), function(t) solved[, t])
       } else {
+        system <- space_system + kappaT * M0
         z <- vector("list", ncol(X))
+        previous <- if (stationary) rtmb_rhs_solve(space_system, rhs[, 1L])
         for (t in seq_len(ncol(X))) {
           b <- rhs[, t]
-          if (t > 1L) b <- b + kappaT * rtmb_product(M0, z[[t - 1L]])
-          z[[t]] <- rtmb_rhs_solve(system, b)
+          if (!is.null(previous)) b <- b + kappaT * rtmb_product(M0, previous)
+          z[[t]] <- previous <- rtmb_rhs_solve(system, b)
         }
       }
     }

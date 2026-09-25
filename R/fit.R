@@ -128,7 +128,11 @@ NULL
 #'   Example: `~ diffusion(x) + time_lag(x)`. When both wrappers use the same
 #'   covariate, they select parts of one joint operator and produce one
 #'   transformed predictor and coefficient. Different covariates produce
-#'   separate transformed predictors and coefficients. Note that spatial-only
+#'   separate transformed predictors and coefficients. `time_lag()` takes an
+#'   optional `start` argument for the transformed state before the first time
+#'   slice: `"stationary"` (default) assumes the covariate held at its first
+#'   slice beforehand, and `"zero"` starts from zero as in Thorson et al.
+#'   (2026), e.g. `~ time_lag(x, start = "zero")`. Note that spatial-only
 #'   covariates will be held constant across time slices unless the `time`
 #'   argument is specified. See the non-local covariates vignette for the
 #'   MSDK and RMSDK definitions.
@@ -1425,6 +1429,7 @@ sdmTMB <- function(
     nonlocal_covariate_has_temporal <- as.integer(nonlocal_parsed$covariate_has_temporal)
     nonlocal_term_component <- as.integer(nonlocal_parsed$term_component_id - 1L)
     nonlocal_term_covariate <- as.integer(nonlocal_parsed$term_covariate_index0)
+    nonlocal_term_start <- as.integer(nonlocal_parsed$term_start)
   } else {
     nonlocal_n_terms <- 0L
     nonlocal_n_covariates <- 0L
@@ -1433,6 +1438,7 @@ sdmTMB <- function(
     nonlocal_covariate_has_temporal <- integer(0)
     nonlocal_term_component <- integer(0)
     nonlocal_term_covariate <- integer(0)
+    nonlocal_term_start <- integer(0)
   }
   nonlocal_tmb <- list(
     n_terms = nonlocal_n_terms,
@@ -1440,7 +1446,8 @@ sdmTMB <- function(
     covariate_vertex_time = nonlocal_covariate_vertex_time,
     proj_covariate_vertex_time = array(0, dim = c(1L, 1L, 1L)),
     term_component = nonlocal_term_component,
-    term_covariate = nonlocal_term_covariate
+    term_covariate = nonlocal_term_covariate,
+    term_start = nonlocal_term_start
   )
 
   # TODO: make this cleaner
