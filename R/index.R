@@ -187,13 +187,18 @@ get_index <- function(obj, newdata = NULL, bias_correct = TRUE, level = 0.95,
       "i" = "Choose one of {.val {names(.valid_link)}}."
     ))
   }
-  if (isTRUE(fit_obj$family$delta)) {
+  family_spec <- .object_family_spec(fit_obj, caller = "`get_index()`")
+  if (.family_spec_is_multi_family(family_spec)) {
+    cli_abort("`derived_link` is not currently supported for multi-family models.")
+  }
+  family <- family_spec$family
+  if (.family_spec_has_two_components(family_spec)) {
     cli_abort("`derived_link` is not currently supported for delta or hurdle families.")
   }
-  if (!fit_obj$family$family %in% c("binomial", "betabinomial")) {
+  if (!family$family %in% c("binomial", "betabinomial")) {
     cli_abort("`derived_link` is currently only supported for binomial and betabinomial models.")
   }
-  if (!identical(fit_obj$family$link, "cloglog")) {
+  if (!identical(family$link, "cloglog")) {
     cli_abort("`derived_link` is currently only supported when the fitted family uses `link = 'cloglog'`.")
   }
   derived_link
@@ -204,7 +209,8 @@ get_index <- function(obj, newdata = NULL, bias_correct = TRUE, level = 0.95,
     if (!is.null(tmb_data$link)) {
       tmb_data$link_pred <- tmb_data$link
     } else {
-      tmb_data$link_pred <- unname(.valid_link[fit_obj$family$link])
+      family <- .object_family_spec(fit_obj, caller = "`get_index()`")$family
+      tmb_data$link_pred <- unname(.valid_link[family$link])
     }
   }
   if (!is.null(derived_link)) {
@@ -571,19 +577,19 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     eps_name <- "eps_index" # FIXME break out into function; add for COG?
     pars[[eps_name]] <- numeric(0)
 
-    new_obj <- TMB::MakeADFun(
+    new_obj <- make_sdmTMB_adfun(
       data = tmb_data,
       parameters = pars,
       profile = obj$fit_obj$control$profile,
       map = obj$fit_obj$tmb_map,
       random = obj$fit_obj$tmb_random,
-      DLL = "sdmTMB",
+      backend = backend_sdmTMB(obj$fit_obj),
       silent = silent
     )
 
     old_par <- obj$fit_obj$model$par
     bc <- FALSE ## done below
-    sr <- TMB::sdreport(new_obj, par.fixed = old_par, bias.correct = bc, ...)
+    sr <- sdreport_sdmTMB(new_obj, par.fixed = old_par, bias.correct = bc, ...)
   } else if (rebuild_from_fit) {
     reinitialize(obj)
     if (bias_correct && obj$control$parallel > 1) {
@@ -627,19 +633,19 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     eps_name <- "eps_index"
     pars[[eps_name]] <- numeric(0)
 
-    new_obj <- TMB::MakeADFun(
+    new_obj <- make_sdmTMB_adfun(
       data = tmb_data,
       parameters = pars,
       profile = obj$control$profile,
       map = obj$tmb_map,
       random = obj$tmb_random,
-      DLL = "sdmTMB",
+      backend = backend_sdmTMB(obj),
       silent = silent
     )
 
     old_par <- obj$model$par
     bc <- FALSE
-    sr <- TMB::sdreport(new_obj, par.fixed = old_par, bias.correct = bc, ...)
+    sr <- sdreport_sdmTMB(new_obj, par.fixed = old_par, bias.correct = bc, ...)
     obj <- list(fit_obj = obj)
   } else {
     sr <- obj$sd_report # already done in sdmTMB(do_index = TRUE)
@@ -663,13 +669,13 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     new_values <- rep(0, .n)
     names(new_values) <- rep(eps_name, length(new_values))
     fixed <- c(obj$fit_obj$model$par, new_values)
-    new_obj2 <- TMB::MakeADFun(
+    new_obj2 <- make_sdmTMB_adfun(
       data = tmb_data,
       parameters = pars,
       map = obj$fit_obj$tmb_map,
       profile = obj$fit_obj$control$profile,
       random = obj$fit_obj$tmb_random,
-      DLL = "sdmTMB",
+      backend = backend_sdmTMB(obj$fit_obj),
       silent = silent,
       intern = FALSE, # tested as faster for most models
       inner.control = list(sparse = TRUE, lowrank = TRUE, trace = FALSE)

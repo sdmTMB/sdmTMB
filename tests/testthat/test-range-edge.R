@@ -1,18 +1,24 @@
-test_that("get_range_edge() basic functionality works", {
-  skip_on_cran()
-
-  m <- sdmTMB(
+# One non-spatial fit and one set of simulated predictions shared by most
+# tests.
+range_edge_grid <- function() replicate_df(qcs_grid_small, "year", unique(pcod$year))
+range_edge_fit <- fit_once(function() {
+  sdmTMB(
     density ~ 0 + as.factor(year),
     data = pcod, family = tweedie(link = "log"),
     time = "year", spatiotemporal = "off", spatial = "off"
   )
+})
+range_edge_sims <- fit_once(function() {
+  set.seed(123)
+  predict(range_edge_fit(), newdata = range_edge_grid(), nsim = 50)
+})
+
+test_that("get_range_edge() basic functionality works", {
+  skip_on_cran()
 
   # Create prediction grid
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-
-  # Get predictions with simulations
-  set.seed(123)
-  p <- predict(m, newdata = nd, nsim = 100)
+  nd <- range_edge_grid()
+  p <- range_edge_sims()
 
   # Calculate range edges
   edges <- get_range_edge(p, axis = nd$Y)
@@ -36,15 +42,8 @@ test_that("get_range_edge() basic functionality works", {
 test_that("get_range_edge() works with custom quantiles", {
   skip_on_cran()
 
-  m <- sdmTMB(
-    density ~ 1,
-    data = pcod, family = tweedie(link = "log"),
-    time = "year", spatiotemporal = "off", spatial = "off"
-  )
-
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  set.seed(456)
-  p <- predict(m, newdata = nd, nsim = 50)
+  nd <- range_edge_grid()
+  p <- range_edge_sims()
 
   # Test with custom quantiles
   edges <- get_range_edge(p, axis = nd$Y, quantiles = c(0.05, 0.5, 0.95))
@@ -63,15 +62,8 @@ test_that("get_range_edge() works with custom quantiles", {
 test_that("get_range_edge() works with return_sims = TRUE", {
   skip_on_cran()
 
-  m <- sdmTMB(
-    density ~ 1,
-    data = pcod, family = tweedie(link = "log"),
-    time = "year", spatiotemporal = "off", spatial = "off"
-  )
-
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  set.seed(789)
-  p <- predict(m, newdata = nd, nsim = 50)
+  nd <- range_edge_grid()
+  p <- range_edge_sims()
 
   # Get simulation draws
   edges_sims <- get_range_edge(p, axis = nd$Y, return_sims = TRUE)
@@ -79,8 +71,8 @@ test_that("get_range_edge() works with return_sims = TRUE", {
   # Test output structure
   expect_s3_class(edges_sims, "data.frame")
   expect_named(edges_sims, c("year", "quantile", ".value", ".iteration"))
-  expect_equal(nrow(edges_sims), length(unique(pcod$year)) * 2 * 50) # 2 quantiles * 50 sims
-  expect_equal(unique(edges_sims$.iteration), 1:50)
+  expect_equal(nrow(edges_sims), length(unique(pcod$year)) * 2 * ncol(p)) # 2 quantiles
+  expect_equal(unique(edges_sims$.iteration), seq_len(ncol(p)))
 
   # Compare with summary output
   edges <- get_range_edge(p, axis = nd$Y, return_sims = FALSE)
@@ -102,15 +94,10 @@ test_that("get_range_edge() works with return_sims = TRUE", {
 test_that("get_range_edge() input validation works", {
   skip_on_cran()
 
-  m <- sdmTMB(
-    density ~ 1,
-    data = pcod, family = tweedie(link = "log"),
-    time = "year", spatiotemporal = "off", spatial = "off"
-  )
+  m <- range_edge_fit()
 
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  set.seed(101)
-  p <- predict(m, newdata = nd, nsim = 50)
+  nd <- range_edge_grid()
+  p <- range_edge_sims()
 
   # Test error for predictions without simulations
   p_no_sim <- predict(m, newdata = nd)
@@ -153,44 +140,24 @@ test_that("get_range_edge() input validation works", {
   )
 })
 
-test_that("get_range_edge() works with different confidence levels", {
+test_that("get_range_edge() works with a spatial model, confidence levels, and edge cases", {
   skip_on_cran()
-  skip_on_ci()
 
-  mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 10)
   m <- sdmTMB(
     density ~ depth_scaled,
-    mesh = mesh,
-    data = pcod, family = tweedie(link = "log"),
+    mesh = pcod_mesh_2011,
+    data = pcod_2011, family = tweedie(link = "log"),
     time = "year", spatiotemporal = "off", spatial = "on"
   )
-
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
+  # full grid: range edges on a coarse grid snap to a few Y values
+  nd <- replicate_df(qcs_grid, "year", unique(pcod_2011$year))
   set.seed(202)
-  p <- predict(m, newdata = nd, nsim = 100)
-
-  # Test with 90% confidence level
-  edges_70 <- get_range_edge(p, axis = nd$Y, level = 0.70)
-  edges_95 <- get_range_edge(p, axis = nd$Y, level = 0.95)
+  p <- predict(m, newdata = nd, nsim = 50)
 
   # 70% CI should be narrower than 95% CI
+  edges_70 <- get_range_edge(p, axis = nd$Y, level = 0.70)
+  edges_95 <- get_range_edge(p, axis = nd$Y, level = 0.95)
   expect_true(mean(edges_70$upr - edges_70$lwr) < mean(edges_95$upr - edges_95$lwr))
-})
-
-test_that("get_range_edge() handles edge cases", {
-  skip_on_cran()
-  skip_on_ci()
-
-  mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 20)
-  m <- sdmTMB(
-    density ~ 1,
-    data = pcod, mesh = mesh, family = tweedie(link = "log"),
-    time = "year", spatiotemporal = "off", spatial = "on"
-  )
-
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  set.seed(303)
-  p <- predict(m, newdata = nd, nsim = 20)
 
   # Test with extreme quantiles
   edges <- get_range_edge(p, axis = nd$Y, quantiles = c(0.001, 0.999))
@@ -199,7 +166,7 @@ test_that("get_range_edge() handles edge cases", {
 
   # Test with single quantile
   edges <- get_range_edge(p, axis = nd$Y, quantiles = 0.5)
-  expect_equal(nrow(edges), length(unique(pcod$year)))
+  expect_equal(nrow(edges), length(unique(pcod_2011$year)))
   expect_equal(unique(edges$quantile), 0.5)
 })
 
@@ -214,7 +181,7 @@ test_that("get_range_edge() works with different link functions", {
     time = "year", spatiotemporal = "off", spatial = "off"
   )
 
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
+  nd <- range_edge_grid()
   set.seed(404)
   p <- predict(m_binomial, newdata = nd, nsim = 50)
 
@@ -230,15 +197,8 @@ test_that("get_range_edge() works with different link functions", {
 test_that("get_range_edge() axis ordering is handled correctly", {
   skip_on_cran()
 
-  m <- sdmTMB(
-    density ~ 1,
-    data = pcod, family = tweedie(link = "log"),
-    time = "year", spatiotemporal = "off", spatial = "off"
-  )
-
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  set.seed(505)
-  p <- predict(m, newdata = nd, nsim = 50)
+  nd <- range_edge_grid()
+  p <- range_edge_sims()
 
   # Test with Y axis (original)
   edges_y <- get_range_edge(p, axis = nd$Y)
@@ -262,15 +222,8 @@ test_that("get_range_edge() axis ordering is handled correctly", {
 test_that("get_range_edge() warning for missing link attribute", {
   skip_on_cran()
 
-  m <- sdmTMB(
-    density ~ 1,
-    data = pcod, family = tweedie(link = "log"),
-    time = "year", spatiotemporal = "off", spatial = "off"
-  )
-
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  set.seed(606)
-  p <- predict(m, newdata = nd, nsim = 20)
+  nd <- range_edge_grid()
+  p <- range_edge_sims()
 
   # Remove link attribute to trigger warning
   attr(p, "link") <- NULL
@@ -283,15 +236,8 @@ test_that("get_range_edge() warning for missing link attribute", {
 test_that("get_range_edge() handles consistent time column naming", {
   skip_on_cran()
 
-  m <- sdmTMB(
-    density ~ 1,
-    data = pcod, family = tweedie(link = "log"),
-    time = "year", spatiotemporal = "off", spatial = "off"
-  )
-
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  set.seed(707)
-  p <- predict(m, newdata = nd, nsim = 30)
+  nd <- range_edge_grid()
+  p <- range_edge_sims()
 
   edges <- get_range_edge(p, axis = nd$Y)
 

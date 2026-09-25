@@ -10,6 +10,170 @@
 * `get_cog()` now errors informatively for areal (SAR/CAR) models, which have
   no x/y coordinates, instead of returning a centre of gravity of zero.
 
+* Rows with missing values in the response or any variable the model uses
+  (including `weights` and `offset`) are now omitted before fitting, as with
+  `na.action = na.omit` in `glm()`, with a message unless `silent = TRUE`.
+  Previously such rows were dropped from the response and main-effect design
+  matrix but not from the spatial, temporal, random-effect, or spatially
+  varying inputs, so later rows were matched to the wrong locations and
+  times, giving silently incorrect fits.
+  Post-fit methods such as `predict()`, `residuals()`, and `sdmTMB_cv()`
+  errored for these fits and now work. The fitted object's `data` holds the
+  rows used.
+
+* Add experimental multi-family models, where each row of the data can use a
+  different observation family (e.g., binomial, count, and delta-lognormal
+  data in one model with shared fields). Supply a named list of families to
+  `family` and name the column mapping rows to families with the new
+  `distribution_column` argument. See the new multi-family vignette for the
+  supported family combinations and post-fit methods.
+
+* Add a `dispformula` argument to `sdmTMB()` for modelling the observation
+  dispersion parameter with fixed-effect predictors. Not currently supported
+  for multi-family models or truncated negative binomial families.
+
+* Remove the experimental `epsilon_model = "re"` and `"trend-re"` options
+  (random year effects on the spatiotemporal SD). They did not recover
+  simulated year-to-year variation in the field SD. The `"trend"` option is
+  unchanged.
+
+* `sdmTMB_simulate()` now errors if `sigma_E` has more than one value. Only
+  the first value was used, so a time-varying `sigma_E` silently simulated a
+  constant SD. Simulation uses the backend set by `sdmTMBcontrol(backend)` or
+  the `sdmTMB.backend` option (TMB by default). The TMB and RTMB backends
+  give different simulated values for the same seed.
+
+* Compute `censored_poisson()` log likelihoods on the log scale in both the
+  TMB and RTMB backends. Censored probabilities were formed on the ordinary
+  scale before taking logs, so observations far in either tail (e.g., right
+  censored at 100 with a mean of 1) gave `-Inf` log likelihoods and
+  unusable gradients, which could derail optimization from poor parameter
+  values. Log probabilities are now computed from the tail that avoids
+  cancellation, with exact derivatives of all orders.
+
+* Fix `ordbeta()` simulation in both the TMB and RTMB backends. A one was
+  drawn only after a zero was not, so the probability of a one was
+  `(1 - p0) * p1` rather than `p1`; the missing mass went to the continuous
+  component. Simulated responses from `simulate()`, `sdmTMB_simulate()`, and
+  simulation-based residuals (e.g., DHARMa) therefore understated ones and
+  the mean. The likelihood was unaffected.
+
+* Start covariate diffusion's `kappaS_nl` at a value scaled to the data's
+  spatial extent (RMSDK equal to a quarter of the bounding-box diagonal)
+  rather than at 1. The old start meant very different amounts of smoothing
+  depending on coordinate units and could let the optimizer drift into a
+  degenerate over-smoothed mode (`kappaS_nl` near 0) with a
+  non-positive-definite Hessian.
+
+* Bound covariate diffusion's `log_kappaS_nl` by default so RMSDK stays
+  between half the shortest mesh edge and 10 times the mesh bounding-box
+  diagonal. Beyond these the likelihood is flat and the optimizer could drift
+  indefinitely, giving NaN standard errors; a fit at a bound now warns.
+  Override with `lower` or `upper` in `sdmTMBcontrol()`.
+
+* Estimate covariate diffusion's temporal parameter as `log_kappaT_nl`
+  (equal to `logit(rhoT)`) in place of `kappaT_nl_raw`, which had a lower
+  bound at zero. This needs no bounds, so it is also safe with `tmbstan`, where
+  `kappaT_nl_raw` could go negative. Update any `start`, `map`, `lower`, or
+  `upper` entries for `kappaT_nl_raw` accordingly. `sdmTMB_simulate()` now
+  requires `0 < lags_rhoT < 1`.
+
+* Start covariate diffusion's `time_lag()` recursion from a stationary state
+  by default: the covariate is assumed to have held at its first time slice
+  beforehand. Previously the state before the first slice was zero, which
+  shrank early slices towards zero and made fits depend on where the
+  covariate's zero was. For example, adding a constant to the covariate could
+  change estimates of `rhoT` and the coefficient under a single intercept.
+  `time_lag(x, start = "zero")` reproduces the previous behaviour, which
+  matches Thorson et al. (2026). Fits of `time_lag()` terms will differ from
+  earlier versions unless `start = "zero"` is used.
+
+* Check that `mesh` matches `nrow(data)` when `nonlocal_formula` is used, even
+  with spatial and spatiotemporal fields off. Covariate diffusion maps each
+  observation to the mesh by row, so a mesh built from a different data frame
+  silently used the wrong locations.
+
+* Fix `breakpt()` likelihoods and gradients after the estimated cutpoint
+  moves from its starting value. The C++ backend now evaluates the threshold
+  branch on the current parameter, matching the RTMB backend.
+
+* Add an experimental `sdmTMBcontrol(backend = "rtmb")` path. It supports all
+  observation families, delta (hurdle) and Poisson-link delta models, and
+  row-wise multi-family models with SPDE (isotropic, anisotropic, or
+  barrier) and areal SAR/CAR spatial and spatiotemporal fields (IID, AR1, or
+  RW), spatially and time-varying coefficients, correlated IID effects,
+  penalized smooths, threshold terms, nonstationary spatiotemporal variance,
+  dispersion formulas, covariate diffusion, restricted spatial regression,
+  priors, REML, and profiled fixed effects, plus `get_index()`, `get_cog()`,
+  `get_eao()`, and `get_weighted_average()` with bias correction. Post-fit
+  methods work on RTMB fits, including `simulate()`, `sdmTMB_simulate()`,
+  `project()`, `cAIC()`, residuals, and tmbstan sampling with
+  `bayesian = TRUE`. The default remains the TMB backend while the RTMB model
+  is migrated in stages.
+
+* Fix `time_varying` models with more than one column (e.g., `~ 1 + x` or a
+  factor with several levels). Each term's contribution was previously
+  re-added to the linear predictor once per later column, so term `k` of `K`
+  entered `K - k + 1` times. Maximized likelihoods, fitted values, and
+  predictions are unchanged, but estimated `b_rw_t` and `sigma_V` for every
+  term except the last were shrunk by `1 / (K - k + 1)`. These estimates, and
+  fits using a `sigma_V` prior, now change. Single-column `time_varying`
+  models are unaffected.
+
+* Fix `sigma_V` priors being applied twice in delta models.
+
+* Fix `censored_poisson()` likelihoods and gradients. Since sdmTMB 0.4.0
+  (2023), the censored Poisson CDF terms were evaluated as constants at the
+  starting values, so objective values and gradients were wrong elsewhere.
+  With the default `multiphase = TRUE`, the terms were fixed at the
+  phase-one Poisson estimates. Censored Poisson fits may change.
+
+* Fix binomial deviance residuals for responses with more than one trial
+  (e.g., proportions with `weights`). These were previously `NaN` or
+  incorrect because the calculation assumed 0/1 responses.
+
+* Use one default likelihood weight and index area per observation in delta
+  models. Previously these vectors included unused entries for the second
+  response component. Default binomial sizes follow the same row count.
+
+* Report each AR1 spatiotemporal `rho` once in delta models. The standard
+  error report previously repeated the full `rho` vector for each AR1 field.
+
+* Simulate correlated IID random effects with the RTMB backend when
+  `re_form = NA`. The TMB backend continues to retain their fitted modes
+  during simulation.
+
+* Add `make_zero_one_map()` to address #386. This is useful for categories
+  (e.g., year factors) where the response is all zeros or ones.
+
+* Add the `ordbeta()` family for ordered beta regression (Kubinec 2023),
+  a parsimonious alternative to ZOIB for continuous data on the closed unit
+  interval `[0, 1]` with point masses at 0 and 1. Two internal cutpoints are
+  estimated and reported (on the response scale) by `tidy()` and `print()`.
+  Multi-family fits including ordered beta are not supported. Closes #515.
+
+* The interaction between `spatial`, `spatial_varying`, and the intercept of
+  the `spatial_varying` design matrix has been clarified. See the vignette/article
+  "svc-factor-models."
+
+  `spatial_varying` now respects its own model matrix. The `(Intercept)`
+  column is only dropped when `spatial = "on"`, in which case the ordinary
+  spatial field `omega_s` is used as the SVC intercept/reference-level field
+  (a single informational message is issued at fit time, suppressible via
+  `silent = TRUE`).
+
+  The only material change in fitted-model structure versus published
+  releases is for `spatial = "off", spatial_varying = ~ 1 + factor`: this
+  previously stripped the intercept *and* zeroed `omega_s`, leaving only
+  `K - 1` deviation fields with no reference field. It now fits a genuine
+  SVC intercept field plus `K - 1` deviation fields. A one-cycle warning is
+  emitted for this specification.
+  
+  The previous message suggesting `spatial = "off"` when using
+  `spatial = "on", spatial_varying = ~ 0 + factor_var` has been removed; this
+  is a valid model specification (global spatial field plus per-level SVC
+  deviations) although it can be more challenging to estimate.
+
 * `diffusion(x) + time_lag(x)` in `nonlocal_formula` now fits one stationary
   joint space--time distributed-lag operator with one coefficient and one
   transformed prediction column (`nl_diffusion_time_lag_x`). Wrappers for

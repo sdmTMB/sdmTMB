@@ -7,7 +7,7 @@
 \usage{
 \method{tidy}{sdmTMB}(
   x,
-  effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov", "rsr"),
+  effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov", "rsr", "dispersion"),
   model = 1,
   conf.int = TRUE,
   conf.level = 0.95,
@@ -30,7 +30,8 @@ by model and group), or \code{"rsr"} (Restricted Spatial Regression fixed-effect
 coefficients adjusted for spatial confounding with the random fields;
 Hanks et al. 2015; Diaz and Thorson 2025). To access RSR coefficients the
 model must be fitted with
-\code{control = sdmTMBcontrol(get_rsr = TRUE)}.}
+\code{control = sdmTMBcontrol(get_rsr = TRUE)}.
+\code{"dispersion"} returns dispersion-model coefficients when \code{dispformula} is used.}
 
 \item{model}{Which model to tidy if a delta model (1 or 2). The \code{model} will be
 ignored when effects is \code{"ran_vals"} (all returned in a single dataframe)}
@@ -56,7 +57,8 @@ Turn sdmTMB model output into a tidy data frame
 Follows the conventions of the \pkg{broom} and \pkg{broom.mixed} packages.
 
 Currently, \code{effects = "ran_pars"} also includes dispersion-related terms
-(e.g., \code{phi}), which are not actually associated with random effects.
+(e.g., \code{phi}) only when dispersion is scalar. With \code{dispformula},
+use \code{effects = "dispersion"} to extract dispersion-model coefficients.
 
 Standard errors for spatial variance terms fit in log space (e.g., variance
 terms, range, or parameters associated with the observation error) are

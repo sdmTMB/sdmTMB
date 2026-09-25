@@ -25,6 +25,7 @@ jobs:
         with:
           extra-packages: any::covr
           needs: coverage
+          install-quarto: false
 
       - name: Install extras
         run: |

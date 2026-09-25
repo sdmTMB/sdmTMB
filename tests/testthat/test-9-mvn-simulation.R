@@ -7,7 +7,7 @@ test_that("rmvnorm sim prediction works with no random effects", {
     spatial = "off", spatiotemporal = "off"
   )
   set.seed(1)
-  nd <- replicate_df(qcs_grid, "year", unique(pcod_2011$year))
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
   p <- predict(m, newdata = nd, nsim = 30L)
   p1 <- predict(m, newdata = nd)
   expect_identical(class(p)[[1]], "matrix")
@@ -24,13 +24,12 @@ test_that("rmvnorm sim prediction works with no random effects", {
 
 test_that("rmvnorm sim prediction works", {
   skip_on_cran()
-  mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 10)
   m <- sdmTMB(
-    data = pcod,
+    data = pcod_2011,
     formula = density ~ 0 + as.factor(year),
-    mesh = mesh, family = tweedie(link = "log"))
+    mesh = pcod_mesh_2011, family = tweedie(link = "log"))
   set.seed(1)
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
   p <- predict(m, newdata = nd, nsim = 15L)
   p1 <- predict(m, newdata = nd)
   expect_identical(class(p)[[1]], "matrix")
@@ -53,10 +52,10 @@ test_that("get_index_sims works", {
     data = pcod_2011, mesh = pcod_mesh_2011, family = tweedie(link = "log"),
     time = "year", spatiotemporal = "off"
   )
-  qcs_grid_2011 <- replicate_df(qcs_grid, "year", unique(pcod_2011$year))
+  qcs_grid_2011 <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
   set.seed(1029)
-  p <- predict(m, newdata = qcs_grid_2011, nsim = 200L)
-  expect_equal(ncol(p), 200L)
+  p <- predict(m, newdata = qcs_grid_2011, nsim = 50L)
+  expect_equal(ncol(p), 50L)
   expect_equal(nrow(p), nrow(qcs_grid_2011))
 
   # library(dplyr)
@@ -68,9 +67,6 @@ test_that("get_index_sims works", {
   expect_equal(nrow(x), length(unique(qcs_grid_2011$year)))
   expect_true(sum(is.na(x$se)) == 0L)
 
-  x_regular <- get_index(m, newdata = qcs_grid_2011)
-  # expect_equal(round(x_regular$est/x$est, 5),
-  #   c(0.91494, 0.92115, 0.92244, 0.9049))
 
   x_sims <- get_index_sims(p, return_sims = TRUE)
   expect_equal(nrow(x_sims), nrow(x) * ncol(p))
@@ -94,7 +90,7 @@ test_that("get_index_sims works", {
   # check that index still works with type = response
   expect_match(attr(p,"link"), "log")
 
-  # p_response <- predict(m, newdata = qcs_grid_2011, nsim = 200L, type = "response")
+  # p_response <- predict(m, newdata = qcs_grid_2011, nsim = 50L, type = "response")
   # expect_match(attr(p_response,"link"), "response")
   # expect_warning(get_index_sims(p_response))
   # suppressWarnings(
@@ -129,38 +125,13 @@ test_that("get_index_sims works", {
   expect_warning(get_index_sims(p))
 })
 
-test_that("rmvnorm sim prediction works", {
-  skip_on_cran()
-  mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 10)
-  m <- sdmTMB(
-    data = pcod,
-    formula = density ~ 0 + as.factor(year),
-    mesh = mesh, family = tweedie(link = "log"))
-  set.seed(1)
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  p <- predict(m, newdata = nd, nsim = 15L)
-  p1 <- predict(m, newdata = nd)
-  expect_identical(class(p)[[1]], "matrix")
-  expect_identical(ncol(p), 15L)
-
-  # expect_equal(round(p[1:2, 1:10], 5),
-  #   structure(c(1.71569, 1.83575, -1.33492, -1.27293, 0.38908, 0.70163,
-  #     1.45686, 1.60475, 2.30503, 2.1425, 1.34876, 1.33194, 4.38547,
-  #     4.14214, 1.29596, 1.0981, 0.50995, 0.37118, 1.85081, 1.80129), .Dim = c(2L,
-  #       10L), .Dimnames = list(c("0", "0"), NULL)))
-
-  .mean <- apply(p, 1, mean)
-  .sd <- apply(p, 1, sd)
-  expect_gt(cor(.mean, p1$est), 0.99)
-})
-
 test_that("predict link attribute and get_index_sims work with delta", {
   skip_on_cran()
   m <- sdmTMB(density ~ 0 + as.factor(year),
               data = pcod_2011, mesh = pcod_mesh_2011, family = delta_gamma(),
               time = "year", spatiotemporal = "off"
   )
-  qcs_grid_2011 <- replicate_df(qcs_grid, "year", unique(pcod_2011$year))
+  qcs_grid_2011 <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
   set.seed(1029)
 
   p <- predict(m, newdata = qcs_grid_2011, nsim = 50L, model = 1)
@@ -219,7 +190,7 @@ test_that("predict link attribute and get_index_sims work with delta", {
   expect_equal(nrow(x), length(unique(qcs_grid_2011$year)))
   expect_true(sum(is.na(x$se)) == 0L)
 
-  x_regular <- get_index(m, newdata = qcs_grid_2011, bias_correct = T)
+  x_regular <- get_index(m, newdata = qcs_grid_2011, bias_correct = TRUE)
 
   x_sims <- get_index_sims(p, return_sims = TRUE)
   expect_equal(nrow(x_sims), nrow(x) * ncol(p))
@@ -260,7 +231,7 @@ test_that("rmvnorm sim prediction works with various sims_vars", {
 
   # need more data to converge:
   d <- pcod
-  pcod_spde <- make_mesh(d, c("X", "Y"), cutoff = 10)
+  pcod_spde <- make_mesh(d, c("X", "Y"), cutoff = 15)
   m3 <- sdmTMB(
     density ~ 1, data = d,
     mesh = pcod_spde, family = delta_gamma(),

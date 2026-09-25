@@ -69,6 +69,7 @@ cAIC <- function(object, what = c("cAIC", "EDF"), ...) {
 #' @exportS3Method
 cAIC.sdmTMB <- function(object, what = c("cAIC", "EDF"), ...) {
 
+  .check_family_capability(object, "cAIC")
   what <- tolower(what)
   what <- match.arg(what, choices = c("caic", "edf"))
 
@@ -82,24 +83,24 @@ cAIC.sdmTMB <- function(object, what = c("cAIC", "EDF"), ...) {
   if (is.null(object$control$profile)) {
     obj <- object$tmb_obj
   } else {
-    obj <- TMB::MakeADFun(
+    obj <- make_sdmTMB_adfun(
       data = tmb_data,
       parameters = object$parlist,
       map = object$tmb_map,
       random = object$tmb_random,
-      DLL = "sdmTMB",
+      backend = backend_sdmTMB(object),
       profile = NULL #<
     )
   }
 
   ## Make obj_new
   tmb_data$weights_i[] <- 0
-  obj_new <- TMB::MakeADFun(
+  obj_new <- make_sdmTMB_adfun(
     data = tmb_data,
     parameters = object$parlist,
     map = object$tmb_map,
     random = object$tmb_random,
-    DLL = "sdmTMB",
+    backend = backend_sdmTMB(object),
     profile = NULL
   )
 
@@ -140,7 +141,7 @@ cAIC.sdmTMB <- function(object, what = c("cAIC", "EDF"), ...) {
     }
     s_groups <- convert_bsmooth2names(object)
     # smoothers always shared in delta models
-    if (is_delta(object)) s_groups <- c(paste0("1LP-", s_groups), paste0("2LP-", s_groups))
+    if (.object_has_two_components(object, caller = "`cAIC()`")) s_groups <- c(paste0("1LP-", s_groups), paste0("2LP-", s_groups))
     group[group == "b_smooth"] <- s_groups
     group <- factor(group)
 

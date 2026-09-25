@@ -42,7 +42,13 @@ test_that("SVC are estimated correctly for binomial and delta models", {
     )
   )
 
-  expect_equal(m1$model$objective, m1.2$model$objective)
+  # these are two independent nlminb() optimizations of an equivalent model;
+  # they need not agree to full floating-point precision
+  expect_equal(
+    as.numeric(m1$model$objective),
+    as.numeric(m1.2$model$objective),
+    tolerance = 1e-6
+  )
 
   # valid: global spatial field plus factor-level SVC deviations (no routine warning)
   m1.3 <- sdmTMB(
@@ -221,4 +227,3 @@ test_that("x$spatial correctly reflects user's specification for all SVC cases",
   expect_equal(fF$spatial, "off")
   expect_equal(ncol(fF$tmb_data$z_i), 0L)
 })
-

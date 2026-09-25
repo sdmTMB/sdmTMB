@@ -14,6 +14,7 @@ articles:
   - articles/poisson-link
   - articles/threshold-models
   - articles/zoib
+  - articles/multi-family
   - articles/multispecies
   - articles/age-composition
   - articles/presence-only
@@ -84,6 +85,7 @@ reference:
   - replicate_df
   - set_delta_model
   - make_category_svc
+  - make_zero_one_map
   - coef.sdmTMB
   - sigma.sdmTMB
   - cAIC

@@ -15,7 +15,7 @@ mround <- function(x, digits) {
 #' @export
 #' @noRd
 nobs.sdmTMB <- function(object, ...) {
-    sum(!is.na(object$data[all.vars(object$formula[[1]])[1]]))
+  sum(!is.na(object$data[all.vars(object$formula[[1]])[1]]))
 }
 
 #' Get fitted values from an sdmTMB model
@@ -28,17 +28,7 @@ fitted.sdmTMB <- function(object, ...) {
 
   if (!"offset" %in% names(object))
     cli_abort("It looks like this was fit with an older version of sdmTMB. Try sdmTMB:::update_version(fit).")
-  if (isTRUE(object$family$delta)) {
-    inv1 <- object$family[[1]]$linkinv
-    p <- predict(object, type = "link", offset = object$offset)
-    p1 <- inv1(p$est1)
-    inv2 <- object$family[[2]]$linkinv
-    p2 <- inv2(p$est2)
-    p1 * p2
-  } else {
-    inv <- object$family$linkinv
-    inv(predict(object, type = "link", offset = object$offset)$est)
-  }
+  predict(object, newdata = object$data, type = "response", offset = object$offset)$est
 }
 
 #' Get fixed-effect coefficients
@@ -83,7 +73,7 @@ vcov.sdmTMB <- function(object, complete = FALSE, model = 1, ...) {
   nm <- colnames(v)
 
   # For delta models, identify which b_j to use
-  if (is_delta(object)) {
+  if (.object_has_two_components(object, caller = "`vcov()`")) {
     if (model == 1L) {
       i <- grepl("^b_j$", nm)
     } else {
@@ -139,7 +129,7 @@ logLik.sdmTMB <- function(object, ...) {
   val <- -object$model$objective
   nobs <- nobs.sdmTMB(object)
   lpb <- names(object$tmb_obj$env$last.par.best)
-  ran <- c("omega_s", "epsilon_st", "zeta_s", "b_rw_t", "epsilon_re", "RE", "b_smooth", "re_b_pars")
+  ran <- c("omega_s", "epsilon_st", "zeta_s", "b_rw_t", "RE", "b_smooth", "re_b_pars")
   df <- sum(!lpb %in% ran)
   structure(val,
     nobs = nobs, nall = nobs, df = df,
@@ -165,6 +155,10 @@ extractAIC.sdmTMB <- function(fit, scale, k = 2, ...) {
 #' @importFrom stats family
 #' @export
 family.sdmTMB <- function (object, ...) {
+  family_spec <- .object_family_spec(object, caller = "`family()`")
+  if (.family_spec_is_multi_family(family_spec)) {
+    return(family_spec$family_input)
+  }
   if (.has_delta_attr(object)) {
     which_model <- attr(object, "delta_model_predict")
     if (is.na(which_model)) which_model <- 2L # combined; for link
@@ -232,9 +226,10 @@ ranef.sdmTMB <- function(object, ...) {
 #' @importFrom stats residuals
 #' @export
 deviance.sdmTMB <- function(object, ...) {
+  .check_family_capability(object, "deviance")
   implemented <- c("poisson", "Gamma", "binomial",
     "gaussian", "lognormal", "tweedie", "nbinom1", "nbinom2")
-  if (!is_delta(object)) {
+  if (!.object_has_two_components(object, caller = "`deviance()`")) {
     if (!object$family$family %in% implemented) {
       cli_abort("Deviance not implemented for the fitted family")
     }
@@ -243,7 +238,7 @@ deviance.sdmTMB <- function(object, ...) {
       cli_abort("Deviance not implemented for the fitted family")
     }
   }
-  if (is_delta(object)) {
+  if (.object_has_two_components(object, caller = "`deviance()`")) {
     r1 <- residuals(object, type = "deviance", model = 1)
     r2 <- residuals(object, type = "deviance", model = 2)
     r <- sum(r1^2 + r2^2)
@@ -374,6 +369,7 @@ Effect.sdmTMB <- function(focal.predictors, mod, ...) {
   if (!requireNamespace("effects", quietly = TRUE)) {
     cli_abort("Please install the effects package")
   }
+  .check_family_capability(mod, "Effect", caller = "`effects::Effect()`")
 
   if (is_delta(mod)) {
     msg <- paste0("Effect() and ggeffects::ggeffect() do not yet work with ",
@@ -433,6 +429,12 @@ model.frame.sdmTMB <- function(formula, ...) {
 #' handling the mesh object to avoid environment issues when loading models
 #' from saved files.
 #'
+#' Unless `control` is supplied, the updated model reuses the fitted model's
+#' [sdmTMBcontrol()] settings, including its backend, regardless of the
+#' current `sdmTMB.backend` option. A supplied `control` replaces these
+#' settings, including the backend (e.g.,
+#' `update(fit, control = sdmTMBcontrol(backend = "rtmb"))`).
+#'
 #' @param object An sdmTMB model object.
 #' @param formula. Optional updated formula.
 #' @param ... Other arguments to update in the model call.
@@ -481,6 +483,17 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
     call$data <- object$data
   }
 
+  # keep the fitted controls and backend unless `control` is replaced;
+  # otherwise the backend would re-resolve from the current global option
+  if (!"control" %in% names(new_args)) {
+    control <- object$control
+    if (!is.list(control)) control <- sdmTMBcontrol(backend = "tmb")
+    control$backend <- backend_sdmTMB(object)
+    call$control <- control
+  } else if (is.list(new_args$control) && is.null(new_args$control$backend)) {
+    call$control$backend <- backend_sdmTMB(object)
+  }
+
   # evaluate the updated call if requested
   if (evaluate) {
     # create an environment with the necessary objects
@@ -505,9 +518,16 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
 #' @method sigma sdmTMB
 #' @export
 sigma.sdmTMB <- function(object, ...) {
+  .check_family_capability(object, "sigma")
+  if (isTRUE(object$has_dispformula)) {
+    cli_abort(c(
+      "`sigma()` is not available when `dispformula` is used because dispersion varies by observation.",
+      "i" = "Use `tidy(object, effects = 'dispersion')` to inspect dispersion coefficients, or `dharma_residuals()` for residual diagnostics."
+    ))
+  }
 
   # Get family
-  fam <- if (is_delta(object)) {
+  fam <- if (.object_has_two_components(object, caller = "`sigma()`")) {
     # For delta models, use the positive model
     object$family[[2]]
   } else {

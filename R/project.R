@@ -204,6 +204,7 @@ project <- function(
   }
 
   reinitialize(object)
+  family_spec <- .check_family_capability(object, "project")
 
   if (object$time == "_sdmTMB_time")
     cli_abort("Please refit the sdmTMB model with the 'time' argument specified.")
@@ -265,7 +266,7 @@ project <- function(
 
   ## parameters: add zeros as needed to all time-based parameters
   pars <- get_pars(object)
-  n_m <- if (is_delta(object)) 2L else 1L
+  n_m <- family_spec$n_m
   n_s <- dim(pars$epsilon_st)[1]
 
   new_eps <- array(0, c(n_s, nproj, n_m))
@@ -273,10 +274,6 @@ project <- function(
   new_b_rw_t <- array(0, c(nproj, n_time_varying, n_m))
   pars$epsilon_st <- abind::abind(pars$epsilon_st, new_eps, along = 2)
   pars$b_rw_t <- abind::abind(pars$b_rw_t, new_b_rw_t, along = 1)
-  new_epsilon_re <- matrix(0, nrow = nproj, ncol = n_m)
-  if (length(pars$epsilon_re)) {
-    pars$epsilon_re <- rbind(pars$epsilon_re, new_epsilon_re)
-  }
 
   map <- object$tmb_map
   if ("b_rw_t" %in% names(map)) {
@@ -284,12 +281,6 @@ project <- function(
       cli_abort("Function not set up yet for non-NA mapping of `b_rw_t`.")
     }
     map$b_rw_t <- factor(rep(NA, length(as.numeric(pars$b_rw_t))))
-  }
-  if ("epsilon_re" %in% names(map) && length(pars$epsilon_re)) {
-    if (any(!is.na(map$epsilon_re))) {
-      cli_abort("Function not set up yet for non-NA mapping of `epsilon_re`.")
-    }
-    map$epsilon_re <- factor(rep(NA, length(as.numeric(pars$epsilon_re))))
   }
 
   delta <- is_delta(object)
@@ -308,13 +299,13 @@ project <- function(
 
   ## rebuild TMB object
   if (!silent) cli::cli_inform("Rebuilding TMB object with TMB::MakeADFun()")
-  obj <- TMB::MakeADFun(
+  obj <- make_sdmTMB_adfun(
     data = p,
     profile = object$control$profile,
     parameters = pars,
     map = map,
     random = object$tmb_random,
-    DLL = "sdmTMB",
+    backend = backend_sdmTMB(object),
     silent = TRUE
   )
 
@@ -336,12 +327,6 @@ project <- function(
         lpx, "epsilon_st", .n = sum(epsilon_future_active),
         n_groups = n_active_st,
         fill = as.vector(new_eps)[epsilon_future_active]
-      )
-    }
-    if ("epsilon_re" %in% names(lpx)) {
-      lpx <- insert_pars(
-        lpx, "epsilon_re", .n = length(as.vector(new_epsilon_re)),
-        n_groups = n_m, fill = as.vector(new_epsilon_re)
       )
     }
     if (future_re != "include" || !sample_future_re ||
@@ -396,7 +381,7 @@ project <- function(
 project_sd_report <- function(object) {
   sd_report <- object$sd_report
   if (!"jointPrecision" %in% names(sd_report) && length(object$tmb_random)) {
-    sd_report <- TMB::sdreport(object$tmb_obj, getJointPrecision = TRUE)
+    sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
   }
   sd_report
 }
@@ -406,8 +391,7 @@ project_historical_re_indices <- function(lp) {
   ## internal random block also contains b_j (and bs for smoothers), which are
   ## still estimated model parameters for project()'s API.
   historical_re <- c(
-    "omega_s", "epsilon_st", "zeta_s", "re_b_pars", "b_rw_t",
-    "epsilon_re", "b_smooth"
+    "omega_s", "epsilon_st", "zeta_s", "re_b_pars", "b_rw_t", "b_smooth"
   )
   which(names(lp) %in% historical_re)
 }
@@ -711,17 +695,29 @@ move_proj_to_tmbdat <- function(x, object, newdata, called_by_simulate = FALSE, 
   ## x$A_st <- x$proj_mesh
   ## .cpp uses unique locations in projection but not in fitting:
   xy_cols <- object$spde$xy_cols
-  proj_mesh <- fmesher::fm_basis(object$spde$mesh, loc = as.matrix(newdata[, xy_cols, drop = FALSE]))
-  x$A_st <- proj_mesh
-  x$A_spatial_index <- seq_len(dim(proj_mesh)[1]) - 1L
+  if (!is.null(xy_cols) && all(xy_cols %in% names(newdata))) {
+    proj_mesh <- fmesher::fm_basis(object$spde$mesh, loc = as.matrix(newdata[, xy_cols, drop = FALSE]))
+    x$A_st <- proj_mesh
+    x$A_spatial_index <- seq_len(dim(proj_mesh)[1]) - 1L
+  } else {
+    x$A_st <- x$proj_mesh
+    x$A_spatial_index <- x$proj_spatial_index
+  }
   x$X_threshold <- x$proj_X_threshold
   x$X_ij <- x$proj_X_ij
+  if (isTRUE(as.logical(x$has_dispersion_model))) {
+    if (is.null(x$proj_Xdisp_ij)) {
+      cli_abort("Internal error: missing dispersion projection matrix in prediction data.")
+    }
+    x$Xdisp_ij <- x$proj_Xdisp_ij
+  }
   x$X_rw_ik <- x$proj_X_rw_ik
   x$z_i <- x$proj_z_i
   x$Zs <- x$proj_Zs
   x$Xs <- x$proj_Xs
   x$Zt_list <- x$Zt_list_proj
   x$offset_i <- x$proj_offset_i
+  x$obs_family_id <- x$proj_family_id
   n_m <- length(x$X_ij) ## n linear predictor [m]odels
   x$y_i <- matrix(NA, ncol = n_m, nrow = nrow(x$proj_X_ij[[1]])) # fake
   x$weights_i <- rep(1, nrow(x$y_i)) # fake: FIXME: bring in?
@@ -754,6 +750,7 @@ move_proj_to_tmbdat <- function(x, object, newdata, called_by_simulate = FALSE, 
 
   # nullify large data objects that are no longer needed:
   x$proj_X_ij <- list(matrix(0, ncol = 1, nrow = 1))
+  x$proj_Xdisp_ij <- matrix(0, ncol = 1, nrow = 1)
   x$proj_X_rw_ik <- matrix(0, ncol = 1, nrow = 1) # dummy
   x$proj_mesh <- Matrix::Matrix(c(0, 0, 2:0), 3, 5) # dummy
   x$proj_Zs <- list()

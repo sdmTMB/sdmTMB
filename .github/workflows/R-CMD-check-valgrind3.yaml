@@ -54,6 +54,7 @@ jobs:
           extra-packages: |
             any::rcmdcheck
           needs: check
+          install-quarto: false
 
       - name: Check with valgrind
         env:

@@ -1,35 +1,45 @@
-test_that("get_index works", {
-  skip_on_cran()
-
-  pcod_spde <- make_mesh(pcod, c("X", "Y"), n_knots = 50, type = "kmeans")
-  m <- sdmTMB(
-    data = pcod,
-    formula = density ~ 0 + as.factor(year),
-    spatiotemporal = "off", # speed
-    time = "year", mesh = pcod_spde,
+# One spatial model shared by most tests. Bias correction is only checked
+# once, for get_index(), because it is slow for COG and EAO and they share its
+# code path.
+index_fit <- fit_once(function() {
+  sdmTMB(
+    density ~ 0 + as.factor(year),
+    data = pcod_2011, mesh = pcod_mesh_2011,
+    spatiotemporal = "off", time = "year",
     family = tweedie(link = "log")
   )
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
+})
+index_grid <- function() replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
+
+test_that("get_index works", {
+  skip_on_cran()
+  m <- index_fit()
+  nd <- index_grid()
+
+  expect_error(get_index(predict(m, newdata = nd)), regexp = "return_tmb_object")
   lifecycle::expect_deprecated(
     predictions <- predict(m, newdata = nd, return_tmb_object = TRUE),
     "return_tmb_object"
   )
   ind <- get_index(predictions, bias_correct = FALSE)
-  ind_direct <- get_index(m, newdata = nd, bias_correct = FALSE)
+  expect_s3_class(ind, "data.frame")
+  expect_equal(get_index(m, newdata = nd, bias_correct = FALSE), ind)
   expect_equal(get_index(m, nd, bias_correct = FALSE), ind)
   expect_warning(ind_positional <- get_index(predictions, FALSE), "positional")
   expect_equal(ind_positional, ind)
   expect_error(get_index(predictions, FALSE, 0.9), "ambiguous")
-  ind
-  expect_s3_class(ind, "data.frame")
-  expect_equal(ind_direct, ind)
-  expect_equal(ind$est, c(231093.53593233, 496535.536294892, 448246.178485261,
-    123741.27252067, 186757.491613366, 354408.827465818, 319877.944093621,
-    363284.968094093, 191744.545097374), tolerance = 1e-5)
-  expect_equal(ind$se_natural, c(34119.5010216887, 67987.7282245663, 
-    60432.8362168011, 19242.5241803067, 
-    28990.7319560472, 47539.6734588743, 44165.2634135574, 49344.1167299188, 
-    29289.6929311748), tolerance = 1e-4)
+  expect_equal(ind$est, c(15514.38579, 18087.5931, 21469.68763, 10818.77689),
+    tolerance = 1e-5)
+  expect_equal(ind$se_natural, c(2063.19087, 2506.177356, 2880.466712, 1681.308913),
+    tolerance = 1e-4)
+  expect_equal(ind$lwr, c(11954.6533, 13786.05969, 16505.35323, 7978.033581),
+    tolerance = 1e-4)
+
+  ind_bc <- get_index(predictions, bias_correct = TRUE)
+  expect_s3_class(ind_bc, "data.frame")
+  expect_equal(ind_bc$est, c(17125.71065, 19966.1714, 23699.53043, 11942.41558),
+    tolerance = 1e-5)
+  expect_gt(mean(ind_bc$est - ind$est), 0)
 
   indsp <- get_index_split(m, nd, nsplit = 2, bias_correct = FALSE)
   expect_equal(ind, indsp)
@@ -38,22 +48,18 @@ test_that("get_index works", {
   expect_error(chunk_time(c(1, 2), -1))
   expect_error(chunk_time(c(1, 2), "a"))
   expect_error(chunk_time(c(1, 2), 0.2))
-  expect_error(indsp <- get_index_split(m, nd, nsplit = 2, predict_args = "a"), regexp = "list")
-
-  ind <- get_index(predictions, bias_correct = TRUE)
-  expect_s3_class(ind, "data.frame")
-  expect_equal(ind$est, c(247806.62874544, 532445.863555338, 480664.134071607,
-    132690.459974602, 200264.123368708, 380040.300035246, 343012.082168642,
-    389558.378836063, 205611.849371771), tolerance = 1e-5)
+  expect_error(get_index_split(m, nd, nsplit = 2, predict_args = "a"), regexp = "list")
 
   cog <- get_cog(predictions)
-  cog
   expect_s3_class(cog, "data.frame")
   expect_equal(get_cog(m, newdata = nd), cog)
-
-  cog <- get_cog(predictions, format = "wide")
-  cog
-  expect_s3_class(cog, "data.frame")
+  expect_equal(cog$est, c(rep(464.7814192, 4), rep(5752.411089, 4)),
+    tolerance = 1e-5)
+  cog_wide <- get_cog(predictions, format = "wide")
+  expect_s3_class(cog_wide, "data.frame")
+  expect_equal(names(cog_wide), c("year", "est_x", "lwr_x", "upr_x", "se_x",
+    "est_y", "lwr_y", "upr_y", "se_y", "type"))
+  expect_equal(cog$est[cog$coord == "X"], cog_wide$est_x)
 
   expect_error(get_index(predictions, area = c(1, 2, 3)), regexp = "area")
 
@@ -63,8 +69,23 @@ test_that("get_index works", {
   ind <- get_index(predictions, area = areas, bias_correct = FALSE)
   indsp <- get_index_split(m, nd, nsplit = 2, area = areas, bias_correct = FALSE)
   expect_equal(ind, indsp)
+})
 
-  # splits work with offsets:
+test_that("get_index_sims() roughly matches get_index()", {
+  skip_on_cran()
+  m <- index_fit()
+  nd <- index_grid()
+  ind <- get_index(m, newdata = nd, bias_correct = FALSE)
+  set.seed(1)
+  ind_sim <- get_index_sims(predict(m, newdata = nd, nsim = 100L))
+  expect_s3_class(ind_sim, "data.frame")
+  expect_gt(cor(ind_sim$est, ind$est), 0.9)
+  expect_gt(cor(ind_sim$lwr, ind$lwr), 0.9)
+  expect_gt(cor(ind_sim$upr, ind$upr), 0.9)
+})
+
+test_that("get_index works with offsets and splits", {
+  skip_on_cran()
   m2 <- sdmTMB(
     data = dogfish,
     formula = catch_weight ~ 0 + as.factor(year),
@@ -77,9 +98,7 @@ test_that("get_index works", {
   set.seed(1)
   fake_offset <- rnorm(nrow(nd2), 0, 0.1)
   ind <- get_index(m2, newdata = nd2, offset = fake_offset, bias_correct = FALSE)
-  ind_direct <- get_index(m2, newdata = nd2, offset = fake_offset, bias_correct = FALSE)
   indsp <- get_index_split(m2, nd2, nsplit = 2, offset = fake_offset, bias_correct = FALSE)
-  expect_equal(ind, ind_direct)
   expect_equal(ind, indsp)
   expect_error(
     get_index(m2, newdata = nd2, offset = fake_offset[-1], bias_correct = FALSE),
@@ -94,7 +113,6 @@ test_that("get_index works", {
     get_index(m2, newdata = nd2, predict_args = list(NA), bias_correct = FALSE),
     "must be named"
   )
-
   expect_warning(
     get_index_split(m2, nd2, nsplit = 2,
       predict_args = list(offset = fake_offset), bias_correct = FALSE),
@@ -105,6 +123,39 @@ test_that("get_index works", {
       predict_args = list(offset = fake_offset), bias_correct = FALSE),
     "not both"
   )
+})
+
+test_that("index errors are returned as needed", {
+  skip_on_cran()
+  g <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
+  expect_error(
+    sdmTMB(
+      density ~ 1,
+      data = pcod_2011,
+      spatial = "off", spatiotemporal = "off",
+      family = tweedie(link = "log"),
+      time = "year",
+      predict_args = list(newdata = g),
+      index_args = list(area = 1)
+    ), regexp = "do_index" # missing!
+  )
+
+  fit <- sdmTMB(
+    density ~ 1,
+    data = pcod_2011, spatial = "off", spatiotemporal = "off",
+    family = tweedie(link = "log"),
+    time = "year"
+  )
+  lifecycle::expect_deprecated(
+    p1 <- predict(fit, newdata = NULL, return_tmb_object = TRUE),
+    "return_tmb_object"
+  )
+  expect_error(get_index(p1), "newdata") # missing!
+
+  suppressMessages(
+    i <- get_index(fit, newdata = g, bias_correct = FALSE)
+  )
+  expect_s3_class(i, "data.frame")
 })
 
 test_that("get_index() can override the derived response link for cloglog binomial models", {
@@ -152,41 +203,31 @@ test_that("get_index() can override the derived response link for cloglog binomi
   )
   expect_equal(idx_log, idx_split)
 
-  m_do_index <- sdmTMB(
-    prop ~ 0 + as.factor(time),
-    data = d,
-    family = binomial(link = "cloglog"),
-    weights = d$trials,
-    spatial = "off",
-    spatiotemporal = "off",
-    time = "time",
-    do_index = TRUE,
-    predict_args = list(newdata = nd),
-    index_args = list(area = n_trials, derived_link = "log")
-  )
-  idx_fit <- get_index(m_do_index, bias_correct = FALSE)
-  expect_equal(idx_fit$est, idx_log$est)
-
-  m_do_index_default <- sdmTMB(
-    prop ~ 0 + as.factor(time),
-    data = d,
-    family = binomial(link = "cloglog"),
-    weights = d$trials,
-    spatial = "off",
-    spatiotemporal = "off",
-    time = "time",
-    do_index = TRUE,
-    predict_args = list(newdata = nd),
-    index_args = list(area = n_trials)
-  )
-  idx_fit_override <- get_index(m_do_index_default, bias_correct = FALSE, derived_link = "log")
+  do_index_fit <- function(index_args) {
+    sdmTMB(
+      prop ~ 0 + as.factor(time),
+      data = d,
+      family = binomial(link = "cloglog"),
+      weights = d$trials,
+      spatial = "off",
+      spatiotemporal = "off",
+      time = "time",
+      do_index = TRUE,
+      predict_args = list(newdata = nd),
+      index_args = index_args
+    )
+  }
+  m_do_index <- do_index_fit(list(area = n_trials, derived_link = "log"))
+  expect_equal(get_index(m_do_index, bias_correct = FALSE)$est, idx_log$est)
+  m_do_index_default <- do_index_fit(list(area = n_trials))
+  idx_fit_override <- get_index(m_do_index_default, bias_correct = FALSE,
+    derived_link = "log")
   expect_equal(idx_fit_override$est, idx_log$est)
 })
 
 test_that("get_cog works with subsets of years", {
   skip_on_cran()
-  skip_on_ci()
-  d <- pcod_2011[pcod_2011$year %in% c(2011, 2013, 2015), ,drop=FALSE]
+  d <- pcod_2011[pcod_2011$year %in% c(2011, 2013, 2015), , drop = FALSE]
   mesh <- make_mesh(d, c("X", "Y"), mesh = pcod_mesh_2011$mesh)
 
   m <- sdmTMB(
@@ -194,23 +235,20 @@ test_that("get_cog works with subsets of years", {
     data = d,
     time = "year",
     spatiotemporal = "iid",
-    spatial = 'off',
+    spatial = "off",
     mesh = mesh,
     family = tweedie()
   )
-  nd <- replicate_df(qcs_grid, "year", unique(d$year))
-  nd_2011 <- replicate_df(qcs_grid, "year", 2011)
-  nd_2 <- replicate_df(qcs_grid, "year", c(2011, 2013))
-  nd_3 <- replicate_df(qcs_grid, "year", c(2015, 2011))
+  nd <- replicate_df(qcs_grid_small, "year", unique(d$year))
+  nd_2011 <- replicate_df(qcs_grid_small, "year", 2011)
+  nd_3 <- replicate_df(qcs_grid_small, "year", c(2015, 2011))
 
   # use get_weighted_average to halve time:
-  cog_full <- get_weighted_average(m, newdata = nd, bias_correct = TRUE, vector = nd$X)
-  expect_equal(cog_full$est, c(465.937297088344, 473.391667509379, 463.328781317731), tolerance = 1e-5)
-  cog_2011 <- get_weighted_average(m, newdata = nd_2011, bias_correct = TRUE, vector = nd_2011$X)
-  cog_2 <- get_weighted_average(m, newdata = nd_2, bias_correct = TRUE, vector = nd_2$X)
-  cog_3 <- get_weighted_average(m, newdata = nd_3, bias_correct = TRUE, vector = nd_3$X)
+  cog_full <- get_weighted_average(m, newdata = nd, bias_correct = FALSE, vector = nd$X)
+  expect_equal(cog_full$est, c(466.9521354, 475.6277198, 462.6024796), tolerance = 1e-5)
+  cog_2011 <- get_weighted_average(m, newdata = nd_2011, bias_correct = FALSE, vector = nd_2011$X)
+  cog_3 <- get_weighted_average(m, newdata = nd_3, bias_correct = FALSE, vector = nd_3$X)
   expect_equal(cog_2011$est, subset(cog_full, year == 2011)$est)
-  expect_equal(cog_2$est, subset(cog_full, year %in% c(2011, 2013))$est)
   expect_equal(cog_3$est, subset(cog_full, year %in% c(2015, 2011))$est)
 })
 
@@ -222,158 +260,86 @@ test_that("get_index works with subsets of years", {
     data = pcod_2011,
     time = "year",
     spatiotemporal = "off",
-    spatial = 'off',
+    spatial = "off",
     mesh = pcod_mesh_2011,
     family = delta_gamma()
   )
-  nd <- replicate_df(qcs_grid, "year", unique(pcod_2011$year))
-  nd_2011 <- replicate_df(qcs_grid, "year", 2011)
-  nd_2 <- replicate_df(qcs_grid, "year", c(2011, 2013))
-  nd_3 <- replicate_df(qcs_grid, "year", c(2015, 2011))
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
+  nd_2011 <- replicate_df(qcs_grid_small, "year", 2011)
+  nd_2 <- replicate_df(qcs_grid_small, "year", c(2011, 2013))
+  nd_3 <- replicate_df(qcs_grid_small, "year", c(2015, 2011))
 
-  index_full <- get_index(m, newdata = nd, bias_correct = TRUE)
-  expect_equal(index_full$est, c(322529.726849684, 293854.369632378, 390942.264920706, 184368.275544616), tolerance = 1e-4)
-
-  index_full_no_bias_correction <- get_index(m, newdata = nd, bias_correct = FALSE)
-  expect_equal(index_full_no_bias_correction$est, c(322529.726849684, 293854.369632378, 390942.264920706, 184368.275544616), tolerance = 1e-4)
-
-  index_2011 <- get_index(m, newdata = nd_2011, bias_correct = TRUE)
-  index_2 <- get_index(m, newdata = nd_2, bias_correct = TRUE)
-  index_3 <- get_index(m, newdata = nd_3, bias_correct = TRUE)
-  cog <- get_cog(m, newdata = nd)
-  cog_bias <- get_cog(m, newdata = nd, bias_correct = TRUE)
-  expect_equal(cog$est, cog$est) # no random effects so equal
-
+  index_full <- get_index(m, newdata = nd, bias_correct = FALSE)
+  expect_equal(index_full$est, c(19932.10781, 18159.99112, 24159.95403, 11393.82835),
+    tolerance = 1e-4)
+  index_2011 <- get_index(m, newdata = nd_2011, bias_correct = FALSE)
+  index_2 <- get_index(m, newdata = nd_2, bias_correct = FALSE)
+  index_3 <- get_index(m, newdata = nd_3, bias_correct = FALSE)
   expect_equal(index_2011$est, subset(index_full, year == 2011)$est)
   expect_equal(index_2$est, subset(index_full, year %in% c(2011, 2013))$est)
   expect_equal(index_3$est, subset(index_full, year %in% c(2015, 2011))$est)
 
-  index_apply <- lapply(unique(pcod_2011$year), \(y) {
-    nd <- replicate_df(qcs_grid, "year", y)
-    get_index(m, newdata = nd, bias_correct = TRUE)
-  })
-  index_apply <- do.call(rbind, index_apply)
-  expect_equal(index_apply, index_full)
+  cog <- get_cog(m, newdata = nd, bias_correct = FALSE)
+  cog2011 <- get_cog(m, newdata = nd_2011, bias_correct = FALSE)
+  expect_equal(cog2011$est, cog$est[cog$year == 2011])
 
-  cog <- get_cog(m, newdata = nd)
   eao <- get_eao(m, newdata = nd, bias_correct = FALSE)
-  eao_bias <- get_eao(m, newdata = nd, bias_correct = TRUE)
-  expect_equal(eao$est, eao_bias$est) # no random effects so equal
-  expect_equal(eao$est, c(7314.00000000023, 7313.99999999846, 7314.00000000215, 7313.99999999964), tolerance = 1e-5)
-  cog2011 <- get_cog(m, newdata = nd_2011)
-  eao2011 <- get_eao(m, newdata = nd_2011)
+  # no random effects, so every cell is occupied:
+  expect_equal(eao$est, rep(nrow(qcs_grid_small), 4), tolerance = 1e-5)
+  eao2011 <- get_eao(m, newdata = nd_2011, bias_correct = FALSE)
   expect_equal(eao2011$est, eao$est[eao$year == 2011])
-  expect_equal(cog2011$est, cog2011$est[cog2011$year == 2011])
 })
 
 test_that("Index integration with area vector works with extra time and possibly not all time elements in prediction data #323", {
   skip_on_cran()
   fit <- sdmTMB(
     density ~ s(depth),
-    time_varying_type = 'ar1',
+    time_varying_type = "ar1",
     time_varying = ~ 1,
-    time = 'year',
-    spatial = 'off',
-    spatiotemporal = 'off',
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off",
     extra_time = c(2012, 2014, 2016),
     data = pcod_2011,
     family = tweedie(link = "log")
   )
   # with all years:
-  nd <- replicate_df(qcs_grid, "year", seq(2011, 2017))
+  nd <- replicate_df(qcs_grid_small, "year", seq(2011, 2017))
   nd$area <- 4
   ind0 <- get_index(fit, newdata = nd, area = nd$area, bias_correct = FALSE)
 
   # newdata doesn't have all fitted years:
-  nd <- replicate_df(qcs_grid, "year", unique(pcod_2011$year))
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
   nd$area <- 4
   ind <- get_index(fit, newdata = nd, area = nd$area, bias_correct = FALSE)
-  if (FALSE) {
-    library(ggplot2)
-    ggplot(ind, aes(year, est, ymin = lwr, ymax = upr)) + geom_pointrange() +
-      geom_pointrange(data = ind0, colour = "red", mapping = aes(x = year + 0.05))
-  }
   expect_equal(ind$est - ind0$est[ind0$year %in% seq(2011, 2017, 2)], c(0, 0, 0, 0))
   expect_equal(ind$se - ind0$se[ind0$year %in% seq(2011, 2017, 2)], c(0, 0, 0, 0))
 })
 
-test_that("get_index works", {
+test_that("get_index(), get_eao(), and get_cog() take area as a vector or column name", {
   skip_on_cran()
+  m <- index_fit()
+  set.seed(1)
+  g <- qcs_grid_small
+  g$area <- runif(nrow(g), 0.9, 1.1)
+  nd <- replicate_df(g, "year", unique(pcod_2011$year))
 
-  pcod_spde <- make_mesh(pcod, c("X", "Y"), n_knots = 50, type = "kmeans")
-  m <- sdmTMB(
-    data = pcod,
-    formula = density ~ 0 + as.factor(year),
-    spatiotemporal = "off", # speed
-    time = "year", mesh = pcod_spde,
-    family = tweedie(link = "log")
-  )
-
-  # add some jittered area data to qcs_grid for testing
-  qcs_grid$area <- runif(nrow(qcs_grid), 0.9, 1.1)
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-
-  # get predictions with area passed as vector
   ind <- get_index(m, newdata = nd, area = nd$area, bias_correct = FALSE)
-  # get predictions with area as a named column
-  ind2 <- get_index(m, newdata = nd, area = "area", bias_correct = FALSE)
-  expect_equal(ind, ind2)
   expect_equal(get_index(m, newdata = nd, area = "area", bias_correct = FALSE), ind)
   expect_equal(
     get_index_split(m, newdata = nd, nsplit = 2, area = "area",
       bias_correct = FALSE),
     ind
   )
-
-  # get predictions with area passed as vector
-  eao <- get_eao(m, newdata = nd, area = nd$area)
-  # get predictions with area as a named column
-  eao2 <- get_eao(m, newdata = nd, area = "area")
-  expect_equal(eao, eao2)
-  expect_equal(get_eao(m, newdata = nd, area = "area"), eao)
-
-  # get predictions with area passed as vector
-  cog <- get_cog(m, newdata = nd, area = nd$area)
-  # get predictions with area as a named column
-  cog2 <- get_cog(m, newdata = nd, area = "area")
-  expect_equal(cog, cog2)
+  expect_equal(
+    get_eao(m, newdata = nd, area = "area"),
+    get_eao(m, newdata = nd, area = nd$area)
+  )
+  expect_equal(
+    get_cog(m, newdata = nd, area = "area"),
+    get_cog(m, newdata = nd, area = nd$area)
+  )
 })
-
-# test_that("get_index faster epsilon bias correction", {
-#   skip_on_cran()
-#
-#   library(sdmTMB)
-#   mesh <- make_mesh(pcod, c('X', 'Y'), cutoff = 5)
-#
-#   m <- sdmTMB(
-#     density ~ factor(year),
-#     data = pcod,
-#     mesh = mesh,
-#     time = "year",
-#     family = delta_gamma()
-#   )
-#   nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-#   p <- predict(m, newdata = nd, return_tmb_object = TRUE)
-#
-#   TRACE=TRUE
-#
-#   INTERN=TRUE
-#   LOWRANK=TRUE
-#   index <- get_index(p, bias_correct = TRUE)
-#
-#   INTERN=FALSE
-#   LOWRANK=FALSE
-#   index <- get_index(p, bias_correct = TRUE)
-#
-#   INTERN=FALSE
-#   LOWRANK=TRUE
-#   index <- get_index(p, bias_correct = TRUE)
-#
-#   INTERN=TRUE
-#   LOWRANK=FALSE
-#   index <- get_index(p, bias_correct = TRUE)
-#
-# })
 
 # https://github.com/sdmTMB/sdmTMB/issues/408
 test_that("Models error our nicely with Inf or -Inf covariates before get_index()", {
@@ -389,28 +355,16 @@ test_that("Models error our nicely with Inf or -Inf covariates before get_index(
   ), regexp = "Inf")
 })
 
-test_that("get_weighted_average works", {
+test_that("get_weighted_average works and matches get_cog()", {
   skip_on_cran()
-
-  pcod_spde <- make_mesh(pcod, c("X", "Y"), n_knots = 50, type = "kmeans")
-  m <- sdmTMB(
-    data = pcod,
-    formula = density ~ 0 + as.factor(year),
-    spatiotemporal = "off", # speed
-    time = "year", mesh = pcod_spde,
-    family = tweedie(link = "log")
-  )
-
-  # Create prediction grid with a test vector (depth)
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  nd$test_vector <- nd$depth # use depth as our test vector
+  m <- index_fit()
+  nd <- index_grid()
+  nd$test_vector <- nd$depth
 
   lifecycle::expect_deprecated(
     predictions <- predict(m, newdata = nd, return_tmb_object = TRUE),
     "return_tmb_object"
   )
-
-  # Test the weighted average function
   wa <- get_weighted_average(predictions, vector = nd$test_vector, bias_correct = FALSE)
   wa_direct <- get_weighted_average(m, newdata = nd, vector = nd$test_vector,
     bias_correct = FALSE)
@@ -421,88 +375,44 @@ test_that("get_weighted_average works", {
   expect_s3_class(wa, "data.frame")
   expect_equal(wa_direct, wa)
   expect_equal(wa_positional, wa)
-  expect_true("est" %in% names(wa))
-  expect_true("se" %in% names(wa))
-  expect_true("year" %in% names(wa))
-  expect_equal(nrow(wa), length(unique(pcod$year)))
+  expect_true(all(c("est", "se", "year") %in% names(wa)))
+  expect_equal(nrow(wa), length(unique(pcod_2011$year)))
 
-  # Test with bias correction
-  wa_bc <- get_weighted_average(predictions, vector = nd$test_vector, bias_correct = TRUE)
-  expect_s3_class(wa_bc, "data.frame")
-
-  # Test with area weighting
+  # area weighting:
+  set.seed(1)
   nd$area <- runif(nrow(nd), 0.9, 1.1)
   lifecycle::expect_deprecated(
     predictions_area <- predict(m, newdata = nd, return_tmb_object = TRUE),
     "return_tmb_object"
   )
-  wa_area <- get_weighted_average(predictions_area, vector = nd$test_vector, area = nd$area, bias_correct = FALSE)
+  wa_area <- get_weighted_average(predictions_area, vector = nd$test_vector,
+    area = nd$area, bias_correct = FALSE)
   wa_area_direct <- get_weighted_average(m, newdata = nd,
     vector = nd$test_vector, area = "area", bias_correct = FALSE)
   expect_s3_class(wa_area, "data.frame")
   expect_equal(wa_area_direct, wa_area)
 
-  # Test error conditions
   expect_error(get_weighted_average(predictions, vector = c(1, 2, 3)), regexp = "length")
   expect_error(get_weighted_average(predictions, vector = NULL), regexp = "vector")
-})
 
-test_that("get_weighted_average matches get_cog when using latitude", {
-  skip_on_cran()
-
-  pcod_spde <- make_mesh(pcod, c("X", "Y"), n_knots = 50, type = "kmeans")
-  m <- sdmTMB(
-    data = pcod,
-    formula = density ~ 0 + as.factor(year),
-    spatiotemporal = "off", # speed
-    time = "year", mesh = pcod_spde,
-    family = tweedie(link = "log")
-  )
-
-  # Create prediction grid
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  lifecycle::expect_deprecated(
-    predictions <- predict(m, newdata = nd, return_tmb_object = TRUE),
-    "return_tmb_object"
-  )
-
-  # Get center of gravity
+  # a weighted average of Y is the Y center of gravity:
   cog <- get_cog(predictions, bias_correct = FALSE, format = "wide")
-
-  # Get weighted average using latitude (same as Y coordinate)
   wa_lat <- get_weighted_average(predictions, vector = nd$Y, bias_correct = FALSE)
-
-  # They should be very similar (within tolerance for numerical differences)
   expect_equal(wa_lat$est, cog$est_y, tolerance = 1e-6)
   expect_equal(wa_lat$se, cog$se_y, tolerance = 1e-6)
   expect_equal(wa_lat$lwr, cog$lwr_y, tolerance = 1e-6)
   expect_equal(wa_lat$upr, cog$upr_y, tolerance = 1e-6)
-
-  # Test with bias correction too
-  cog_bc <- get_cog(predictions, bias_correct = TRUE, format = "wide")
-  wa_lat_bc <- get_weighted_average(predictions, vector = nd$Y, bias_correct = TRUE)
-
-  expect_equal(wa_lat_bc$est, cog_bc$est_y, tolerance = 1e-6)
-  expect_equal(wa_lat_bc$se, cog_bc$se_y, tolerance = 1e-6)
 })
 
 test_that("get_index() etc. errors if the data have been subset after predicting", {
   skip_on_cran()
-  skip_on_ci()
-  mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 25)
-  m <- sdmTMB(
-    data = pcod,
-    formula = density ~ 0 + as.factor(year),
-    mesh = mesh,
-    spatiotemporal = "off", spatial = "on",
-    time = "year", family = tweedie(link = "log")
-  )
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
+  m <- index_fit()
+  nd <- index_grid()
   lifecycle::expect_deprecated(
     p <- predict(m, newdata = nd, return_tmb_object = TRUE),
     "return_tmb_object"
   )
-  p$data <- p$data[p$data$Y > 5700, , drop=FALSE]
+  p$data <- p$data[p$data$Y > 5700, , drop = FALSE]
   expect_error(get_index(p), regexp = "data")
 })
 

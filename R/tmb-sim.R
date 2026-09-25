@@ -33,7 +33,7 @@
 #' @param rho Spatiotemporal correlation between years; should be between -1 and
 #'   1.
 #' @param sigma_O SD of spatial process (Omega).
-#' @param sigma_E SD of spatiotemporal process (Epsilon).
+#' @param sigma_E SD of spatiotemporal process (Epsilon). A single value.
 #' @param sigma_Z SD of spatially varying coefficient field (Zeta).
 #' @param sigma_V SD(s) of the time-varying process. Provide a single value or a
 #'   vector matching the number of time-varying coefficients.
@@ -52,19 +52,22 @@
 #' @param previous_fit (**Deprecated**; please use [simulate.sdmTMB()]).
 #'   An optional previous [sdmTMB()] fit to pull parameter values.
 #'   Will be overridden by any non-`NULL` parameter arguments supplied directly.
-#' @param seed Seed number.
+#' @param seed Seed number. The TMB and RTMB backends (see the `backend`
+#'   argument of [sdmTMBcontrol()], passed via `control`) draw random numbers
+#'   differently, so the same seed gives different simulated values with each.
 #' @param rho_time Autoregressive correlation(s) for time-varying parameters
 #'   when `time_varying_type = "ar1"`. Values must lie between -1 and 1 and may
 #'   be supplied as a single value or a vector the same length as `sigma_V`.
 #' @param nonlocal_formula An optional one-sided formula describing
 #'   covariate-diffusion terms to pass to [sdmTMB()]. Supported wrappers are
 #'   `diffusion()` and `time_lag()`. Same-covariate wrappers select one joint
-#'   operator and coefficient.
+#'   operator and coefficient. See [sdmTMB()] for the `time_lag()` `start`
+#'   argument.
 #' @param lags_kappaS Spatial diffusion scale for `diffusion()` terms.
 #'   Must be positive and finite. Supply a single value or
 #'   one value per covariate needing a spatial scale.
 #' @param lags_rhoT Temporal diffusion persistence for `time_lag()` terms.
-#'   Must be finite and satisfy `0 <= rhoT < 1`. Supply a single value or one
+#'   Must satisfy `0 < rhoT < 1`. Supply a single value or one
 #'   value per covariate needing temporal diffusion.
 #' @param ... Any other arguments to pass to [sdmTMB()].
 #'
@@ -161,7 +164,11 @@ simulate_new <- function(formula,
   assert_that((rho >= -1 && rho <= 1) || is.null(rho))
   assert_that(phi > 0 || is.null(phi))
   assert_that(sigma_O >= 0 || is.null(sigma_O))
-  assert_that(all(sigma_E >= 0) || is.null(sigma_E))
+  if (length(sigma_E) > 1L) {
+    cli::cli_abort(c("`sigma_E` must be a single value.",
+      "i" = "For a spatiotemporal SD that varies by time, simulate each time step separately."))
+  }
+  assert_that(sigma_E >= 0 || is.null(sigma_E))
   assert_that(all(sigma_Z >= 0) || is.null(sigma_Z))
 
   dots <- list(...)
@@ -293,12 +300,12 @@ simulate_new <- function(formula,
     )
     params <- .set_diffusion_parameter(
       params = params,
-      param_name = "kappaT_nl_raw",
+      param_name = "log_kappaT_nl",
       user_value = lags_rhoT,
       mask = nonlocal_dat$covariate_has_temporal,
       label = "lags_rhoT",
-      valid = function(x) all(is.finite(x) & x >= 0 & x < 1),
-      transform = function(x) x / (1 - x)
+      valid = function(x) all(is.finite(x) & x > 0 & x < 1),
+      transform = stats::qlogis
     )
   } else if (!is.null(lags_kappaS) || !is.null(lags_rhoT)) {
     cli::cli_abort("Diffusion parameters require `nonlocal_formula`.")
@@ -393,7 +400,7 @@ simulate_new <- function(formula,
   }
 
   if (!is.null(B)) params$b_j <- matrix(B, ncol = 1L) # TODO DELTA
-  if (!is.null(phi)) params$ln_phi <- log(phi)
+  if (!is.null(phi) && length(params$ln_phi) > 0L) params$ln_phi <- log(phi)
   if (!is.null(rho)) {
     if (rho != 0 && rho < 1) {
       tmb_data$ar1_fields <- 1L
@@ -415,10 +422,10 @@ simulate_new <- function(formula,
     params$zeta_s <- fixed_re$zeta_s
   }
 
-  newobj <- TMB::MakeADFun(
+  newobj <- make_sdmTMB_adfun(
     data = tmb_data, map = fit$tmb_map,
-    random = fit$tmb_random, parameters = params, DLL = "sdmTMB",
-    checkParameterOrder = FALSE
+    random = fit$tmb_random, parameters = params,
+    backend = backend_sdmTMB(fit)
   )
 
   set.seed(seed)
@@ -471,7 +478,7 @@ simulate_new <- function(formula,
       M0 = fit$tmb_data$spde$M0,
       M1 = fit$tmb_data$spde$M1,
       log_kappaS_nl = as.numeric(params$log_kappaS_nl),
-      kappaT_nl_raw = as.numeric(params$kappaT_nl_raw)
+      log_kappaT_nl = as.numeric(params$log_kappaT_nl)
     )
     colnames(nl_truth) <- sub("^nl_", "nl_truth_", colnames(nl_truth))
     d <- cbind(d, as.data.frame(nl_truth))
@@ -505,7 +512,8 @@ sdmTMB_simulate <- simulate_new
 #' @method simulate sdmTMB
 #' @param object An `sdmTMB` model.
 #' @param nsim Number of response lists to simulate. Defaults to 1.
-#' @param seed Random number seed.
+#' @param seed Random number seed. Simulations use the backend the model was
+#'   fit with; TMB and RTMB fits give different values for the same seed.
 #' @param type How parameters should be treated. `"mle-eb"`: fixed effects
 #'   are at their maximum likelihood (MLE) estimates  and random effects are at
 #'   their empirical Bayes (EB) estimates. `"mle-mvn"`: fixed effects are at
@@ -594,6 +602,8 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
 
   # need to re-attach environment if in fresh session
   reinitialize(object)
+  family_spec <- .object_family_spec(object, caller = "`simulate()`")
+  has_two_components <- family_spec$n_m == 2L
 
   if (is.null(object$tmb_random) && type == "mle-mvn") {
     type <- "mle-eb" # no random effects to sample from
@@ -617,12 +627,14 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
     p$sim_re <- tmb_dat$sim_re
     tmb_dat <- p
   }
+  row_family_id <- if (!is.null(newdata)) tmb_dat$obs_family_id + 1L else family_spec$family_id_i
 
   tmb_dat$sim_obs <- as.integer(observation_error)
 
-  newobj <- TMB::MakeADFun(
+  newobj <- make_sdmTMB_adfun(
     data = tmb_dat, map = object$tmb_map,
-    random = object$tmb_random, parameters = object$tmb_obj$env$parList(), DLL = "sdmTMB"
+    random = object$tmb_random, parameters = object$tmb_obj$env$parList(),
+    backend = backend_sdmTMB(object)
   )
 
   # params MLE/MVN stuff
@@ -665,16 +677,17 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
   if (!silent) cli::cli_progress_done()
 
   if (!return_tmb_report) {
-    if (is_delta(object)) {
-      if (is.na(model[[1]])) {
-        ret <- lapply(ret, function(.x) .x[,1] * .x[,2])
-      } else if (model[[1]] == 1) {
-        ret <- lapply(ret, function(.x) .x[,1])
-      } else if (model[[1]] == 2) {
-        ret <- lapply(ret, function(.x) .x[,2])
-      } else {
-        cli_abort("`model` argument isn't valid; should be NA, 1, or 2.")
-      }
+    if (has_two_components) {
+      ret <- lapply(ret, function(.x) {
+        .family_spec_combine_simulated(
+          x = .x,
+          family_spec = family_spec,
+          row_family_id = row_family_id,
+          model = as.integer(model[[1]])
+        )
+      })
+    } else {
+      ret <- lapply(ret, function(.x) .x[, 1L])
     }
 
     ret <- do.call(cbind, ret)
@@ -682,11 +695,11 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
     if (!is.null(newdata)) {
       rownames(ret) <- newdata[[object$time]] # for use in index calcs
       attr(ret, "time") <- object$time
-      if (is_delta(object)) {
-        attr(ret, "link") <- object$family[[2]]$link
-      } else {
-        attr(ret, "link") <- object$family$link
-      }
+      attr(ret, "link") <- .family_spec_prediction_link_name(
+        family_spec = family_spec,
+        row_family_id = row_family_id,
+        model = as.integer(model[[1]])
+      )
     }
 
     attr(ret, "type") <- type

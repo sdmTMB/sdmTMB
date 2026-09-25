@@ -1,3 +1,29 @@
+multi_family_anisotropy_fixture <- function() {
+  set.seed(21)
+  dat <- pcod_2011
+  dat$dist <- rep(c("gauss", "delta", "delta"), length.out = nrow(dat))
+  gauss_rows <- dat$dist == "gauss"
+  delta_rows <- !gauss_rows
+
+  dat$y <- numeric(nrow(dat))
+  dat$y[gauss_rows] <- 2 + stats::rnorm(sum(gauss_rows), sd = 0.25)
+  present <- stats::rbinom(sum(delta_rows), size = 1, prob = 0.7)
+  y_pos <- stats::rgamma(sum(delta_rows), shape = 6, scale = 0.3)
+  dat$y[delta_rows] <- ifelse(present == 1, y_pos, 0)
+
+  suppressWarnings(sdmTMB(
+    y ~ 1,
+    data = dat,
+    mesh = pcod_mesh_2011,
+    family = list(gauss = gaussian(), delta = delta_gamma()),
+    distribution_column = "dist",
+    spatial = "on",
+    spatiotemporal = "off",
+    anisotropy = TRUE,
+    control = sdmTMBcontrol(newton_loops = 0L, getsd = TRUE)
+  ))
+}
+
 test_that("Print anisotropy prints correctly", {
   skip_on_cran()
   skip_on_ci() # slow
@@ -32,10 +58,11 @@ test_that("Print anisotropy prints correctly", {
   expect_output(print(fit_sp_only), regexp = "\\(spatial\\): 6.1 to 86.0 at 126")
 
   # Anisotropy with only spatiotemporal random field
-  test_mesh <- make_mesh(data = pcod, xy_cols = c("X", "Y"), cutoff = 20)
+  test_mesh <- make_mesh(data = dogfish, xy_cols = c("X", "Y"), cutoff = 10)
   fit_st_only <- sdmTMB(
-    data = pcod,
-    formula = density ~ 1,
+    data = dogfish,
+    formula = catch_weight ~ 1,
+    offset = log(dogfish$area_swept),
     mesh = test_mesh,
     family = tweedie(),
     spatial = "off",
@@ -45,13 +72,14 @@ test_that("Print anisotropy prints correctly", {
     control = sdmTMBcontrol(newton_loops = 1)
   )
 
-  expect_output(print(fit_st_only), regexp = "\\(spatiotemporal\\): 16.5 to 29.1 at 54")
+  expect_output(print(fit_st_only), regexp = "\\(spatiotemporal\\): 9.0 to 72.2 at 135")
 # -------------------
 
   # Anisotropy when not shared across random fields
   fit2 <- sdmTMB(
-    data = pcod,
-    formula = density ~ 1,
+    data = dogfish,
+    formula = catch_weight ~ 1,
+    offset = log(dogfish$area_swept),
     mesh = test_mesh,
     family = tweedie(),
     share_range = FALSE,
@@ -79,10 +107,11 @@ test_that("Print anisotropy prints correctly", {
   expect_output(cat(print_anisotropy(fit_dg_shared, m = 2)), regexp = "\\(spatial\\): 2")
 
   # Anisotropy when not shared across random fields in delta model
+  pcod_mesh <- make_mesh(data = pcod, xy_cols = c("X", "Y"), cutoff = 20)
   fit_dg_not_shared <- sdmTMB(
     data = pcod,
     formula = density ~ 1,
-    mesh = test_mesh,
+    mesh = pcod_mesh,
     family = delta_gamma(),
     share_range = FALSE,
     time = "year",
@@ -93,4 +122,24 @@ test_that("Print anisotropy prints correctly", {
   expect_output(cat(print_anisotropy(fit_dg_not_shared, m = 1)), regexp = "\\(spatiotemporal\\): 12")
   expect_output(cat(print_anisotropy(fit_dg_not_shared, m = 2)), regexp = "\\(spatial\\): 0")
   expect_output(cat(print_anisotropy(fit_dg_not_shared, m = 2)), regexp = "\\(spatiotemporal\\): 9")
+})
+
+test_that("multi-family anisotropy reports both linear predictors", {
+  skip_on_cran()
+  skip_on_ci() # slow
+
+  fit_multi <- multi_family_anisotropy_fixture()
+  aniso_df <- plot_anisotropy(fit_multi, return_data = TRUE)
+  report <- fit_multi$tmb_obj$report(fit_multi$tmb_obj$env$last.par.best)
+  comp1 <- calculate_anisotropy_components(fit_multi, m = 1)
+  comp2 <- calculate_anisotropy_components(fit_multi, m = 2)
+  plot_lp2 <- suppressWarnings(plot_anisotropy2(fit_multi, model = 2))
+
+  expect_equal(sort(unique(aniso_df$model_num)), c(1L, 2L))
+  expect_true(all(aniso_df$random_field == "spatial"))
+  expect_equal(comp1$eig$values, eigen(report$H)$values)
+  expect_equal(comp2$eig$values, eigen(report$H2)$values)
+  expect_equal(plot_lp2$H, report$H2)
+  expect_output(cat(print_anisotropy(fit_multi, m = 1)), regexp = "\\(spatial\\): ")
+  expect_output(cat(print_anisotropy(fit_multi, m = 2)), regexp = "\\(spatial\\): ")
 })

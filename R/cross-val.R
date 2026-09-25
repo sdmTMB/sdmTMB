@@ -1,3 +1,79 @@
+ll_gaussian <- function(object, withheld_y, withheld_mu) {
+  .sd <- exp(object$model$par[["ln_phi"]])
+  stats::dnorm(x = withheld_y, mean = withheld_mu, sd = .sd, log = TRUE)
+}
+
+ll_tweedie <- function(object, withheld_y, withheld_mu) {
+  p <- stats::plogis(object$model$par[["thetaf"]]) + 1
+  phi <- exp(object$model$par[["ln_phi"]])
+  fishMod::dTweedie(y = withheld_y, mu = withheld_mu, p = p, phi = phi, LOG = TRUE)
+}
+
+ll_binomial <- function(object, withheld_y, withheld_mu) {
+  stats::dbinom(x = withheld_y, size = 1, prob = withheld_mu, log = TRUE)
+}
+
+ll_gamma <- function(object, withheld_y, withheld_mu) {
+  .shape <- exp(object$model$par[["ln_phi"]])
+  stats::dgamma(x = withheld_y, shape = .shape, scale = withheld_mu / .shape, log = TRUE)
+}
+
+ll_lognormal <- function(object, withheld_y, withheld_mu) {
+  .sd <- exp(object$model$par[["ln_phi"]])
+  stats::dlnorm(x = withheld_y, meanlog = withheld_mu - 0.5 * (.sd)^2, sdlog = .sd, log = TRUE)
+}
+
+dstudent <- function(x, df, mean, sd, ncp, log = FALSE) {
+  # from metRology::dt.scaled()
+  if (!log) {
+    return(stats::dt((x - mean) / sd, df, ncp = ncp, log = FALSE) / sd)
+  } else {
+    return(stats::dt((x - mean) / sd, df, ncp = ncp, log = TRUE) - log(sd))
+  }
+}
+
+ll_student <- function(object, withheld_y, withheld_mu) {
+  .sd <- exp(object$model$par[["ln_phi"]])
+  dstudent(x = withheld_y, df = object$tmb_data$df, mean = withheld_mu, sd = .sd, log = TRUE)
+}
+
+ll_nbinom1 <- function(object, withheld_y, withheld_mu) {
+  phi <- exp(object$model$par[["ln_phi"]])
+  stats::dnbinom(x = withheld_y, size = withheld_mu / phi, mu = withheld_mu, log = TRUE)
+}
+
+ll_nbinom2 <- function(object, withheld_y, withheld_mu) {
+  phi <- exp(object$model$par[["ln_phi"]])
+  stats::dnbinom(x = withheld_y, size = phi, mu = withheld_mu, log = TRUE)
+}
+
+# no longer used within sdmTMB_cv(); uses TMB report() instead
+ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
+  family_spec <- .object_family_spec(object, caller = "`ll_sdmTMB()`")
+  if (.family_spec_is_multi_family(family_spec)) {
+    cli_abort("`ll_sdmTMB()` is not yet supported for multi-family models.")
+  }
+  if (.family_spec_has_two_components(family_spec)) {
+    cli_abort("`ll_sdmTMB()` is not yet supported for models with two linear predictors.")
+  }
+  family_name <- family(object)$family
+  family_func <- switch(family_name,
+    gaussian = ll_gaussian,
+    tweedie = ll_tweedie,
+    binomial = ll_binomial,
+    lognormal = ll_lognormal,
+    student = ll_student,
+    Gamma = ll_gamma,
+    nbinom1 = ll_nbinom1,
+    nbinom2 = ll_nbinom2,
+    cli_abort(paste0(
+      family_name, " not yet implemented. ",
+      "Please file an issue on GitHub."
+    ))
+  )
+  family_func(object, withheld_y, withheld_mu)
+}
+
 #' Cross validation with sdmTMB models
 #'
 #' Performs k-fold or leave-future-out cross validation with sdmTMB models.
@@ -9,7 +85,8 @@
 #' [cross-validation vignette](https://sdmTMB.github.io/sdmTMB/articles/cross-validation.html).
 #'
 #' @param formula Model formula.
-#' @param data A data frame.
+#' @param data A data frame. Rows [sdmTMB()] omits for missing values are
+#'   left out of the validation results.
 #' @param mesh Output from [make_mesh()]. If supplied, the same mesh will be
 #'   used for all folds. This is faster and usually what you want.
 #' @param mesh_args Arguments for [make_mesh()]. If supplied, the mesh will be
@@ -229,6 +306,13 @@ sdmTMB_cv <- function(
 
   dot_args <- as.list(substitute(list(...)))[-1L]
 
+  if ("family" %in% names(dot_args)) {
+    family_arg <- eval(dot_args$family, envir = parent.frame())
+    if (.is_named_family_list(family_arg) && length(family_arg) > 1L) {
+      cli_abort("`sdmTMB_cv()` is not yet supported for multi-family models.")
+    }
+  }
+
   # Extract user-supplied weights if provided
   if ("weights" %in% names(dot_args)) {
     user_weights <- eval(dot_args$weights, envir = parent.frame())
@@ -332,11 +416,12 @@ sdmTMB_cv <- function(
       object <- do.call(sdmTMB, args)
     }
 
+    # rows `sdmTMB()` omitted for missing values are not validated
+    obj_order <- object$data[["_sdm_order_"]]
     validation_fold <- if (lfo) k + lfo_forecast else k
-    validation <- data$cv_fold == validation_fold
+    validation <- data$cv_fold == validation_fold & data[["_sdm_order_"]] %in% obj_order
     cv_data <- data[validation, , drop = FALSE]
 
-    obj_order <- object$data[["_sdm_order_"]]
     validation_order <- cv_data[["_sdm_order_"]]
     validation_index <- match(validation_order, obj_order)
     if (length(validation_index) != nrow(cv_data) ||
@@ -351,8 +436,8 @@ sdmTMB_cv <- function(
     # predict for withheld data:
     # cli_inform("Testing on data fold {k}.")
     if (time_indexed_nonlocal) {
-      predicted_full <- predict(object, newdata = data, type = "response",
-        offset = if (!is.null(.offset)) data[[.offset]] else rep(0, nrow(data)))
+      predicted_full <- predict(object, newdata = object$data, type = "response",
+        offset = if (!is.null(.offset)) object$data[[.offset]] else rep(0, nrow(object$data)))
       match_idx <- match(cv_data[["_sdm_order_"]], predicted_full[["_sdm_order_"]])
       predicted <- predicted_full[match_idx, , drop = FALSE]
     } else {
@@ -385,12 +470,12 @@ sdmTMB_cv <- function(
     score_weights[validation_index] <- object$likelihood_weights[validation_index]
     tmb_data$weights_i <- score_weights
 
-    scoring_obj <- TMB::MakeADFun(
+    scoring_obj <- make_sdmTMB_adfun(
       data = tmb_data,
       parameters = get_pars(object),
       map = object$tmb_map,
       random = object$tmb_random,
-      DLL = "sdmTMB",
+      backend = backend_sdmTMB(object),
       silent = TRUE
     )
     r <- scoring_obj$report(object$tmb_obj$env$last.par.best)

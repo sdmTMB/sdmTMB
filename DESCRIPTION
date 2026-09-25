@@ -79,6 +79,7 @@ Imports:
     nlme,
     reformulas (>= 0.4.4),
     rlang,
+    RTMB (>= 1.9),
     stats,
     TMB (>= 1.8.0)
 Suggests:
@@ -95,6 +96,7 @@ Suggests:
     ggplot2,
     knitr,
     lme4,
+    numDeriv,
     rmarkdown,
     sf,
     spatstat.data,

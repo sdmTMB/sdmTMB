@@ -10,6 +10,7 @@ sdmTMB(
   mesh,
   time = NULL,
   family = gaussian(link = "identity"),
+  distribution_column = NULL,
   spatial = c("on", "off"),
   spatiotemporal = c("iid", "ar1", "rw", "off"),
   spatial_model = c("spde", "sar", "car"),
@@ -17,6 +18,7 @@ sdmTMB(
   time_varying = NULL,
   time_varying_type = c("rw", "rw0", "ar1"),
   spatial_varying = NULL,
+  dispformula = ~1,
   nonlocal_formula = NULL,
   nonlocal_data = NULL,
   weights = NULL,
@@ -44,7 +46,10 @@ representing groups. Penalized splines are possible via \pkg{mgcv} with
 \code{s()}. Optionally a list for delta (hurdle) models.  See
 examples and details below.}
 
-\item{data}{A data frame.}
+\item{data}{A data frame. Rows with missing values in the response or any
+variable the model uses (including \code{weights} and \code{offset}) are omitted
+before fitting, as with \code{na.action = na.omit} in \code{\link[stats:glm]{stats::glm()}}. The
+rows used are stored in the returned object as \code{data}.}
 
 \item{mesh}{An object from \code{\link[=make_mesh]{make_mesh()}} for \code{spatial_model = "spde"} or
 from \code{\link[=make_areal_domain]{make_areal_domain()}} for \code{"sar"} or \code{"car"}.}
@@ -80,7 +85,15 @@ Delta/hurdle models (for data with zeros) include:
 \code{\link[sdmTMB:families]{delta_truncated_nbinom2()}}.
 See the \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-model vignette} for
 details. For binomial family options, see 'Binomial families' in the Details
-section below.}
+section below. Experimental multi-family models use a named list of family
+objects; \code{distribution_column} then maps each row to an entry in that list.
+See the \href{https://sdmTMB.github.io/sdmTMB/articles/multi-family.html}{multi-family vignette} for
+supported family combinations and post-fit methods.}
+
+\item{distribution_column}{For experimental multi-family models, the name of
+the column in \code{data} mapping each row to a family in the named \code{family}
+list. See the multi-family vignette for the supported family and method
+combinations.}
 
 \item{spatial}{Estimate spatial random fields? Options are \code{'on'} / \code{'off'}
 or equivalently \code{TRUE} / \code{FALSE}. Optionally, a list for delta models,
@@ -140,12 +153,23 @@ argument}; set \code{spatial = 'on'} or \code{'off'} to include or exclude it. F
 factor predictors, if \code{spatial_varying} excludes the intercept (\code{~ 0} or \code{~ -1}), set \code{spatial = 'off'} to match. Structure is shared in delta
 models.}
 
+\item{dispformula}{A one-sided formula describing predictors for the
+observation model dispersion parameter. Defaults to \code{~ 1}, which estimates
+a single dispersion parameter. For families without an estimable
+dispersion parameter (e.g., binomial or Poisson), this is ignored.
+Currently not supported for multi-family models or truncated
+negative-binomial families.}
+
 \item{nonlocal_formula}{An optional one-sided formula describing distributed
 lag terms with \code{diffusion()} or \code{time_lag()} wrappers.
 Example: \code{~ diffusion(x) + time_lag(x)}. When both wrappers use the same
 covariate, they select parts of one joint operator and produce one
 transformed predictor and coefficient. Different covariates produce
-separate transformed predictors and coefficients. Note that spatial-only
+separate transformed predictors and coefficients. \code{time_lag()} takes an
+optional \code{start} argument for the transformed state before the first time
+slice: \code{"stationary"} (default) assumes the covariate held at its first
+slice beforehand, and \code{"zero"} starts from zero as in Thorson et al.
+(2026), e.g. \code{~ time_lag(x, start = "zero")}. Note that spatial-only
 covariates will be held constant across time slices unless the \code{time}
 argument is specified. See the non-local covariates vignette for the
 MSDK and RMSDK definitions.

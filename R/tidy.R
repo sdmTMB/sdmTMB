@@ -11,6 +11,7 @@
 #'   Hanks et al. 2015; Diaz and Thorson 2025). To access RSR coefficients the
 #'   model must be fitted with
 #'   `control = sdmTMBcontrol(get_rsr = TRUE)`.
+#'   `"dispersion"` returns dispersion-model coefficients when `dispformula` is used.
 #' @param conf.int Include a confidence interval?
 #' @param conf.level Confidence level for CI.
 #' @param exponentiate Whether to exponentiate the fixed-effect coefficient
@@ -26,7 +27,8 @@
 #' Follows the conventions of the \pkg{broom} and \pkg{broom.mixed} packages.
 #'
 #' Currently, `effects = "ran_pars"` also includes dispersion-related terms
-#' (e.g., `phi`), which are not actually associated with random effects.
+#' (e.g., `phi`) only when dispersion is scalar. With `dispformula`,
+#' use `effects = "dispersion"` to extract dispersion-model coefficients.
 #'
 #' Standard errors for spatial variance terms fit in log space (e.g., variance
 #' terms, range, or parameters associated with the observation error) are
@@ -64,7 +66,7 @@
 #' )
 #' tidy(fit, "ran_vals")
 
-tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov", "rsr"), model = 1,
+tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov", "rsr", "dispersion"), model = 1,
                  conf.int = TRUE, conf.level = 0.95, exponentiate = FALSE,
                  silent = FALSE, ...) {
   effects <- match.arg(effects)
@@ -83,8 +85,10 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   reinitialize(x)
   is_areal <- is_areal_fit(x)
   is_car <- is_car_fit(x)
+  family_spec <- .object_family_spec(x, caller = "`tidy()`")
+  multi_family <- family_spec$n_f > 1L
 
-  delta <- isTRUE(x$family$delta)
+  delta <- family_spec$n_m == 2L
   assert_that(is.numeric(model))
   assert_that(length(model) == 1L)
   if (delta) assert_that(model %in% c(1, 2), msg = "`model` must be 1 or 2.")
@@ -129,7 +133,6 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     p$ln_tau_Z <- .subset_model(p$ln_tau_Z)
     p$ln_tau_E <- .subset_model(p$ln_tau_E)
     p$ln_kappa <- .subset_model(p$ln_kappa)
-    p$ln_phi <- .subset_model(p$ln_phi)
     p$ln_tau_V <- .subset_model(p$ln_tau_V)
     p$ar1_phi <- .subset_model(p$ar1_phi)
     p$log_sigma_O <- .subset_model(p$log_sigma_O)
@@ -138,13 +141,21 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     p$log_range <- .subset_model(p$log_range)
     p$logit_rho_sar <- .subset_model(p$logit_rho_sar)
 
-    p$phi <- .subset_model(p$phi)
     p$range <- .subset_model(p$range)
     p$sigma_E <- .subset_model(p$sigma_E)
     p$sigma_O <- .subset_model(p$sigma_O)
     p$sigma_Z <- .subset_model(p$sigma_Z)
     p$rho_sar <- .subset_model(p$rho_sar)
     p$alpha_car <- .subset_model(p$alpha_car)
+    if (!multi_family) {
+      p$ln_phi <- .subset_model(p$ln_phi)
+      p$phi <- .subset_model(p$phi)
+      p$thetaf <- .subset_model(p$thetaf)
+      p$tweedie_p <- .subset_model(p$tweedie_p)
+      p$ln_student_df <- .subset_model(p$ln_student_df)
+      p$student_df <- .subset_model(p$student_df)
+      p$gengamma_Q <- .subset_model(p$gengamma_Q)
+    }
 
     if (!is.null(p$rho_time_unscaled) && length(p$rho_time_unscaled)) {
       p$rho_time_unscaled <- .subset_model(p$rho_time_unscaled)
@@ -167,7 +178,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   est <- subset_pars(est, model)
   se <- subset_pars(se, model)
 
-  if (x$family$family[[model]] %in% c("binomial", "poisson")) {
+  if (!multi_family && x$family$family[[model]] %in% c("binomial", "poisson")) {
     se$ln_phi <- NULL
     est$ln_phi <- NULL
     se$phi <- NULL
@@ -238,7 +249,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     log_name <- c(log_name, "log_range")
     name <- c(name, "range")
   }
-  if (!isTRUE(is.na(x$tmb_map$ln_phi))) {
+  if (!multi_family && !isTRUE(x$has_dispformula) && !isTRUE(is.na(x$tmb_map$ln_phi))) {
     log_name <- c(log_name, "ln_phi")
     name <- c(name, "phi")
   }
@@ -329,7 +340,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   discard <- unlist(lapply(out_re, function(x) length(x) == 1L)) # e.g. old models and phi
   out_re[discard] <- NULL
 
-  if ("tweedie" %in% x$family$family) {
+  if (!multi_family && "tweedie" %in% x$family$family) {
     out_re$tweedie_p <- data.frame(
       term = "tweedie_p", estimate = plogis(est$thetaf) + 1,
       std.error = se$tweedie_p, stringsAsFactors = FALSE)
@@ -338,7 +349,20 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     ii <- ii + 1
   }
 
-  if ("student" %in% x$family$family) {
+  if (!multi_family && "ordbeta" %in% x$family$family) {
+    cuts <- plogis(est$psi)
+    out_re$ordbeta_cutpoint_lower <- data.frame(
+      term = "ordbeta_cutpoint_lower", estimate = cuts[1],
+      std.error = NA_real_, conf.low = NA_real_, conf.high = NA_real_,
+      stringsAsFactors = FALSE)
+    out_re$ordbeta_cutpoint_upper <- data.frame(
+      term = "ordbeta_cutpoint_upper", estimate = cuts[2],
+      std.error = NA_real_, conf.low = NA_real_, conf.high = NA_real_,
+      stringsAsFactors = FALSE)
+    ii <- ii + 2
+  }
+
+  if (!multi_family && "student" %in% x$family$family) {
     # Check if df was fixed (mapped to NA) or estimated
     df_fixed <- !is.null(x$tmb_map$ln_student_df) && is.na(x$tmb_map$ln_student_df[1])
     if (df_fixed) {
@@ -441,6 +465,21 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
 
   out_re <- do.call("rbind", out_re)
   row.names(out_re) <- NULL
+  if (multi_family) {
+    family_param_rows <- .tidy_multi_family_param_rows(
+      est = est,
+      se = se,
+      family_spec = family_spec,
+      crit = crit,
+      conf.int = conf.int
+    )
+    if (!is.null(family_param_rows)) {
+      all_cols <- union(names(out_re), names(family_param_rows))
+      for (nm in setdiff(all_cols, names(out_re))) out_re[[nm]] <- NA
+      for (nm in setdiff(all_cols, names(family_param_rows))) family_param_rows[[nm]] <- NA
+      out_re <- rbind(out_re[, all_cols, drop = FALSE], family_param_rows[, all_cols, drop = FALSE])
+    }
+  }
 
   if (identical(est$ln_tau_E, 0)) out_re <- out_re[out_re$term != "sigma_E", ]
   if (identical(est$ln_tau_V, 0)) out_re <- out_re[out_re$term != "sigma_V", ]
@@ -570,6 +609,44 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   out <- unique(out) # range can be duplicated
   out_re <- unique(out_re)
 
+  out_disp <- NULL
+  if (effects == "dispersion" && isTRUE(x$has_dispformula)) {
+    if (multi_family) {
+      cli_abort("`effects = 'dispersion'` is not available for multi-family models yet.")
+    }
+    if (delta && model == 1L) {
+      if (!silent) {
+        cli_inform("Dispersion coefficients are for the positive component only; use `model = 2`.")
+      }
+      out_disp <- data.frame(
+        model = integer(0),
+        term = character(0),
+        estimate = numeric(0),
+        std.error = numeric(0)
+      )
+    } else {
+      disp_est <- as.numeric(est$b_disp_k)
+      disp_se <- as.numeric(se$b_disp_k)
+      disp_terms <- colnames(x$tmb_data$Xdisp_ij)
+      if (is.null(disp_terms) || length(disp_terms) != length(disp_est)) {
+        disp_terms <- paste0("b_disp_k[", seq_along(disp_est), "]")
+      }
+      out_disp <- data.frame(
+        term = disp_terms,
+        estimate = disp_est,
+        std.error = disp_se
+      )
+      if (delta) {
+        out_disp$model <- model
+        out_disp <- out_disp[, c("model", "term", "estimate", "std.error")]
+      }
+    }
+    if (conf.int) {
+      out_disp$conf.low <- out_disp$estimate - crit * out_disp$std.error
+      out_disp$conf.high <- out_disp$estimate + crit * out_disp$std.error
+    }
+  }
+
   if (requireNamespace("tibble", quietly = TRUE)) {
     frm <- tibble::as_tibble
   } else {
@@ -584,6 +661,11 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     return(frm(out_re))
   } else if (effects == "ran_vcov") {
     return(cov_mat_list)
+  } else if (effects == "dispersion") {
+    if (!isTRUE(x$has_dispformula)) {
+      cli_abort("`effects = 'dispersion'` is only available when `dispformula` is used.")
+    }
+    return(frm(out_disp))
   } else if (effects == "rsr") {
     return(.tidy_rsr_effects(x, model, conf.int, conf.level, exponentiate, crit, trans, frm))
   } else {
@@ -997,4 +1079,111 @@ flatten_cov_output <- function(v, cnms) {
   df <- do.call(rbind, results)
   rownames(df) <- NULL
   df
+}
+
+
+.tidy_multi_family_param_rows <- function(est, se, family_spec, crit, conf.int = TRUE) {
+  rows <- list()
+
+  add_rows <- function(slot_name, term_name, estimate_fun, std_error_fun = NULL, conf_fun = NULL) {
+    slot <- family_spec$param_slot[[slot_name]]
+    used <- which(!is.na(slot))
+    if (!length(used)) {
+      return(NULL)
+    }
+    out <- lapply(used, function(f) {
+      idx <- slot[[f]]
+      estimate <- estimate_fun(idx)
+      std.error <- if (is.null(std_error_fun)) NA_real_ else std_error_fun(idx)
+      row <- data.frame(
+        group_name = family_spec$family_labels[[f]],
+        term = term_name,
+        estimate = estimate,
+        std.error = std.error,
+        stringsAsFactors = FALSE
+      )
+      if (conf.int) {
+        bounds <- if (is.null(conf_fun)) c(NA_real_, NA_real_) else conf_fun(idx)
+        row$conf.low <- bounds[[1]]
+        row$conf.high <- bounds[[2]]
+      }
+      row
+    })
+    do.call(rbind, out)
+  }
+
+  rows$phi <- add_rows(
+    slot_name = "ln_phi",
+    term_name = "phi",
+    estimate_fun = function(idx) as.numeric(est$phi[[idx]]),
+    std_error_fun = function(idx) {
+      if (is.null(se$phi) || length(se$phi) < idx) NA_real_ else as.numeric(se$phi[[idx]])
+    },
+    conf_fun = function(idx) {
+      if (is.null(est$ln_phi) || is.null(se$ln_phi) || length(se$ln_phi) < idx) {
+        return(c(NA_real_, NA_real_))
+      }
+      c(
+        exp(est$ln_phi[[idx]] - crit * se$ln_phi[[idx]]),
+        exp(est$ln_phi[[idx]] + crit * se$ln_phi[[idx]])
+      )
+    }
+  )
+  rows$tweedie_p <- add_rows(
+    slot_name = "thetaf",
+    term_name = "tweedie_p",
+    estimate_fun = function(idx) plogis(est$thetaf[[idx]]) + 1,
+    std_error_fun = function(idx) {
+      if (is.null(se$tweedie_p) || length(se$tweedie_p) < idx) NA_real_ else as.numeric(se$tweedie_p[[idx]])
+    },
+    conf_fun = function(idx) {
+      if (is.null(est$thetaf) || is.null(se$thetaf) || length(se$thetaf) < idx) {
+        return(c(NA_real_, NA_real_))
+      }
+      c(
+        plogis(est$thetaf[[idx]] - crit * se$thetaf[[idx]]) + 1,
+        plogis(est$thetaf[[idx]] + crit * se$thetaf[[idx]]) + 1
+      )
+    }
+  )
+  rows$student_df <- add_rows(
+    slot_name = "ln_student_df",
+    term_name = "student_df",
+    estimate_fun = function(idx) exp(est$ln_student_df[[idx]]) + 1,
+    std_error_fun = function(idx) {
+      if (is.null(se$student_df) || length(se$student_df) < idx) NA_real_ else as.numeric(se$student_df[[idx]])
+    },
+    conf_fun = function(idx) {
+      if (is.null(est$ln_student_df) || is.null(se$ln_student_df) || length(se$ln_student_df) < idx) {
+        return(c(NA_real_, NA_real_))
+      }
+      c(
+        exp(est$ln_student_df[[idx]] - crit * se$ln_student_df[[idx]]) + 1,
+        exp(est$ln_student_df[[idx]] + crit * se$ln_student_df[[idx]]) + 1
+      )
+    }
+  )
+  rows$gengamma_Q <- add_rows(
+    slot_name = "gengamma_Q",
+    term_name = "gengamma_Q",
+    estimate_fun = function(idx) as.numeric(est$gengamma_Q[[idx]]),
+    std_error_fun = function(idx) {
+      if (is.null(se$gengamma_Q) || length(se$gengamma_Q) < idx) NA_real_ else as.numeric(se$gengamma_Q[[idx]])
+    },
+    conf_fun = function(idx) {
+      if (is.null(est$gengamma_Q) || is.null(se$gengamma_Q) || length(se$gengamma_Q) < idx) {
+        return(c(NA_real_, NA_real_))
+      }
+      c(
+        est$gengamma_Q[[idx]] - crit * se$gengamma_Q[[idx]],
+        est$gengamma_Q[[idx]] + crit * se$gengamma_Q[[idx]]
+      )
+    }
+  )
+
+  rows <- Filter(Negate(is.null), rows)
+  if (!length(rows)) {
+    return(NULL)
+  }
+  do.call(rbind, rows)
 }

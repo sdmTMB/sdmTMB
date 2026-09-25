@@ -26,7 +26,8 @@
 
 \item{nsim}{Number of response lists to simulate. Defaults to 1.}
 
-\item{seed}{Random number seed.}
+\item{seed}{Random number seed. Simulations use the backend the model was
+fit with; TMB and RTMB fits give different values for the same seed.}
 
 \item{type}{How parameters should be treated. \code{"mle-eb"}: fixed effects
 are at their maximum likelihood (MLE) estimates  and random effects are at

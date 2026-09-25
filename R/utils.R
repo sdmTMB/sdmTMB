@@ -35,6 +35,14 @@
 #'   likelihood using the Laplace approximation? Can result in a substantial
 #'   speed boost in some cases. This used to default to `FALSE` prior to
 #'   May 2021. Currently not working for models fit with REML or random intercepts.
+#' @param backend Model backend. `"tmb"` is the default; set
+#'   `options(sdmTMB.backend = "rtmb")` to use RTMB by default. The experimental
+#'   `"rtmb"` backend currently supports all families, including delta and
+#'   multi-family models, with SPDE (isotropic, anisotropic, or barrier) and
+#'   areal SAR/CAR spatial and spatiotemporal fields, spatially and
+#'   time-varying coefficients, IID random effects, smoothers, threshold
+#'   terms, covariate diffusion, restricted spatial regression, priors, and
+#'   derived indices.
 #' @param multiphase Logical: estimate the fixed and random effects in phases?
 #'   Phases are usually faster and more stable.
 #' @param profile Logical: should population-level/fixed effects be profiled
@@ -149,6 +157,7 @@ sdmTMBcontrol <- function(
   collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
   get_rsr = FALSE,
+  backend = getOption("sdmTMB.backend", "tmb"),
   ...) {
 
   assert_that(is.numeric(nlminb_loops), is.numeric(newton_loops))
@@ -194,11 +203,13 @@ sdmTMBcontrol <- function(
     collapse_ar1_threshold < 0.5
   )
   sar_weight_style <- match.arg(sar_weight_style)
+  backend <- match.arg(backend, c("tmb", "rtmb"))
 
   out <- named_list(
     eval.max,
     iter.max,
     normalize,
+    backend,
     nlminb_loops,
     newton_loops,
     getsd,
@@ -220,6 +231,67 @@ sdmTMBcontrol <- function(
     get_rsr
   )
   c(out, list(...))
+}
+
+.subset_by_na_action <- function(x, na_action, drop = FALSE) {
+  if (is.null(x) || is.null(na_action)) {
+    return(x)
+  }
+  if (is.matrix(x) || is.data.frame(x)) {
+    return(x[-na_action, , drop = drop])
+  }
+  x[-na_action]
+}
+
+.get_model_frame_rows <- function(mf, data) {
+  match(row.names(mf), row.names(data))
+}
+
+.is_whole_number <- function(x, tol = sqrt(.Machine$double.eps)) {
+  abs(x - round(x)) <= tol
+}
+
+.classify_binomial_like_numeric_rows <- function(y_i, weights = NULL,
+  allow_counts = FALSE, weighted_binary_counts = FALSE) {
+  non_missing <- !is.na(y_i)
+  whole_number <- non_missing & .is_whole_number(y_i)
+  binary_rows <- whole_number & y_i %in% c(0, 1)
+  weight_available <- if (is.null(weights)) {
+    rep(FALSE, length(y_i))
+  } else {
+    !is.na(weights)
+  }
+
+  count_rows <- if (allow_counts) {
+    whole_number & (y_i > 1 | (weighted_binary_counts & binary_rows & weight_available))
+  } else {
+    rep(FALSE, length(y_i))
+  }
+  bernoulli_rows <- binary_rows & !count_rows
+  proportion_rows <- non_missing & !bernoulli_rows & !count_rows
+
+  list(
+    count_rows = count_rows,
+    bernoulli_rows = bernoulli_rows,
+    proportion_rows = proportion_rows
+  )
+}
+
+.process_binomial_response <- function(mf, weights = NULL, weights_arg = "`weights`") {
+  y_i <- model.response(mf, type = "any")
+  spec <- .compile_family_spec(stats::binomial(), data = data.frame(.row = seq_len(NROW(y_i))))
+  out <- .prepare_family_response(y_i, weights, spec)
+
+  if (is.logical(y_i)) {
+    msg <- paste0(
+      "We recommend against using `TRUE`/`FALSE` ",
+      "response values if you are going to use the `visreg::visreg()` ",
+      "function after. Consider converting to integer with `as.integer()`."
+    )
+    cli_warn(msg)
+  }
+
+  out[c("y_i", "size", "weights")]
 }
 
 set_par_value <- function(opt, par) {
@@ -735,12 +807,12 @@ get_fitted_time <- function(x) {
 reload_model <- function(object) {
   if ("parlist" %in% names(object)) {
     # tinyVAST does this to be extra sure... I've found one case where it was needed
-    obj <- TMB::MakeADFun(
+    obj <- make_sdmTMB_adfun(
       data = object$tmb_data,
       parameters = object$parlist, #!! important part
       map = object$tmb_map,
       random = object$tmb_random,
-      DLL = "sdmTMB",
+      backend = backend_sdmTMB(object),
       profile = object$control$profile
     )
     obj$env$beSilent()

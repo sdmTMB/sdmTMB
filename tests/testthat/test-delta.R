@@ -10,7 +10,7 @@ test_that("Delta-Gamma family fits", {
     time = "year", family = delta_gamma()
   )
   fit_dg$sd_report
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod$year))
 
   expect_equal(
     round(tidy(fit_dg, "ran_pars", model = 1)$estimate, 3),
@@ -43,7 +43,7 @@ test_that("Delta-Gamma family fits", {
   sr_dg <- as.list(fit_dg$sd_report, "Estimate")
   expect_equal(sr_bin$b_j[1], sr_dg$b_j[1], tolerance = 1e-4)
   expect_equal(sr_gamma$b_j[1], sr_dg$b_j2[1], tolerance = 1e-4)
-  expect_equal(sr_gamma$ln_phi, sr_dg$ln_phi[2], tolerance = 1e-4)
+  expect_equal(sr_gamma$ln_phi, sr_dg$ln_phi[1], tolerance = 1e-4)
   expect_equal(sr_gamma$ln_tau_O, sr_dg$ln_tau_O[2], tolerance = 1e-4)
   expect_equal(sr_gamma$ln_tau_E, sr_dg$ln_tau_E[2], tolerance = 1e-4)
   expect_equal(sr_gamma$ln_kappa[1,1], sr_dg$ln_kappa[1,2], tolerance = 1e-4)
@@ -174,7 +174,7 @@ test_that("Anisotropy with delta model", {
   expect_equal(sr_bin$b_j[1], sr_dg$b_j[1], tolerance = 1e-4)
   expect_equal(sr_bin$ln_kappa[1,1], sr_dg$ln_kappa[1,1], tolerance = 1e-4)
   expect_equal(sr_gamma$b_j[1], sr_dg$b_j2[1], tolerance = 1e-4)
-  expect_equal(sr_gamma$ln_phi, sr_dg$ln_phi[2], tolerance = 1e-4)
+  expect_equal(sr_gamma$ln_phi, sr_dg$ln_phi[1], tolerance = 1e-4)
   expect_equal(sr_gamma$ln_tau_O, sr_dg$ln_tau_O[2], tolerance = 1e-4)
   expect_equal(sr_gamma$ln_tau_E, sr_dg$ln_tau_E[2], tolerance = 1e-4)
   expect_equal(sr_gamma$ln_kappa[1,1], sr_dg$ln_kappa[1,2], tolerance = 1e-4)
@@ -199,7 +199,7 @@ test_that("Delta-Gengamma family fits", {
     c(4.418)
   )
 
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod$year))
   # check
   fit_bin <- sdmTMB(present ~ 1,
     data = pcod, mesh = pcod_spde,
@@ -216,7 +216,7 @@ test_that("Delta-Gengamma family fits", {
   sr_dgg <- as.list(fit_dgg$sd_report, "Estimate")
   expect_equal(sr_bin$b_j[1], sr_dgg$b_j[1], tolerance = 1e-4)
   expect_equal(sr_gengamma$b_j[1], sr_dgg$b_j2[1], tolerance = 1e-4)
-  expect_equal(sr_gengamma$ln_phi, sr_dgg$ln_phi[2], tolerance = 1e-4)
+  expect_equal(sr_gengamma$ln_phi, sr_dgg$ln_phi[1], tolerance = 1e-4)
   expect_equal(sr_gengamma$ln_tau_O, sr_dgg$ln_tau_O[2], tolerance = 1e-4)
   expect_equal(sr_gengamma$ln_tau_E, sr_dgg$ln_tau_E[2], tolerance = 1e-4)
   expect_equal(sr_gengamma$ln_kappa[1,1], sr_dgg$ln_kappa[1,2], tolerance = 1e-4)

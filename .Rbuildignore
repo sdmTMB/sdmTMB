@@ -36,3 +36,4 @@ revdep/
 ^\.agents
 ^\.codex-plugins
 ^Rplots.pdf$
+^tests/optional$

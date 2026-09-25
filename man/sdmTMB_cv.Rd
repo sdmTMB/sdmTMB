@@ -25,7 +25,8 @@ sdmTMB_cv(
 \arguments{
 \item{formula}{Model formula.}
 
-\item{data}{A data frame.}
+\item{data}{A data frame. Rows \code{\link[=sdmTMB]{sdmTMB()}} omits for missing values are
+left out of the validation results.}
 
 \item{mesh_args}{Arguments for \code{\link[=make_mesh]{make_mesh()}}. If supplied, the mesh will be
 reconstructed for each fold.}

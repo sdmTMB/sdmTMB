@@ -74,7 +74,7 @@ qres_betabinomial <- function(object, y, mu, .n = NULL) {
   # Extract dispersion parameter
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) phi <- phi[2]
+  if (is_delta(object)) phi <- phi[1]
 
   # TMB parameterization: alpha = mu * phi, beta = (1 - mu) * phi
   # where mu is already on probability scale from linkinv
@@ -92,7 +92,7 @@ qres_betabinomial <- function(object, y, mu, .n = NULL) {
 qres_nbinom2 <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) phi <- phi[2]
+  if (is_delta(object)) phi <- phi[1]
   a <- stats::pnbinom(y - 1, size = phi, mu = mu)
   b <- stats::pnbinom(y, size = phi, mu = mu)
   u <- stats::runif(n = length(y), min = a, max = b)
@@ -117,7 +117,7 @@ qnbinom1 <- function(p, mu, phi) {
 qres_nbinom1 <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) phi <- phi[2]
+  if (is_delta(object)) phi <- phi[1]
   a <- pnbinom1(y - 1, phi = phi, mu = mu)
   b <- pnbinom1(y, phi = phi, mu = mu)
   u <- stats::runif(n = length(y), min = a, max = b)
@@ -134,7 +134,7 @@ ptruncated_nbinom1 <- function(q, mu, phi){
 qres_truncated_nbinom2 <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) phi <- phi[2]
+  if (is_delta(object)) phi <- phi[1]
   a <- ptruncated_nbinom2(y - 1, mu = mu, phi = phi)
   b <- ptruncated_nbinom2(y, mu = mu, phi = phi)
   a[is.na(a)] <- -99
@@ -147,7 +147,7 @@ qres_truncated_nbinom2 <- function(object, y, mu, ...) {
 qres_truncated_nbinom1 <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) phi <- phi[2]
+  if (is_delta(object)) phi <- phi[1]
   a <- ptruncated_nbinom1(y - 1, mu = mu, phi = phi)
   b <- ptruncated_nbinom1(y, mu = mu, phi = phi)
   a[is.na(a)] <- -99
@@ -165,13 +165,13 @@ qres_pois <- function(object, y, mu, ...) {
 }
 
 is_delta <- function(object) {
-  isTRUE(object$family$delta)
+  .object_is_delta(object, caller = "`is_delta()`")
 }
 
 qres_gamma <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) phi <- phi[2]
+  if (is_delta(object)) phi <- phi[1]
   s1 <- phi
   s2 <- mu / s1
   u <- stats::pgamma(q = y, shape = s1, scale = s2)
@@ -197,7 +197,7 @@ qres_nbinom2_mix <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   p_extreme <- plogis(theta[["logit_p_extreme"]])
   phi <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) phi <- phi[2]
+  if (is_delta(object)) phi <- phi[1]
   ratio <- exp(theta[["log_ratio_mix"]])
   a <- stats::pnbinom(y - 1, size = phi, mu = (1-p_extreme)*mu + p_extreme*ratio*mu)
   b <- stats::pnbinom(y, size = phi, mu = (1-p_extreme)*mu + p_extreme*ratio*mu)
@@ -210,7 +210,7 @@ qres_lognormal_mix <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   p_extreme <- plogis(theta[["logit_p_extreme"]])
   dispersion <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) dispersion <- dispersion[2]
+  if (is_delta(object)) dispersion <- dispersion[1]
   ratio <- exp(theta[["log_ratio_mix"]])
   u <- stats::plnorm(q = y, meanlog = log((1-p_extreme)*mu + p_extreme*ratio*mu) - (dispersion^2) / 2, sdlog = dispersion)
   stats::qnorm(u)
@@ -226,7 +226,7 @@ qres_gaussian <- function(object, y, mu, ...) {
 qres_lognormal <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   dispersion <- exp(theta[["ln_phi"]])
-  if (is_delta(object)) dispersion <- dispersion[2]
+  if (is_delta(object)) dispersion <- dispersion[1]
   u <- stats::plnorm(q = y, meanlog = log(mu) - (dispersion^2) / 2, sdlog = dispersion)
   stats::qnorm(u)
 }
@@ -248,6 +248,29 @@ qres_beta <- function(object, y, mu, ...) {
   s1 <- mu * phi
   s2 <- (1 - mu) * phi
   u <- stats::pbeta(q = y, shape1 = s1, shape2 = s2)
+  stats::qnorm(u)
+}
+
+qres_ordbeta <- function(object, y, mu, ...) {
+  theta <- get_pars(object)
+  phi <- exp(theta[["ln_phi"]])
+  psi <- theta[["psi"]]
+  eta <- stats::qlogis(mu)
+  p0 <- stats::plogis(psi[1] - eta)              # Pr(y == 0)
+  p1 <- stats::plogis(eta - psi[2])              # Pr(y == 1)
+  pmid <- pmax(1 - p0 - p1, 0)
+  s1 <- mu * phi
+  s2 <- (1 - mu) * phi
+  u <- numeric(length(y))
+  zero <- y == 0
+  one <- y == 1
+  mid <- !zero & !one
+  if (any(zero)) u[zero] <- stats::runif(sum(zero), 0, p0[zero])
+  if (any(one)) u[one] <- stats::runif(sum(one), 1 - p1[one], 1)
+  if (any(mid)) {
+    u[mid] <- p0[mid] + pmid[mid] *
+      stats::pbeta(q = y[mid], shape1 = s1[mid], shape2 = s2[mid])
+  }
   stats::qnorm(u)
 }
 
@@ -276,7 +299,7 @@ qres_gengamma <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   .Q <- theta$gengamma_Q
   sigma <- exp(theta$ln_phi)
-  if (is_delta(object)) sigma <- sigma[2]
+  if (is_delta(object)) sigma <- sigma[1]
   u <- pgengamma(q = y, mean = mu, sigma = sigma, .Q = .Q)
   stats::qnorm(u)
 }
@@ -455,6 +478,16 @@ residuals.sdmTMB <- function(object,
                              ...) {
   type_was_missing <- missing(type)
   type <- match.arg(type[[1]], choices = c("mle-mvn", "mle-laplace", "mle-eb", "mle-mcmc", "response", "pearson", "deviance"))
+  .check_family_capability(
+    object, "residuals",
+    info = "Use `simulate.sdmTMB()` with DHARMa or another simulation-based residual workflow for now."
+  )
+  if (isTRUE(object$has_dispformula) && type != "response") {
+    cli_abort(c(
+      "Residual type `{type}` is not available when `dispformula` is used.",
+      "i" = "Use simulation-based residuals with `dharma_residuals()`."
+    ))
+  }
 
   # retrieve function that called this:
   sys_calls <- unlist(lapply(sys.calls(), deparse))
@@ -469,7 +502,9 @@ residuals.sdmTMB <- function(object,
   # need to re-attach environment if in fresh session
   reinitialize(object)
 
-  fam <- object$family$family
+  # This method is guarded above; do not partially interpret multi-family
+  # metadata here.
+  fam <- .object_family_spec(object, caller = "`residuals()`")$family$family
   nd <- NULL
   est_column <- "est"
   linkinv <- object$family$linkinv
@@ -490,6 +525,7 @@ residuals.sdmTMB <- function(object,
       betabinomial = qres_betabinomial,
       tweedie  = qres_tweedie,
       Beta     = qres_beta,
+      ordbeta  = qres_ordbeta,
       Gamma    = qres_gamma,
       nbinom2  = qres_nbinom2,
       nbinom1  = qres_nbinom1,
@@ -646,7 +682,7 @@ residuals.sdmTMB <- function(object,
   } else {
     cli_abort("residual type not implemented")
   }
-  if (isTRUE(object$family$delta) && is.null(mcmc_samples) && model_missing) {
+  if (.object_is_delta(object, caller = "`residuals()`") && is.null(mcmc_samples) && model_missing) {
     cli_inform(paste0("These are residuals for delta model component ", model,
       ". Use the `model` argument to select the other component."))
   }
@@ -668,6 +704,9 @@ check_overdisp <- function(object) {
 # random effects sampled from the implied MVN posterior and the
 # fixed effects at their MLEs
 .one_sample_posterior <- function(object) {
+  if (!any(object$tmb_obj$env$lrandom())) {
+    return(object$tmb_obj$env$last.par.best)
+  }
   tmp <- object$tmb_obj$env$MC(n = 1L, keep = TRUE, antithetic = FALSE)
   re_samp <- as.vector(attr(tmp, "samples"))
   lp <- object$tmb_obj$env$last.par.best

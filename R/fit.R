@@ -20,7 +20,10 @@ NULL
 #'   representing groups. Penalized splines are possible via \pkg{mgcv} with
 #'   `s()`. Optionally a list for delta (hurdle) models.  See
 #'   examples and details below.
-#' @param data A data frame.
+#' @param data A data frame. Rows with missing values in the response or any
+#'   variable the model uses (including `weights` and `offset`) are omitted
+#'   before fitting, as with `na.action = na.omit` in [stats::glm()]. The
+#'   rows used are stored in the returned object as `data`.
 #' @param mesh An object from [make_mesh()] for `spatial_model = "spde"` or
 #'   from [make_areal_domain()] for `"sar"` or `"car"`.
 #' @param spatial_model Spatial process model. `"spde"` uses the default
@@ -58,7 +61,15 @@ NULL
 #'   See the [delta-model
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html) for
 #'   details. For binomial family options, see 'Binomial families' in the Details
-#'   section below.
+#'   section below. Experimental multi-family models use a named list of family
+#'   objects; `distribution_column` then maps each row to an entry in that list.
+#'   See the [multi-family
+#'   vignette](https://sdmTMB.github.io/sdmTMB/articles/multi-family.html) for
+#'   supported family combinations and post-fit methods.
+#' @param distribution_column For experimental multi-family models, the name of
+#'   the column in `data` mapping each row to a family in the named `family`
+#'   list. See the multi-family vignette for the supported family and method
+#'   combinations.
 #' @param spatial Estimate spatial random fields? Options are `'on'` / `'off'`
 #'   or equivalently `TRUE` / `FALSE`. Optionally, a list for delta models, 
 #'   e.g. `list('on', 'off')`.
@@ -109,12 +120,22 @@ NULL
 #'   factor predictors, if `spatial_varying` excludes the intercept (`~ 0` or `~
 #'   -1`), set `spatial = 'off'` to match. Structure is shared in delta
 #'   models.
+#' @param dispformula A one-sided formula describing predictors for the
+#'   observation model dispersion parameter. Defaults to `~ 1`, which estimates
+#'   a single dispersion parameter. For families without an estimable
+#'   dispersion parameter (e.g., binomial or Poisson), this is ignored.
+#'   Currently not supported for multi-family models or truncated
+#'   negative-binomial families.
 #' @param nonlocal_formula An optional one-sided formula describing distributed
 #'   lag terms with `diffusion()` or `time_lag()` wrappers.
 #'   Example: `~ diffusion(x) + time_lag(x)`. When both wrappers use the same
 #'   covariate, they select parts of one joint operator and produce one
 #'   transformed predictor and coefficient. Different covariates produce
-#'   separate transformed predictors and coefficients. Note that spatial-only
+#'   separate transformed predictors and coefficients. `time_lag()` takes an
+#'   optional `start` argument for the transformed state before the first time
+#'   slice: `"stationary"` (default) assumes the covariate held at its first
+#'   slice beforehand, and `"zero"` starts from zero as in Thorson et al.
+#'   (2026), e.g. `~ time_lag(x, start = "zero")`. Note that spatial-only
 #'   covariates will be held constant across time slices unless the `time`
 #'   argument is specified. See the non-local covariates vignette for the
 #'   MSDK and RMSDK definitions.
@@ -194,10 +215,7 @@ NULL
 #   used to model effects on the standard deviation, e.g. `log(sd(i)) = B0 + B1
 #   * epsilon_predictor(i)`. The 'epsilon_model' argument may also be
 #   specified. This is the name of the model to use for modeling time-varying
-#   epsilon. This can be one of the following: "trend" (default, fits a linear
-#   model without random effects), "re" (fits a model with random effects in
-#   epsilon_st, but no trend), and "trend-re" (a model that includes both the
-#   trend and random effects)
+#   epsilon. Currently only "trend" (a log-linear model) is available.
 #' @importFrom methods as is
 #' @importFrom cli cli_abort cli_warn cli_inform
 #' @importFrom mgcv s t2
@@ -633,6 +651,7 @@ sdmTMB <- function(
     mesh,
     time = NULL,
     family = gaussian(link = "identity"),
+    distribution_column = NULL,
     spatial = c("on", "off"),
     spatiotemporal = c("iid", "ar1", "rw", "off"),
     spatial_model = c("spde", "sar", "car"),
@@ -640,6 +659,7 @@ sdmTMB <- function(
     time_varying = NULL,
     time_varying_type = c("rw", "rw0", "ar1"),
     spatial_varying = NULL,
+    dispformula = ~ 1,
     nonlocal_formula = NULL,
     nonlocal_data = NULL,
     weights = NULL,
@@ -665,10 +685,77 @@ sdmTMB <- function(
     cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain supplied to `mesh`.")
   }
   is_areal <- spatial_model %in% c("sar", "car")
+  if (!inherits(dispformula, "formula") || length(dispformula) != 2L) {
+    cli_abort("`dispformula` must be a one-sided formula such as `~ 1`.")
+  }
+  # Omit rows with missing values in any variable the model uses, as with
+  # `na.action = na.omit` in glm(). Doing this before anything is built from
+  # `data` keeps the stored data, mesh rows, and post-fit methods aligned.
+  complete <- .complete_model_rows(
+    data,
+    formulas = c(
+      .formula_list(formula), .formula_list(spatial_varying),
+      .formula_list(time_varying), list(dispformula),
+      if (is.null(nonlocal_data)) .formula_list(nonlocal_formula)
+    ),
+    row_vectors = list(weights, if (is.character(offset)) data[[offset]] else offset)
+  )
+  if (!any(complete)) cli_abort("No rows remain after omitting rows with missing values.")
+  if (!all(complete)) {
+    rows <- which(complete)
+    n <- nrow(data)
+    if (!silent) cli_inform("Omitting {n - length(rows)} row{?s} with missing values.")
+    data <- data[rows, , drop = FALSE]
+    weights <- .subset_rows(weights, rows, n)
+    offset <- .subset_rows(offset, rows, n)
+    control$censored_upper <- .subset_rows(control$censored_upper, rows, n)
+    if (!is.null(experimental$.cv_fold_weights)) {
+      experimental$.cv_fold_weights <- .subset_rows(experimental$.cv_fold_weights, rows, n)
+    }
+    if (!mesh_missing) mesh <- .subset_mesh_rows(mesh, rows, n)
+  }
   data <- droplevels(data) # if data was subset, strips absent factors
+  is_intercept_only_dispformula <- function(f) {
+    tt <- stats::terms(f)
+    length(attr(tt, "term.labels")) == 0L && isTRUE(attr(tt, "intercept") == 1L)
+  }
+  dispformula_is_intercept_only <- is_intercept_only_dispformula(dispformula)
+  has_dispformula <- !dispformula_is_intercept_only
 
-  delta <- isTRUE(family$delta)
-  n_m <- if (delta) 2L else 1L
+  family_spec <- .compile_family_spec(
+    family = family,
+    data = data,
+    distribution_column = distribution_column
+  )
+  is_multi_family <- .family_spec_is_multi_family(family_spec)
+  family <- family_spec$family
+  has_two_components <- .family_spec_has_two_components(family_spec)
+  n_m <- family_spec$n_m
+  if (is_multi_family && has_dispformula) {
+    cli_abort("`dispformula` is not supported for multi-family models yet. Use `dispformula = ~ 1`.")
+  }
+  if (!is_multi_family) {
+    disp_family <- if (has_two_components) family$family[[2]] else family$family[[1]]
+    if (has_dispformula && !.family_metadata(disp_family)$uses_phi) {
+      cli_warn("`dispformula` ignored because this family has no dispersion parameter.")
+      dispformula <- ~ 1
+      dispformula_is_intercept_only <- TRUE
+      has_dispformula <- FALSE
+    }
+    if (has_dispformula && disp_family %in% c("truncated_nbinom1", "truncated_nbinom2")) {
+      cli_abort("`dispformula` is not supported for truncated negative-binomial families yet.")
+    }
+  }
+
+  if ((!is.null(predict_args) || !is.null(index_args)) && isFALSE(do_index)) {
+    cli_abort(c(
+      "`predict_args` and/or `index_args` were set but `do_index` was FALSE.",
+      "`do_index` must be TRUE for these arguments to take effect."
+    ))
+  }
+  if (do_index && .family_spec_is_multi_family(family_spec)) {
+    cli_abort("`do_index = TRUE` is not yet supported for multi-family models.")
+  }
 
   if (inherits(formula, "formula")) {
     formula <- normalize_bar_only_formula(formula)
@@ -685,7 +772,7 @@ sdmTMB <- function(
     if (length(spatiotemporal) > 1 && !is.list(spatiotemporal)) {
       cli_abort("`spatiotemporal` should be a single value or a list")
     }
-    if (delta && !is.list(spatiotemporal)) {
+    if (has_two_components && !is.list(spatiotemporal)) {
       spatiotemporal <- rep(spatiotemporal[[1]], 2L)
     }
     spatiotemporal <- vapply(seq_along(spatiotemporal),
@@ -769,6 +856,10 @@ sdmTMB <- function(
   }
 
   normalize <- control$normalize
+  backend <- control$backend
+  if (backend == "rtmb" && isTRUE(normalize)) {
+    cli_abort("`normalize = TRUE` is unavailable with the RTMB backend; its densities are fully normalized.")
+  }
   nlminb_loops <- control$nlminb_loops
   newton_loops <- control$newton_loops
   quadratic_roots <- control$quadratic_roots
@@ -795,7 +886,7 @@ sdmTMB <- function(
     "suppress_nlminb_warnings", "collapse_spatial_variance",
     "collapse_spatial_variance_threshold",
     "collapse_spatiotemporal_ar1", "collapse_ar1_threshold",
-    "sar_weight_style", "get_rsr"
+    "sar_weight_style", "get_rsr", "backend"
   )
   .control <- control
   # FIXME; automate this from sdmTMcontrol args?
@@ -854,7 +945,7 @@ sdmTMB <- function(
     nonlocal_formula_parsed,
     data = data,
     time = time,
-    multi_family = FALSE
+    multi_family = is_multi_family
   )
   if (!is.null(nonlocal_formula_parsed) && mesh_missing) {
     cli_abort("`mesh` must be supplied when using `nonlocal_formula`.")
@@ -921,7 +1012,9 @@ sdmTMB <- function(
   )
   is_areal <- identical(domain$type, "areal")
 
-  if (!no_spatial && !is_areal) {
+  # Covariate diffusion also maps observations to the mesh by row
+  uses_mesh_rows <- !no_spatial || !is.null(nonlocal_formula_parsed)
+  if (uses_mesh_rows && !is_areal) {
     if (!identical(nrow(spde$loc_xy), nrow(data))) {
       msg <- c(
         "Number of x-y coordinates in `mesh` does not match `nrow(data)`.",
@@ -932,7 +1025,8 @@ sdmTMB <- function(
   }
   # FIXME parallel setup here?
 
-  if (family$family[1] == "censored_poisson") {
+  uses_censored_poisson <- any(family_spec$components$family_name == "censored_poisson")
+  if (uses_censored_poisson) {
     if ("lwr" %in% names(experimental) || "upr" %in% names(experimental)) {
       cli_abort("Detected `lwr` or `upr` in `experimental`. `lwr` is no longer needed and `upr` is now specified as `control = sdmTMBcontrol(censored_upper = ...)`.")
     }
@@ -945,7 +1039,7 @@ sdmTMB <- function(
   if (inherits(formula, "formula")) {
     original_formula <- replicate(n_m, list(formula))
     thresh <- list(check_and_parse_thresh_params(formula, data))
-    if (delta) {
+    if (has_two_components) {
       formula <- list(thresh[[1]]$formula, thresh[[1]]$formula)
     } else {
       formula <- list(thresh[[1]]$formula)
@@ -1023,6 +1117,8 @@ sdmTMB <- function(
   }
   contains_offset <- check_offset(formula[[1]]) # deprecated check
 
+  Xdisp_ij <- model.matrix(dispformula, data = data)
+
   split_formula <- list() # passed to out structure, not TMB
   X_ij <- list() # main effects, passed into TMB
   mf <- list()
@@ -1061,7 +1157,7 @@ sdmTMB <- function(
     sm[[ii]]$formula_no_bars_no_sm <- formula_no_bars_no_sm
   }
 
-  if (delta) {
+  if (has_two_components) {
     random_effects <- lapply(split_formula, function(x) {
       vapply(x$bars, safe_deparse, character(1))
     })
@@ -1112,7 +1208,7 @@ sdmTMB <- function(
     if (n_re_groups[ii] > 0) var_indx_matrix[seq_along(sd_vec), i] <- sd_vec
   }
 
-  if (delta) {
+  if (has_two_components) {
     if (any(unlist(lapply(sm, `[[`, "has_smooths")))) {
       if (original_formula[[1]] != original_formula[[2]]) {
         msg <- paste0(
@@ -1127,7 +1223,7 @@ sdmTMB <- function(
   # always shared; only keep track of one:
   sm <- sm[[1]]
 
-  y_i <- model.response(mf[[1]], "numeric")
+  y_i <- model.response(mf[[1]], "any")
 
   # Keep the CV inclusion mask separate from user weights. In particular,
   # binomial user weights can represent trial sizes rather than likelihood
@@ -1137,116 +1233,31 @@ sdmTMB <- function(
     cli_abort("Internal error: CV fold weights do not match the number of data rows.")
   }
 
-  # Filter weights and offset to match NA-filtered response
-  # model.frame() removes NAs by default; external vectors need same filtering
-  na_action <- attr(mf[[1]], "na.action")
-  if (!is.null(na_action)) {
-    # na.omit creates "omit" class with row indices that were removed
-    if (!is.null(weights)) {
-      weights <- weights[-na_action]
-    }
-    if (!is.null(offset)) {
-      offset <- offset[-na_action]
-    }
-    if (!is.null(cv_fold_weights)) {
-      cv_fold_weights <- cv_fold_weights[-na_action]
-    }
-  }
-
-  if (delta) {
-    y_i2 <- model.response(mf[[2]], "numeric")
+  if (has_two_components) {
+    y_i2 <- model.response(mf[[2]], "any")
     if (!identical(y_i, y_i2)) {
       cli_abort("Response variable should be the same in both parts of the delta formula.")
     }
   }
 
-  if (family$family[1] %in% c("Gamma", "lognormal") && min(y_i) <= 0 && !delta) {
-    cli_abort("Gamma and lognormal must have response values > 0.")
-  }
-  if (family$family[1] == "censored_poisson") {
-    assert_that(mean(upr - y_i, na.rm = TRUE) >= 0)
-  }
+  response <- .prepare_family_response(y_i, weights, family_spec, upr)
+  y_i <- response$y_i
+  size <- response$size
+  weights <- response$weights
 
-  # This is taken from approach in glmmTMB to match how they handle binomial
-  # yobs could be a factor -> treat as binary following glm
-  # yobs could be cbind(success, failure)
-  # yobs could be binary
-  # (yobs, weights) could be (proportions, size)
-  # On the C++ side 'yobs' must be the number of successes.
-  size <- rep(1, nrow(X_ij[[1]])) # for non-binomial case TODO: change hard coded index
-
-  # Helper function for binomial-type response processing
-  process_binomial_response <- function(mf, weights) {
-    ## call this to catch the factor / matrix cases
-    y_i <- model.response(mf[[1]], type = "any")
-    size <- rep(1, length(y_i))
-
-    ## allow character
-    if (is.character(y_i)) {
-      y_i <- model.response(mf[[1]], type = "factor")
-      if (nlevels(y_i) > 2) {
-        cli_abort("More than 2 levels detected for response")
-      }
-    }
-    if (is.factor(y_i)) {
-      if (nlevels(y_i) > 2) {
-        cli_abort("More than 2 levels detected for response")
-      }
-      ## following glm, 'success' is interpreted as the factor not
-      ## having the first level (and hence usually of having the
-      ## second level).
-      y_i <- pmin(as.numeric(y_i) - 1, 1)
-      size <- rep(1, length(y_i))
-    } else {
-      if (is.matrix(y_i)) { # yobs=cbind(success, failure)
-        size <- y_i[, 1] + y_i[, 2]
-        yobs <- y_i[, 1] # successes
-        y_i <- yobs
-      } else {
-        if (all(y_i %in% c(0, 1))) { # binary
-          size <- rep(1, length(y_i))
-        } else { # proportions
-          if (is.null(weights)) {
-            cli_abort(c(
-              "`weights` argument was not specified but proportions were supplied to the binomial or betabinomial family.",
-              "Please supply the `weights` argument with the number of trials per event."))
-          }
-          y_i <- weights * y_i
-          size <- weights
-          weights <- rep(1, length(y_i))
-        }
-      }
-    } # https://github.com/sdmTMB/sdmTMB/issues/172
-    if (is.logical(y_i)) {
-      msg <- paste0(
-        "We recommend against using `TRUE`/`FALSE` ",
-        "response values if you are going to use the `visreg::visreg()` ",
-        "function after. Consider converting to integer with `as.integer()`."
-      )
-      cli_warn(msg)
-    }
-
-    list(y_i = y_i, size = size, weights = weights)
-  }
-
-  if ((identical(family$family[1], "binomial") || identical(family$family[1], "betabinomial")) && !delta) {
-    result <- process_binomial_response(mf, weights)
-    y_i <- result$y_i
-    size <- result$size
-    weights <- result$weights
-  }
-
-  likelihood_weights <- if (!is.null(weights)) weights else rep(1, length(y_i))
+  likelihood_weights <- if (!is.null(weights)) weights else rep(1, NROW(y_i))
   if (!is.null(cv_fold_weights)) {
     weights <- likelihood_weights * cv_fold_weights
   }
 
-  if (identical(family$link[1], "log") && min(y_i, na.rm = TRUE) < 0 && !delta) {
+  if (identical(family$link[1], "log") && min(y_i, na.rm = TRUE) < 0 && !has_two_components) {
     cli_abort("`link = 'log'` but the reponse data include values < 0.")
   }
-
   if (is.null(offset)) offset <- rep(0, length(y_i))
   assert_that(length(offset) == length(y_i), msg = "Offset doesn't match length of data")
+  if (nrow(Xdisp_ij) != length(y_i)) {
+    cli_abort("Internal error: `dispformula` model matrix rows do not match response length.")
+  }
 
   if (!is.null(time_varying)) {
     X_rw_ik <- model.matrix(time_varying, data)
@@ -1257,17 +1268,21 @@ sdmTMB <- function(
   n_s <- domain$n_s
 
   # Student-t df: can be NULL (estimate, default) or numeric (fix)
-  student_df_fixed <- if (family$family[1] == "student" && "df" %in% names(family)) {
+  has_student_family <- any(!is.na(family_spec$param_slot$ln_student_df))
+  student_df_fixed <- if (family_spec$n_f == 1L && family$family[1] == "student" && "df" %in% names(family)) {
     family$df
   } else {
     NULL
   }
-  estimate_student_df <- family$family[1] == "student" && is.null(student_df_fixed)
+  estimate_student_df <- has_student_family && is.null(student_df_fixed)
 
+  if (!is.null(epsilon_model) && !identical(epsilon_model, "trend")) {
+    cli_abort("`experimental$epsilon_model` must be \"trend\".")
+  }
   est_epsilon_model <- 0L
   epsilon_covariate <- rep(0, length(unique(data[[time]])))
   if (!is.null(epsilon_predictor) & !is.null(epsilon_model)) {
-    if (epsilon_model %in% c("trend", "trend-re")) {
+    if (epsilon_model == "trend") {
       # covariate vector dimensioned by number of time steps
       time_steps <- unique(data[[time]])
       for (i in seq_along(time_steps)) {
@@ -1279,20 +1294,10 @@ sdmTMB <- function(
       est_epsilon_model <- 1L
     }
   }
-  # flags for turning off the trend and random effects
   est_epsilon_slope <- 0
   if (!is.null(epsilon_model)) {
-    if (epsilon_model %in% c("trend", "trend-re")) {
-      est_epsilon_slope <- 1L
-      est_epsilon_model <- 1L
-    }
-  }
-  est_epsilon_re <- 0
-  if (!is.null(epsilon_model)) {
-    if (epsilon_model[1] %in% c("re", "trend-re")) {
-      est_epsilon_re <- 1L
-      est_epsilon_model <- 1L
-    }
+    est_epsilon_slope <- 1L
+    est_epsilon_model <- 1L
   }
 
   priors_b <- priors$b
@@ -1341,8 +1346,10 @@ sdmTMB <- function(
 
   A_st <- domain$A_st
   A_spatial_index <- domain$A_spatial_index
-  if (delta) y_i <- cbind(ifelse(y_i > 0, 1, 0), ifelse(y_i > 0, y_i, NA_real_))
-  if (!delta) y_i <- matrix(y_i, ncol = 1L)
+  y_i <- response$response
+  family_tmb <- .as_tmb_family_data(family_spec)
+  fit_poisson_link_delta <- identical(family_spec$families$combine_kind[[1]], "poisson_link_delta") &&
+    family_spec$n_f == 1L
 
   nonlocal_parsed <- .build_nonlocal_tmb_data(
     nonlocal_formula = nonlocal_formula_parsed,
@@ -1368,6 +1375,7 @@ sdmTMB <- function(
     nonlocal_covariate_has_temporal <- as.integer(nonlocal_parsed$covariate_has_temporal)
     nonlocal_term_component <- as.integer(nonlocal_parsed$term_component_id - 1L)
     nonlocal_term_covariate <- as.integer(nonlocal_parsed$term_covariate_index0)
+    nonlocal_term_start <- as.integer(nonlocal_parsed$term_start)
   } else {
     nonlocal_n_terms <- 0L
     nonlocal_n_covariates <- 0L
@@ -1376,6 +1384,7 @@ sdmTMB <- function(
     nonlocal_covariate_has_temporal <- integer(0)
     nonlocal_term_component <- integer(0)
     nonlocal_term_covariate <- integer(0)
+    nonlocal_term_start <- integer(0)
   }
   nonlocal_tmb <- list(
     n_terms = nonlocal_n_terms,
@@ -1383,7 +1392,8 @@ sdmTMB <- function(
     covariate_vertex_time = nonlocal_covariate_vertex_time,
     proj_covariate_vertex_time = array(0, dim = c(1L, 1L, 1L)),
     term_component = nonlocal_term_component,
-    term_covariate = nonlocal_term_covariate
+    term_covariate = nonlocal_term_covariate,
+    term_start = nonlocal_term_start
   )
 
   # TODO: make this cleaner
@@ -1418,6 +1428,7 @@ sdmTMB <- function(
     simulate_t = rep(1L, n_t),
     rw_fields = rw_fields,
     X_ij = X_ij_list,
+    Xdisp_ij = Xdisp_ij,
     X_rw_ik = X_rw_ik,
     Zs = sm$Zs, # optional smoother basis function matrices
     Xs = sm$Xs, # optional smoother linear effect matrix
@@ -1432,8 +1443,8 @@ sdmTMB <- function(
     calc_se = 0L,
     pop_pred = 0L,
     short_newdata = 0L,
-    weights_i = if (!is.null(weights)) weights else rep(1, length(y_i)),
-    area_i = rep(1, length(y_i)),
+    weights_i = if (!is.null(weights)) weights else rep(1, NROW(y_i)),
+    area_i = rep(1, NROW(y_i)),
     normalize_in_r = 0L, # not used first time
     flag = 1L, # part of TMB::normalize()
     calc_index_totals = 0L,
@@ -1456,6 +1467,7 @@ sdmTMB <- function(
     proj_X_rw_ik = matrix(0, ncol = 1, nrow = 1), # dummy
     proj_year = 0, # dummy
     proj_time_include = rep(1L, n_t),
+    proj_family_id = 0L, # dummy
     proj_spatial_index = 0L, # dummy
     proj_z_i = matrix(0, nrow = 1, ncol = n_m), # dummy
     indexes_total = numeric(0), # dummy
@@ -1466,10 +1478,10 @@ sdmTMB <- function(
     spde_barrier = domain$spde_barrier_struct,
     barrier_scaling = domain$barrier_scaling,
     anisotropy = domain$anisotropy,
-    family = .valid_family[family$family],
+    # Used only for derived prediction quantities (e.g., indices), so that
+    # `derived_link` does not alter the likelihood link.
+    link_pred = family_tmb$link_code[1L, 1L],
     size = c(size),
-    link = .valid_link[family$link],
-    link_pred = .valid_link[family$link],
     spatial_only = as.integer(spatial_only),
     spatial_covariate = as.integer(!is.null(spatial_varying)),
     calc_quadratic_range = as.integer(quadratic_roots),
@@ -1479,11 +1491,10 @@ sdmTMB <- function(
     est_epsilon_model = as.integer(est_epsilon_model),
     epsilon_predictor = epsilon_covariate,
     est_epsilon_slope = as.integer(est_epsilon_slope),
-    est_epsilon_re = as.integer(est_epsilon_re),
     has_smooths = as.integer(sm$has_smooths),
+    has_dispersion_model = as.integer(has_dispformula),
     upr = upr,
     lwr = 0L, # in case we want to reintroduce this
-    poisson_link_delta = as.integer(isTRUE(family$type == "poisson_link_delta")),
     stan_flag = as.integer(bayesian),
     no_spatial = no_spatial,
     re_cov_df_map = as.matrix(re_cov_df_map), # dataframe used to map parameters to cov matrices,
@@ -1496,31 +1507,36 @@ sdmTMB <- function(
     Zt_list_proj = list(),
     exclude_RE = 0L
   )
+  tmb_data <- c(tmb_data, family_tmb)
+  tmb_data$poisson_link_delta <- as.integer(fit_poisson_link_delta)
   b_thresh <- matrix(0, 2L, n_m)
   if (thresh[[1]]$threshold_func == 2L) b_thresh <- matrix(0, 3L, n_m) # logistic #TODO: change hard coding on index of thresh[[1]]
+  family_params <- .family_parameter_values(
+    family_spec,
+    estimate_student_df = estimate_student_df,
+    student_df_fixed = student_df_fixed
+  )
 
   tmb_params <- list(
     ln_H_input = matrix(0, nrow = 2L, ncol = n_m),
     b_j = rep(0, ncol(X_ij[[1]])), # TODO: verify ok
-    b_j2 = if (delta) rep(0, ncol(X_ij[[2]])) else numeric(0), # TODO: verify ok
+    b_j2 = if (has_two_components) rep(0, ncol(X_ij[[2]])) else numeric(0), # TODO: verify ok
+    b_disp_k = rep(0, ncol(Xdisp_ij)),
     bs = if (sm$has_smooths) matrix(0, nrow = ncol(sm$Xs), ncol = n_m) else array(0),
     ln_tau_O = rep(0, n_m),
     ln_tau_Z = matrix(0, n_z, n_m),
     ln_tau_E = rep(0, n_m),
     ln_kappa = matrix(0, 2L, n_m),
-    log_kappaS_nl = numeric(nonlocal_n_covariates),
-    kappaT_nl_raw = rep(1, nonlocal_n_covariates),
+    log_kappaS_nl = .nonlocal_log_kappaS_start(spde$loc_xy, nonlocal_n_covariates),
+    log_kappaT_nl = numeric(nonlocal_n_covariates),
     # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
-    thetaf = 0,
-    ln_student_df = if (family$family[1] == "student") {
-      if (estimate_student_df) log(2) else log(student_df_fixed - 1)
-    } else {
-      0  # default for non-student families
-    },
-    gengamma_Q = 0.5, # Not defined at exactly 0
+    thetaf = family_params$thetaf,
+    ln_student_df = family_params$ln_student_df,
+    gengamma_Q = family_params$gengamma_Q,
+    psi = family_params$psi,
     logit_p_extreme = 0,
     log_ratio_mix = -1, # ratio is 1 + exp(log_ratio_mix) so 0 would start fairly high
-    ln_phi = rep(0, n_m),
+    ln_phi = family_params$ln_phi,
     ln_tau_V = matrix(0, ncol(X_rw_ik), n_m),
     rho_time_unscaled = matrix(0, ncol(X_rw_ik), n_m),
     ar1_phi = rep(0, n_m),
@@ -1533,12 +1549,10 @@ sdmTMB <- function(
     epsilon_st = array(0, dim = c(n_s, tmb_data$n_t, n_m)),
     b_threshold = if (thresh[[1]]$threshold_func == 2L) matrix(0, 3L, n_m) else matrix(0, 2L, n_m),
     b_epsilon = rep(0, n_m),
-    ln_epsilon_re_sigma = rep(0, n_m),
-    epsilon_re = matrix(0, tmb_data$n_t, n_m),
     b_smooth = if (sm$has_smooths) matrix(0, sum(sm$sm_dims), n_m) else array(0),
     ln_smooth_sigma = if (sm$has_smooths) matrix(0, length(sm$sm_dims), n_m) else array(0)
   )
-  if (identical(family$link, "inverse") && family$family[1] %in% c("Gamma", "gaussian", "student") && !delta) {
+  if (family_spec$n_f == 1L && identical(family$link, "inverse") && family$family[1] %in% c("Gamma", "gaussian", "student") && !has_two_components) {
     fam <- family
     if (family$family == "student") fam$family <- "gaussian"
     temp <- mgcv::gam(formula = formula[[1]], data = data, family = fam)
@@ -1548,6 +1562,11 @@ sdmTMB <- function(
   # Map off parameters not needed
   tmb_map <- map_all_params(tmb_params)
   tmb_map$b_j <- NULL
+  if (!is_multi_family && has_dispformula) {
+    tmb_map <- unmap(tmb_map, "b_disp_k")
+  } else {
+    tmb_map$b_disp_k <- factor(rep(NA, length(tmb_params$b_disp_k)))
+  }
   .make_nonlocal_kappa_map <- function(has_component) {
     if (!length(has_component)) {
       return(factor(integer(0)))
@@ -1556,35 +1575,14 @@ sdmTMB <- function(
     out[!as.logical(has_component)] <- NA_integer_
     factor(out)
   }
-  if (delta) tmb_map$b_j2 <- NULL
-  if (family$family[[1]] == "tweedie") tmb_map$thetaf <- NULL
-  if (family$family[[1]] == "student") {
-    if (estimate_student_df) {
-      tmb_map$ln_student_df <- NULL  # estimate
-    } else {
-      tmb_map$ln_student_df <- factor(NA)  # fix at initial value
-    }
-  } else {
-    tmb_map$ln_student_df <- factor(NA)  # not student family, fix at 0
-  }
-  if ("gengamma" %in% family$family) tmb_map$gengamma_Q <- factor(NA)
-  tmb_map$ln_phi <- rep(1, n_m)
-  if (family$family[[1]] %in% c("binomial", "poisson", "censored_poisson")) {
-    tmb_map$ln_phi[1] <- factor(NA)
-  }
-  if (delta) {
-    if (family$family[[2]] %in% c("binomial", "poisson", "censored_poisson")) {
-      tmb_map$ln_phi[2] <- factor(NA)
-    } else {
-      tmb_map$ln_phi[2] <- 2
-    }
-  }
-  tmb_map$ln_phi <- as.factor(tmb_map$ln_phi)
+  if (has_two_components) tmb_map$b_j2 <- NULL
+  tmb_map <- .map_family_parameters(
+    tmb_map, tmb_params,
+    has_dispformula = has_dispformula,
+    estimate_student_df = estimate_student_df
+  )
   if (!is.null(thresh[[1]]$threshold_parameter)) tmb_map$b_threshold <- NULL
 
-  if (est_epsilon_re == 1L) {
-    tmb_map <- unmap(tmb_map, c("ln_epsilon_re_sigma", "epsilon_re"))
-  }
   if (est_epsilon_slope == 1L) {
     tmb_map <- unmap(tmb_map, "b_epsilon")
   }
@@ -1598,14 +1596,18 @@ sdmTMB <- function(
     # tmb_data$spatial_only <- rep(1L, length(tmb_data$spatial_only))
 
     # Poisson on first phase increases stability:
-    if (family$family[[1]] == "censored_poisson") tmb_data$family <- .valid_family["poisson"]
+    censored_code <- unname(.valid_family["censored_poisson"])
+    if (any(tmb_data$component_active == 1L & tmb_data$family_code == censored_code)) {
+      tmb_data$family_code[tmb_data$component_active == 1L & tmb_data$family_code == censored_code] <- unname(.valid_family["poisson"])
+    }
 
-    tmb_obj1 <- TMB::MakeADFun(
+    tmb_obj1 <- make_sdmTMB_adfun(
       data = tmb_data, parameters = tmb_params,
       profile = control$profile,
-      map = tmb_map, DLL = "sdmTMB", silent = silent
+      map = tmb_map, backend = backend, silent = silent
     )
     lim <- set_limits(tmb_obj1, lower = lower, upper = upper,
+      mesh = if (is_areal) NULL else spde$mesh,
       spatial_model = tmb_data$spatial_model,
       silent = TRUE)
 
@@ -1624,7 +1626,7 @@ sdmTMB <- function(
   }
 
   tmb_map$log_kappaS_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_spatial)
-  tmb_map$kappaT_nl_raw <- .make_nonlocal_kappa_map(nonlocal_covariate_has_temporal)
+  tmb_map$log_kappaT_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_temporal)
 
   tmb_random <- c()
   if (any(spatial == "on") && !omit_spatial_intercept) {
@@ -1646,10 +1648,6 @@ sdmTMB <- function(
     if (time_varying_type == "ar1") {
       tmb_map <- unmap(tmb_map, "rho_time_unscaled")
     }
-  }
-  if (est_epsilon_re) {
-    tmb_random <- c(tmb_random, "epsilon_re")
-    tmb_map <- unmap(tmb_map, c("epsilon_re"))
   }
 
   tmb_map$ar1_phi <- as.numeric(tmb_map$ar1_phi) # strip factors
@@ -1677,7 +1675,7 @@ sdmTMB <- function(
     tmb_map$re_cov_pars <- as.factor(tmb_map$re_cov_pars)
   }
   if (reml) tmb_random <- c(tmb_random, "b_j")
-  if (reml && delta) tmb_random <- c(tmb_random, "b_j2")
+  if (reml && has_two_components) tmb_random <- c(tmb_random, "b_j2")
 
   if (sm$has_smooths) {
     if (reml) tmb_random <- c(tmb_random, "bs")
@@ -1721,7 +1719,7 @@ sdmTMB <- function(
       "i" = paste0("Nonlocal covariates (in order): ", cov_text, ".")
     ))
   }
-  nl_param_names <- c("log_kappaS_nl", "kappaT_nl_raw")
+  nl_param_names <- c("log_kappaS_nl", "log_kappaT_nl")
   for (param_name in nl_param_names) {
     if (param_name %in% names(start)) {
       .validate_nonlocal_control_length(start[[param_name]], param_name, "start")
@@ -1730,18 +1728,6 @@ sdmTMB <- function(
       .validate_nonlocal_control_length(map[[param_name]], param_name, "map")
     }
   }
-  if ("kappaT_nl_raw" %in% names(start)) {
-    temporal_start <- start$kappaT_nl_raw[
-      as.logical(nonlocal_covariate_has_temporal)
-    ]
-    if (!is.numeric(temporal_start) || anyNA(temporal_start) ||
-        any(!is.finite(temporal_start)) || any(temporal_start < 0)) {
-      cli_abort(
-        "Active values in `control$start$kappaT_nl_raw` must be finite and non-negative."
-      )
-    }
-  }
-
   for (i in seq_along(start)) {
     cli_inform(c(
       i = paste0(
@@ -1772,7 +1758,7 @@ sdmTMB <- function(
   data$sdmTMB_X_ <- data$sdmTMB_Y_ <- NULL
 
   # delta spatiotemporal mapping:
-  if (delta && "off" %in% spatiotemporal) {
+  if (has_two_components && "off" %in% spatiotemporal) {
     tmb_map$epsilon_st <- array(
       seq_len(length(tmb_params$epsilon_st)),
       dim = dim(tmb_params$epsilon_st)
@@ -1786,7 +1772,7 @@ sdmTMB <- function(
     tmb_map$ln_tau_E <- as.factor(tmb_map$ln_tau_E)
   }
   # delta spatial mapping:
-  if (delta && "off" %in% spatial) {
+  if (has_two_components && "off" %in% spatial) {
     tmb_map$omega_s <- array(
       seq_len(length(tmb_params$omega_s)),
       dim = dim(tmb_params$omega_s)
@@ -1800,12 +1786,12 @@ sdmTMB <- function(
     tmb_map$ln_tau_O <- as.factor(tmb_map$ln_tau_O)
   }
 
-  if (isTRUE(domain$anisotropy == 1L) && delta && !"ln_H_input" %in% names(map)) {
+  if (isTRUE(domain$anisotropy == 1L) && has_two_components && !"ln_H_input" %in% names(map)) {
     tmb_map$ln_H_input <- factor(c(1, 2, 1, 2)) # share anisotropy as in VAST
   }
 
   # Handle mixture models
-  if (family$family[[1]] %in% c("gamma_mix", "lognormal_mix", "nbinom2_mix")) {
+  if (family_spec$n_f == 1L && family$family[[1]] %in% c("gamma_mix", "lognormal_mix", "nbinom2_mix")) {
     fixed_p_extreme <- family$p_extreme
 
     if (!is.null(fixed_p_extreme)) {
@@ -1819,7 +1805,7 @@ sdmTMB <- function(
     }
   }
   # delta mixture models
-  if (delta) {
+  if (family_spec$n_f == 1L && has_two_components) {
     if (family$family[[2]] %in% c("gamma_mix", "lognormal_mix", "nbinom2_mix")) {
       fixed_p_extreme <- family[[2]]$p_extreme
       if (is.null(fixed_p_extreme)) fixed_p_extreme <- family$p_extreme
@@ -1837,7 +1823,6 @@ sdmTMB <- function(
   }
 
   if (tmb_data$threshold_func > 0) tmb_map$b_threshold <- NULL
-  if ("gengamma" %in% family$family) tmb_map$gengamma_Q <- NULL
 
   for (i in seq_along(map)) { # user supplied
     cli_inform(c(i = paste0("Fixing or mirroring `", names(map)[i], "`")))
@@ -1850,7 +1835,7 @@ sdmTMB <- function(
 
   if (isTRUE(control$profile)) {
     prof <- c("b_j")
-    if (delta) prof <- c(prof, "b_j2")
+    if (has_two_components) prof <- c(prof, "b_j2")
     control$profile <- prof
   } else if (is.character(control$profile)) {
     prof <- control$profile
@@ -1865,6 +1850,8 @@ sdmTMB <- function(
       offset = offset,
       spde = spde,
       formula = original_formula,
+      dispformula = dispformula,
+      has_dispformula = has_dispformula,
       split_formula = split_formula,
       time_varying = time_varying,
       threshold_parameter = thresh[[1]]$threshold_parameter,
@@ -1872,7 +1859,11 @@ sdmTMB <- function(
       epsilon_predictor = epsilon_predictor,
       time = time,
       time_lu = time_df,
-      family = family,
+      # Keep the public field faithful to the user's input. Internal code uses
+      # `family_spec`, so a multi-family fit must not expose only family one.
+      family = family_spec$family_input,
+      family_spec = family_spec,
+      distribution_column = family_spec$distribution_column,
       likelihood_weights = likelihood_weights,
       smoothers = sm,
       response = y_i,
@@ -1880,6 +1871,7 @@ sdmTMB <- function(
       tmb_params = tmb_params,
       tmb_map = tmb_map,
       tmb_random = tmb_random,
+      backend = backend,
       spatial_varying = spatial_varying,
       nonlocal_formula = nonlocal_formula,
       nonlocal_formula_parsed = nonlocal_formula_parsed,
@@ -1905,12 +1897,6 @@ sdmTMB <- function(
     class = "sdmTMB"
   )
 
-  if ((!is.null(predict_args) || !is.null(index_args)) && isFALSE(do_index)) {
-    cli_abort(c(
-      "`predict_args` and/or `index_args` were set but `do_index` was FALSE.",
-      "`do_index` must be TRUE for these arguments to take effect."
-    )) # 276
-  }
   if (do_index) {
     args <- list(object = out_structure, return_tmb_data = TRUE)
     args <- c(args, predict_args)
@@ -1949,14 +1935,14 @@ sdmTMB <- function(
     out_structure$do_index <- FALSE
   }
 
-  tmb_obj <- TMB::MakeADFun(
+  tmb_obj <- make_sdmTMB_adfun(
     data = tmb_data, parameters = tmb_params, map = tmb_map,
     profile = control$profile,
-    random = tmb_random, DLL = "sdmTMB", silent = silent
+    random = tmb_random, backend = backend, silent = silent
   )
   lim <- set_limits(tmb_obj,
     lower = lower, upper = upper,
-    loc = if (is_areal) NULL else spde$mesh$loc,
+    mesh = if (is_areal) NULL else spde$mesh,
     spatial_model = tmb_data$spatial_model,
     silent = FALSE
   )
@@ -2025,7 +2011,7 @@ sdmTMB <- function(
       collapse_spatial_variance_threshold = collapse_spatial_variance_threshold,
       collapse_spatiotemporal_ar1 = collapse_spatiotemporal_ar1,
       collapse_ar1_threshold = collapse_ar1_threshold,
-      delta = delta,
+      has_two_components = has_two_components,
       silent = silent
     )
     if (collapse_result$do_refit) {
@@ -2055,7 +2041,7 @@ sdmTMB <- function(
 
   if (!silent && getsd) cli_inform("running TMB sdreport\n")
   if (getsd) {
-    sd_report <- TMB::sdreport(tmb_obj, getJointPrecision = get_joint_precision)
+    sd_report <- sdreport_sdmTMB(tmb_obj, getJointPrecision = get_joint_precision)
     conv <- get_convergence_diagnostics(sd_report)
   } else {
     sd_report <- NULL
@@ -2063,9 +2049,9 @@ sdmTMB <- function(
   }
 
   # save params that families need to grab from environments:
-  if (any(family$family %in% c("truncated_nbinom1", "truncated_nbinom2"))) {
+  if (family_spec$n_f == 1L && any(family$family %in% c("truncated_nbinom1", "truncated_nbinom2"))) {
     phi <- exp(tmb_obj$par[["ln_phi"]])
-    if (delta) {
+    if (has_two_components) {
       assign(".phi", phi, environment(out_structure[["family"]][[2]][["linkinv"]]))
     } else {
       assign(".phi", phi, environment(out_structure[["family"]][["linkinv"]]))
@@ -2122,8 +2108,13 @@ check_and_collapse_spatial_fields <- function(
     collapse_spatial_variance_threshold,
     collapse_spatiotemporal_ar1,
     collapse_ar1_threshold,
-    delta,
-    silent) {
+    has_two_components = NULL,
+    silent = FALSE,
+    delta = NULL) {
+
+  if (is.null(has_two_components)) {
+    has_two_components <- isTRUE(delta)
+  }
 
   do_refit <- FALSE
   spatial_updated <- spatial
@@ -2232,7 +2223,7 @@ check_and_collapse_spatial_fields <- function(
     }
   }
 
-  if (delta) {
+  if (has_two_components) {
     spatial_arg <- as.list(spatial_updated)
     spatiotemporal_arg <- as.list(spatiotemporal_updated)
   } else {
@@ -2247,23 +2238,10 @@ check_and_collapse_spatial_fields <- function(
   )
 }
 
-set_limits <- function(tmb_obj, lower, upper, loc = NULL, spatial_model = 0L,
+set_limits <- function(tmb_obj, lower, upper, mesh = NULL, spatial_model = 0L,
                        silent = TRUE) {
   .lower <- stats::setNames(rep(-Inf, length(tmb_obj$par)), names(tmb_obj$par))
   .upper <- stats::setNames(rep(Inf, length(tmb_obj$par)), names(tmb_obj$par))
-  has_kappaT <- "kappaT_nl_raw" %in% names(tmb_obj$par)
-  if (has_kappaT && "kappaT_nl_raw" %in% names(lower)) {
-    x <- lower$kappaT_nl_raw
-    if (!is.numeric(x) || anyNA(x) || any(!is.finite(x)) || any(x < 0)) {
-      cli_abort("`control$lower$kappaT_nl_raw` must contain finite, non-negative values.")
-    }
-  }
-  if (has_kappaT && "kappaT_nl_raw" %in% names(upper)) {
-    x <- upper$kappaT_nl_raw
-    if (!is.numeric(x) || anyNA(x) || any(x < 0)) {
-      cli_abort("`control$upper$kappaT_nl_raw` must contain non-negative values.")
-    }
-  }
   for (i_name in names(lower)) {
     if (i_name %in% names(.lower)) {
       .lower[names(.lower) %in% i_name] <- lower[[i_name]]
@@ -2291,10 +2269,6 @@ set_limits <- function(tmb_obj, lower, upper, loc = NULL, spatial_model = 0L,
     .lower["ar1_phi"] <- stats::qlogis((-0.999 + 1) / 2)
     .upper["ar1_phi"] <- stats::qlogis((0.999 + 1) / 2)
   }
-  if ("kappaT_nl_raw" %in% names(tmb_obj$par) &&
-    !"kappaT_nl_raw" %in% names(lower)) {
-    .lower[names(.lower) == "kappaT_nl_raw"] <- 0
-  }
   if ("logit_rho_sar" %in% names(tmb_obj$par) &&
     !"logit_rho_sar" %in% union(names(lower), names(upper))) {
     if (identical(spatial_model, 2L)) {
@@ -2303,6 +2277,12 @@ set_limits <- function(tmb_obj, lower, upper, loc = NULL, spatial_model = 0L,
       .lower["logit_rho_sar"] <- stats::qlogis((-0.999 + 1) / 2)
       .upper["logit_rho_sar"] <- stats::qlogis((0.999 + 1) / 2)
     }
+  }
+  is_kappaS_nl <- names(.lower) == "log_kappaS_nl"
+  if (any(is_kappaS_nl) && !is.null(mesh)) {
+    bounds <- .nonlocal_log_kappaS_bounds(mesh)
+    if (!"log_kappaS_nl" %in% names(lower)) .lower[is_kappaS_nl] <- bounds[[1L]]
+    if (!"log_kappaS_nl" %in% names(upper)) .upper[is_kappaS_nl] <- bounds[[2L]]
   }
 
   list(lower = .lower, upper = .upper)

@@ -29,6 +29,7 @@ sdmTMBcontrol(
   collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
   get_rsr = FALSE,
+  backend = getOption("sdmTMB.backend", "tmb"),
   ...
 )
 }
@@ -153,6 +154,15 @@ spatial regression (RSR) adjusted estimator for covariate responses. If
 \code{get_rsr = TRUE}, these will be available via
 \code{tidy(fit, effects = "rsr")}. See Hanks et al. (2015) and
 Diaz and Thorson (2025).}
+
+\item{backend}{Model backend. \code{"tmb"} is the default; set
+\code{options(sdmTMB.backend = "rtmb")} to use RTMB by default. The experimental
+\code{"rtmb"} backend currently supports all families, including delta and
+multi-family models, with SPDE (isotropic, anisotropic, or barrier) and
+areal SAR/CAR spatial and spatiotemporal fields, spatially and
+time-varying coefficients, IID random effects, smoothers, threshold
+terms, covariate diffusion, restricted spatial regression, priors, and
+derived indices.}
 
 \item{...}{Anything else. See the 'Control parameters' section of
 \code{\link[stats:nlminb]{stats::nlminb()}}.}

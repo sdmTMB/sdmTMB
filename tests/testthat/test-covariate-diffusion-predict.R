@@ -64,14 +64,14 @@ test_that("covariate diffusion predict works for default and newdata pathways", 
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
     nonlocal_data = grid,
-    # the simulated data have no nonlocal signal, so fix the rates at their
-    # starting values to keep the Hessian well conditioned for `se_fit`:
+    # Fix the nonlocal rates: they are not identified in this tiny data set.
     control = sdmTMBcontrol(
+      newton_loops = 0,
+      start = list(log_kappaS_nl = c(-1, 0)),
       map = list(
         log_kappaS_nl = factor(c(NA, NA)),
-        kappaT_nl_raw = factor(c(NA, NA))
-      ),
-      newton_loops = 0
+        log_kappaT_nl = factor(c(NA, NA))
+      )
     )
   )
 

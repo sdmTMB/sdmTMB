@@ -237,7 +237,7 @@ test_that(".build_nonlocal_tmb_data represents a joint operator once", {
   expect_equal(out$covariate_has_temporal, 1L)
 })
 
-test_that("joint R solver uses the stationary space-time recursion", {
+test_that("joint R solver with a zero start matches Thorson et al. 2026", {
   M0 <- Matrix::Diagonal(2L, c(1, 2))
   M1 <- Matrix::Diagonal(2L, c(2, 4))
   x <- matrix(c(1, 2, 3, 4), nrow = 2L)
@@ -246,7 +246,7 @@ test_that("joint R solver uses the stationary space-time recursion", {
 
   actual <- .solve_nonlocal_vertex_time(
     "combined", x, M0, M1, kappaS, kappaT,
-    has_space = TRUE, has_time = TRUE
+    has_space = TRUE, has_time = TRUE, start = "zero"
   )
   system <- (1 + kappaT) * M0 + kappaS^(-2) * M1
   expected <- matrix(0, nrow = 2L, ncol = 2L)
@@ -291,8 +291,95 @@ test_that("joint R solver uses the stationary space-time recursion", {
   )
 })
 
+test_that("stationary start makes z shift with x and hold constants", {
+  set.seed(1)
+  M0 <- Matrix::Diagonal(3L, c(1, 2, 1.5))
+  M1 <- Matrix::sparseMatrix(i = c(1, 1, 2, 2, 2, 3, 3), j = c(1, 2, 1, 2, 3, 2, 3),
+    x = c(1, -1, -1, 2, -1, -1, 1))
+  x <- matrix(rnorm(12), nrow = 3L)
+  solve_nl <- function(component, x, start) {
+    .solve_nonlocal_vertex_time(component, x, M0, M1, kappaS = 2, kappaT = 1.5,
+      has_space = TRUE, has_time = TRUE, start = start)
+  }
+
+  for (component in c("time_lag", "combined")) {
+    stationary <- solve_nl(component, x, "stationary")
+    expect_equal(solve_nl(component, x + 10, "stationary"), stationary + 10,
+      info = component)
+    expect_equal(solve_nl(component, matrix(10, 3, 4), "stationary"),
+      matrix(10, 3, 4), info = component)
+    # The zero start instead gives z_t = c (1 - rhoT^t) for constant x = c
+    rhoT <- 1.5 / 2.5
+    expect_equal(solve_nl(component, matrix(10, 3, 4), "zero"),
+      matrix(10 * (1 - rhoT^(1:4)), 3, 4, byrow = TRUE), info = component)
+  }
+
+  # Stationary state before slice 1: x_1 for time, spatial diffusion for joint
+  expect_equal(solve_nl("time_lag", x, "stationary")[, 1L], x[, 1L])
+  z0 <- solve_nl("diffusion", x, "stationary")[, 1L]
+  system <- 2.5 * M0 + 0.25 * M1
+  expect_equal(solve_nl("combined", x, "stationary")[, 1L],
+    as.numeric(Matrix::solve(system, M0 %*% x[, 1L] + 1.5 * M0 %*% z0)))
+})
+
+test_that("fitted C++ start matches the R solver and is invariant to shifting x", {
+  skip_on_cran()
+  set.seed(1)
+  dat <- data.frame(
+    x = rnorm(16),
+    year = rep(1:4, each = 4),
+    X = rep(1:4, times = 4),
+    Y = rep(c(0, 1), 8)
+  )
+  dat$y <- 0.5 * dat$x + rnorm(16, sd = 0.3)
+  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.5)
+  grid <- make_nl_covariate_grid(mesh, sort(unique(dat$year)), "x")
+  ctrl <- sdmTMBcontrol(
+    newton_loops = 0, getsd = FALSE,
+    start = list(log_kappaS_nl = log(2), log_kappaT_nl = log(1.5)),
+    map = list(log_kappaS_nl = factor(NA), log_kappaT_nl = factor(NA))
+  )
+  fit_nl <- function(nonlocal_formula, shift = 0) {
+    d <- dat
+    g <- grid
+    d$x <- d$x + shift
+    g$x <- g$x + shift
+    suppressWarnings(sdmTMB(y ~ 1, data = d, mesh = mesh, time = "year",
+      spatial = "off", spatiotemporal = "off", family = gaussian(),
+      nonlocal_formula = nonlocal_formula, nonlocal_data = g, control = ctrl))
+  }
+  cases <- list(
+    list(~ time_lag(x), "time_lag", "stationary"),
+    list(~ time_lag(x, start = "zero"), "time_lag", "zero"),
+    list(~ diffusion(x) + time_lag(x), "combined", "stationary"),
+    list(~ diffusion(x) + time_lag(x, start = "zero"), "combined", "zero")
+  )
+  for (case in cases) {
+    info <- paste(deparse(case[[1]]), collapse = "")
+    fit <- fit_nl(case[[1]])
+    expected <- .project_nonlocal_vertex_time(
+      .solve_nonlocal_vertex_time(case[[2]], fit$nonlocal_parsed$covariate_vertex_time[, , 1L],
+        fit$tmb_data$spde$M0, fit$tmb_data$spde$M1, kappaS = 2, kappaT = 1.5,
+        has_space = case[[2]] == "combined", has_time = TRUE, start = case[[3]]),
+      fit$tmb_data$A_st, fit$tmb_data$A_spatial_index, fit$tmb_data$year_i,
+      fit$tmb_data$n_t
+    )
+    expect_equal(as.numeric(fit$tmb_obj$report()$covariate_diffusion_values[, 1L]),
+      expected, tolerance = 1e-8, info = info)
+
+    shifted <- fit_nl(case[[1]], shift = 10)
+    if (case[[3]] == "stationary") {
+      expect_equal(shifted$model$objective, fit$model$objective,
+        tolerance = 1e-6, info = info)
+    } else {
+      expect_gt(abs(shifted$model$objective - fit$model$objective), 1e-3)
+    }
+  }
+})
+
 test_that("fitted and prediction C++ paths use the joint operator", {
   skip_on_cran()
+  set.seed(1)
   dat <- data.frame(
     y = rnorm(8),
     x = rnorm(8),
@@ -313,12 +400,22 @@ test_that("fitted and prediction C++ paths use the joint operator", {
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x) + time_lag(x),
     nonlocal_data = grid,
-    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+    # Fix the operator scales so this tests the R/C++ implementations rather
+    # than numerical differences from an ill-conditioned, tiny-data fit.
+    control = sdmTMBcontrol(
+      newton_loops = 0,
+      getsd = FALSE,
+      start = list(log_kappaS_nl = log(2), log_kappaT_nl = log(0.5)),
+      map = list(
+        log_kappaS_nl = factor(NA),
+        log_kappaT_nl = factor(NA)
+      )
+    )
   ))
 
   fitted_params <- fit$tmb_obj$env$parList(fit$model$par)
   kappaS <- exp(fitted_params$log_kappaS_nl[[1L]])
-  kappaT <- fitted_params$kappaT_nl_raw[[1L]]
+  kappaT <- exp(fitted_params$log_kappaT_nl[[1L]])
   expected_vertex_time <- .solve_nonlocal_vertex_time(
     component = "combined",
     vertex_time_input = fit$nonlocal_parsed$covariate_vertex_time[, , 1L],
