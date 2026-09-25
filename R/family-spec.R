@@ -32,8 +32,8 @@
 }
 
 # Family subsystem architecture:
-# user input -> .compile_family_spec() -> .establish_analysis_rows() ->
-# .prepare_family_response() -> .as_tmb_family_data() -> TMB resolver.
+# user input -> .compile_family_spec() -> .prepare_family_response() ->
+# .as_tmb_family_data() -> TMB resolver.
 #
 # Invariants: family IDs are one-based in R and zero-based only at the TMB
 # boundary; a fit has one or two latent components; single families use LP1;
@@ -185,14 +185,6 @@
     cli_abort("Internal family spec error: `family_id_i` must match the response length.")
   }
   family_spec$family_id_i
-}
-
-.family_spec_subset_rows <- function(family_spec, rows) {
-  if (!length(family_spec$family_id_i)) {
-    return(family_spec)
-  }
-  family_spec$family_id_i <- family_spec$family_id_i[rows]
-  family_spec
 }
 
 .family_spec_component_active <- function(family_spec, row_family_id = family_spec$family_id_i) {

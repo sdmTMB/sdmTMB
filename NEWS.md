@@ -1,5 +1,27 @@
 # sdmTMB (development version)
 
+* Rows with missing values in the response or any variable the model uses
+  (including `weights` and `offset`) are now omitted before fitting, as with
+  `na.action = na.omit` in `glm()`, with a message unless `silent = TRUE`.
+  Previously such rows were dropped from the response and main-effect design
+  matrix but not from the spatial, temporal, random-effect, or spatially
+  varying inputs, so later rows were matched to the wrong locations and
+  times, giving silently incorrect fits.
+  Post-fit methods such as `predict()`, `residuals()`, and `sdmTMB_cv()`
+  errored for these fits and now work. The fitted object's `data` holds the
+  rows used.
+
+* Add experimental multi-family models, where each row of the data can use a
+  different observation family (e.g., binomial, count, and delta-lognormal
+  data in one model with shared fields). Supply a named list of families to
+  `family` and name the column mapping rows to families with the new
+  `distribution_column` argument. See the new multi-family vignette for the
+  supported family combinations and post-fit methods.
+
+* Add a `dispformula` argument to `sdmTMB()` for modelling the observation
+  dispersion parameter with fixed-effect predictors. Not currently supported
+  for multi-family models or truncated negative binomial families.
+
 * Remove the experimental `epsilon_model = "re"` and `"trend-re"` options
   (random year effects on the spatiotemporal SD). They did not recover
   simulated year-to-year variation in the field SD. The `"trend"` option is
@@ -7,9 +29,9 @@
 
 * `sdmTMB_simulate()` now errors if `sigma_E` has more than one value. Only
   the first value was used, so a time-varying `sigma_E` silently simulated a
-  constant SD. Simulation now also always uses the RTMB backend so a given
-  seed produces the same data regardless of `sdmTMBcontrol(backend)` or the
-  `sdmTMB.backend` option.
+  constant SD. Simulation uses the backend set by `sdmTMBcontrol(backend)` or
+  the `sdmTMB.backend` option (TMB by default). The TMB and RTMB backends
+  give different simulated values for the same seed.
 
 * Compute `censored_poisson()` log likelihoods on the log scale in both the
   TMB and RTMB backends. Censored probabilities were formed on the ordinary
@@ -141,10 +163,6 @@
   `spatial = "on", spatial_varying = ~ 0 + factor_var` has been removed; this
   is a valid model specification (global spatial field plus per-level SVC
   deviations) although it can be more challenging to estimate.
-
-* Add `plot_diffusion_kernel()` for plotting covariate-diffusion impulse
-  responses and `plot_diffused_covariate()` for plotting original and estimated
-  diffused covariate fields on the fitted mesh.
 
 * `diffusion(x) + time_lag(x)` in `nonlocal_formula` now fits one stationary
   joint space--time distributed-lag operator with one coefficient and one

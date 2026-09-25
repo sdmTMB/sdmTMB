@@ -85,7 +85,8 @@ ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
 #' [cross-validation vignette](https://sdmTMB.github.io/sdmTMB/articles/cross-validation.html).
 #'
 #' @param formula Model formula.
-#' @param data A data frame.
+#' @param data A data frame. Rows [sdmTMB()] omits for missing values are
+#'   left out of the validation results.
 #' @param mesh Output from [make_mesh()]. If supplied, the same mesh will be
 #'   used for all folds. This is faster and usually what you want.
 #' @param mesh_args Arguments for [make_mesh()]. If supplied, the mesh will be
@@ -415,11 +416,12 @@ sdmTMB_cv <- function(
       object <- do.call(sdmTMB, args)
     }
 
+    # rows `sdmTMB()` omitted for missing values are not validated
+    obj_order <- object$data[["_sdm_order_"]]
     validation_fold <- if (lfo) k + lfo_forecast else k
-    validation <- data$cv_fold == validation_fold
+    validation <- data$cv_fold == validation_fold & data[["_sdm_order_"]] %in% obj_order
     cv_data <- data[validation, , drop = FALSE]
 
-    obj_order <- object$data[["_sdm_order_"]]
     validation_order <- cv_data[["_sdm_order_"]]
     validation_index <- match(validation_order, obj_order)
     if (length(validation_index) != nrow(cv_data) ||
@@ -434,8 +436,8 @@ sdmTMB_cv <- function(
     # predict for withheld data:
     # cli_inform("Testing on data fold {k}.")
     if (time_indexed_nonlocal) {
-      predicted_full <- predict(object, newdata = data, type = "response",
-        offset = if (!is.null(.offset)) data[[.offset]] else rep(0, nrow(data)))
+      predicted_full <- predict(object, newdata = object$data, type = "response",
+        offset = if (!is.null(.offset)) object$data[[.offset]] else rep(0, nrow(object$data)))
       match_idx <- match(cv_data[["_sdm_order_"]], predicted_full[["_sdm_order_"]])
       predicted <- predicted_full[match_idx, , drop = FALSE]
     } else {

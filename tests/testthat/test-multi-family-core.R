@@ -275,77 +275,49 @@ test_that("multi-family fits build family-based TMB data", {
   expect_identical(family(fit), fit$family)
 })
 
-test_that("missing covariates are rejected before fitting", {
+test_that("rows with missing covariates are omitted before fitting", {
   dat_single <- data.frame(
     y = c(1.2, 2.4, 3.6, 4.8, 6.0),
     x = c(-1, NA, 0, 0.5, 1)
   )
-
-  expect_error(
-    sdmTMB(
-      y ~ x,
-      data = dat_single,
-      spatial = "off",
-      spatiotemporal = "off",
-      family = gaussian(),
-      do_fit = FALSE
-    ),
-    regexp = "Rows with missing covariates: 2"
-  )
-
-  fit_complete <- sdmTMB(
+  fit <- sdmTMB(
     y ~ x,
-    data = transform(dat_single, x = seq(-1, 1, length.out = 5)),
+    data = dat_single,
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
     do_fit = FALSE
   )
+  expect_equal(fit$data$y, c(1.2, 3.6, 4.8, 6.0))
+  expect_equal(fit$tmb_data$y_i[, 1], c(1.2, 3.6, 4.8, 6.0))
+
+  # prediction data must still be complete:
   expect_error(
-    predict(
-      fit_complete,
-      newdata = transform(dat_single, x = c(-1, NA, 0, 0.5, 1))
-    ),
+    predict(fit, newdata = dat_single),
     regexp = "Rows with missing covariates: 2"
   )
 
+  # a missing value in any component's formula omits the row:
   dat_multi <- data.frame(
     y = c(1.2, 0.0, 2.1),
     x1 = c(-1, 0, 1),
     x2 = c(NA, -0.2, 0.3),
     dist = c("gauss", "delta", "delta")
   )
-
-  expect_error(
-    sdmTMB(
-      formula = list(y ~ x1, y ~ x2),
-      data = dat_multi,
-      spatial = "off",
-      spatiotemporal = "off",
-      family = list(gauss = gaussian(), delta = delta_gamma()),
-      distribution_column = "dist",
-      do_fit = FALSE
-    ),
-    regexp = "Rows with missing covariates: 1"
+  fit_multi <- sdmTMB(
+    formula = list(y ~ x1, y ~ x2),
+    data = dat_multi,
+    spatial = "off",
+    spatiotemporal = "off",
+    family = list(gauss = gaussian(), delta = delta_gamma()),
+    distribution_column = "dist",
+    do_fit = FALSE
   )
-  dat_multi$x2[1] <- 0.1
-  dat_multi$x2[2] <- NA
-
-  expect_error(
-    sdmTMB(
-      formula = list(y ~ x1, y ~ x2),
-      data = dat_multi,
-      spatial = "off",
-      spatiotemporal = "off",
-      family = list(gauss = gaussian(), delta = delta_gamma()),
-      distribution_column = "dist",
-      do_fit = FALSE
-    ),
-    regexp = "Rows with missing covariates: 2"
-  )
+  expect_equal(fit_multi$data$x1, c(0, 1))
+  expect_equal(fit_multi$family_spec$family_id_i, c(2L, 2L))
 })
 
-test_that("response omissions use one explicit row map for all row-level data", {
+test_that("omitted rows are dropped from all row-level data", {
   dat_single <- data.frame(
     y = c(1.2, NA, 3.6, 4.8, 6.0),
     x = c(-1, -0.3, 0, 0.5, 1)
@@ -361,15 +333,14 @@ test_that("response omissions use one explicit row map for all row-level data", 
     control = sdmTMBcontrol(getsd = FALSE, newton_loops = 0)
   )
 
-  expect_equal(fit_single$analysis_rows$used, c(1L, 3L, 4L, 5L))
-  expect_equal(fit_single$analysis_rows$omitted, 2L)
-  expect_equal(fit_single$analysis_rows$original_to_analysis, c(1L, NA, 2L, 3L, 4L))
+  expect_equal(fit_single$data$x, c(-1, 0, 0.5, 1))
   expect_equal(fit_single$tmb_data$offset_i, c(10, 30, 40, 50))
   expect_equal(fit_single$tmb_data$obs_family_id, rep(0L, 4L))
   expect_equal(fit_single$family_spec$family_id_i, rep(1L, 4L))
   expect_equal(fit_single$tmb_data$y_i[, 1], c(1.2, 3.6, 4.8, 6.0))
-  expect_equal(fit_single$offset, c(10, 20, 30, 40, 50))
-  expect_length(fitted(fit_single), nrow(dat_single))
+  expect_equal(fit_single$offset, c(10, 30, 40, 50))
+  expect_equal(nobs(fit_single), 4L)
+  expect_length(fitted(fit_single), 4L)
   expect_equal(
     fitted(fit_single),
     predict(fit_single, type = "response")$est,
@@ -392,7 +363,7 @@ test_that("response omissions use one explicit row map for all row-level data", 
     do_fit = FALSE
   )
 
-  expect_equal(fit_multi$analysis_rows$used, c(1L, 3L, 4L, 5L))
+  expect_equal(fit_multi$data$x, c(-1, -0.1, 0.4, 1))
   expect_equal(fit_multi$tmb_data$offset_i, c(5, 7, 8, 9))
   expect_equal(fit_multi$tmb_data$obs_family_id, c(0L, 1L, 0L, 1L))
   expect_equal(fit_multi$family_spec$family_id_i, c(1L, 2L, 1L, 2L))
@@ -447,6 +418,33 @@ test_that("response omissions keep spatial indices within the retained rows", {
   expect_equal(nrow(fit$tmb_data$A_st), 28L)
   expect_equal(fit$tmb_data$A_spatial_index, 0:27)
   expect_true(is.finite(fit$tmb_obj$fn()))
+})
+
+test_that("NA rows give the same fit and post-fit results as dropping them first", {
+  skip_on_cran()
+  set.seed(1)
+  d <- data.frame(X = runif(150), Y = runif(150), x = rnorm(150))
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.1)
+  d$y <- sdmTMB_simulate(~ x, data = d, mesh = mesh, range = 0.5,
+    sigma_O = 0.5, phi = 0.2, B = c(1, 0.5), seed = 1)$observed
+  d$y[4] <- NA
+  d$x[30] <- NA
+  fit <- sdmTMB(y ~ x, data = d, mesh = mesh)
+
+  d2 <- d[-c(4, 30), ]
+  fit2 <- sdmTMB(y ~ x, data = d2,
+    mesh = make_mesh(d2, c("X", "Y"), mesh = mesh$mesh))
+
+  expect_equal(logLik(fit), logLik(fit2))
+  expect_equal(nobs(fit), 148L)
+  expect_equal(predict(fit)$est, predict(fit2)$est)
+  expect_equal(residuals(fit, type = "deviance"), residuals(fit2, type = "deviance"))
+  expect_equal(nrow(simulate(fit, nsim = 1)), 148L)
+
+  set.seed(2)
+  cv <- sdmTMB_cv(y ~ x, data = d, mesh = mesh, k_folds = 2)
+  expect_equal(nrow(cv$data), 148L)
+  expect_true(is.finite(cv$sum_loglik))
 })
 
 test_that("mixed gaussian plus delta fits reach the unified TMB path", {

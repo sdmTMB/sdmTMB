@@ -46,7 +46,10 @@ representing groups. Penalized splines are possible via \pkg{mgcv} with
 \code{s()}. Optionally a list for delta (hurdle) models.  See
 examples and details below.}
 
-\item{data}{A data frame.}
+\item{data}{A data frame. Rows with missing values in the response or any
+variable the model uses (including \code{weights} and \code{offset}) are omitted
+before fitting, as with \code{na.action = na.omit} in \code{\link[stats:glm]{stats::glm()}}. The
+rows used are stored in the returned object as \code{data}.}
 
 \item{mesh}{An object from \code{\link[=make_mesh]{make_mesh()}} for \code{spatial_model = "spde"} or
 from \code{\link[=make_areal_domain]{make_areal_domain()}} for \code{"sar"} or \code{"car"}.}

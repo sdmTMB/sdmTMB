@@ -20,7 +20,10 @@ NULL
 #'   representing groups. Penalized splines are possible via \pkg{mgcv} with
 #'   `s()`. Optionally a list for delta (hurdle) models.  See
 #'   examples and details below.
-#' @param data A data frame.
+#' @param data A data frame. Rows with missing values in the response or any
+#'   variable the model uses (including `weights` and `offset`) are omitted
+#'   before fitting, as with `na.action = na.omit` in [stats::glm()]. The
+#'   rows used are stored in the returned object as `data`.
 #' @param mesh An object from [make_mesh()] for `spatial_model = "spde"` or
 #'   from [make_areal_domain()] for `"sar"` or `"car"`.
 #' @param spatial_model Spatial process model. `"spde"` uses the default
@@ -682,10 +685,36 @@ sdmTMB <- function(
     cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain supplied to `mesh`.")
   }
   is_areal <- spatial_model %in% c("sar", "car")
-  data <- droplevels(data) # if data was subset, strips absent factors
   if (!inherits(dispformula, "formula") || length(dispformula) != 2L) {
     cli_abort("`dispformula` must be a one-sided formula such as `~ 1`.")
   }
+  # Omit rows with missing values in any variable the model uses, as with
+  # `na.action = na.omit` in glm(). Doing this before anything is built from
+  # `data` keeps the stored data, mesh rows, and post-fit methods aligned.
+  complete <- .complete_model_rows(
+    data,
+    formulas = c(
+      .formula_list(formula), .formula_list(spatial_varying),
+      .formula_list(time_varying), list(dispformula),
+      if (is.null(nonlocal_data)) .formula_list(nonlocal_formula)
+    ),
+    row_vectors = list(weights, if (is.character(offset)) data[[offset]] else offset)
+  )
+  if (!any(complete)) cli_abort("No rows remain after omitting rows with missing values.")
+  if (!all(complete)) {
+    rows <- which(complete)
+    n <- nrow(data)
+    if (!silent) cli_inform("Omitting {n - length(rows)} row{?s} with missing values.")
+    data <- data[rows, , drop = FALSE]
+    weights <- .subset_rows(weights, rows, n)
+    offset <- .subset_rows(offset, rows, n)
+    control$censored_upper <- .subset_rows(control$censored_upper, rows, n)
+    if (!is.null(experimental$.cv_fold_weights)) {
+      experimental$.cv_fold_weights <- .subset_rows(experimental$.cv_fold_weights, rows, n)
+    }
+    if (!mesh_missing) mesh <- .subset_mesh_rows(mesh, rows, n)
+  }
+  data <- droplevels(data) # if data was subset, strips absent factors
   is_intercept_only_dispformula <- function(f) {
     tt <- stats::terms(f)
     length(attr(tt, "term.labels")) == 0L && isTRUE(attr(tt, "intercept") == 1L)
@@ -1023,49 +1052,9 @@ sdmTMB <- function(
     )
     formula <- list(thresh[[1]]$formula, thresh[[2]]$formula)
   }
-  threshold_columns <- unique(unlist(
-    lapply(thresh, `[[`, "threshold_parameter"),
-    use.names = FALSE
-  ))
 
   if (is.character(offset)) {
     offset <- data[[offset]]
-  }
-  offset_original <- if (is.null(offset)) rep(0, nrow(data)) else offset
-
-  .check_no_missing_covariates(
-    data = data,
-    formulas = formula,
-    shared_formulas = c(
-      .formula_list(spatial_varying),
-      .formula_list(time_varying),
-      list(dispformula)
-    ),
-    required_columns = if (is.null(nonlocal_formula_parsed)) {
-      threshold_columns
-    } else {
-      c(nonlocal_formula_parsed$covariates, threshold_columns)
-    },
-    stage = "fitting"
-  )
-  analysis_rows <- .establish_analysis_rows(
-    data = data,
-    formulas = formula,
-    family_spec = family_spec
-  )
-  has_omitted_rows <- length(analysis_rows$omitted) > 0L
-  analysis_data <- if (has_omitted_rows) {
-    data[analysis_rows$used, , drop = FALSE]
-  } else {
-    data
-  }
-  if (has_omitted_rows) {
-    family_spec <- .family_spec_subset_rows(family_spec, analysis_rows$used)
-    weights <- .subset_analysis_rows(weights, analysis_rows, name = "weights")
-    offset <- .subset_analysis_rows(offset, analysis_rows, name = "offset")
-    if (length(upr) > 1L) {
-      upr <- .subset_analysis_rows(upr, analysis_rows, name = "censored_upper")
-    }
   }
 
   check_irregalar_time(
@@ -1081,7 +1070,7 @@ sdmTMB <- function(
 
   spatial_varying_formula <- spatial_varying # save it
   if (!is.null(spatial_varying)) {
-    mf1 <- model.frame(spatial_varying, analysis_data)
+    mf1 <- model.frame(spatial_varying, data)
     for (i in seq_len(ncol(mf1))) {
       if (is.character(mf1[[i]])) {
         cli_warn(paste0(
@@ -1091,7 +1080,7 @@ sdmTMB <- function(
         ))
       }
     }
-    z_i <- model.matrix(spatial_varying, analysis_data)
+    z_i <- model.matrix(spatial_varying, data)
     .int <- grep("(Intercept)", colnames(z_i))
     has_intercept <- length(.int) > 0L
     svc_omega_is_intercept <- has_intercept && !omit_spatial_intercept
@@ -1118,7 +1107,7 @@ sdmTMB <- function(
     spatial_varying <- colnames(z_i)
     svc_contrasts <- attr(z_i, which = "contrasts")
   } else {
-    z_i <- matrix(0, nrow(analysis_data), 0L)
+    z_i <- matrix(0, nrow(data), 0L)
     svc_contrasts <- NULL
   }
   n_z <- ncol(z_i)
@@ -1128,11 +1117,7 @@ sdmTMB <- function(
   }
   contains_offset <- check_offset(formula[[1]]) # deprecated check
 
-  mf_disp <- model.frame(dispformula, data = analysis_data, na.action = stats::na.pass)
-  if (any(!stats::complete.cases(mf_disp))) {
-    cli_abort("NAs are not allowed in variables used by `dispformula`.")
-  }
-  Xdisp_ij <- model.matrix(dispformula, data = mf_disp)
+  Xdisp_ij <- model.matrix(dispformula, data = data)
 
   split_formula <- list() # passed to out structure, not TMB
   X_ij <- list() # main effects, passed into TMB
@@ -1149,13 +1134,13 @@ sdmTMB <- function(
     # smoothers removed, but random effects remain:
     formula_no_sm <- remove_s_and_t2(formula[ii][[1]])
     # random effects parsed into data structures:
-    split_formula[[ii]] <- parse_formula(formula_no_sm, analysis_data)
+    split_formula[[ii]] <- parse_formula(formula_no_sm, data)
 
     # save formula with no bars (but with smoothers)
     formula_no_bars <- reformulas::nobars(formula[ii][[1]])
     formula_no_bars_no_sm <- remove_s_and_t2(formula_no_bars)
-    X_ij[[ii]] <- model.matrix(formula_no_bars_no_sm, analysis_data)
-    mf[[ii]] <- model.frame(formula_no_bars_no_sm, analysis_data)
+    X_ij[[ii]] <- model.matrix(formula_no_bars_no_sm, data)
+    mf[[ii]] <- model.frame(formula_no_bars_no_sm, data)
     vars <- colnames(mf[[ii]])
     for (g in seq_along(vars)) {
       if (any(is.infinite(mf[[ii]][, g, drop = TRUE]))) {
@@ -1165,7 +1150,7 @@ sdmTMB <- function(
 
     mt[[ii]] <- attr(mf[[ii]], "terms")
     # parse everything mgcv + smoothers:
-    sm[[ii]] <- parse_smoothers(formula = formula_no_bars, data = analysis_data, knots = knots)
+    sm[[ii]] <- parse_smoothers(formula = formula_no_bars, data = data, knots = knots)
     sm[[ii]]$split_formula <- split_formula
     sm[[ii]]$formula_no_sm <- formula_no_sm
     sm[[ii]]$formula_no_bars <- formula_no_bars
@@ -1248,21 +1233,6 @@ sdmTMB <- function(
     cli_abort("Internal error: CV fold weights do not match the number of data rows.")
   }
 
-  # Filter weights and offset to match NA-filtered response
-  # model.frame() removes NAs by default; external vectors need same filtering
-  na_action <- attr(mf[[1]], "na.action")
-  if (!is.null(na_action)) {
-    # na.omit creates "omit" class with row indices that were removed
-    if (!is.null(weights)) {
-      weights <- weights[-na_action]
-    }
-    if (!is.null(offset)) {
-      offset <- offset[-na_action]
-    }
-    if (!is.null(cv_fold_weights)) {
-      cv_fold_weights <- cv_fold_weights[-na_action]
-    }
-  }
   if (has_two_components) {
     y_i2 <- model.response(mf[[2]], "any")
     if (!identical(y_i, y_i2)) {
@@ -1290,9 +1260,9 @@ sdmTMB <- function(
   }
 
   if (!is.null(time_varying)) {
-    X_rw_ik <- model.matrix(time_varying, analysis_data)
+    X_rw_ik <- model.matrix(time_varying, data)
   } else {
-    X_rw_ik <- matrix(0, nrow = nrow(analysis_data), ncol = 1)
+    X_rw_ik <- matrix(0, nrow = nrow(data), ncol = 1)
   }
 
   n_s <- domain$n_s
@@ -1375,39 +1345,15 @@ sdmTMB <- function(
   }
 
   A_st <- domain$A_st
-  if (has_omitted_rows && nrow(A_st) == nrow(data)) {
-    A_st <- A_st[analysis_rows$used, , drop = FALSE]
-  }
   A_spatial_index <- domain$A_spatial_index
-  if (has_omitted_rows && length(A_spatial_index) == nrow(data)) {
-    A_spatial_index <- A_spatial_index[analysis_rows$used]
-    # `A_st` rows were subset above, so index the retained rows.
-    if (nrow(domain$A_st) == nrow(data)) {
-      A_spatial_index <-
-        analysis_rows$original_to_analysis[A_spatial_index + 1L] - 1L
-    }
-  }
-  X_threshold <- if (has_omitted_rows) {
-    .subset_analysis_rows(
-      thresh[[1]]$X_threshold,
-      analysis_rows,
-      name = "threshold covariate"
-    )
-  } else {
-    thresh[[1]]$X_threshold
-  }
   y_i <- response$response
   family_tmb <- .as_tmb_family_data(family_spec)
   fit_poisson_link_delta <- identical(family_spec$families$combine_kind[[1]], "poisson_link_delta") &&
     family_spec$n_f == 1L
 
-  time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
-  n_t <- nrow(time_df)
-  year_i_data <- time_df$year_i[match(analysis_data[[time]], time_df$time_from_data)]
-
   nonlocal_parsed <- .build_nonlocal_tmb_data(
     nonlocal_formula = nonlocal_formula_parsed,
-    data = if (nonlocal_grid_supplied) nonlocal_grid_inputs$data else analysis_data,
+    data = if (nonlocal_grid_supplied) nonlocal_grid_inputs$data else data,
     A_st = if (nonlocal_grid_supplied) nonlocal_grid_inputs$A_st else A_st,
     A_spatial_index = if (nonlocal_grid_supplied) nonlocal_grid_inputs$A_spatial_index else A_spatial_index,
     year_i = if (nonlocal_grid_supplied) nonlocal_grid_inputs$year_i else year_i_data,
@@ -1539,7 +1485,7 @@ sdmTMB <- function(
     spatial_only = as.integer(spatial_only),
     spatial_covariate = as.integer(!is.null(spatial_varying)),
     calc_quadratic_range = as.integer(quadratic_roots),
-    X_threshold = X_threshold, # TODO: don't hardcode index thresh[[1]]
+    X_threshold = thresh[[1]]$X_threshold, # TODO: don't hardcode index thresh[[1]]
     proj_X_threshold = 0, # dummy
     threshold_func = thresh[[1]]$threshold_func, # TODO: don't hardcode index thresh[[1]]
     est_epsilon_model = as.integer(est_epsilon_model),
@@ -1901,7 +1847,7 @@ sdmTMB <- function(
   out_structure <- structure(
     list(
       data = data,
-      offset = offset_original,
+      offset = offset,
       spde = spde,
       formula = original_formula,
       dispformula = dispformula,
@@ -1917,7 +1863,6 @@ sdmTMB <- function(
       # `family_spec`, so a multi-family fit must not expose only family one.
       family = family_spec$family_input,
       family_spec = family_spec,
-      analysis_rows = analysis_rows,
       distribution_column = family_spec$distribution_column,
       likelihood_weights = likelihood_weights,
       smoothers = sm,

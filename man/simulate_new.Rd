@@ -118,7 +118,9 @@ corresponding random effects should be simulated.}
 An optional previous \code{\link[=sdmTMB]{sdmTMB()}} fit to pull parameter values.
 Will be overridden by any non-\code{NULL} parameter arguments supplied directly.}
 
-\item{seed}{Seed number.}
+\item{seed}{Seed number. The TMB and RTMB backends (see the \code{backend}
+argument of \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}}, passed via \code{control}) draw random numbers
+differently, so the same seed gives different simulated values with each.}
 
 \item{time_varying}{An optional one-sided formula describing time-varying
 covariates passed through to \code{\link[=sdmTMB]{sdmTMB()}} for building a time-varying random

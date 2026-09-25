@@ -736,7 +736,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     tmb_data$proj_offset_i <- if (!is.null(offset)) {
       offset
     } else if (nd_arg_was_null) {
-      if (length(object$offset) == nrow(newdata)) object$offset else tmb_data$offset_i
+      tmb_data$offset_i
     } else {
       rep(0, nrow(proj_X_ij[[1]]))
     }

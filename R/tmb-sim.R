@@ -52,7 +52,9 @@
 #' @param previous_fit (**Deprecated**; please use [simulate.sdmTMB()]).
 #'   An optional previous [sdmTMB()] fit to pull parameter values.
 #'   Will be overridden by any non-`NULL` parameter arguments supplied directly.
-#' @param seed Seed number.
+#' @param seed Seed number. The TMB and RTMB backends (see the `backend`
+#'   argument of [sdmTMBcontrol()], passed via `control`) draw random numbers
+#'   differently, so the same seed gives different simulated values with each.
 #' @param rho_time Autoregressive correlation(s) for time-varying parameters
 #'   when `time_varying_type = "ar1"`. Values must lie between -1 and 1 and may
 #'   be supplied as a single value or a vector the same length as `sigma_V`.
@@ -420,11 +422,10 @@ simulate_new <- function(formula,
     params$zeta_s <- fixed_re$zeta_s
   }
 
-  # Always simulate with the RTMB backend so a given seed yields the same data
-  # regardless of the `sdmTMB.backend` option (RTMB draws differ from TMB's).
   newobj <- make_sdmTMB_adfun(
     data = tmb_data, map = fit$tmb_map,
-    random = fit$tmb_random, parameters = params, backend = "rtmb"
+    random = fit$tmb_random, parameters = params,
+    backend = backend_sdmTMB(fit)
   )
 
   set.seed(seed)
@@ -511,7 +512,8 @@ sdmTMB_simulate <- simulate_new
 #' @method simulate sdmTMB
 #' @param object An `sdmTMB` model.
 #' @param nsim Number of response lists to simulate. Defaults to 1.
-#' @param seed Random number seed.
+#' @param seed Random number seed. Simulations use the backend the model was
+#'   fit with; TMB and RTMB fits give different values for the same seed.
 #' @param type How parameters should be treated. `"mle-eb"`: fixed effects
 #'   are at their maximum likelihood (MLE) estimates  and random effects are at
 #'   their empirical Bayes (EB) estimates. `"mle-mvn"`: fixed effects are at
