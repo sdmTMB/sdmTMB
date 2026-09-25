@@ -26,6 +26,26 @@
   simulation-based residuals (e.g., DHARMa) therefore understated ones and
   the mean. The likelihood was unaffected.
 
+* Start covariate diffusion's `kappaS_nl` at a value scaled to the data's
+  spatial extent (RMSDK equal to a quarter of the bounding-box diagonal)
+  rather than at 1. The old start meant very different amounts of smoothing
+  depending on coordinate units and could let the optimizer drift into a
+  degenerate over-smoothed mode (`kappaS_nl` near 0) with a
+  non-positive-definite Hessian.
+
+* Bound covariate diffusion's `log_kappaS_nl` by default so RMSDK stays
+  between half the shortest mesh edge and 10 times the mesh bounding-box
+  diagonal. Beyond these the likelihood is flat and the optimizer could drift
+  indefinitely, giving NaN standard errors; a fit at a bound now warns.
+  Override with `lower` or `upper` in `sdmTMBcontrol()`.
+
+* Estimate covariate diffusion's temporal parameter as `log_kappaT_nl`
+  (equal to `logit(rhoT)`) in place of `kappaT_nl_raw`, which had a lower
+  bound at zero. This needs no bounds, so it is also safe with `tmbstan`, where
+  `kappaT_nl_raw` could go negative. Update any `start`, `map`, `lower`, or
+  `upper` entries for `kappaT_nl_raw` accordingly. `sdmTMB_simulate()` now
+  requires `0 < lags_rhoT < 1`.
+
 * Check that `mesh` matches `nrow(data)` when `nonlocal_formula` is used, even
   with spatial and spatiotemporal fields off. Covariate diffusion maps each
   observation to the mesh by row, so a mesh built from a different data frame

@@ -144,7 +144,7 @@ Must be positive and finite. Supply a single value or
 one value per covariate needing a spatial scale.}
 
 \item{lags_rhoT}{Temporal diffusion persistence for \code{time_lag()} terms.
-Must be finite and satisfy \verb{0 <= rhoT < 1}. Supply a single value or one
+Must satisfy \verb{0 < rhoT < 1}. Supply a single value or one
 value per covariate needing temporal diffusion.}
 
 \item{...}{Any other arguments to pass to \code{\link[=sdmTMB]{sdmTMB()}}.}

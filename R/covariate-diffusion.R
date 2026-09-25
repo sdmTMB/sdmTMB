@@ -573,6 +573,33 @@
   term_coef_name
 }
 
+# Start kappaS_nl so RMSDK (2 / kappaS_nl) is a quarter of the diagonal of the
+# data's bounding box. This makes the start invariant to coordinate units and
+# keeps it away from the kappaS_nl -> 0 (smooth everything) degenerate mode.
+# The start matters because the kappaS_nl gradient is zero while the nonlocal
+# coefficient is at its start of 0.
+.nonlocal_log_kappaS_start <- function(loc_xy, n_covariates) {
+  if (n_covariates == 0L) return(numeric(0))
+  if (is.null(loc_xy) || nrow(loc_xy) < 2L) return(numeric(n_covariates))
+  diagonal <- sqrt(sum(apply(loc_xy, 2, function(x) diff(range(x)))^2))
+  if (!is.finite(diagonal) || diagonal <= 0) return(numeric(n_covariates))
+  rep(log(2 / (0.25 * diagonal)), n_covariates)
+}
+
+# Default bounds on log_kappaS_nl so RMSDK (2 / kappaS_nl) stays between half
+# the shortest mesh edge and 10 times the mesh bounding-box diagonal. Beyond
+# these the likelihood is flat (z_t -> x_t or z_t -> its spatial mean), so
+# unbounded fits can drift off indefinitely.
+.nonlocal_log_kappaS_bounds <- function(mesh) {
+  loc <- mesh$loc[, 1:2, drop = FALSE]
+  tv <- mesh$graph$tv
+  edges <- rbind(tv[, 1:2], tv[, 2:3], tv[, c(3L, 1L)])
+  min_edge <- min(sqrt(rowSums((loc[edges[, 1L], , drop = FALSE] -
+    loc[edges[, 2L], , drop = FALSE])^2)))
+  diagonal <- sqrt(sum(apply(loc, 2, function(x) diff(range(x)))^2))
+  c(log(2 / (10 * diagonal)), log(2 / (0.5 * min_edge)))
+}
+
 .compute_nonlocal_term_values <- function(nonlocal_parsed,
                                                  covariate_vertex_time,
                                                  A_st,
@@ -582,7 +609,7 @@
                                                  M0,
                                                  M1,
                                                  log_kappaS_nl,
-                                                 kappaT_nl_raw) {
+                                                 log_kappaT_nl) {
   if (is.null(nonlocal_parsed)) {
     return(NULL)
   }
@@ -592,7 +619,7 @@
   }
   n_covariates <- nonlocal_parsed$n_covariates
   if (length(log_kappaS_nl) != n_covariates ||
-      length(kappaT_nl_raw) != n_covariates) {
+      length(log_kappaT_nl) != n_covariates) {
     cli_abort("Covariate diffusion parameter vectors did not match the expected number of lag covariates.")
   }
 
@@ -615,7 +642,7 @@
       ncol = dim(covariate_vertex_time)[2]
     )
     kappaS <- exp(log_kappaS_nl[[cov_i]])
-    kappaT <- kappaT_nl_raw[[cov_i]]
+    kappaT <- exp(log_kappaT_nl[[cov_i]])
     transformed_vertex_time <- .solve_nonlocal_vertex_time(
       component = component,
       vertex_time_input = cov_slice,
@@ -710,7 +737,7 @@
   }
   list(
     kappaS = exp(params$log_kappaS_nl[cov_i]),
-    kappaT = params$kappaT_nl_raw[cov_i]
+    kappaT = exp(params$log_kappaT_nl[cov_i])
   )
 }
 

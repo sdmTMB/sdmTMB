@@ -64,7 +64,7 @@
 #'   Must be positive and finite. Supply a single value or
 #'   one value per covariate needing a spatial scale.
 #' @param lags_rhoT Temporal diffusion persistence for `time_lag()` terms.
-#'   Must be finite and satisfy `0 <= rhoT < 1`. Supply a single value or one
+#'   Must satisfy `0 < rhoT < 1`. Supply a single value or one
 #'   value per covariate needing temporal diffusion.
 #' @param ... Any other arguments to pass to [sdmTMB()].
 #'
@@ -297,12 +297,12 @@ simulate_new <- function(formula,
     )
     params <- .set_diffusion_parameter(
       params = params,
-      param_name = "kappaT_nl_raw",
+      param_name = "log_kappaT_nl",
       user_value = lags_rhoT,
       mask = nonlocal_dat$covariate_has_temporal,
       label = "lags_rhoT",
-      valid = function(x) all(is.finite(x) & x >= 0 & x < 1),
-      transform = function(x) x / (1 - x)
+      valid = function(x) all(is.finite(x) & x > 0 & x < 1),
+      transform = stats::qlogis
     )
   } else if (!is.null(lags_kappaS) || !is.null(lags_rhoT)) {
     cli::cli_abort("Diffusion parameters require `nonlocal_formula`.")
@@ -476,7 +476,7 @@ simulate_new <- function(formula,
       M0 = fit$tmb_data$spde$M0,
       M1 = fit$tmb_data$spde$M1,
       log_kappaS_nl = as.numeric(params$log_kappaS_nl),
-      kappaT_nl_raw = as.numeric(params$kappaT_nl_raw)
+      log_kappaT_nl = as.numeric(params$log_kappaT_nl)
     )
     colnames(nl_truth) <- sub("^nl_", "nl_truth_", colnames(nl_truth))
     d <- cbind(d, as.data.frame(nl_truth))

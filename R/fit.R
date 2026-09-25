@@ -1574,8 +1574,8 @@ sdmTMB <- function(
     ln_tau_Z = matrix(0, n_z, n_m),
     ln_tau_E = rep(0, n_m),
     ln_kappa = matrix(0, 2L, n_m),
-    log_kappaS_nl = numeric(nonlocal_n_covariates),
-    kappaT_nl_raw = rep(1, nonlocal_n_covariates),
+    log_kappaS_nl = .nonlocal_log_kappaS_start(spde$loc_xy, nonlocal_n_covariates),
+    log_kappaT_nl = numeric(nonlocal_n_covariates),
     # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
     thetaf = family_params$thetaf,
     ln_student_df = family_params$ln_student_df,
@@ -1654,6 +1654,7 @@ sdmTMB <- function(
       map = tmb_map, backend = backend, silent = silent
     )
     lim <- set_limits(tmb_obj1, lower = lower, upper = upper,
+      mesh = if (is_areal) NULL else spde$mesh,
       spatial_model = tmb_data$spatial_model,
       silent = TRUE)
 
@@ -1672,7 +1673,7 @@ sdmTMB <- function(
   }
 
   tmb_map$log_kappaS_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_spatial)
-  tmb_map$kappaT_nl_raw <- .make_nonlocal_kappa_map(nonlocal_covariate_has_temporal)
+  tmb_map$log_kappaT_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_temporal)
 
   tmb_random <- c()
   if (any(spatial == "on") && !omit_spatial_intercept) {
@@ -1765,7 +1766,7 @@ sdmTMB <- function(
       "i" = paste0("Nonlocal covariates (in order): ", cov_text, ".")
     ))
   }
-  nl_param_names <- c("log_kappaS_nl", "kappaT_nl_raw")
+  nl_param_names <- c("log_kappaS_nl", "log_kappaT_nl")
   for (param_name in nl_param_names) {
     if (param_name %in% names(start)) {
       .validate_nonlocal_control_length(start[[param_name]], param_name, "start")
@@ -1774,18 +1775,6 @@ sdmTMB <- function(
       .validate_nonlocal_control_length(map[[param_name]], param_name, "map")
     }
   }
-  if ("kappaT_nl_raw" %in% names(start)) {
-    temporal_start <- start$kappaT_nl_raw[
-      as.logical(nonlocal_covariate_has_temporal)
-    ]
-    if (!is.numeric(temporal_start) || anyNA(temporal_start) ||
-        any(!is.finite(temporal_start)) || any(temporal_start < 0)) {
-      cli_abort(
-        "Active values in `control$start$kappaT_nl_raw` must be finite and non-negative."
-      )
-    }
-  }
-
   for (i in seq_along(start)) {
     cli_inform(c(
       i = paste0(
@@ -2001,7 +1990,7 @@ sdmTMB <- function(
   )
   lim <- set_limits(tmb_obj,
     lower = lower, upper = upper,
-    loc = if (is_areal) NULL else spde$mesh$loc,
+    mesh = if (is_areal) NULL else spde$mesh,
     spatial_model = tmb_data$spatial_model,
     silent = FALSE
   )
@@ -2297,23 +2286,10 @@ check_and_collapse_spatial_fields <- function(
   )
 }
 
-set_limits <- function(tmb_obj, lower, upper, loc = NULL, spatial_model = 0L,
+set_limits <- function(tmb_obj, lower, upper, mesh = NULL, spatial_model = 0L,
                        silent = TRUE) {
   .lower <- stats::setNames(rep(-Inf, length(tmb_obj$par)), names(tmb_obj$par))
   .upper <- stats::setNames(rep(Inf, length(tmb_obj$par)), names(tmb_obj$par))
-  has_kappaT <- "kappaT_nl_raw" %in% names(tmb_obj$par)
-  if (has_kappaT && "kappaT_nl_raw" %in% names(lower)) {
-    x <- lower$kappaT_nl_raw
-    if (!is.numeric(x) || anyNA(x) || any(!is.finite(x)) || any(x < 0)) {
-      cli_abort("`control$lower$kappaT_nl_raw` must contain finite, non-negative values.")
-    }
-  }
-  if (has_kappaT && "kappaT_nl_raw" %in% names(upper)) {
-    x <- upper$kappaT_nl_raw
-    if (!is.numeric(x) || anyNA(x) || any(x < 0)) {
-      cli_abort("`control$upper$kappaT_nl_raw` must contain non-negative values.")
-    }
-  }
   for (i_name in names(lower)) {
     if (i_name %in% names(.lower)) {
       .lower[names(.lower) %in% i_name] <- lower[[i_name]]
@@ -2341,10 +2317,6 @@ set_limits <- function(tmb_obj, lower, upper, loc = NULL, spatial_model = 0L,
     .lower["ar1_phi"] <- stats::qlogis((-0.999 + 1) / 2)
     .upper["ar1_phi"] <- stats::qlogis((0.999 + 1) / 2)
   }
-  if ("kappaT_nl_raw" %in% names(tmb_obj$par) &&
-    !"kappaT_nl_raw" %in% names(lower)) {
-    .lower[names(.lower) == "kappaT_nl_raw"] <- 0
-  }
   if ("logit_rho_sar" %in% names(tmb_obj$par) &&
     !"logit_rho_sar" %in% union(names(lower), names(upper))) {
     if (identical(spatial_model, 2L)) {
@@ -2353,6 +2325,12 @@ set_limits <- function(tmb_obj, lower, upper, loc = NULL, spatial_model = 0L,
       .lower["logit_rho_sar"] <- stats::qlogis((-0.999 + 1) / 2)
       .upper["logit_rho_sar"] <- stats::qlogis((0.999 + 1) / 2)
     }
+  }
+  is_kappaS_nl <- names(.lower) == "log_kappaS_nl"
+  if (any(is_kappaS_nl) && !is.null(mesh)) {
+    bounds <- .nonlocal_log_kappaS_bounds(mesh)
+    if (!"log_kappaS_nl" %in% names(lower)) .lower[is_kappaS_nl] <- bounds[[1L]]
+    if (!"log_kappaS_nl" %in% names(upper)) .upper[is_kappaS_nl] <- bounds[[2L]]
   }
 
   list(lower = .lower, upper = .upper)

@@ -438,7 +438,7 @@ Type objective_function<Type>::operator()()
   PARAMETER_VECTOR(ln_tau_E);    // spatio-temporal process
   PARAMETER_ARRAY(ln_kappa);    // Matern parameter
   PARAMETER_VECTOR(log_kappaS_nl);    // covariate diffusion spatial scale
-  PARAMETER_VECTOR(kappaT_nl_raw);    // covariate diffusion temporal scale
+  PARAMETER_VECTOR(log_kappaT_nl);    // covariate diffusion temporal scale
 
   PARAMETER_VECTOR(thetaf);           // tweedie only
   PARAMETER_VECTOR(ln_student_df);    // student-t df (log(df - 1))
@@ -567,7 +567,7 @@ Type objective_function<Type>::operator()()
   // Covariate diffusion
   // Transform distributed-lag parameters onto the scales used by the solvers
   if (log_kappaS_nl.size() != covariate_diffusion.n_covariates ||
-      kappaT_nl_raw.size() != covariate_diffusion.n_covariates) {
+      log_kappaT_nl.size() != covariate_diffusion.n_covariates) {
     error("Nonlocal parameter vectors must have length `covariate_diffusion.n_covariates`.");
   }
   vector<Type> kappaS_nl_by_covariate(covariate_diffusion.n_covariates);
@@ -579,7 +579,7 @@ Type objective_function<Type>::operator()()
       kappaS_nl_by_covariate(cov_i) = exp(log_kappaS_nl(cov_i));
     }
     if (covariate_diffusion.has(cov_i, sdmTMB::nl_time) == 1) {
-      kappaT_nl_by_covariate(cov_i) = kappaT_nl_raw(cov_i);
+      kappaT_nl_by_covariate(cov_i) = exp(log_kappaT_nl(cov_i));
     }
   }
 

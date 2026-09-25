@@ -28,7 +28,7 @@ rtmb_diffusion_terms <- function(par, diffusion, rows) {
     type <- diffusion$type[[term]]
     k <- diffusion$covariate[[term]]
     X <- matrix(x[, , k], dim(x)[1L], dim(x)[2L])
-    kappaT <- par$kappaT_nl_raw[[k]]
+    kappaT <- exp(par$log_kappaT_nl[[k]])
     if (type == "time") {
       z <- vector("list", ncol(X))
       z[[1L]] <- X[, 1L] / (1 + kappaT)
@@ -73,14 +73,14 @@ rtmb_diffusion_scales <- function(par, diffusion) {
   out <- list()
   if (length(space)) {
     kappaS_nl <- exp(par$log_kappaS_nl[space])
-    kappaT <- par$kappaT_nl_raw[space]
+    kappaT <- exp(par$log_kappaT_nl[space])
     MSDK <- 4 / kappaS_nl^2 *
       (1 - as.numeric(space %in% time) * kappaT / (1 + kappaT))
     out <- c(out, list(kappaS_nl = kappaS_nl, MSDK = MSDK,
       RMSDK = sqrt(MSDK), log_MSDK = log(MSDK), log_RMSDK = log(sqrt(MSDK))))
   }
   if (length(time)) {
-    kappaT_nl <- par$kappaT_nl_raw[time]
+    kappaT_nl <- exp(par$log_kappaT_nl[time])
     out <- c(out,
       list(kappaT_nl = kappaT_nl, rhoT = kappaT_nl / (1 + kappaT_nl)))
   }

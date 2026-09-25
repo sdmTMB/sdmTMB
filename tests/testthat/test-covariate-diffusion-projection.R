@@ -319,17 +319,17 @@ test_that("fitted and prediction C++ paths use the joint operator", {
     control = sdmTMBcontrol(
       newton_loops = 0,
       getsd = FALSE,
-      start = list(log_kappaS_nl = log(2), kappaT_nl_raw = 0.5),
+      start = list(log_kappaS_nl = log(2), log_kappaT_nl = log(0.5)),
       map = list(
         log_kappaS_nl = factor(NA),
-        kappaT_nl_raw = factor(NA)
+        log_kappaT_nl = factor(NA)
       )
     )
   ))
 
   fitted_params <- fit$tmb_obj$env$parList(fit$model$par)
   kappaS <- exp(fitted_params$log_kappaS_nl[[1L]])
-  kappaT <- fitted_params$kappaT_nl_raw[[1L]]
+  kappaT <- exp(fitted_params$log_kappaT_nl[[1L]])
   expected_vertex_time <- .solve_nonlocal_vertex_time(
     component = "combined",
     vertex_time_input = fit$nonlocal_parsed$covariate_vertex_time[, , 1L],
