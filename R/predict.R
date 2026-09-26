@@ -480,22 +480,9 @@ predict.sdmTMB <- function(object, newdata = NULL,
         )
       }
     } else if (!no_spatial || has_nonlocal) {
-      if (requireNamespace("dplyr", quietly = TRUE)) { # faster
-        unique_newdata <- dplyr::distinct(newdata[, xy_cols, drop = FALSE])
-      } else {
-        unique_newdata <- unique(newdata[, xy_cols, drop = FALSE])
-      }
-      unique_newdata[["sdm_spatial_id"]] <- seq(1, nrow(unique_newdata)) - 1L
-
-      if (requireNamespace("dplyr", quietly = TRUE)) { # much faster
-        newdata <- dplyr::left_join(newdata, unique_newdata, by = xy_cols)
-      } else {
-        newdata <- base::merge(newdata, unique_newdata, by = xy_cols,
-          all.x = TRUE, all.y = FALSE)
-        newdata <- newdata[order(newdata$sdm_orig_id),, drop = FALSE]
-      }
-      proj_mesh <- fmesher::fm_basis(object$spde$mesh,
-        loc = as.matrix(unique_newdata[, xy_cols, drop = FALSE]))
+      locations <- .project_unique_locations(object$spde$mesh, newdata, xy_cols)
+      newdata[["sdm_spatial_id"]] <- locations$index
+      proj_mesh <- locations$A
     } else {
       proj_mesh <- object$spde$A_st # fake
       if (!all(object$spde$xy_cols %in% names(newdata))) {
@@ -548,102 +535,11 @@ predict.sdmTMB <- function(object, newdata = NULL,
 
     if (!"mgcv" %in% names(object)) object[["mgcv"]] <- FALSE
 
-    # FIXME check if random slopes and intercepts are the same in both linear predictors?
-    # parse random intercept/slope sparse model matrices on new data:
-    Zt_list <- list()
-
-    if (sum(object$tmb_data$n_re_groups) > 0 && isFALSE(pop_pred_iid)) {
-      re_formula_no_response <- stats::formula(
-        stats::delete.response(
-          stats::terms(remove_s_and_t2(object$smoothers$formula_no_sm))
-        )
-      )
-      for (ii in seq_len(length(formula))) {
-        # factor level checks:
-        RE_names <- barnames(reformulas::findbars(re_formula_no_response))
-        missing_RE_names <- setdiff(RE_names, names(newdata))
-        if (length(missing_RE_names) > 0) {
-          cli_abort(c(
-            "Random effect group column(s) missing from `newdata`: {.val {missing_RE_names}}.",
-            "i" = "Use `re_form_iid = NA` or `re_form_iid = ~0` to exclude random effects in prediction."
-          ))
-        }
-        new_level_rows <- integer(0)
-        for (i in seq_along(RE_names)) {
-          assert_that(is.factor(newdata[[RE_names[i]]]),
-            msg = sprintf("Random effect group column `%s` in newdata is not a factor.", RE_names[i]))
-          levels_fit <- levels(object$data[[RE_names[i]]])
-          values_nd <- as.character(newdata[[RE_names[i]]])
-          is_new_level <- !is.na(values_nd) & !values_nd %in% levels_fit
-          if (any(is_new_level)) {
-            new_level_rows <- union(new_level_rows, which(is_new_level))
-            if (isFALSE(allow_new_levels)) {
-              cli_warn(c(
-                "Found new levels in random effect grouping variable {.field {RE_names[i]}}.",
-                "i" = "These rows will use population-level IID random effect predictions (`re_form_iid = NA`).",
-                "i" = "Set `allow_new_levels = TRUE` to suppress this warning."
-              ))
-            }
-          }
-        }
-
-        # now do with a joint data frame to ensure factor levels match
-        common_cols <- intersect(colnames(object$data), colnames(nd))
-        nd_aligned <- nd[, common_cols, drop = FALSE]
-        for (col_name in common_cols) {
-          if (is.factor(object$data[[col_name]]) && is.factor(nd_aligned[[col_name]])) {
-            nd_aligned[[col_name]] <- factor(
-              as.character(nd_aligned[[col_name]]),
-              levels = levels(object$data[[col_name]])
-            )
-            if (anyNA(nd_aligned[[col_name]])) {
-              nd_aligned[[col_name]][is.na(nd_aligned[[col_name]])] <-
-                levels(object$data[[col_name]])[1]
-            }
-          }
-        }
-        joint_df <- rbind(object$data[, common_cols, drop = FALSE], nd_aligned)
-        xx <- parse_formula(re_formula_no_response, joint_df)
-        # drop the original data:
-        Zt <- xx$re_cov_terms$Zt[, seq(nrow(object$data) + 1, nrow(object$data) + nrow(nd)), drop = FALSE]
-        if (length(new_level_rows) > 0) {
-          Zt[, new_level_rows] <- 0
-        }
-        Zt_list[[ii]] <- Zt
-      }
-    }
-
-    # deal with prediction IID random intercepts:
-    # RE_names <- object$split_formula[[1]]$barnames # TODO DELTA HARDCODED TO 1 here; fine for now
-
-    ## not checking so that not all factors need to be in prediction:
-    # fct_check <- vapply(RE_names, function(x) check_valid_factor_levels(data[[x]], .name = x), TRUE)
-    # proj_RE_indexes <- vapply(RE_names, function(x) as.integer(nd[[x]]) - 1L, rep(1L, nrow(nd)))
-
-    # if (isFALSE(pop_pred_iid)) {
-    #   for (i in seq_along(RE_names)) {
-    #     # checking newdata random intercept columns are factors
-    #     assert_that(is.factor(newdata[[RE_names[i]]]),
-    #                 msg = sprintf("Random effect group column `%s` in newdata is not a factor.", RE_names[i]))
-    #     levels_fit <- levels(object$data[[RE_names[i]]])
-    #     levels_nd <- levels(newdata[[RE_names[i]]])
-    #     if (sum(!levels_nd %in% levels_fit)) {
-    #       msg <- paste0("Extra levels found in random intercept factor levels for `", RE_names[i],
-    #         "`. Please remove them.")
-    #       cli_abort(msg)
-    #     }
-    #   }
-    # }
-
-    proj_X_ij <- list()
-    for (i in seq_along(object$formula)) {
-      f2 <- remove_s_and_t2(object$split_formula[[i]]$form_no_bars)#object$smoothers$formula_no_bars_no_sm
-      tt <- stats::terms(f2)
-      attr(tt, "predvars") <- attr(object$terms[[i]], "predvars")
-      Terms <- stats::delete.response(tt)
-      mf <- model.frame(Terms, newdata, xlev = object$xlevels[[i]])
-      proj_X_ij[[i]] <- model.matrix(Terms, mf, contrasts.arg = object$contrasts[[i]])
-    }
+    design <- .newdata_design(object, nd,
+      include_iid = sum(object$tmb_data$n_re_groups) > 0 && isFALSE(pop_pred_iid),
+      warn_new_levels = isFALSE(allow_new_levels))
+    proj_X_ij <- design$X_ij
+    Zt_list <- design$Zt_list
     if (has_nonlocal) {
       proj_X_ij[[1]] <- .append_nonlocal_coef_columns(
         X = proj_X_ij[[1]],
@@ -680,10 +576,6 @@ predict.sdmTMB <- function(object, newdata = NULL,
       }
       proj_Xdisp_ij <- proj_Xdisp_ij[, fit_disp_cols, drop = FALSE]
     }
-
-    # TODO DELTA hardcoded to 1:
-    sm <- parse_smoothers(object$smoothers$formula_no_bars, data = object$data,
-      newdata = nd, basis_prev = object$smoothers$basis_out)
 
     if (!is.null(object$time_varying)) {
       tv_terms <- stats::terms(object$time_varying)
@@ -806,8 +698,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
         tmb_data$covariate_diffusion$proj_covariate_vertex_time <- proj_nonlocal_data$covariate_vertex_time
       }
     }
-    tmb_data$proj_Zs <- sm$Zs
-    tmb_data$proj_Xs <- sm$Xs
+    tmb_data$proj_Zs <- design$Zs
+    tmb_data$proj_Xs <- design$Xs
 
     # SVC:
     if (!is.null(object$spatial_varying)) {
@@ -865,20 +757,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     }
 
     if (sims > 0 && is.null(mcmc_samples)) {
-      if (!"jointPrecision" %in% names(object$sd_report) && !has_no_random_effects(object)) {
-        message("Rerunning TMB::sdreport() with `getJointPrecision = TRUE`.")
-        sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
-      } else {
-        sd_report <- object$sd_report
-      }
-      if (has_no_random_effects(object)) {
-        t_draws <- t(mvtnorm::rmvnorm(n = sims, mean = sd_report$par.fixed,
-          sigma = sd_report$cov.fixed))
-        row.names(t_draws) <- NULL
-      } else {
-        t_draws <- rmvnorm_prec(mu = lp,
-          tmb_sd = sd_report, n_sims = sims)
-      }
+      t_draws <- .joint_par_draws(object, lp, sims)
       r <- apply(t_draws, 2L, new_tmb_obj$report)
     }
     if (!is.null(mcmc_samples)) {
@@ -1316,4 +1195,140 @@ check_visreg <- function(sys_calls) {
       se_fit <- TRUE
   }
   named_list(visreg_df, se_fit, re_form)
+}
+
+# Fixed-effect design for new rows from fitted terms (which carry `predvars`,
+# e.g., a fitted poly() basis), factor levels, and contrasts. Shared by
+# prediction and the preferential-sampling surface. `...` goes to
+# model.frame(), e.g., `na.action`.
+.fixed_effect_design <- function(terms, newdata, xlevels, contrasts, ...) {
+  mf <- stats::model.frame(terms, newdata, xlev = xlevels, ...)
+  stats::model.matrix(terms, mf, contrasts.arg = contrasts)
+}
+
+# Main-model covariate design at new rows, as prediction evaluates it: each
+# component's fixed-effect design from the fitted terms, the smoothers with
+# their fitted bases, and, if `include_iid`, the transposed IID random-effect
+# design (the same for every component). `model` holds the fitted pieces
+# (`split_formula`, `terms`, `xlevels`, `contrasts`, `smoothers`, `data`):
+# a fitted object, or the same pieces while fitting. Shared by prediction and
+# the preferential-sampling surface.
+.newdata_design <- function(model, newdata, include_iid = FALSE,
+                            new_levels = c("zero", "error"),
+                            warn_new_levels = TRUE, ...) {
+  X_ij <- lapply(seq_along(model$split_formula), function(i) {
+    tt <- stats::terms(remove_s_and_t2(model$split_formula[[i]]$form_no_bars))
+    attr(tt, "predvars") <- attr(model$terms[[i]], "predvars")
+    .fixed_effect_design(stats::delete.response(tt), newdata,
+      model$xlevels[[i]], model$contrasts[[i]], ...)
+  })
+  sm <- parse_smoothers(model$smoothers$formula_no_bars, data = model$data,
+    newdata = newdata, basis_prev = model$smoothers$basis_out)
+  Zt_list <- list()
+  if (include_iid) {
+    Zt <- .iid_newdata_design(model, newdata, match.arg(new_levels),
+      warn_new_levels)
+    Zt_list <- rep(list(Zt), length(X_ij))
+  }
+  list(X_ij = X_ij, Zs = sm$Zs, Xs = sm$Xs, Zt_list = Zt_list)
+}
+
+# Transposed IID random-effect design at new rows, indexed like the fitted
+# random effects: the random-effect terms are parsed on the fitted and new
+# rows together so that factor levels match, and only the new rows are kept.
+# Rows at new group levels get zero columns (with a warning if
+# `warn_new_levels`), or an error with `new_levels = "error"`.
+.iid_newdata_design <- function(model, newdata, new_levels = c("zero", "error"),
+                                warn_new_levels = TRUE) {
+  new_levels <- match.arg(new_levels)
+  data <- model$data
+  bars <- reformulas::findbars(model$smoothers$formula_no_sm)
+  groups <- barnames(bars)
+  missing <- setdiff(groups, names(newdata))
+  if (length(missing)) {
+    cli_abort(c(
+      "Random effect group column(s) missing from `newdata`: {.val {missing}}.",
+      "i" = "Use `re_form_iid = NA` or `re_form_iid = ~0` to exclude random effects in prediction."
+    ))
+  }
+  new_level_rows <- integer(0)
+  for (g in groups) {
+    assert_that(is.factor(newdata[[g]]),
+      msg = sprintf("Random effect group column `%s` in newdata is not a factor.", g))
+    values <- as.character(newdata[[g]])
+    is_new <- !is.na(values) & !values %in% levels(data[[g]])
+    if (!any(is_new)) next
+    if (new_levels == "error") {
+      cli_abort(c(
+        "Found new levels in random effect grouping variable {.field {g}}: {.val {unique(values[is_new])}}.",
+        "i" = "Use `re_form_iid = NA` to exclude IID random effects."
+      ))
+    }
+    new_level_rows <- union(new_level_rows, which(is_new))
+    if (warn_new_levels) {
+      cli_warn(c(
+        "Found new levels in random effect grouping variable {.field {g}}.",
+        "i" = "These rows will use population-level IID random effect predictions (`re_form_iid = NA`).",
+        "i" = "Set `allow_new_levels = TRUE` to suppress this warning."
+      ))
+    }
+  }
+
+  common_cols <- intersect(colnames(data), colnames(newdata))
+  nd <- newdata[, common_cols, drop = FALSE]
+  for (col_name in common_cols) {
+    if (is.factor(data[[col_name]]) && is.factor(nd[[col_name]])) {
+      nd[[col_name]] <- factor(as.character(nd[[col_name]]),
+        levels = levels(data[[col_name]]))
+      if (anyNA(nd[[col_name]])) {
+        nd[[col_name]][is.na(nd[[col_name]])] <- levels(data[[col_name]])[1]
+      }
+    }
+  }
+  joint <- rbind(data[, common_cols, drop = FALSE], nd)
+  re_formula <- stats::reformulate(paste0("(", vapply(bars, deparse1, ""), ")"))
+  Zt <- parse_formula(re_formula, joint)$re_cov_terms$Zt
+  Zt <- Zt[, nrow(data) + seq_len(nrow(nd)), drop = FALSE]
+  if (length(new_level_rows)) Zt[, new_level_rows] <- 0
+  Zt
+}
+
+# Mesh basis at the unique locations of `newdata` (in order of first
+# appearance) and each row's zero-based index into them.
+.project_unique_locations <- function(mesh, newdata, xy_cols) {
+  xy <- newdata[, xy_cols, drop = FALSE]
+  if (requireNamespace("dplyr", quietly = TRUE)) { # much faster
+    unique_xy <- dplyr::distinct(xy)
+    unique_xy[[".sdm_id"]] <- seq_len(nrow(unique_xy))
+    index <- dplyr::left_join(xy, unique_xy, by = xy_cols)[[".sdm_id"]]
+    unique_xy[[".sdm_id"]] <- NULL
+  } else {
+    key <- paste(xy[[1L]], xy[[2L]], sep = "\r")
+    first <- !duplicated(key)
+    unique_xy <- xy[first, , drop = FALSE]
+    index <- match(key, key[first])
+  }
+  list(
+    A = fmesher::fm_basis(mesh, loc = as.matrix(unique_xy)),
+    index = index - 1L
+  )
+}
+
+# Draws of all parameters (columns) from the joint precision matrix, centred
+# on `lp`, or from the fixed-effect covariance without random effects.
+.joint_par_draws <- function(object, lp, nsim) {
+  if (has_no_random_effects(object)) {
+    sd_report <- object$sd_report
+    draws <- t(mvtnorm::rmvnorm(n = nsim, mean = sd_report$par.fixed,
+      sigma = sd_report$cov.fixed))
+    row.names(draws) <- NULL
+    return(draws)
+  }
+  if (!"jointPrecision" %in% names(object$sd_report)) {
+    message("Rerunning TMB::sdreport() with `getJointPrecision = TRUE`.")
+    sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
+  } else {
+    sd_report <- object$sd_report
+  }
+  rmvnorm_prec(mu = lp, tmb_sd = sd_report, n_sims = nsim)
 }

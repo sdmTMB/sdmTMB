@@ -24,6 +24,11 @@ rtmb_objective <- function(par, prepared) {
   fitted$epsilon <- fitted$epsilon * active
   obs <- rtmb_observations(par, theta, prepared, fitted$eta)
   jnll <- effects$nll + sum(obs$jnll_obs) + rtmb_prior_nll(par, theta, prepared)
+  sampling <- NULL
+  if (!is.null(prepared$preferential)) {
+    sampling <- rtmb_sampling(par, theta, effects, prepared)
+    jnll <- jnll + sampling$nll
+  }
   projected <- derived <- NULL
   if (!is.null(prepared$proj)) {
     projected <- rtmb_linear_predictors(par, theta, effects, prepared,
@@ -40,7 +45,7 @@ rtmb_objective <- function(par, prepared) {
     }
   }
   rtmb_report(par, theta, prepared, effects, fitted, obs, projected, derived,
-    simulating)
+    sampling, simulating)
   jnll
 }
 
@@ -75,6 +80,7 @@ rtmb_transform <- function(par, prepared) {
   dim(rho_time) <- dim(par$rho_time_unscaled)
   b <- par$b_threshold
   kappa <- exp(par$ln_kappa)
+  xi <- !is.null(prepared$preferential) && prepared$preferential$xi
   list(
     # Random fields
     kappa = kappa,
@@ -88,6 +94,18 @@ rtmb_transform <- function(par, prepared) {
     alpha_car = RTMB::plogis(par$logit_rho_sar),
     H = if (prepared$anisotropy) {
       lapply(seq_len(n_m), function(m) rtmb_aniso_H(par$ln_H_input[, m]))
+    },
+    # Preferential-sampling field
+    xi = if (xi) {
+      log_sigma <- rtmb_log_field_sd(par$ln_tau_xi, par$ln_kappa_xi,
+        prepared$preferential$precision)
+      list(kappa = exp(par$ln_kappa_xi), log_sigma = log_sigma,
+        sigma = exp(log_sigma), range = sqrt(8) / exp(par$ln_kappa_xi))
+    },
+    # Preferential-sampling temporal process SDs
+    sigma_b_pref = if (!is.null(par$ln_sigma_b_pref)) exp(par$ln_sigma_b_pref),
+    sigma_alpha_pref = if (!is.null(par$ln_sigma_alpha_pref)) {
+      exp(par$ln_sigma_alpha_pref)
     },
     # Time-varying coefficients
     sigma_V = sigma_V,

@@ -286,6 +286,7 @@
   invisible(family_list)
 }
 
+#' @importFrom utils tail
 .compile_family_spec <- function(family, data = NULL, distribution_column = NULL) {
   if (inherits(family, "family")) {
     if (!is.null(distribution_column)) {

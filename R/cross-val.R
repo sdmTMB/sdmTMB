@@ -247,6 +247,12 @@ sdmTMB_cv <- function(
     future_globals = NULL,
     ...) {
   if (k_folds < 1) cli_abort("`k_folds` must be >= 1.")
+  if ("preferential" %in% ...names()) {
+    cli_abort(c(
+      "Cross-validation is not supported for preferential-sampling models.",
+      "i" = "Holding out catches but not their sampling indicators isn't a joint predictive test."
+    ))
+  }
 
   spde <- mesh
   data[["_sdm_order_"]] <- seq_len(nrow(data))

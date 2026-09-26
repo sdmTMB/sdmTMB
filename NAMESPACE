@@ -81,6 +81,8 @@ export(plot_nonlocal_covariate)
 export(plot_nonlocal_kernel)
 export(plot_pc_matern)
 export(plot_smooth)
+export(predict_sampling)
+export(preferential_sampling)
 export(project)
 export(replicate_df)
 export(run_extra_optimization)
@@ -163,4 +165,5 @@ importFrom(stats,
   update,
   vcov
 )
+importFrom(utils,tail)
 useDynLib(sdmTMB, .registration = TRUE)

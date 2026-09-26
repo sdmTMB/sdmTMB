@@ -145,8 +145,10 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
   "[<-" <- RTMB::ADoverload("[<-")
   inputs <- prepared$precision
   n_m <- prepared$n_m
+  # The preferential-sampling field `xi_s` has no simulation option yet, so
+  # it is never drawn.
   simulate <- function(name) {
-    name %in% simulating && prepared$simulate_re[[name]]
+    name %in% simulating && isTRUE(prepared$simulate_re[name])
   }
   effects <- c(list(nll = 0), par[c("omega_s", "epsilon_st", "zeta_s",
     "b_rw_t", "re_b_pars", "b_smooth")],
@@ -200,5 +202,39 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
         simulate("b_smooth"), m), "b_smooth")
     }
   }
+  # Sampling-only field of a preferential-sampling model: time invariant,
+  # isotropic, and independent of the catch fields.
+  if (!is.null(prepared$preferential) && prepared$preferential$xi) {
+    inputs <- prepared$preferential$precision
+    kappa <- theta$xi$kappa
+    dim(kappa) <- c(1L, 1L)
+    Q <- rtmb_precision(inputs, list(kappa = kappa), 1L, 1L)
+    scale <- rtmb_gmrf_scale(theta$xi$log_sigma, par$ln_kappa_xi, inputs)
+    effects$xi_s <- gmrf(par$xi_s, Q, scale, "xi_s")
+  }
+  # Temporal processes of a preferential-sampling model, as deviations by
+  # time step. Like `xi_s`, they are never simulated.
+  pref <- prepared$preferential
+  if (!is.null(pref) && pref$coefficient != "none") {
+    add(rtmb_sampling_process(par$b_pref_dev, theta$sigma_b_pref,
+      pref$coefficient), "b_pref_t")
+  }
+  if (!is.null(pref) && pref$baseline != "none") {
+    add(rtmb_sampling_process(par$alpha_pref_dev, theta$sigma_alpha_pref,
+      pref$baseline), "alpha_pref_t")
+  }
   effects
+}
+
+# Proper temporal deviations, one per time step: `x` are IID deviations, or
+# the increments of a random walk anchored at 0 in the first time step (its
+# level there is a fixed parameter).
+rtmb_sampling_process <- function(x, sigma, type) {
+  "[<-" <- RTMB::ADoverload("[<-")
+  value <- x
+  if (type == "rw") {
+    value <- numeric(length(x) + 1L)
+    value[-1L] <- cumsum(x)
+  }
+  list(nll = -sum(RTMB::dnorm(x, 0, sigma, log = TRUE)), value = value)
 }

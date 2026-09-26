@@ -18,6 +18,14 @@ rtmb_link <- function(mu, link) {
     cli::cli_abort("Link not implemented."))
 }
 
+# Log of the inverse link without underflow, e.g., log(plogis(eta)).
+rtmb_log_inverse_link <- function(eta, link) {
+  switch(link,
+    log = eta,
+    logit = -RTMB::logspace_add(0, -eta),
+    log(rtmb_inverse_link(eta, link)))
+}
+
 # Logit of the inverse link without losing accuracy, as used by binomial
 # likelihoods. log(exp(exp(eta)) - 1) is the cloglog case.
 rtmb_logit_inverse_link <- function(eta, link) {

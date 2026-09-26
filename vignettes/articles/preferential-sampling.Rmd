@@ -1,0 +1,413 @@
+---
+title: "Fitting a joint preferential-sampling model with sdmTMB"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Fitting a joint preferential-sampling model with sdmTMB}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE, cache=FALSE}
+dplyr_installed <- require("dplyr", quietly = TRUE)
+ggplot_installed <- require("ggplot2", quietly = TRUE)
+rtmb_installed <- requireNamespace("RTMB", quietly = TRUE)
+pkgs <- dplyr_installed && ggplot_installed && rtmb_installed
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.asp = 0.618,
+  eval = identical(Sys.getenv("NOT_CRAN"), "true") && pkgs,
+  purl = identical(Sys.getenv("NOT_CRAN"), "true") && pkgs
+)
+```
+
+**This feature is experimental.** It requires the RTMB backend, and its
+interface and supported models may change.
+
+Fishery-dependent data are rarely collected at random locations. Fishers
+return to places where they expect good catches, so where samples are taken
+depends on the quantity being measured. An ordinary species distribution
+model treats the sample locations as uninformative. When locations are
+chosen preferentially, the model's fields are poorly informed in the places
+fishers avoid, and an index of abundance can be biased. This is especially
+true if the amount or spread of fishing changes over time.
+
+sdmTMB can fit a joint model of the catches and of *where sampling
+happened*, motivated by
+
+Ward, E.J., K.L. Oken, Y.A. Chen, K.E. Richerson, C. Barnes, and D. Holland
+2026. Correcting trend bias from preferential sampling in fishery-dependent
+indices. In review.
+
+The equations are in the preferential-sampling section of the
+[model description](https://sdmTMB.github.io/sdmTMB/articles/model-description.html).
+
+## The model
+
+The catch model is an ordinary sdmTMB model with spatial and/or
+spatiotemporal fields. The sampling model is a Bernoulli model for whether
+each eligible grid cell $g$ was sampled at least once in time step $t$:
+
+$$
+\mathrm{logit}\,\Pr(R_{g,t} = 1) = \mathbf{Z}_{g,t} \boldsymbol{\gamma}
+  + b\, h_{g,t} + \xi_g.
+$$
+
+* $\mathbf{Z}_{g,t} \boldsymbol{\gamma}$ is a separate sampling regression,
+  for example free annual intercepts (changing effort) and distance to port.
+* $h_{g,t}$ is the log of **standardized expected catch**: the catch model
+  evaluated on the cell, including its spatial and spatiotemporal fields.
+  You choose the standardization (e.g., a reference gear) through the
+  covariate values you supply for each cell.
+* $b$ is the preference coefficient. Multiplying the standardized expected
+  catch by $c$ multiplies the odds of sampling by $c^b$, holding the other
+  sampling terms fixed. $b > 0$ means fishers favor high catches. There is
+  no sign restriction.
+* $\xi_g$ is an optional sampling-only spatial field. It absorbs spatial
+  structure in sampling that isn't explained by the covariates or by $h$.
+
+The two models share the catch fields, and the joint likelihood integrates
+over them. The catch fields therefore learn from where fishing did and did
+not happen, and $b$ is estimated together with the catch model.
+
+## Simulating a fishery
+
+We simulate one coupled data set that follows this model. Then we can
+compare the estimates with the truth. Fish density depends on depth and on
+spatial and spatiotemporal fields, and it declines over eight years. The
+fleet samples more cells as the years go on, favors cells close to port,
+and favors cells with high expected catch ($b = 1$). An area in the
+southeast is closed to fishing.
+
+```{r packages, message=FALSE}
+library(sdmTMB)
+library(dplyr)
+library(ggplot2)
+```
+
+```{r simulate-biology}
+set.seed(42)
+years <- 2011:2018
+cells <- expand.grid(X = seq(0.2, 9.8, 0.4), Y = seq(0.2, 9.8, 0.4))
+cells$depth <- 20 + 15 * cells$X + 20 * sin(cells$Y / 2)
+cells$dist_port <- sqrt(cells$X^2 + (cells$Y - 5)^2) / 10
+cells$eligible <- !(cells$X > 7 & cells$Y < 3) # a closed area
+grid <- merge(cells, data.frame(year = years))
+
+mesh_grid <- make_mesh(grid, c("X", "Y"), cutoff = 0.8)
+fields <- sdmTMB_simulate(~1,
+  data = grid, mesh = mesh_grid, time = "year",
+  family = poisson(), range = 4, sigma_O = 0.8, sigma_E = 0.3, B = 0,
+  spatiotemporal = "iid", seed = 1
+)
+# True log standardized expected catch: a declining trend, a depth
+# optimum, and the fields.
+grid$h <- log(4) - 0.08 * (grid$year - 2011) -
+  0.0006 * (grid$depth - 80)^2 + fields$eta
+```
+
+Next we simulate where sampling happened, in the eligible cells only.
+
+```{r simulate-sampling}
+frame <- filter(grid, eligible)
+a <- seq(-2.6, -1.0, length.out = length(years)) # rising effort
+frame$sampled <- rbinom(
+  nrow(frame), 1,
+  plogis(a[frame$year - 2010] - 1.2 * frame$dist_port +
+    1 * (frame$h - mean(frame$h)))
+)
+group_by(frame, year) |> summarise(prop_sampled = mean(sampled))
+```
+
+Catches exist only at sampled cells. Each catch comes from one of two gears
+and one of ten vessels, which affect catchability but not fish density.
+Gear `"trawl_b"` catches more, and it becomes more common over time. Catch
+is a count with negative binomial variation, and effort varies.
+
+```{r simulate-catches}
+catches <- frame[frame$sampled == 1, c("X", "Y", "year", "depth", "h")]
+n <- nrow(catches)
+share_b <- seq(0.2, 0.7, length.out = length(years))[catches$year - 2010]
+catches$gear <- factor(ifelse(runif(n) < share_b, "trawl_b", "trawl_a"))
+vessel_effect <- rnorm(10, 0, 0.3)
+catches$vessel <- factor(sample(paste0("v", 1:10), n, TRUE))
+catches$effort <- runif(n, 0.5, 2)
+mu <- catches$effort * exp(catches$h + 0.5 * (catches$gear == "trawl_b") +
+  vessel_effect[as.integer(catches$vessel)])
+catches$catch <- rnbinom(n, size = 2, mu = mu)
+```
+
+## Building the sampling frame
+
+The sampling `data` table (the *frame*) is the most important input. It has
+one row per eligible cell and time step, and it needs:
+
+* **The sampling response**, coded as 1 (sampled), 0 (eligible, not
+  sampled), or `NA` (unknown).
+    * A **known unsampled** cell is a 0. It is evidence that fishers chose
+      not to go there.
+    * An **unknown** cell is `NA`: for example, a year or region without
+      reliable logbook coverage. `NA` rows add nothing to the sampling
+      likelihood, and the biological time steps are kept.
+    * An **ineligible** cell (land, a closed area, outside the fishery's
+      range) must be left out of the frame. A 0 there would wrongly suggest
+      that fishers avoided it because of low catches.
+* **The mesh coordinates** (cell centres) and the model's **`time`
+  column**. In real data, assign each catch record to its cell before
+  building the indicators. There must be one row per cell and time step.
+  The frame is not checked for completeness, so every eligible
+  cell-time must be included.
+* **The sampling covariates**, here distance to port.
+* **Every covariate in the main model's fixed effects and smoothers.**
+
+Suppose logbook records for the north half of the domain were lost in 2014.
+Those cells are unknown, not unsampled:
+
+```{r frame-unknown}
+frame$sampled[frame$year == 2014 & frame$Y > 5] <- NA
+```
+
+### Defining the standardization
+
+The main model is evaluated on the frame like `newdata` in
+`predict.sdmTMB()`, so the frame's covariate values define what
+"standardized expected catch" means. Covariates that describe biology
+(depth here) keep their cell values. Covariates that describe catchability
+are set to a reference value:
+
+* **Gear**: a factor column set to the reference gear, with the fitted
+  factor levels.
+* **Vessel intercepts** (`(1 | vessel)`): `re_form_iid = NA` (the default)
+  leaves them out, i.e., sets them to 0, so no `vessel` column is needed.
+  `re_form_iid = NULL` would include the fitted intercepts at the vessel
+  levels in the frame. Grouping columns must then be factors with levels
+  from the fitted data.
+* **Effort**: the observation offset is not copied. The `offset` argument
+  of `preferential_sampling()` sets the surface's offset on the link scale.
+  The default is 0, i.e., unit effort.
+
+```{r frame-standardize}
+frame$gear <- factor("trawl_a", levels = levels(catches$gear))
+```
+
+Standardization is a scientific choice that the package can't make for
+you: a smoother or a random effect could describe biology or catchability.
+Holding a covariate at a reference value is not the same as removing its
+term, and an interaction is evaluated at the reference value too.
+
+## Fitting the models
+
+First, the ordinary catch-only model:
+
+```{r fit-catch}
+mesh <- make_mesh(catches, c("X", "Y"), mesh = mesh_grid$mesh)
+fit_catch <- sdmTMB(
+  catch ~ 0 + factor(year) + s(depth) + gear + (1 | vessel),
+  data = catches, mesh = mesh, time = "year", family = nbinom2(),
+  offset = log(catches$effort),
+  control = sdmTMBcontrol(backend = "rtmb")
+)
+```
+
+The joint model adds `preferential`. We use free annual sampling intercepts,
+which let the proportion of cells sampled change from year to year without
+forcing $b$ or abundance to explain it.
+
+```{r fit-joint}
+fit <- update(fit_catch,
+  preferential = preferential_sampling(
+    sampled ~ 0 + factor(year) + dist_port,
+    data = frame
+  )
+)
+```
+
+## Inspecting the fit
+
+`print()` adds a section for the sampling model. Note that the objective,
+and so `logLik()` and `AIC()`, include the sampling likelihood.
+
+```{r print}
+fit
+sanity(fit)
+```
+
+`tidy(fit, model = "sampling")` gives the sampling coefficients and $b$
+(`b_pref`). The default `tidy()` output describes the catch model.
+
+```{r tidy}
+tidy(fit, model = "sampling")
+```
+
+The true preference coefficient, 1, is inside the 95% confidence interval
+for `b_pref`.
+`predict_sampling()` returns the fitted sampling probability for each frame
+row, and its pieces on the logit scale: the sampling formula (`est_fixed`),
+the preference term (`est_preference`, $b h$), and the shared target
+`est_target` ($h$).
+
+```{r predict-sampling, fig.asp = 0.5}
+ps <- predict_sampling(fit)
+ggplot(filter(ps, year %in% c(2011, 2018)), aes(X, Y, fill = est)) +
+  geom_raster() +
+  geom_point(data = filter(ps, year %in% c(2011, 2018), sampled == 1),
+    inherit.aes = FALSE, aes(X, Y), size = 0.4) +
+  facet_wrap(~year) +
+  scale_fill_viridis_c() +
+  coord_fixed() +
+  labs(fill = "Pr(sampled)")
+```
+
+With `nsim > 0`, `predict_sampling()` returns draws from the joint
+precision matrix. Use them for uncertainty:
+
+```{r predict-sampling-draws}
+draws <- predict_sampling(fit, nsim = 200)
+ps$lwr <- apply(draws, 1, quantile, probs = 0.025)
+ps$upr <- apply(draws, 1, quantile, probs = 0.975)
+head(ps[, c("X", "Y", "year", "sampled", "est", "lwr", "upr")])
+```
+
+## The standardized index
+
+Catch predictions and indices work as usual. The prediction grid can differ
+from the sampling frame: here it includes the closed area. Prediction rows
+are not sampling observations. The index uncertainty comes from the joint
+model. Keep the default `bias_correct = TRUE`: in our simulations, the
+plug-in index (`bias_correct = FALSE`) was biased low for joint delta
+models.
+
+```{r index, message=FALSE}
+nd <- grid
+nd$gear <- factor("trawl_a", levels = levels(catches$gear))
+nd$vessel <- factor("v1", levels = levels(catches$vessel))
+index_args <- list(re_form_iid = NA)
+ind <- bind_rows(
+  get_index(fit_catch, newdata = nd, predict_args = index_args) |>
+    mutate(model = "Catch only"),
+  get_index(fit, newdata = nd, predict_args = index_args) |>
+    mutate(model = "Joint")
+)
+truth <- group_by(grid, year) |> summarise(est = sum(exp(h)))
+
+ggplot(ind, aes(year, est, ymin = lwr, ymax = upr, colour = model)) +
+  geom_pointrange(position = position_dodge(width = 0.4)) +
+  geom_line(data = truth, aes(year, est), inherit.aes = FALSE) +
+  labs(y = "Index", colour = NULL,
+    caption = "Line: true standardized index")
+```
+
+In this realization, the catch-only model overestimates abundance, because
+it fills unsampled, lower-density cells with values that are too high. The
+joint model is closer to the truth. This is one simulated data set. The
+replicated simulations in the package's
+[development files](https://github.com/sdmTMB/sdmTMB/tree/main/tests/optional/preferential-recovery)
+include cases where the joint model helps little (e.g., $b = 0$) and cases
+where a misspecified sampling model biases it.
+
+## Is a sampling-only field warranted?
+
+Unexplained spatial structure in sampling, such as access or tradition, can
+be mistaken for preference if it happens to line up with the catch fields.
+Measured access covariates, like distance to port, are the first defense.
+A sampling-only field is the second: `spatial = "on"`. The joint models
+share the same catch data and sampling frame, so their AIC values are
+comparable with each other (but not with the catch-only model).
+
+```{r fit-xi, warning=FALSE}
+fit_xi <- update(fit,
+  preferential = preferential_sampling(
+    sampled ~ 0 + factor(year) + dist_port,
+    data = frame, spatial = "on"
+  )
+)
+sanity(fit_xi)
+tidy(fit_xi, "ran_pars", model = "sampling")
+tidy(fit_xi, model = "sampling") |> filter(term == "b_pref")
+AIC(fit, fit_xi)
+```
+
+Our simulation has no sampling-only field, and the fit shows it: the field
+SD collapses toward zero, the Hessian isn't positive definite, and AIC
+favors the simpler model. The estimate of `b_pref` barely changes. When
+sampling has a real residual spatial pattern, the field SD is clearly
+positive, and you should report how much `b_pref` and the index change
+with and without it.
+
+## Delta models
+
+For a delta model the shared target combines both components at the same
+parameter values:
+$h = \log(\mathrm{logit}^{-1}(\eta_1)) + \eta_2$, i.e., the log of encounter
+probability times positive mean, not the sum of the two linear predictors.
+Conventional logit/log `delta_gamma()` and `delta_lognormal()` are
+supported. As in prediction, the surface's `offset` enters the positive
+component only.
+
+Poisson-link delta models (`delta_gamma(type = "poisson-link")` or
+`delta_lognormal(type = "poisson-link")`) are also supported. Their
+expected catch is $\exp(\eta_1 + \eta_2)$, so here the target is the sum
+of the linear predictors. As in prediction, the surface's `offset` enters
+$\eta_2$ only.
+
+## Interpretation and limitations
+
+* **A model for cell visits.** The sampling model says whether a cell was
+  visited at least once per time step. It is not a point-process model of
+  fishing locations. Coefficients, including $b$, depend on the cell size
+  and the time step. Use cells fine enough that biology is roughly constant
+  within a cell, and check sensitivity to the resolution.
+* **Repeated visits.** One indicator per cell-time is modeled. Multiple
+  catches within a cell enter the catch likelihood, but the number of
+  visits and where fishers fish within a cell aren't modeled.
+* **What "standardized" means.** $h$ is expected catch at your reference
+  catchability, conditional on the fields. It isn't absolute biomass, and
+  the method can't tell biological covariates from catchability covariates.
+  The sampling target and the index grid can use different
+  standardizations; state both.
+* **Simulation and residuals are conditional.** `simulate()` draws catches
+  at the observed locations given the fitted fields; it doesn't draw new
+  sampling locations. Residuals check the catch model only.
+  `simulate(re_form = NA)`, `project()`, and `sdmTMB_cv()` aren't supported.
+  `predict_sampling()` covers the fitted frame only.
+* **Currently supported.** The RTMB backend; single log-link Poisson, NB2,
+  Gamma, Tweedie, or lognormal families, or delta-gamma and
+  delta-lognormal with default links (standard or Poisson-link); univariate `s()` smoothers; IID random intercepts
+  (excluded, or included at known levels); ordinary isotropic spatial and
+  spatiotemporal fields; ordinary fixed effects in the sampling formula; a
+  constant preference coefficient or one that varies by time step
+  (`coefficient = "iid"` or `"rw"`); and an optional IID or random-walk
+  sampling baseline (`baseline`). Other features give an error.
+
+## Troubleshooting
+
+* **"Observed sampling indicators are all 0/1 wherever column ... is 1".**
+  A free intercept for a time step with no sampled (or no unsampled)
+  eligible cells has no finite estimate. Drop that time step from the frame,
+  set its indicators to `NA`, or use a pooled baseline (`sampled ~ 1`).
+* **"The sampling design is not full rank".** Often a time step whose
+  indicators are all `NA` under `factor(year)`. Drop those rows from the
+  frame. The biological time step is kept either way.
+* **The sampling-field SD goes to zero,** with a non-positive-definite
+  Hessian. The data don't support the field (see above). Turn it off, or
+  report it as a boundary estimate.
+* **`sigma_b_pref` (or `sigma_alpha_pref`) goes to zero.** With
+  `coefficient = "iid"` or `"rw"`, the data may not show year-to-year
+  variation in preference beyond sampling noise. With 8 or so time steps,
+  this also happens by chance when the preference does vary. A collapsed SD
+  gives the constant model's estimates; report it as a boundary estimate or
+  use `coefficient = "constant"`.
+* **`b_pref` is uncertain or strongly correlated with other parameters.**
+  The preference coefficient is identified by variation in the shared fields
+  that the sampling covariates don't explain. A sampling formula that
+  duplicates the catch covariates, a flexible sampling field with a range
+  like the catch fields, or weak spatial signal can all compete with $b$.
+  Prefer measured sampling covariates, and check how sensitive the
+  estimate is to the sampling specification.
+* **An error about a covariate or new factor level in the sampling
+  `data`.** The frame needs every main-model covariate, with no missing
+  values, and factors with levels from the fitted data. For a covariate you
+  want to vary in the sampling formula but standardize in the catch surface,
+  use two columns (e.g., `gear_actual` and `gear`).

@@ -81,7 +81,56 @@ rtmb_prepare <- function(data) {
     prepared$proj <- rtmb_row_inputs(data, prepared$families,
       projection = TRUE)
   }
+  if (has_preferential(data)) {
+    prepared$preferential <- rtmb_preferential_inputs(data, prepared$families)
+  }
   prepared
+}
+
+has_preferential <- function(data) isTRUE(data$preferential$n_pref > 0L)
+
+# Sampling-frame inputs: the observed indicators and sampling design, and
+# `rows`, the frame's shared catch-predictor rows for
+# rtmb_linear_predictors(). Like projection rows, these select from the
+# unique frame locations. Terms that preferential sampling doesn't support
+# yet (SVCs, thresholds, time-varying, and diffusion) are rejected before
+# this point and have no inputs here. The optional sampling field
+# `xi` always uses an isotropic SPDE precision on the model mesh, even in the
+# first multiphase fit, when the catch fields are off.
+rtmb_preferential_inputs <- function(data, families) {
+  pref <- data$preferential
+  station_index <- pref$station_i + 1L
+  rows <- list(
+    X = pref$X_ij, offset = pref$offset_i, Zs = pref$Zs, Xs = pref$Xs,
+    Zt = pref$Zt_list, include_iid = pref$include_iid == 1L,
+    A_rows = pref$A_station[station_index, , drop = FALSE],
+    A_station = pref$A_station, station_index = station_index,
+    time = pref$year_i + 1L,
+    family_id = rep(1L, pref$n_pref)
+  )
+  list(
+    # Offsets are placed as in prediction.
+    rows = rtmb_row_family_flags(rows, families, projection = TRUE),
+    R = pref$R_i,
+    observed = which(!is.na(pref$R_i)),
+    Z = pref$Z_ij,
+    xi = pref$spatial_xi == 1L,
+    # Temporal processes for the preference coefficient and the baseline:
+    # "none", "iid", or "rw".
+    coefficient = c("none", "iid", "rw")[pref$coefficient_type + 1L],
+    baseline = c("none", "iid", "rw")[pref$baseline_type + 1L],
+    # Averages the frame rows of each time step present in the frame (time
+    # by row); `time_mean_index` gives each row's time step among those.
+    time_mean = if (pref$coefficient_type > 0L) {
+      x <- Matrix::fac2sparse(factor(pref$year_i))
+      Matrix::Diagonal(x = 1 / Matrix::rowSums(x)) %*% x
+    },
+    time_mean_index = as.integer(factor(pref$year_i)),
+    precision = if (pref$spatial_xi == 1L) {
+      rtmb_precision_inputs(list(spatial_model = 0L, no_spatial = 0L,
+        barrier = 0L, anisotropy = 0L, spde = data$spde))
+    }
+  )
 }
 
 # Names for integer codes from `R/enum.R`; unmatched codes give NA.
@@ -101,9 +150,12 @@ rtmb_family_inputs <- function(data) {
       link = rtmb_code_name(data$link_code[f, ], .valid_link),
       # Offsets enter a single family's only component and a standard delta
       # family's positive component. Poisson-link deltas apply them in the
-      # response mean instead.
+      # response mean instead, except in projections, where they enter
+      # component 2 so exp(eta1 + eta2) is the expected catch at that offset.
       offset_applies = c(combine == "single",
         combine == "delta")[seq_len(ncol(data$y_i))],
+      proj_offset_applies = c(combine == "single",
+        combine != "single")[seq_len(ncol(data$y_i))],
       phi = slot(data$ln_phi_slot, f),
       thetaf = slot(data$thetaf_slot, f),
       student_df = slot(data$ln_student_df_slot, f),
@@ -149,11 +201,17 @@ rtmb_row_inputs <- function(data, families, projection) {
       upr = rep_len(data$upr, nrow(data$y_i)), Xdisp = data$Xdisp_ij
     )
   }
-  out$active <- do.call(rbind, lapply(families, `[[`, "active"))[
-    out$family_id, , drop = FALSE]
-  out$offset_applies <- do.call(rbind,
-    lapply(families, `[[`, "offset_applies"))[out$family_id, , drop = FALSE]
-  out
+  rtmb_row_family_flags(out, families, projection)
+}
+
+# Per-row component activity and offset placement from each row's family.
+rtmb_row_family_flags <- function(rows, families, projection) {
+  rows$active <- do.call(rbind, lapply(families, `[[`, "active"))[
+    rows$family_id, , drop = FALSE]
+  offset_applies <- if (projection) "proj_offset_applies" else "offset_applies"
+  rows$offset_applies <- do.call(rbind,
+    lapply(families, `[[`, offset_applies))[rows$family_id, , drop = FALSE]
+  rows
 }
 
 # Fitted rows grouped by component and family. `observed` excludes missing
@@ -224,7 +282,10 @@ rtmb_validate <- function(data, prepared, parameters, random, ...) {
     if ("b_j" %in% random) "b_j",
     if ("b_j2" %in% random) "b_j2",
     if (prepared$smooths && "bs" %in% random) "bs",
-    if (prepared$smooths) "b_smooth"
+    if (prepared$smooths) "b_smooth",
+    if (isTRUE(prepared$preferential$xi)) "xi_s",
+    if (isTRUE(prepared$preferential$coefficient != "none")) "b_pref_dev",
+    if (isTRUE(prepared$preferential$baseline != "none")) "alpha_pref_dev"
   )
   unexpected <- setdiff(random, expected_random)
   if (length(unexpected)) {

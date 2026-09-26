@@ -148,6 +148,10 @@ NULL
 #'   (`time_lag()` terms, or `diffusion()` terms with `time` specified). In
 #'   that case, it must cover every fitted (+ `extra_time`) time slice.
 #'   Defaults to `NULL`, in which case `data` is used.
+#' @param preferential `r lifecycle::badge("experimental")` An optional
+#'   preferential-sampling specification from [preferential_sampling()].
+#'   Requires `control = sdmTMBcontrol(backend = "rtmb")`. The sampling
+#'   indicators are then modeled jointly with the catch data.
 #' @param weights A numeric vector representing optional likelihood weights for
 #'   the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
 #'   to sum to one and are not internally modified. Can also be used for trials
@@ -662,6 +666,7 @@ sdmTMB <- function(
     dispformula = ~ 1,
     nonlocal_formula = NULL,
     nonlocal_data = NULL,
+    preferential = NULL,
     weights = NULL,
     offset = NULL,
     extra_time = NULL,
@@ -996,6 +1001,18 @@ sdmTMB <- function(
     )
   }
 
+  if (!is.null(preferential)) {
+    .validate_preferential_scope(
+      spec = preferential, formula = formula, delta = has_two_components,
+      multi_family = is_multi_family, family = family, areal = is_areal,
+      mesh = spde,
+      mesh_missing = mesh_missing, anisotropy = anisotropy,
+      time_varying = time_varying, spatial_varying = spatial_varying,
+      nonlocal_formula = nonlocal_formula_parsed, normalize = normalize,
+      backend = backend, no_spatial = no_spatial
+    )
+  }
+
   domain <- prepare_spatial_domain(
     mesh = spde,
     data = data,
@@ -1222,6 +1239,19 @@ sdmTMB <- function(
 
   # always shared; only keep track of one:
   sm <- sm[[1]]
+
+  preferential_prep <- if (!is.null(preferential)) {
+    .prepare_preferential(
+      preferential,
+      model = list(
+        split_formula = split_formula, terms = mt,
+        xlevels = lapply(seq_along(mf), function(i) stats::.getXlevels(mt[[i]], mf[[i]])),
+        contrasts = lapply(X_ij, attr, which = "contrasts"),
+        smoothers = sm, data = data
+      ),
+      X_ij = X_ij, mesh = spde, time = time, time_df = time_df
+    )
+  }
 
   y_i <- model.response(mf[[1]], "any")
 
@@ -1508,6 +1538,7 @@ sdmTMB <- function(
     exclude_RE = 0L
   )
   tmb_data <- c(tmb_data, family_tmb)
+  tmb_data$preferential <- preferential_prep$data
   tmb_data$poisson_link_delta <- as.integer(fit_poisson_link_delta)
   b_thresh <- matrix(0, 2L, n_m)
   if (thresh[[1]]$threshold_func == 2L) b_thresh <- matrix(0, 3L, n_m) # logistic #TODO: change hard coding on index of thresh[[1]]
@@ -1552,6 +1583,7 @@ sdmTMB <- function(
     b_smooth = if (sm$has_smooths) matrix(0, sum(sm$sm_dims), n_m) else array(0),
     ln_smooth_sigma = if (sm$has_smooths) matrix(0, length(sm$sm_dims), n_m) else array(0)
   )
+  tmb_params <- c(tmb_params, preferential_prep$parameters)
   if (family_spec$n_f == 1L && identical(family$link, "inverse") && family$family[1] %in% c("Gamma", "gaussian", "student") && !has_two_components) {
     fam <- family
     if (family$family == "student") fam$family <- "gaussian"
@@ -1562,6 +1594,10 @@ sdmTMB <- function(
   # Map off parameters not needed
   tmb_map <- map_all_params(tmb_params)
   tmb_map$b_j <- NULL
+  # The sampling coefficients are estimated in every phase. The preference
+  # coefficient, sampling field, and temporal processes wait for the catch
+  # fields (below).
+  tmb_map$gamma_pref <- NULL
   if (!is_multi_family && has_dispformula) {
     tmb_map <- unmap(tmb_map, "b_disp_k")
   } else {
@@ -1681,6 +1717,10 @@ sdmTMB <- function(
     if (reml) tmb_random <- c(tmb_random, "bs")
     tmb_random <- c(tmb_random, "b_smooth") # smooth random effects
     tmb_map <- unmap(tmb_map, c("b_smooth", "ln_smooth_sigma", "bs"))
+  }
+  if (!is.null(preferential_prep)) {
+    tmb_map <- unmap(tmb_map, names(preferential_prep$parameters))
+    tmb_random <- c(tmb_random, preferential_prep$random)
   }
 
   if (!is.null(previous_fit)) {
@@ -1877,6 +1917,7 @@ sdmTMB <- function(
       nonlocal_formula_parsed = nonlocal_formula_parsed,
       nonlocal_parsed = nonlocal_parsed,
       nonlocal_grid_supplied = nonlocal_grid_supplied,
+      preferential = preferential_prep$info,
       spatial = spatial_user,
       spatiotemporal = spatiotemporal,
       spatial_varying_formula = spatial_varying_formula,

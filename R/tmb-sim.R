@@ -605,12 +605,18 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
   family_spec <- .object_family_spec(object, caller = "`simulate()`")
   has_two_components <- family_spec$n_m == 2L
 
-  if (is.null(object$tmb_random) && type == "mle-mvn") {
+  if (has_no_random_effects(object) && type == "mle-mvn") {
     type <- "mle-eb" # no random effects to sample from
   }
 
   # re_form stuff
   conditional_re <- !(!is.null(re_form) && ((re_form == ~0) || identical(re_form, NA)))
+  if (!conditional_re && !is.null(object$preferential)) {
+    cli_abort(c(
+      "`re_form = NA` or `~0` is not supported for preferential-sampling models.",
+      "i" = "New catch fields would no longer match the fitted sampling process. Use `re_form = NULL` to simulate conditional on the fitted fields."
+    ))
+  }
   tmb_dat <- object$tmb_data
   if (conditional_re) {
     tmb_dat$sim_re <- rep(0L, length(object$tmb_data$sim_re)) # don't simulate any REs

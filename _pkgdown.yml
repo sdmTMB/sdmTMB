@@ -18,6 +18,7 @@ articles:
   - articles/multispecies
   - articles/age-composition
   - articles/presence-only
+  - articles/preferential-sampling
   - articles/areal-sar-car-spde
   - articles/areal-grid-sar-car-spde
 
@@ -81,6 +82,8 @@ reference:
   - update.sdmTMB
   - dharma_residuals
   - sdmTMBcontrol
+  - preferential_sampling
+  - predict_sampling
   - run_extra_optimization
   - replicate_df
   - set_delta_model

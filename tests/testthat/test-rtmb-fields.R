@@ -238,6 +238,7 @@ test_that("RTMB areal SAR and CAR fields match TMB", {
 
 test_that("RTMB barrier fields match TMB", {
   skip_if_not_installed("sdmTMBextra")
+  skip_if_not_installed("INLAspacetime")
   skip_if_not_installed("sf")
   d <- rtmb_spatial_data()
   mesh <- make_mesh(d, c("x", "y"), cutoff = 0.7)
