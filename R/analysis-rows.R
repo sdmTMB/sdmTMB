@@ -1,5 +1,5 @@
-# Keep the observation row contract explicit without allowing component-specific
-# missing predictors to create different implicit model-frame row sets.
+# Rows with missing values in variables the model uses are omitted before
+# fitting (see `sdmTMB()`); prediction data must be complete instead.
 
 .formula_list <- function(x) {
   if (is.null(x)) return(list())
@@ -79,61 +79,23 @@
   invisible(NULL)
 }
 
-.establish_analysis_rows <- function(data, formulas, family_spec) {
-  formulas <- .formula_list(formulas)
-  if (length(formulas) < family_spec$n_m) {
-    cli_abort("Internal row-identity error: not enough component formulas were supplied.")
-  }
-  row_family_id <- family_spec$family_id_i
-  active <- .family_spec_component_active(family_spec, row_family_id)
-  response_complete <- rep(TRUE, nrow(data))
-
-  for (component in seq_len(family_spec$n_m)) {
-    formula_no_smooths <- remove_s_and_t2(formulas[[component]])
-    # We only need the response here. `model.frame()` evaluates every term in
-    # the formula, including random-effect terms such as `(1 | group)`, where
-    # `|` is otherwise an arithmetic operator. Replace the RHS before making
-    # the frame so establishing the common response-row set neither evaluates
-    # random effects nor considers predictor completeness.
-    response_formula <- formula_no_smooths
-    response_formula[[3L]] <- quote(1)
-    mf <- stats::model.frame(
-      response_formula,
-      data = data,
-      na.action = stats::na.pass
-    )
-    component_response <- stats::model.response(mf, type = "any")
-    component_complete <- stats::complete.cases(component_response)
-    response_complete <- response_complete &
-      (!active[, component] | component_complete)
-  }
-
-  used <- which(response_complete)
-  if (!length(used)) {
-    cli_abort("No rows with a non-missing response remain for fitting.")
-  }
-  omitted <- setdiff(seq_len(nrow(data)), used)
-  original_to_analysis <- rep.int(NA_integer_, nrow(data))
-  original_to_analysis[used] <- seq_along(used)
-  list(
-    original_n = as.integer(nrow(data)),
-    used = as.integer(used),
-    omitted = as.integer(omitted),
-    original_to_analysis = as.integer(original_to_analysis)
-  )
+.complete_model_rows <- function(data, formulas, row_vectors = list()) {
+  vars <- intersect(unique(unlist(lapply(formulas, all.vars))), names(data))
+  row_vectors <- Filter(function(x) NROW(x) == nrow(data), row_vectors)
+  do.call(stats::complete.cases, c(list(data[vars]), row_vectors))
 }
 
-.subset_analysis_rows <- function(x, analysis_rows, name = "value") {
-  if (is.null(x)) return(x)
-  n <- if (is.matrix(x) || is.data.frame(x)) nrow(x) else length(x)
-  if (n == analysis_rows$original_n) {
-    if (is.matrix(x) || is.data.frame(x)) {
-      return(x[analysis_rows$used, , drop = FALSE])
-    }
-    return(x[analysis_rows$used])
-  }
-  if (n == length(analysis_rows$used)) return(x)
-  cli_abort(
-    "`{name}` has {n} rows/elements, but expected {analysis_rows$original_n}."
-  )
+.subset_rows <- function(x, rows, n) {
+  if (NROW(x) != n) return(x)
+  if (is.matrix(x) || is.data.frame(x)) x[rows, , drop = FALSE] else x[rows]
+}
+
+# Mesh rows are the data rows (`make_mesh()`); areal domains are built from
+# `data` in `sdmTMB()` and need no subsetting.
+.subset_mesh_rows <- function(mesh, rows, n) {
+  if (is_areal_domain(mesh) || NROW(mesh$loc_xy) != n) return(mesh)
+  mesh$loc_xy <- mesh$loc_xy[rows, , drop = FALSE]
+  mesh$A_st <- mesh$A_st[rows, , drop = FALSE]
+  mesh$sdm_spatial_id <- seq_along(rows)
+  mesh
 }

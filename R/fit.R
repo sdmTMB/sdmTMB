@@ -20,7 +20,10 @@ NULL
 #'   representing groups. Penalized splines are possible via \pkg{mgcv} with
 #'   `s()`. Optionally a list for delta (hurdle) models.  See
 #'   examples and details below.
-#' @param data A data frame.
+#' @param data A data frame. Rows with missing values in the response or any
+#'   variable the model uses (including `weights` and `offset`) are omitted
+#'   before fitting, as with `na.action = na.omit` in [stats::glm()]. The
+#'   rows used are stored in the returned object as `data`.
 #' @param mesh An object from [make_mesh()] for `spatial_model = "spde"` or
 #'   from [make_areal_domain()] for `"sar"` or `"car"`.
 #' @param spatial_model Spatial process model. `"spde"` uses the default
@@ -128,7 +131,11 @@ NULL
 #'   Example: `~ diffusion(x) + time_lag(x)`. When both wrappers use the same
 #'   covariate, they select parts of one joint operator and produce one
 #'   transformed predictor and coefficient. Different covariates produce
-#'   separate transformed predictors and coefficients. Note that spatial-only
+#'   separate transformed predictors and coefficients. `time_lag()` takes an
+#'   optional `start` argument for the transformed state before the first time
+#'   slice: `"stationary"` (default) assumes the covariate held at its first
+#'   slice beforehand, and `"zero"` starts from zero as in Thorson et al.
+#'   (2026), e.g. `~ time_lag(x, start = "zero")`. Note that spatial-only
 #'   covariates will be held constant across time slices unless the `time`
 #'   argument is specified. See the non-local covariates vignette for the
 #'   MSDK and RMSDK definitions.
@@ -208,10 +215,7 @@ NULL
 #   used to model effects on the standard deviation, e.g. `log(sd(i)) = B0 + B1
 #   * epsilon_predictor(i)`. The 'epsilon_model' argument may also be
 #   specified. This is the name of the model to use for modeling time-varying
-#   epsilon. This can be one of the following: "trend" (default, fits a linear
-#   model without random effects), "re" (fits a model with random effects in
-#   epsilon_st, but no trend), and "trend-re" (a model that includes both the
-#   trend and random effects)
+#   epsilon. Currently only "trend" (a log-linear model) is available.
 #' @importFrom methods as is
 #' @importFrom cli cli_abort cli_warn cli_inform
 #' @importFrom mgcv s t2
@@ -681,10 +685,36 @@ sdmTMB <- function(
     cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain supplied to `mesh`.")
   }
   is_areal <- spatial_model %in% c("sar", "car")
-  data <- droplevels(data) # if data was subset, strips absent factors
   if (!inherits(dispformula, "formula") || length(dispformula) != 2L) {
     cli_abort("`dispformula` must be a one-sided formula such as `~ 1`.")
   }
+  # Omit rows with missing values in any variable the model uses, as with
+  # `na.action = na.omit` in glm(). Doing this before anything is built from
+  # `data` keeps the stored data, mesh rows, and post-fit methods aligned.
+  complete <- .complete_model_rows(
+    data,
+    formulas = c(
+      .formula_list(formula), .formula_list(spatial_varying),
+      .formula_list(time_varying), list(dispformula),
+      if (is.null(nonlocal_data)) .formula_list(nonlocal_formula)
+    ),
+    row_vectors = list(weights, if (is.character(offset)) data[[offset]] else offset)
+  )
+  if (!any(complete)) cli_abort("No rows remain after omitting rows with missing values.")
+  if (!all(complete)) {
+    rows <- which(complete)
+    n <- nrow(data)
+    if (!silent) cli_inform("Omitting {n - length(rows)} row{?s} with missing values.")
+    data <- data[rows, , drop = FALSE]
+    weights <- .subset_rows(weights, rows, n)
+    offset <- .subset_rows(offset, rows, n)
+    control$censored_upper <- .subset_rows(control$censored_upper, rows, n)
+    if (!is.null(experimental$.cv_fold_weights)) {
+      experimental$.cv_fold_weights <- .subset_rows(experimental$.cv_fold_weights, rows, n)
+    }
+    if (!mesh_missing) mesh <- .subset_mesh_rows(mesh, rows, n)
+  }
+  data <- droplevels(data) # if data was subset, strips absent factors
   is_intercept_only_dispformula <- function(f) {
     tt <- stats::terms(f)
     length(attr(tt, "term.labels")) == 0L && isTRUE(attr(tt, "intercept") == 1L)
@@ -826,6 +856,10 @@ sdmTMB <- function(
   }
 
   normalize <- control$normalize
+  backend <- control$backend
+  if (backend == "rtmb" && isTRUE(normalize)) {
+    cli_abort("`normalize = TRUE` is unavailable with the RTMB backend; its densities are fully normalized.")
+  }
   nlminb_loops <- control$nlminb_loops
   newton_loops <- control$newton_loops
   quadratic_roots <- control$quadratic_roots
@@ -856,7 +890,7 @@ sdmTMB <- function(
     "suppress_nlminb_warnings", "collapse_spatial_variance",
     "collapse_spatial_variance_threshold",
     "collapse_spatiotemporal_ar1", "collapse_ar1_threshold",
-    "sar_weight_style", "get_rsr", "preferential_grid",
+    "sar_weight_style", "get_rsr", "backend", "preferential_grid",
     "preferential_response", "preferential_formula", "preferential_b_type"
   )
   .control <- control
@@ -1009,7 +1043,9 @@ sdmTMB <- function(
   )
   is_areal <- identical(domain$type, "areal")
 
-  if (!no_spatial && !is_areal) {
+  # Covariate diffusion also maps observations to the mesh by row
+  uses_mesh_rows <- !no_spatial || !is.null(nonlocal_formula_parsed)
+  if (uses_mesh_rows && !is_areal) {
     if (!identical(nrow(spde$loc_xy), nrow(data))) {
       msg <- c(
         "Number of x-y coordinates in `mesh` does not match `nrow(data)`.",
@@ -1047,49 +1083,9 @@ sdmTMB <- function(
     )
     formula <- list(thresh[[1]]$formula, thresh[[2]]$formula)
   }
-  threshold_columns <- unique(unlist(
-    lapply(thresh, `[[`, "threshold_parameter"),
-    use.names = FALSE
-  ))
 
   if (is.character(offset)) {
     offset <- data[[offset]]
-  }
-  offset_original <- if (is.null(offset)) rep(0, nrow(data)) else offset
-
-  .check_no_missing_covariates(
-    data = data,
-    formulas = formula,
-    shared_formulas = c(
-      .formula_list(spatial_varying),
-      .formula_list(time_varying),
-      list(dispformula)
-    ),
-    required_columns = if (is.null(nonlocal_formula_parsed)) {
-      threshold_columns
-    } else {
-      c(nonlocal_formula_parsed$covariates, threshold_columns)
-    },
-    stage = "fitting"
-  )
-  analysis_rows <- .establish_analysis_rows(
-    data = data,
-    formulas = formula,
-    family_spec = family_spec
-  )
-  has_omitted_rows <- length(analysis_rows$omitted) > 0L
-  analysis_data <- if (has_omitted_rows) {
-    data[analysis_rows$used, , drop = FALSE]
-  } else {
-    data
-  }
-  if (has_omitted_rows) {
-    family_spec <- .family_spec_subset_rows(family_spec, analysis_rows$used)
-    weights <- .subset_analysis_rows(weights, analysis_rows, name = "weights")
-    offset <- .subset_analysis_rows(offset, analysis_rows, name = "offset")
-    if (length(upr) > 1L) {
-      upr <- .subset_analysis_rows(upr, analysis_rows, name = "censored_upper")
-    }
   }
 
   check_irregalar_time(
@@ -1105,7 +1101,7 @@ sdmTMB <- function(
 
   spatial_varying_formula <- spatial_varying # save it
   if (!is.null(spatial_varying)) {
-    mf1 <- model.frame(spatial_varying, analysis_data)
+    mf1 <- model.frame(spatial_varying, data)
     for (i in seq_len(ncol(mf1))) {
       if (is.character(mf1[[i]])) {
         cli_warn(paste0(
@@ -1115,7 +1111,7 @@ sdmTMB <- function(
         ))
       }
     }
-    z_i <- model.matrix(spatial_varying, analysis_data)
+    z_i <- model.matrix(spatial_varying, data)
     .int <- grep("(Intercept)", colnames(z_i))
     has_intercept <- length(.int) > 0L
     svc_omega_is_intercept <- has_intercept && !omit_spatial_intercept
@@ -1142,7 +1138,7 @@ sdmTMB <- function(
     spatial_varying <- colnames(z_i)
     svc_contrasts <- attr(z_i, which = "contrasts")
   } else {
-    z_i <- matrix(0, nrow(analysis_data), 0L)
+    z_i <- matrix(0, nrow(data), 0L)
     svc_contrasts <- NULL
   }
   n_z <- ncol(z_i)
@@ -1152,11 +1148,7 @@ sdmTMB <- function(
   }
   contains_offset <- check_offset(formula[[1]]) # deprecated check
 
-  mf_disp <- model.frame(dispformula, data = analysis_data, na.action = stats::na.pass)
-  if (any(!stats::complete.cases(mf_disp))) {
-    cli_abort("NAs are not allowed in variables used by `dispformula`.")
-  }
-  Xdisp_ij <- model.matrix(dispformula, data = mf_disp)
+  Xdisp_ij <- model.matrix(dispformula, data = data)
 
   split_formula <- list() # passed to out structure, not TMB
   X_ij <- list() # main effects, passed into TMB
@@ -1173,13 +1165,13 @@ sdmTMB <- function(
     # smoothers removed, but random effects remain:
     formula_no_sm <- remove_s_and_t2(formula[ii][[1]])
     # random effects parsed into data structures:
-    split_formula[[ii]] <- parse_formula(formula_no_sm, analysis_data)
+    split_formula[[ii]] <- parse_formula(formula_no_sm, data)
 
     # save formula with no bars (but with smoothers)
     formula_no_bars <- reformulas::nobars(formula[ii][[1]])
     formula_no_bars_no_sm <- remove_s_and_t2(formula_no_bars)
-    X_ij[[ii]] <- model.matrix(formula_no_bars_no_sm, analysis_data)
-    mf[[ii]] <- model.frame(formula_no_bars_no_sm, analysis_data)
+    X_ij[[ii]] <- model.matrix(formula_no_bars_no_sm, data)
+    mf[[ii]] <- model.frame(formula_no_bars_no_sm, data)
     vars <- colnames(mf[[ii]])
     for (g in seq_along(vars)) {
       if (any(is.infinite(mf[[ii]][, g, drop = TRUE]))) {
@@ -1189,7 +1181,7 @@ sdmTMB <- function(
 
     mt[[ii]] <- attr(mf[[ii]], "terms")
     # parse everything mgcv + smoothers:
-    sm[[ii]] <- parse_smoothers(formula = formula_no_bars, data = analysis_data, knots = knots)
+    sm[[ii]] <- parse_smoothers(formula = formula_no_bars, data = data, knots = knots)
     sm[[ii]]$split_formula <- split_formula
     sm[[ii]]$formula_no_sm <- formula_no_sm
     sm[[ii]]$formula_no_bars <- formula_no_bars
@@ -1284,21 +1276,6 @@ sdmTMB <- function(
     cli_abort("Internal error: CV fold weights do not match the number of data rows.")
   }
 
-  # Filter weights and offset to match NA-filtered response
-  # model.frame() removes NAs by default; external vectors need same filtering
-  na_action <- attr(mf[[1]], "na.action")
-  if (!is.null(na_action)) {
-    # na.omit creates "omit" class with row indices that were removed
-    if (!is.null(weights)) {
-      weights <- weights[-na_action]
-    }
-    if (!is.null(offset)) {
-      offset <- offset[-na_action]
-    }
-    if (!is.null(cv_fold_weights)) {
-      cv_fold_weights <- cv_fold_weights[-na_action]
-    }
-  }
   if (has_two_components) {
     y_i2 <- model.response(mf[[2]], "any")
     if (!identical(y_i, y_i2)) {
@@ -1311,7 +1288,7 @@ sdmTMB <- function(
   size <- response$size
   weights <- response$weights
 
-  likelihood_weights <- if (!is.null(weights)) weights else rep(1, length(y_i))
+  likelihood_weights <- if (!is.null(weights)) weights else rep(1, NROW(y_i))
   if (!is.null(cv_fold_weights)) {
     weights <- likelihood_weights * cv_fold_weights
   }
@@ -1326,9 +1303,9 @@ sdmTMB <- function(
   }
 
   if (!is.null(time_varying)) {
-    X_rw_ik <- model.matrix(time_varying, analysis_data)
+    X_rw_ik <- model.matrix(time_varying, data)
   } else {
-    X_rw_ik <- matrix(0, nrow = nrow(analysis_data), ncol = 1)
+    X_rw_ik <- matrix(0, nrow = nrow(data), ncol = 1)
   }
 
   n_s <- domain$n_s
@@ -1342,10 +1319,13 @@ sdmTMB <- function(
   }
   estimate_student_df <- has_student_family && is.null(student_df_fixed)
 
+  if (!is.null(epsilon_model) && !identical(epsilon_model, "trend")) {
+    cli_abort("`experimental$epsilon_model` must be \"trend\".")
+  }
   est_epsilon_model <- 0L
   epsilon_covariate <- rep(0, length(unique(data[[time]])))
   if (!is.null(epsilon_predictor) & !is.null(epsilon_model)) {
-    if (epsilon_model %in% c("trend", "trend-re")) {
+    if (epsilon_model == "trend") {
       # covariate vector dimensioned by number of time steps
       time_steps <- unique(data[[time]])
       for (i in seq_along(time_steps)) {
@@ -1357,20 +1337,10 @@ sdmTMB <- function(
       est_epsilon_model <- 1L
     }
   }
-  # flags for turning off the trend and random effects
   est_epsilon_slope <- 0
   if (!is.null(epsilon_model)) {
-    if (epsilon_model %in% c("trend", "trend-re")) {
-      est_epsilon_slope <- 1L
-      est_epsilon_model <- 1L
-    }
-  }
-  est_epsilon_re <- 0
-  if (!is.null(epsilon_model)) {
-    if (epsilon_model[1] %in% c("re", "trend-re")) {
-      est_epsilon_re <- 1L
-      est_epsilon_model <- 1L
-    }
+    est_epsilon_slope <- 1L
+    est_epsilon_model <- 1L
   }
 
   priors_b <- priors$b
@@ -1418,34 +1388,15 @@ sdmTMB <- function(
   }
 
   A_st <- domain$A_st
-  if (has_omitted_rows && nrow(A_st) == nrow(data)) {
-    A_st <- A_st[analysis_rows$used, , drop = FALSE]
-  }
   A_spatial_index <- domain$A_spatial_index
-  if (has_omitted_rows && length(A_spatial_index) == nrow(data)) {
-    A_spatial_index <- A_spatial_index[analysis_rows$used]
-  }
-  X_threshold <- if (has_omitted_rows) {
-    .subset_analysis_rows(
-      thresh[[1]]$X_threshold,
-      analysis_rows,
-      name = "threshold covariate"
-    )
-  } else {
-    thresh[[1]]$X_threshold
-  }
   y_i <- response$response
   family_tmb <- .as_tmb_family_data(family_spec)
   fit_poisson_link_delta <- identical(family_spec$families$combine_kind[[1]], "poisson_link_delta") &&
     family_spec$n_f == 1L
 
-  time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
-  n_t <- nrow(time_df)
-  year_i_data <- time_df$year_i[match(analysis_data[[time]], time_df$time_from_data)]
-
   nonlocal_parsed <- .build_nonlocal_tmb_data(
     nonlocal_formula = nonlocal_formula_parsed,
-    data = if (nonlocal_grid_supplied) nonlocal_grid_inputs$data else analysis_data,
+    data = if (nonlocal_grid_supplied) nonlocal_grid_inputs$data else data,
     A_st = if (nonlocal_grid_supplied) nonlocal_grid_inputs$A_st else A_st,
     A_spatial_index = if (nonlocal_grid_supplied) nonlocal_grid_inputs$A_spatial_index else A_spatial_index,
     year_i = if (nonlocal_grid_supplied) nonlocal_grid_inputs$year_i else year_i_data,
@@ -1467,6 +1418,7 @@ sdmTMB <- function(
     nonlocal_covariate_has_temporal <- as.integer(nonlocal_parsed$covariate_has_temporal)
     nonlocal_term_component <- as.integer(nonlocal_parsed$term_component_id - 1L)
     nonlocal_term_covariate <- as.integer(nonlocal_parsed$term_covariate_index0)
+    nonlocal_term_start <- as.integer(nonlocal_parsed$term_start)
   } else {
     nonlocal_n_terms <- 0L
     nonlocal_n_covariates <- 0L
@@ -1475,6 +1427,7 @@ sdmTMB <- function(
     nonlocal_covariate_has_temporal <- integer(0)
     nonlocal_term_component <- integer(0)
     nonlocal_term_covariate <- integer(0)
+    nonlocal_term_start <- integer(0)
   }
   nonlocal_tmb <- list(
     n_terms = nonlocal_n_terms,
@@ -1482,7 +1435,8 @@ sdmTMB <- function(
     covariate_vertex_time = nonlocal_covariate_vertex_time,
     proj_covariate_vertex_time = array(0, dim = c(1L, 1L, 1L)),
     term_component = nonlocal_term_component,
-    term_covariate = nonlocal_term_covariate
+    term_covariate = nonlocal_term_covariate,
+    term_start = nonlocal_term_start
   )
 
   # TODO: make this cleaner
@@ -1533,8 +1487,8 @@ sdmTMB <- function(
     calc_se = 0L,
     pop_pred = 0L,
     short_newdata = 0L,
-    weights_i = if (!is.null(weights)) weights else rep(1, length(y_i)),
-    area_i = rep(1, length(y_i)),
+    weights_i = if (!is.null(weights)) weights else rep(1, NROW(y_i)),
+    area_i = rep(1, NROW(y_i)),
     normalize_in_r = 0L, # not used first time
     flag = 1L, # part of TMB::normalize()
     calc_index_totals = 0L,
@@ -1575,13 +1529,12 @@ sdmTMB <- function(
     spatial_only = as.integer(spatial_only),
     spatial_covariate = as.integer(!is.null(spatial_varying)),
     calc_quadratic_range = as.integer(quadratic_roots),
-    X_threshold = X_threshold, # TODO: don't hardcode index thresh[[1]]
+    X_threshold = thresh[[1]]$X_threshold, # TODO: don't hardcode index thresh[[1]]
     proj_X_threshold = 0, # dummy
     threshold_func = thresh[[1]]$threshold_func, # TODO: don't hardcode index thresh[[1]]
     est_epsilon_model = as.integer(est_epsilon_model),
     epsilon_predictor = epsilon_covariate,
     est_epsilon_slope = as.integer(est_epsilon_slope),
-    est_epsilon_re = as.integer(est_epsilon_re),
     has_smooths = as.integer(sm$has_smooths),
     has_dispersion_model = as.integer(has_dispformula),
     upr = upr,
@@ -1618,8 +1571,8 @@ sdmTMB <- function(
     ln_tau_Z = matrix(0, n_z, n_m),
     ln_tau_E = rep(0, n_m),
     ln_kappa = matrix(0, 2L, n_m),
-    log_kappaS_nl = numeric(nonlocal_n_covariates),
-    kappaT_nl_raw = rep(1, nonlocal_n_covariates),
+    log_kappaS_nl = .nonlocal_log_kappaS_start(spde$loc_xy, nonlocal_n_covariates),
+    log_kappaT_nl = numeric(nonlocal_n_covariates),
     # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
     thetaf = family_params$thetaf,
     ln_student_df = family_params$ln_student_df,
@@ -1640,8 +1593,6 @@ sdmTMB <- function(
     epsilon_st = array(0, dim = c(n_s, tmb_data$n_t, n_m)),
     b_threshold = if (thresh[[1]]$threshold_func == 2L) matrix(0, 3L, n_m) else matrix(0, 2L, n_m),
     b_epsilon = rep(0, n_m),
-    ln_epsilon_re_sigma = rep(0, n_m),
-    epsilon_re = matrix(0, tmb_data$n_t, n_m),
     b_smooth = if (sm$has_smooths) matrix(0, sum(sm$sm_dims), n_m) else array(0),
     ln_smooth_sigma = if (sm$has_smooths) matrix(0, length(sm$sm_dims), n_m) else array(0)
   )
@@ -1683,9 +1634,6 @@ sdmTMB <- function(
   )
   if (!is.null(thresh[[1]]$threshold_parameter)) tmb_map$b_threshold <- NULL
 
-  if (est_epsilon_re == 1L) {
-    tmb_map <- unmap(tmb_map, c("ln_epsilon_re_sigma", "epsilon_re"))
-  }
   if (est_epsilon_slope == 1L) {
     tmb_map <- unmap(tmb_map, "b_epsilon")
   }
@@ -1704,12 +1652,13 @@ sdmTMB <- function(
       tmb_data$family_code[tmb_data$component_active == 1L & tmb_data$family_code == censored_code] <- unname(.valid_family["poisson"])
     }
 
-    tmb_obj1 <- TMB::MakeADFun(
+    tmb_obj1 <- make_sdmTMB_adfun(
       data = tmb_data, parameters = tmb_params,
       profile = control$profile,
-      map = tmb_map, DLL = "sdmTMB", silent = silent
+      map = tmb_map, backend = backend, silent = silent
     )
     lim <- set_limits(tmb_obj1, lower = lower, upper = upper,
+      mesh = if (is_areal) NULL else spde$mesh,
       spatial_model = tmb_data$spatial_model,
       silent = TRUE)
 
@@ -1728,7 +1677,7 @@ sdmTMB <- function(
   }
 
   tmb_map$log_kappaS_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_spatial)
-  tmb_map$kappaT_nl_raw <- .make_nonlocal_kappa_map(nonlocal_covariate_has_temporal)
+  tmb_map$log_kappaT_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_temporal)
 
   tmb_random <- c()
   tmb_random <- c(tmb_random, .preferential_random_names(!is.null(preferential_response), preferential_b_type))
@@ -1751,10 +1700,6 @@ sdmTMB <- function(
     if (time_varying_type == "ar1") {
       tmb_map <- unmap(tmb_map, "rho_time_unscaled")
     }
-  }
-  if (est_epsilon_re) {
-    tmb_random <- c(tmb_random, "epsilon_re")
-    tmb_map <- unmap(tmb_map, c("epsilon_re"))
   }
 
   tmb_map$ar1_phi <- as.numeric(tmb_map$ar1_phi) # strip factors
@@ -1826,7 +1771,7 @@ sdmTMB <- function(
       "i" = paste0("Nonlocal covariates (in order): ", cov_text, ".")
     ))
   }
-  nl_param_names <- c("log_kappaS_nl", "kappaT_nl_raw")
+  nl_param_names <- c("log_kappaS_nl", "log_kappaT_nl")
   for (param_name in nl_param_names) {
     if (param_name %in% names(start)) {
       .validate_nonlocal_control_length(start[[param_name]], param_name, "start")
@@ -1835,18 +1780,6 @@ sdmTMB <- function(
       .validate_nonlocal_control_length(map[[param_name]], param_name, "map")
     }
   }
-  if ("kappaT_nl_raw" %in% names(start)) {
-    temporal_start <- start$kappaT_nl_raw[
-      as.logical(nonlocal_covariate_has_temporal)
-    ]
-    if (!is.numeric(temporal_start) || anyNA(temporal_start) ||
-        any(!is.finite(temporal_start)) || any(temporal_start < 0)) {
-      cli_abort(
-        "Active values in `control$start$kappaT_nl_raw` must be finite and non-negative."
-      )
-    }
-  }
-
   for (i in seq_along(start)) {
     cli_inform(c(
       i = paste0(
@@ -1966,7 +1899,7 @@ sdmTMB <- function(
   out_structure <- structure(
     list(
       data = data,
-      offset = offset_original,
+      offset = offset,
       spde = spde,
       formula = original_formula,
       dispformula = dispformula,
@@ -1982,7 +1915,6 @@ sdmTMB <- function(
       # `family_spec`, so a multi-family fit must not expose only family one.
       family = family_spec$family_input,
       family_spec = family_spec,
-      analysis_rows = analysis_rows,
       distribution_column = family_spec$distribution_column,
       likelihood_weights = likelihood_weights,
       smoothers = sm,
@@ -1991,6 +1923,7 @@ sdmTMB <- function(
       tmb_params = tmb_params,
       tmb_map = tmb_map,
       tmb_random = tmb_random,
+      backend = backend,
       spatial_varying = spatial_varying,
       nonlocal_formula = nonlocal_formula,
       nonlocal_formula_parsed = nonlocal_formula_parsed,
@@ -2054,14 +1987,14 @@ sdmTMB <- function(
     out_structure$do_index <- FALSE
   }
 
-  tmb_obj <- TMB::MakeADFun(
+  tmb_obj <- make_sdmTMB_adfun(
     data = tmb_data, parameters = tmb_params, map = tmb_map,
     profile = control$profile,
-    random = tmb_random, DLL = "sdmTMB", silent = silent
+    random = tmb_random, backend = backend, silent = silent
   )
   lim <- set_limits(tmb_obj,
     lower = lower, upper = upper,
-    loc = if (is_areal) NULL else spde$mesh$loc,
+    mesh = if (is_areal) NULL else spde$mesh,
     spatial_model = tmb_data$spatial_model,
     silent = FALSE
   )
@@ -2160,7 +2093,7 @@ sdmTMB <- function(
 
   if (!silent && getsd) cli_inform("running TMB sdreport\n")
   if (getsd) {
-    sd_report <- TMB::sdreport(tmb_obj, getJointPrecision = get_joint_precision)
+    sd_report <- sdreport_sdmTMB(tmb_obj, getJointPrecision = get_joint_precision)
     conv <- get_convergence_diagnostics(sd_report)
   } else {
     sd_report <- NULL
@@ -2357,23 +2290,10 @@ check_and_collapse_spatial_fields <- function(
   )
 }
 
-set_limits <- function(tmb_obj, lower, upper, loc = NULL, spatial_model = 0L,
+set_limits <- function(tmb_obj, lower, upper, mesh = NULL, spatial_model = 0L,
                        silent = TRUE) {
   .lower <- stats::setNames(rep(-Inf, length(tmb_obj$par)), names(tmb_obj$par))
   .upper <- stats::setNames(rep(Inf, length(tmb_obj$par)), names(tmb_obj$par))
-  has_kappaT <- "kappaT_nl_raw" %in% names(tmb_obj$par)
-  if (has_kappaT && "kappaT_nl_raw" %in% names(lower)) {
-    x <- lower$kappaT_nl_raw
-    if (!is.numeric(x) || anyNA(x) || any(!is.finite(x)) || any(x < 0)) {
-      cli_abort("`control$lower$kappaT_nl_raw` must contain finite, non-negative values.")
-    }
-  }
-  if (has_kappaT && "kappaT_nl_raw" %in% names(upper)) {
-    x <- upper$kappaT_nl_raw
-    if (!is.numeric(x) || anyNA(x) || any(x < 0)) {
-      cli_abort("`control$upper$kappaT_nl_raw` must contain non-negative values.")
-    }
-  }
   for (i_name in names(lower)) {
     if (i_name %in% names(.lower)) {
       .lower[names(.lower) %in% i_name] <- lower[[i_name]]
@@ -2401,10 +2321,6 @@ set_limits <- function(tmb_obj, lower, upper, loc = NULL, spatial_model = 0L,
     .lower["ar1_phi"] <- stats::qlogis((-0.999 + 1) / 2)
     .upper["ar1_phi"] <- stats::qlogis((0.999 + 1) / 2)
   }
-  if ("kappaT_nl_raw" %in% names(tmb_obj$par) &&
-    !"kappaT_nl_raw" %in% names(lower)) {
-    .lower[names(.lower) == "kappaT_nl_raw"] <- 0
-  }
   if ("logit_rho_sar" %in% names(tmb_obj$par) &&
     !"logit_rho_sar" %in% union(names(lower), names(upper))) {
     if (identical(spatial_model, 2L)) {
@@ -2413,6 +2329,12 @@ set_limits <- function(tmb_obj, lower, upper, loc = NULL, spatial_model = 0L,
       .lower["logit_rho_sar"] <- stats::qlogis((-0.999 + 1) / 2)
       .upper["logit_rho_sar"] <- stats::qlogis((0.999 + 1) / 2)
     }
+  }
+  is_kappaS_nl <- names(.lower) == "log_kappaS_nl"
+  if (any(is_kappaS_nl) && !is.null(mesh)) {
+    bounds <- .nonlocal_log_kappaS_bounds(mesh)
+    if (!"log_kappaS_nl" %in% names(lower)) .lower[is_kappaS_nl] <- bounds[[1L]]
+    if (!"log_kappaS_nl" %in% names(upper)) .upper[is_kappaS_nl] <- bounds[[2L]]
   }
 
   list(lower = .lower, upper = .upper)

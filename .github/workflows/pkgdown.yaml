@@ -35,6 +35,7 @@ jobs:
         with:
           extra-packages: any::pkgdown, local::., any::textshaping, any::remotes
           needs: website
+          install-quarto: false
 
       - name: Install extra packages for web-only vignettes
         run: |

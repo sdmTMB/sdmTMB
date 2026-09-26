@@ -19,8 +19,11 @@ test_that("collapsing spatial and spatiotemporal fields works", {
     sigma_E = 0,
     phi = 0.2,
     sigma_O = 0,
-    seed = 42,
-    B = c(0.2, -0.4) # B0 = intercept, B1 = a1 slope
+    seed = 7,
+    B = c(0.2, -0.4), # B0 = intercept, B1 = a1 slope
+    # TMB and RTMB draw different Tweedie values from the same seed; pin the
+    # backend so the data (and whether fields collapse) don't depend on it
+    control = sdmTMBcontrol(backend = "rtmb")
   )
   # create some fake 0s
   sim_dat$observed[sample(1:500, size = 50, replace = FALSE)] <- 0
@@ -117,7 +120,12 @@ test_that("custom collapse threshold works", {
     )
   )
 
-  # With higher threshold (0.3), should collapse
+  # With a threshold comfortably above the fitted sigma_E, should collapse.
+  # The fitted sigma_E itself is not asserted: TMB and RTMB `simulate()`
+  # consume the RNG stream in different orders, so it varies by backend.
+  sigma_E_est <- tidy(fit_default, "ran_pars")$estimate[
+    tidy(fit_default, "ran_pars")$term == "sigma_E"]
+
   # Original call arguments can be objects in the caller's environment.
   fit_collapse <- local({
     form <- observed ~ a1
@@ -126,7 +134,7 @@ test_that("custom collapse threshold works", {
     mesh_obj <- mesh
     ctrl <- sdmTMBcontrol(
       collapse_spatial_variance = TRUE,
-      collapse_spatial_variance_threshold = 0.3
+      collapse_spatial_variance_threshold = sigma_E_est + 0.2
     )
     sdmTMB(form,
       data = data_obj, mesh = mesh_obj, time = "year",

@@ -89,7 +89,7 @@ test_that("A spatially varying coefficient model fits", {
     mesh = pcod_spde, family = tweedie(link = "log"),
     spatial_varying = ~ 0 + scaled_year, time = "year")
   expect_true(all(!is.na(summary(m$sd_report)[,"Std. Error"])))
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod$year))
   nd$scaled_year <- scale(nd$year)
   p <- predict(m, newdata = subset(nd, year >= 2011))
 })
@@ -307,7 +307,7 @@ test_that("Multiple SVC works", {
   s <- as.list(fit$sd_report, "Std. Error")
   expect_true(sum(is.na(s$b_j)) == 0L)
   fit
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod$year))
   nd$syear <- as.numeric(scale(nd$year))
   p <- predict(fit, newdata = nd)
   # p <- predict(fit, newdata = NULL)
@@ -617,21 +617,21 @@ test_that("Prediction outside fitted coordinates gets warned about #285", {
     data = pcod_2011,
     mesh = pcod_mesh_2011
   )
-  nd <- qcs_grid
+  nd <- qcs_grid_small
   range(nd$X)
   nd$X <- nd$X * 10
   range(nd$X)
   expect_warning(p <- predict(fit, newdata = nd), regexp = "coordinates")
 
-  nd <- qcs_grid
+  nd <- qcs_grid_small
   nd$X <- nd$X / 10
   expect_warning(p <- predict(fit, newdata = nd), regexp = "coordinates")
 
-  nd <- qcs_grid
+  nd <- qcs_grid_small
   nd$Y <- nd$Y / 10
   expect_warning(p <- predict(fit, newdata = nd), regexp = "coordinates")
 
-  nd <- qcs_grid
+  nd <- qcs_grid_small
   nd$Y <- nd$Y * 10
   expect_warning(p <- predict(fit, newdata = nd), regexp = "coordinates")
 })

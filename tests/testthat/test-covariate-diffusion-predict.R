@@ -64,7 +64,15 @@ test_that("covariate diffusion predict works for default and newdata pathways", 
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
     nonlocal_data = grid,
-    control = sdmTMBcontrol(newton_loops = 0)
+    # Fix the nonlocal rates: they are not identified in this tiny data set.
+    control = sdmTMBcontrol(
+      newton_loops = 0,
+      start = list(log_kappaS_nl = c(-1, 0)),
+      map = list(
+        log_kappaS_nl = factor(c(NA, NA)),
+        log_kappaT_nl = factor(c(NA, NA))
+      )
+    )
   )
 
   expect_silent(p_fit <- predict(fit))

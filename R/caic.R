@@ -83,24 +83,24 @@ cAIC.sdmTMB <- function(object, what = c("cAIC", "EDF"), ...) {
   if (is.null(object$control$profile)) {
     obj <- object$tmb_obj
   } else {
-    obj <- TMB::MakeADFun(
+    obj <- make_sdmTMB_adfun(
       data = tmb_data,
       parameters = object$parlist,
       map = object$tmb_map,
       random = object$tmb_random,
-      DLL = "sdmTMB",
+      backend = backend_sdmTMB(object),
       profile = NULL #<
     )
   }
 
   ## Make obj_new
   tmb_data$weights_i[] <- 0
-  obj_new <- TMB::MakeADFun(
+  obj_new <- make_sdmTMB_adfun(
     data = tmb_data,
     parameters = object$parlist,
     map = object$tmb_map,
     random = object$tmb_random,
-    DLL = "sdmTMB",
+    backend = backend_sdmTMB(object),
     profile = NULL
   )
 

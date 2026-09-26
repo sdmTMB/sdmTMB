@@ -58,10 +58,11 @@ test_that("Print anisotropy prints correctly", {
   expect_output(print(fit_sp_only), regexp = "\\(spatial\\): 6.1 to 86.0 at 126")
 
   # Anisotropy with only spatiotemporal random field
-  test_mesh <- make_mesh(data = pcod, xy_cols = c("X", "Y"), cutoff = 20)
+  test_mesh <- make_mesh(data = dogfish, xy_cols = c("X", "Y"), cutoff = 10)
   fit_st_only <- sdmTMB(
-    data = pcod,
-    formula = density ~ 1,
+    data = dogfish,
+    formula = catch_weight ~ 1,
+    offset = log(dogfish$area_swept),
     mesh = test_mesh,
     family = tweedie(),
     spatial = "off",
@@ -71,13 +72,14 @@ test_that("Print anisotropy prints correctly", {
     control = sdmTMBcontrol(newton_loops = 1)
   )
 
-  expect_output(print(fit_st_only), regexp = "\\(spatiotemporal\\): 16.5 to 29.1 at 54")
+  expect_output(print(fit_st_only), regexp = "\\(spatiotemporal\\): 9.0 to 72.2 at 135")
 # -------------------
 
   # Anisotropy when not shared across random fields
   fit2 <- sdmTMB(
-    data = pcod,
-    formula = density ~ 1,
+    data = dogfish,
+    formula = catch_weight ~ 1,
+    offset = log(dogfish$area_swept),
     mesh = test_mesh,
     family = tweedie(),
     share_range = FALSE,
@@ -105,10 +107,11 @@ test_that("Print anisotropy prints correctly", {
   expect_output(cat(print_anisotropy(fit_dg_shared, m = 2)), regexp = "\\(spatial\\): 2")
 
   # Anisotropy when not shared across random fields in delta model
+  pcod_mesh <- make_mesh(data = pcod, xy_cols = c("X", "Y"), cutoff = 20)
   fit_dg_not_shared <- sdmTMB(
     data = pcod,
     formula = density ~ 1,
-    mesh = test_mesh,
+    mesh = pcod_mesh,
     family = delta_gamma(),
     share_range = FALSE,
     time = "year",

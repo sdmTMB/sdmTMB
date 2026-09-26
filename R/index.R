@@ -395,14 +395,22 @@ get_cog <- function(obj, newdata = NULL, bias_correct = FALSE, level = 0.95,
   area_missing <- missing(area)
   obj <- .prepare_index_input(obj, newdata, offset, predict_args)
 
-  xy_cols <- obj$fit_obj$spde$xy_cols
-  if (all(xy_cols %in% names(obj$data))) {
+  is_fit_obj <- inherits(obj, "sdmTMB")
+  fit_obj <- if (is_fit_obj) obj else obj$fit_obj
+  pred_tmb_data <- if (is_fit_obj) obj$tmb_data else obj$pred_tmb_data
+  xy_cols <- fit_obj$spde$xy_cols
+  if (is.null(xy_cols)) {
+    cli_abort("`get_cog()` requires x/y coordinates and isn't available for areal models.")
+  }
+  # for a bare `do_index = TRUE` fit, `obj$data` is the *observation* data, so
+  # coordinates must come from the stored prediction TMB data instead
+  if (!is_fit_obj && all(xy_cols %in% names(obj$data))) {
     x_vec <- obj$data[[xy_cols[[1]]]]
     y_vec <- obj$data[[xy_cols[[2]]]]
-  } else if (!is.null(obj$pred_tmb_data$proj_lon) &&
-             !is.null(obj$pred_tmb_data$proj_lat)) {
-    x_vec <- obj$pred_tmb_data$proj_lon
-    y_vec <- obj$pred_tmb_data$proj_lat
+  } else if (!is.null(pred_tmb_data$proj_lon) &&
+             !is.null(pred_tmb_data$proj_lat)) {
+    x_vec <- pred_tmb_data$proj_lon
+    y_vec <- pred_tmb_data$proj_lat
   } else {
     cli_abort("Prediction data must include the x/y columns used for the model.")
   }
@@ -423,7 +431,7 @@ get_cog <- function(obj, newdata = NULL, bias_correct = FALSE, level = 0.95,
     y <- d[d$coord == "Y", c("est", "lwr", "upr", "se"),drop=FALSE]
     names(x) <- paste0(names(x), "_", "x")
     names(y) <- paste0(names(y), "_", "y")
-    d <- cbind(d[d$coord == "X", obj$fit_obj$time, drop=FALSE], cbind(x, y))
+    d <- cbind(d[d$coord == "X", fit_obj$time, drop=FALSE], cbind(x, y))
   }
   d$type <- "cog"
   d
@@ -498,10 +506,15 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
   reinitialize(obj$fit_obj)
 
   is_fit_obj <- inherits(obj, "sdmTMB")
+  # `do_index = TRUE` fits precompute only the index totals
+  # (`calc_index_totals`) with the fit-time `area`; other derived quantities
+  # and explicit `area` overrides must rebuild the objective function or the
+  # requested values are missing from (or wrong in) the stored sdreport
   use_precomputed <- is_fit_obj &&
     isTRUE(obj$do_index) &&
-    value_name[[1]] %in% c("link_total", "weighted_avg", "log_eao") &&
-    is.null(derived_link)
+    value_name[[1]] == "link_total" &&
+    is.null(derived_link) &&
+    isTRUE(area_missing)
   rebuild_from_fit <- is_fit_obj &&
     value_name[[1]] %in% c("link_total", "weighted_avg", "log_eao") &&
     !use_precomputed
@@ -564,19 +577,19 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     eps_name <- "eps_index" # FIXME break out into function; add for COG?
     pars[[eps_name]] <- numeric(0)
 
-    new_obj <- TMB::MakeADFun(
+    new_obj <- make_sdmTMB_adfun(
       data = tmb_data,
       parameters = pars,
       profile = obj$fit_obj$control$profile,
       map = obj$fit_obj$tmb_map,
       random = obj$fit_obj$tmb_random,
-      DLL = "sdmTMB",
+      backend = backend_sdmTMB(obj$fit_obj),
       silent = silent
     )
 
     old_par <- obj$fit_obj$model$par
     bc <- FALSE ## done below
-    sr <- TMB::sdreport(new_obj, par.fixed = old_par, bias.correct = bc, ...)
+    sr <- sdreport_sdmTMB(new_obj, par.fixed = old_par, bias.correct = bc, ...)
   } else if (rebuild_from_fit) {
     reinitialize(obj)
     if (bias_correct && obj$control$parallel > 1) {
@@ -620,19 +633,19 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     eps_name <- "eps_index"
     pars[[eps_name]] <- numeric(0)
 
-    new_obj <- TMB::MakeADFun(
+    new_obj <- make_sdmTMB_adfun(
       data = tmb_data,
       parameters = pars,
       profile = obj$control$profile,
       map = obj$tmb_map,
       random = obj$tmb_random,
-      DLL = "sdmTMB",
+      backend = backend_sdmTMB(obj),
       silent = silent
     )
 
     old_par <- obj$model$par
     bc <- FALSE
-    sr <- TMB::sdreport(new_obj, par.fixed = old_par, bias.correct = bc, ...)
+    sr <- sdreport_sdmTMB(new_obj, par.fixed = old_par, bias.correct = bc, ...)
     obj <- list(fit_obj = obj)
   } else {
     sr <- obj$sd_report # already done in sdmTMB(do_index = TRUE)
@@ -656,13 +669,13 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     new_values <- rep(0, .n)
     names(new_values) <- rep(eps_name, length(new_values))
     fixed <- c(obj$fit_obj$model$par, new_values)
-    new_obj2 <- TMB::MakeADFun(
+    new_obj2 <- make_sdmTMB_adfun(
       data = tmb_data,
       parameters = pars,
       map = obj$fit_obj$tmb_map,
       profile = obj$fit_obj$control$profile,
       random = obj$fit_obj$tmb_random,
-      DLL = "sdmTMB",
+      backend = backend_sdmTMB(obj$fit_obj),
       silent = silent,
       intern = FALSE, # tested as faster for most models
       inner.control = list(sparse = TRUE, lowrank = TRUE, trace = FALSE)

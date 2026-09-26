@@ -29,9 +29,24 @@ test_that("nonlocal_data can supply missing temporal slices", {
   skip_on_ci()
 
   dat <- make_nl_grid_data()
-  mesh <- make_nl_grid_mesh(dat)
   dat_irregular <- dat[dat$year != 3, , drop = FALSE]
+  mesh <- make_nl_grid_mesh(dat_irregular)
   grid <- make_nl_dense_grid(sort(unique(dat$year)), mesh)
+
+  expect_error(
+    sdmTMB(
+      y ~ x1,
+      data = dat_irregular,
+      mesh = make_nl_grid_mesh(dat),
+      time = "year",
+      spatial = "off",
+      spatiotemporal = "off",
+      nonlocal_formula = ~ time_lag(x1),
+      nonlocal_data = grid,
+      extra_time = 3
+    ),
+    regexp = "does not match"
+  )
 
   expect_error(
     sdmTMB(

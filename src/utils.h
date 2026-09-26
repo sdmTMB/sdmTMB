@@ -69,10 +69,10 @@ Type dordbeta(Type y, Type eta, Type mu, Type phi, Type psi0, Type psi1,
 // Simulate one ordered beta draw given linear predictor and parameters.
 template<class Type>
 Type rordbeta(Type eta, Type mu, Type phi, Type psi0, Type psi1) {
-  Type p0 = invlogit(psi0 - eta);
-  if (runif(Type(0), Type(1)) < p0) return Type(0);
-  Type p1 = invlogit(eta - psi1);
-  if (runif(Type(0), Type(1)) < p1) return Type(1);
+  // One uniform selects the component: P(0) = p0, P(1) = p1.
+  Type u = runif(Type(0), Type(1));
+  if (u < invlogit(psi0 - eta)) return Type(0);
+  if (u > Type(1) - invlogit(eta - psi1)) return Type(1);
   Type s1 = mu * phi;
   Type s2 = (Type(1) - mu) * phi;
   return rbeta(s1, s2);
@@ -95,85 +95,90 @@ Type rgengamma( Type mean,
   return exp(y);
 }
 
-template <class Type>
-Type ppois_log(Type x, Type lambda) {
-  return atomic::Rmath::Rf_ppois(asDouble(x), asDouble(lambda), true, true);
+extern "C" {
+  /* Rmath entry points (Writing R Extensions: 'Numerical analysis subroutines') */
+  double Rf_dpois(double x, double lambda, int give_log);
+  double Rf_logspace_sub(double logx, double logy);
 }
 
-template <class Type>
-Type dcenspois_right(Type x, Type lambda, int give_log = 0) {
-  Type ll;
-  ll = ppois_log(x-Type(1.0), lambda); // F(lower-1)
-  ll = logspace_sub(Type(0.0), ll); // 1 - F(lower-1)
-  if (give_log)
-    return ll;
-  else
-    return exp(ll);
-}
-
-template <class Type>
-Type dcenspois_right_truncated(Type x, Type lambda, Type upr, int give_log = 0) {
-  Type ll;
-  ll = ppois_log(upr, lambda); // F(upr)
-  if (x > Type(0.0)) {
-    Type temp = ppois_log(x-Type(1.0), lambda);
-    ll = logspace_sub(ll, temp); // F(upr) - F(lwr-1) iff x>0
+// log P(L <= Y <= U) for Y ~ Poisson(lambda) with fixed integer bounds;
+// `U = Inf` is right censoring. Values are computed on the log scale from the
+// tail that avoids cancellation. The branches depend on `lambda` but run only
+// in the double-valued atomic below, which is evaluated anew at every lambda.
+inline double censpois_logprob(double lambda, double L, double U) {
+  using atomic::Rmath::Rf_ppois;
+  if (!std::isfinite(U)) {
+    if (L <= 0) return 0.0;
+    return Rf_ppois(L - 1, lambda, 0, 1); // log P(Y > L - 1)
   }
-  if (give_log)
-    return ll;
-  else
-    return exp(ll);
+  if (L <= 0) return Rf_ppois(U, lambda, 1, 1);
+  double ans = R_NegInf;
+  if (U - L > 64) {
+    if (lambda < L) { // mass above the interval: difference of upper tails
+      ans = Rf_logspace_sub(Rf_ppois(L - 1, lambda, 0, 1),
+        Rf_ppois(U, lambda, 0, 1));
+    } else if (lambda > U) { // mass below: difference of lower CDFs
+      ans = Rf_logspace_sub(Rf_ppois(U, lambda, 1, 1),
+        Rf_ppois(L - 1, lambda, 1, 1));
+    } else { // lambda inside: 1 minus both tails
+      ans = log1p(-(exp(Rf_ppois(L - 1, lambda, 1, 1)) +
+        exp(Rf_ppois(U, lambda, 0, 1))));
+    }
+  }
+  if (!std::isfinite(ans)) { // narrow interval (or fallback): sum the PMF
+    ans = Rf_dpois(L, lambda, 1);
+    for (double k = L + 1; k <= U; k++)
+      ans = logspace_add(ans, Rf_dpois(k, lambda, 1));
+  }
+  return ans;
 }
 
+// Atomic with inputs (lambda, L, U); the bounds are data. Using the value y,
+// d y / d lambda = [p(L - 1) - p(U)] / P = exp(log p(L - 1) - y) -
+// exp(log p(U) - y), with the terms omitted for L = 0 or U = Inf. The rule
+// is written with AD types so higher-order derivatives work.
+TMB_ATOMIC_VECTOR_FUNCTION(
+  censpois_logprob
+  ,
+  1
+  ,
+  ty[0] = censpois_logprob(tx[0], tx[1], tx[2]);
+  ,
+  Type lambda = tx[0];
+  double L = asDouble(tx[1]);
+  double U = asDouble(tx[2]);
+  Type d = Type(0);
+  if (L > 0) d += exp(dpois(Type(L - 1), lambda, true) - ty[0]);
+  if (std::isfinite(U)) d -= exp(dpois(Type(U), lambda, true) - ty[0]);
+  px[0] = d * py[0];
+  px[1] = Type(0);
+  px[2] = Type(0);
+)
+
+template <class Type>
+Type censpois_logprob(Type lambda, Type L, Type U) {
+  CppAD::vector<Type> tx(3);
+  tx[0] = lambda;
+  tx[1] = L;
+  tx[2] = U;
+  return censpois_logprob(tx)[0];
+}
+
+// Right-censored (`upr` NA: count >= x), interval-censored
+// (x <= count <= upr), or exact (upr == x) Poisson.
 template <class Type>
 Type dcenspois2(Type x, Type lambda, Type upr, int give_log = 0) {
   Type ll;
-  if (isNA(upr)) { // full right censored
-    if (x == Type(0.0)) {
-      ll = Type(0.0);
-    } else {
-      ll = dcenspois_right(x, lambda, true);
-    }
-  } else if (upr > x) { // upper truncated right censored
-    ll = dcenspois_right_truncated(x, lambda, upr, true);
-  } else if (x == upr) { // not censored
-    ll = dpois(Type(x), lambda, true);
+  if (!isNA(upr) && upr == x) {
+    ll = dpois(x, lambda, true);
+  } else {
+    ll = censpois_logprob(lambda, x, isNA(upr) ? Type(R_PosInf) : upr);
   }
   if (give_log) {
     return ll;
   } else {
     return exp(ll);
   }
-}
-
-template <class Type>
-Type dcenspois(Type x, Type lambda, Type lwr, Type upr, int give_log = 0)
-{
-  // Should not do the obvious route due to numerical issues
-  // tmp_ll = log(ppois(UPPER_i(i), mu_i(i), true) - ppois(LOWER_i(i)-1, mu_i, true));
-  Type tmp_ll;
-  if (lwr == upr) {  // no censorship
-    tmp_ll = dpois(Type(lwr), lambda, true);
-  } else {
-    if (isNA(upr)) {  // right censored
-      if (lwr == Type(0)) {
-        tmp_ll = 0.0;
-      }
-      if (lwr > Type(0)) {
-        tmp_ll = log(ppois(Type(lwr-1.0), lambda)); // F(lower-1)
-        tmp_ll = logspace_sub(Type(0), tmp_ll);  // 1 - F(lower-1)
-      }
-    } else { // right censored with upper limit
-      tmp_ll = log(ppois(Type(upr), lambda)); // F(upr)
-      if (lwr > Type(0)) {
-        tmp_ll = logspace_sub(tmp_ll, log(ppois(Type(lwr-1.0), lambda))); // F(upr) - F(lwr-1) iff lwr>0
-      }
-    }
-  }
-  if (give_log)
-    return tmp_ll;
-  else
-    return exp(tmp_ll);
 }
 
 template <class Type>
@@ -364,13 +369,7 @@ Type linear_threshold(Type x, Type slope, Type cutpoint) {
   // linear threshold model. relationship linear up to a point then constant
   // keep all parameters unconstrained - slope and scale can be neg/pos,
   // as can cutpoint if covariate is scaled ~ N(0,1).
-  Type pred;
-  if (x < cutpoint) {
-    pred = x * slope;
-  } else {
-    pred = cutpoint * slope;
-  }
-  return pred;
+  return slope * CppAD::CondExpLt(x, cutpoint, x, cutpoint);
 }
 
 template <class Type>
@@ -480,6 +479,17 @@ Type devresid_tweedie( Type y,
   Type deviance = 2 * (c1 - c2 + c3 );
   Type devresid = sign( y - mu ) * pow( deviance, 0.5 );
   return devresid;
+}
+
+// Binomial deviance residual for y successes out of `size` trials.
+template<class Type>
+Type devresid_binomial(Type y, Type size, Type logit_p) {
+  Type log_p = -logspace_add(Type(0), -logit_p);
+  Type log_one_minus_p = -logspace_add(Type(0), logit_p);
+  Type deviance = 0;
+  if (y > 0) deviance += y * (log(y / size) - log_p);
+  if (y < size) deviance += (size - y) * (log((size - y) / size) - log_one_minus_p);
+  return sign(y - size * exp(log_p)) * pow(Type(2) * deviance, 0.5);
 }
 
 // From tinyVAST:

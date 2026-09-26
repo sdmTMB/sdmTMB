@@ -37,23 +37,30 @@ test_that("lower and upper work", {
   expect_equal(m$model$par[[2]], -0.45, tolerance = 1e-6)
 })
 
-test_that("covariate diffusion temporal raw parameter has a default lower bound", {
-  obj <- list(par = c(kappaT_nl_raw = -0.5, kappaT_nl_raw = 0.2, b_j = 1))
+test_that("covariate diffusion spatial scale has default bounds from the mesh", {
+  mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 20)
+  obj <- list(par = c(log_kappaS_nl = 0, log_kappaS_nl = 0, b_j = 1))
+  bounds <- .nonlocal_log_kappaS_bounds(mesh$mesh)
+  pick <- function(x) unname(x[names(x) == "log_kappaS_nl"])
+
+  loc <- mesh$mesh$loc[, 1:2]
+  tv <- mesh$mesh$graph$tv
+  edges <- rbind(tv[, 1:2], tv[, 2:3], tv[, c(3, 1)])
+  min_edge <- min(sqrt(rowSums((loc[edges[, 1], ] - loc[edges[, 2], ])^2)))
+  diagonal <- sqrt(sum(apply(loc, 2, function(x) diff(range(x)))^2))
+  # RMSDK = 2 / kappaS_nl
+  expect_equal(2 / exp(bounds), c(10 * diagonal, 0.5 * min_edge))
+
+  lim <- set_limits(obj, lower = list(), upper = list(), mesh = mesh$mesh)
+  expect_equal(pick(lim$lower), rep(bounds[[1]], 2L))
+  expect_equal(pick(lim$upper), rep(bounds[[2]], 2L))
+  expect_equal(unname(lim$lower["b_j"]), -Inf)
+
+  lim <- set_limits(obj, lower = list(log_kappaS_nl = -1), upper = list(),
+    mesh = mesh$mesh)
+  expect_equal(pick(lim$lower), rep(-1, 2L))
+  expect_equal(pick(lim$upper), rep(bounds[[2]], 2L))
 
   lim <- set_limits(obj, lower = list(), upper = list())
-  expect_equal(unname(lim$lower[names(lim$lower) == "kappaT_nl_raw"]), rep(0, 2L))
-  expect_true(all(is.infinite(lim$upper[names(lim$upper) == "kappaT_nl_raw"])))
-
-  lim_override <- set_limits(obj, lower = list(kappaT_nl_raw = 0.1), upper = list(kappaT_nl_raw = 2))
-  expect_equal(unname(lim_override$lower[names(lim_override$lower) == "kappaT_nl_raw"]), rep(0.1, 2L))
-  expect_equal(unname(lim_override$upper[names(lim_override$upper) == "kappaT_nl_raw"]), rep(2, 2L))
-
-  expect_error(
-    set_limits(obj, lower = list(kappaT_nl_raw = -0.1), upper = list()),
-    "must contain finite, non-negative values"
-  )
-  expect_error(
-    set_limits(obj, lower = list(), upper = list(kappaT_nl_raw = -0.1)),
-    "must contain non-negative values"
-  )
+  expect_true(all(is.infinite(pick(lim$lower))))
 })

@@ -400,7 +400,7 @@ test_that("plot_nonlocal_covariate can plot combined fitted transforms", {
     nonlocal_formula = ~ diffusion(x1) + time_lag(x1),
     nonlocal_data = grid,
     control = sdmTMBcontrol(
-      start = list(kappaT_nl_raw = 0.25)
+      start = list(log_kappaT_nl = log(0.25))
     ),
     do_fit = FALSE
   )

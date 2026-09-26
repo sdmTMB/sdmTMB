@@ -415,7 +415,6 @@ Type objective_function<Type>::operator()()
   // optional model for nonstationary st variance
   DATA_INTEGER(est_epsilon_model);
   DATA_INTEGER(est_epsilon_slope);
-  DATA_INTEGER(est_epsilon_re);
   DATA_VECTOR(epsilon_predictor);
 
   // optional stuff for penalized regression splines
@@ -444,7 +443,7 @@ Type objective_function<Type>::operator()()
   PARAMETER_VECTOR(ln_tau_E);    // spatio-temporal process
   PARAMETER_ARRAY(ln_kappa);    // Matern parameter
   PARAMETER_VECTOR(log_kappaS_nl);    // covariate diffusion spatial scale
-  PARAMETER_VECTOR(kappaT_nl_raw);    // covariate diffusion temporal scale
+  PARAMETER_VECTOR(log_kappaT_nl);    // covariate diffusion temporal scale
 
   // Preferential-sampling sub-model parameters. All are length 0 when the
   // feature is off (preferential.n_pref == 0); `gamma_0`/`ln_tau_xi`/
@@ -480,8 +479,6 @@ Type objective_function<Type>::operator()()
   PARAMETER_ARRAY(epsilon_st);  // spatio-temporal effects; n_s by n_t by n_m array
   PARAMETER_ARRAY(b_threshold);  // coefficients for threshold relationship (3) // DELTA TODO
   PARAMETER_VECTOR(b_epsilon); // slope coefficient for log-linear model on epsilon
-  PARAMETER_VECTOR(ln_epsilon_re_sigma);
-  PARAMETER_ARRAY(epsilon_re);
   PARAMETER_ARRAY(b_smooth);  // P-spline smooth parameters
   PARAMETER_ARRAY(ln_smooth_sigma);  // variances of spline REs if included
 
@@ -587,7 +584,7 @@ Type objective_function<Type>::operator()()
   // Covariate diffusion
   // Transform distributed-lag parameters onto the scales used by the solvers
   if (log_kappaS_nl.size() != covariate_diffusion.n_covariates ||
-      kappaT_nl_raw.size() != covariate_diffusion.n_covariates) {
+      log_kappaT_nl.size() != covariate_diffusion.n_covariates) {
     error("Nonlocal parameter vectors must have length `covariate_diffusion.n_covariates`.");
   }
   vector<Type> kappaS_nl_by_covariate(covariate_diffusion.n_covariates);
@@ -599,7 +596,7 @@ Type objective_function<Type>::operator()()
       kappaS_nl_by_covariate(cov_i) = exp(log_kappaS_nl(cov_i));
     }
     if (covariate_diffusion.has(cov_i, sdmTMB::nl_time) == 1) {
-      kappaT_nl_by_covariate(cov_i) = kappaT_nl_raw(cov_i);
+      kappaT_nl_by_covariate(cov_i) = exp(log_kappaT_nl(cov_i));
     }
   }
 
@@ -690,17 +687,9 @@ Type objective_function<Type>::operator()()
       Type log_epsilon_intcpt = log(epsilon_intcpt);
       Type log_epsilon_temp = 0.0;
       Type epsilon_cnst = - log(Type(4.0) * M_PI) / Type(2.0) - ln_kappa(1,m);
-      if (est_epsilon_re) {
-        Type epsilon_re_sigma = exp(ln_epsilon_re_sigma(m));
-        for (int i = 0; i < n_t; i++) {
-          jnll -= dnorm(epsilon_re(i,m), Type(0), Type(epsilon_re_sigma), true);
-        }
-      }
-
       for(int i = 0; i < n_t; i++) {
         log_epsilon_temp = log_epsilon_intcpt;
         if (est_epsilon_slope) log_epsilon_temp += b_epsilon(m) * epsilon_predictor(i);
-        if (est_epsilon_re) log_epsilon_temp += epsilon_re(i,m);
         sigma_E(i,m) = exp(log_epsilon_temp); // log-linear model
         if (spatial_model == 0) {
           ln_tau_E_vec(i,m) = -log_epsilon_temp + epsilon_cnst;
@@ -892,7 +881,6 @@ Type objective_function<Type>::operator()()
               }
             }
           }
-          ADREPORT(rho);
         } else if (rw_fields(m)) {
           Type rw_scale_0 = barrier ?
             sdmTMB::barrier_scaling_factor(ln_tau_E_vec(0,m), ln_kappa(1,m)) :
@@ -926,6 +914,11 @@ Type objective_function<Type>::operator()()
       }
     }
   }
+  bool has_ar1_field = false;
+  for (int m = 0; m < n_m; m++) {
+    if (!spatial_only(m) && ar1_fields(m)) has_ar1_field = true;
+  }
+  if (has_ar1_field) ADREPORT(rho);
   if (flag == 0) return jnll;
 
   // ------------------ Probability of random effects --------------------------
@@ -1090,6 +1083,7 @@ Type objective_function<Type>::operator()()
       n_t,
       covariate_diffusion.term_component,
       covariate_diffusion.term_covariate,
+      covariate_diffusion.term_start,
       covariate_diffusion.covariate_vertex_time,
       A_st,
       A_spatial_index,
@@ -1272,8 +1266,8 @@ Type objective_function<Type>::operator()()
       if (random_walk == 1 || ar1_time || random_walk == 2) {
         for (int k = 0; k < X_rw_ik.cols(); k++) {
           eta_rw_i(i,m) += X_rw_ik(i, k) * b_rw_t(year_i(i), k, m); // record it
-          eta_i(i,m) += eta_rw_i(i,m);
         }
+        eta_i(i,m) += eta_rw_i(i,m);
       }
 
       // Spatially varying effects:
@@ -1414,8 +1408,7 @@ Type objective_function<Type>::operator()()
             } else {
               if (notNA) tmp_ll = dbinom_robust(y_i(i,m), size(i), mu_i(i,m), true);
               if (sim_obs) SIMULATE{y_i(i,m) = rbinom(size(i), invlogit(mu_i(i,m)));} // hardcoded invlogit b/c mu_i in logit space
-              if (notNA) devresid(i,m) = sdmTMB::sign(y_i(i,m) - invlogit(mu_i(i,m))) *
-                pow(-2.*((1-y_i(i,m))*log(1.-invlogit(mu_i(i,m))) + y_i(i,m)*log(invlogit(mu_i(i,m)))), 0.5);
+              if (notNA) devresid(i,m) = sdmTMB::devresid_binomial(y_i(i,m), size(i), mu_i(i,m));
             }
             break;
           }
@@ -1664,12 +1657,10 @@ Type objective_function<Type>::operator()()
     }
     if (priors_sigma_V.rows() != sigma_V.rows())
       error("sigma_V prior dimensions are incorrect");
-    for (int m = 0; m < n_m; m++) {
-      for (int v = 0; v < sigma_V.rows(); v++) {
-        if (!sdmTMB::isNA(priors_sigma_V(v,0)) && !sdmTMB::isNA(priors_sigma_V(v,1))) {
-          jnll -= dgamma(sigma_V(v,m), priors_sigma_V(v,0), priors_sigma_V(v,1), true);
-          if (stan_flag) jnll -= log(sigma_V(v,m)); // Jacobian adjustment
-        }
+    for (int v = 0; v < sigma_V.rows(); v++) {
+      if (!sdmTMB::isNA(priors_sigma_V(v,0)) && !sdmTMB::isNA(priors_sigma_V(v,1))) {
+        jnll -= dgamma(sigma_V(v,m), priors_sigma_V(v,0), priors_sigma_V(v,1), true);
+        if (stan_flag) jnll -= log(sigma_V(v,m)); // Jacobian adjustment
       }
     }
   }
@@ -1748,6 +1739,7 @@ Type objective_function<Type>::operator()()
         n_t,
         covariate_diffusion.term_component,
         covariate_diffusion.term_covariate,
+        covariate_diffusion.term_start,
         covariate_diffusion.proj_covariate_vertex_time,
         proj_mesh,
         proj_spatial_index,
@@ -1844,8 +1836,8 @@ Type objective_function<Type>::operator()()
         for (int i = 0; i < proj_X_rw_ik.rows(); i++) {
           for (int k = 0; k < proj_X_rw_ik.cols(); k++) {
             proj_rw_i(i,m) += proj_X_rw_ik(i, k) * b_rw_t(proj_year(i), k, m);
-            proj_fe(i,m) += proj_rw_i(i,m);
           }
+          proj_fe(i,m) += proj_rw_i(i,m);
         }
       }
     }
@@ -2111,10 +2103,6 @@ Type objective_function<Type>::operator()()
      REPORT(b_epsilon);
      ADREPORT(b_epsilon);
    }
-  if (est_epsilon_re) {
-    REPORT(ln_epsilon_re_sigma);
-    ADREPORT(ln_epsilon_re_sigma);
-  }
 
   //  // ------------------ Reporting ----------------------------------------------
   // FIXME save memory by not reporting all these or optionally so for MVN/Bayes?

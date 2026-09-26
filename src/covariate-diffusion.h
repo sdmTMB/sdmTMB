@@ -10,6 +10,7 @@ struct covariate_diffusion_data_t {
   tmbutils::array<Type> proj_covariate_vertex_time;
   vector<int> term_component;
   vector<int> term_covariate;
+  vector<int> term_start; // CovariateDiffusionStart per term
   matrix<int> has; // [n_covariates x 2], cols = {space, time}
 
   covariate_diffusion_data_t(SEXP x) {
@@ -21,6 +22,7 @@ struct covariate_diffusion_data_t {
       tmbutils::asArray<Type>(getListElement(x, "proj_covariate_vertex_time"));
     term_component = asVector<int>(getListElement(x, "term_component"));
     term_covariate = asVector<int>(getListElement(x, "term_covariate"));
+    term_start = asVector<int>(getListElement(x, "term_start"));
     has.resize(n_covariates, 2);
     has.setZero();
     for (int t = 0; t < n_terms; t++) {
@@ -43,6 +45,7 @@ struct CovariateDiffusionContext {
   int n_t;
   const vector<int>& term_component;
   const vector<int>& term_covariate;
+  const vector<int>& term_start;
   tmbutils::array<Type>& covariate_vertex_time;
   const Eigen::SparseMatrix<Type>& A_st;
   const vector<int>& A_spatial_index;
@@ -59,6 +62,16 @@ enum CovariateDiffusionComponent {
   nl_space = 0,
   nl_time = 1,
   nl_joint = 2
+};
+
+// Transformed state before the first time slice. `nl_start_zero` sets it to 0
+// (Thorson et al. 2026). `nl_start_stationary` assumes the covariate held at
+// its first slice x_1 beforehand, so the state is the recursion's fixed point:
+// x_1 for a time lag, or the spatial diffusion of x_1 for the joint operator.
+// Only the stationary start makes z shift by c when x shifts by c.
+enum CovariateDiffusionStart {
+  nl_start_zero = 0,
+  nl_start_stationary = 1
 };
 
 inline bool nl_is_valid_component(int component) {
@@ -86,11 +99,14 @@ bool nl_solve_transformed_vertex_time(
     const Eigen::SparseMatrix<Type>& M1_nl,
     Type kappaS_scale,
     Type kappaT_nl,
+    int start,
     bool has_system_solver,
-    Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> >& lu_system,
+    Eigen::SimplicialLDLT< Eigen::SparseMatrix<Type> >& lu_system,
+    Eigen::SimplicialLDLT< Eigen::SparseMatrix<Type> >& lu_space,
     Eigen::Matrix<Type, Eigen::Dynamic, Eigen::Dynamic>& transformed_vertex_time) {
   transformed_vertex_time.setZero();
   if (!nl_is_valid_component(component)) return false;
+  bool stationary = start == nl_start_stationary;
 
   if (component == nl_space) {
     if (!has_system_solver || lu_system.info() != Eigen::Success) return false;
@@ -106,13 +122,12 @@ bool nl_solve_transformed_vertex_time(
 
   if (component == nl_time) {
     Type denom = Type(1.0) + kappaT_nl;
-    for (int v = 0; v < n_vertices; v++) {
-      transformed_vertex_time(v, 0) = covariate_vertex_time(v, 0, cov_i) / denom;
-    }
-    for (int t = 1; t < n_t; t++) {
+    for (int t = 0; t < n_t; t++) {
       for (int v = 0; v < n_vertices; v++) {
+        Type previous = t > 0 ? transformed_vertex_time(v, t - 1) :
+          (stationary ? covariate_vertex_time(v, 0, cov_i) : Type(0.0));
         transformed_vertex_time(v, t) =
-          (covariate_vertex_time(v, t, cov_i) + kappaT_nl * transformed_vertex_time(v, t - 1)) / denom;
+          (covariate_vertex_time(v, t, cov_i) + kappaT_nl * previous) / denom;
       }
     }
     return true;
@@ -120,13 +135,21 @@ bool nl_solve_transformed_vertex_time(
 
   if (component == nl_joint) {
     if (!has_system_solver || lu_system.info() != Eigen::Success) return false;
+    Eigen::Matrix<Type, Eigen::Dynamic, 1> previous =
+      Eigen::Matrix<Type, Eigen::Dynamic, 1>::Zero(n_vertices);
+    if (stationary) {
+      if (lu_space.info() != Eigen::Success) return false;
+      previous = lu_space.solve(
+        M0_nl * nl_get_covariate_col(covariate_vertex_time, cov_i, 0, n_vertices));
+      if (lu_space.info() != Eigen::Success) return false;
+    }
     for (int t = 0; t < n_t; t++) {
       Eigen::Matrix<Type, Eigen::Dynamic, 1> rhs =
         M0_nl * nl_get_covariate_col(covariate_vertex_time, cov_i, t, n_vertices);
-      if (t > 0) rhs += kappaT_nl * M0_nl * transformed_vertex_time.col(t - 1);
-      Eigen::Matrix<Type, Eigen::Dynamic, 1> solved = lu_system.solve(rhs);
+      if (t > 0 || stationary) rhs += kappaT_nl * M0_nl * previous;
+      previous = lu_system.solve(rhs);
       if (lu_system.info() != Eigen::Success) return false;
-      transformed_vertex_time.col(t) = solved;
+      transformed_vertex_time.col(t) = previous;
     }
     return true;
   }
@@ -168,7 +191,6 @@ void add_covariate_diffusion_to_eta_fixed(
       ctx.kappaT_by_covariate.size() != ctx.n_covariates) {
     error("Nonlocal parameter length mismatch with n_covariates.");
   }
-
   int n_vertices_nl = ctx.covariate_vertex_time.dim[0];
   int n_t_nl = ctx.covariate_vertex_time.dim[1];
 
@@ -176,6 +198,7 @@ void add_covariate_diffusion_to_eta_fixed(
   std::vector<int> cov_needs_spatial_scale(ctx.n_covariates, 0);
   std::vector<int> cov_needs_system_solver(ctx.n_covariates, 0);
   std::vector<int> cov_uses_joint_system(ctx.n_covariates, 0);
+  std::vector<int> cov_needs_space_solver(ctx.n_covariates, 0);
   for (int term = 0; term < ctx.n_terms; term++) {
     int component = ctx.term_component(term);
     int cov_i = ctx.term_covariate(term);
@@ -190,6 +213,10 @@ void add_covariate_diffusion_to_eta_fixed(
       cov_needs_system_solver[cov_i] = 1;
       if (component == nl_joint) cov_uses_joint_system[cov_i] = 1;
     }
+    // The joint operator's stationary start diffuses x_1 spatially first
+    if (component == nl_joint && ctx.term_start(term) == nl_start_stationary) {
+      cov_needs_space_solver[cov_i] = 1;
+    }
   }
 
   // Compute per-covariate derived scales
@@ -201,9 +228,14 @@ void add_covariate_diffusion_to_eta_fixed(
     }
   }
 
-  // Factorize each spatial or joint system once per covariate
-  std::vector< Eigen::SparseLU< Eigen::SparseMatrix<Type>, Eigen::COLAMDOrdering<int> > >
-    lu_system_by_covariate(ctx.n_covariates);
+  // Factorize each spatial or joint system once per covariate. `system` below
+  // (temporal_scale * M0 + kappaS_scale * M1) is a positive combination of the
+  // SPD SPDE mass/stiffness matrices and is therefore itself SPD, so a sparse
+  // Cholesky (LDLT) factorization is used rather than a general LU: it is
+  // faster and, unlike a non-symmetric LU with column-only (COLAMD) pivoting,
+  // uses numerically stable symmetric pivoting for this system.
+  std::vector< Eigen::SimplicialLDLT< Eigen::SparseMatrix<Type> > >
+    lu_system_by_covariate(ctx.n_covariates), lu_space_by_covariate(ctx.n_covariates);
   for (int cov_i = 0; cov_i < ctx.n_covariates; cov_i++) {
     if (!cov_needs_system_solver[cov_i]) continue;
     Type temporal_scale = cov_uses_joint_system[cov_i] == 1 ?
@@ -212,6 +244,12 @@ void add_covariate_diffusion_to_eta_fixed(
     lu_system_by_covariate[cov_i].compute(system);
     if (lu_system_by_covariate[cov_i].info() != Eigen::Success) {
       error("Nonlocal sparse solve failed while factorizing a spatial or joint system.");
+    }
+    if (!cov_needs_space_solver[cov_i]) continue;
+    Eigen::SparseMatrix<Type> space_system = ctx.M0 + kappaS_scale(cov_i) * ctx.M1;
+    lu_space_by_covariate[cov_i].compute(space_system);
+    if (lu_space_by_covariate[cov_i].info() != Eigen::Success) {
+      error("Nonlocal sparse solve failed while factorizing the stationary start system.");
     }
   }
 
@@ -231,8 +269,10 @@ void add_covariate_diffusion_to_eta_fixed(
       ctx.M1,
       kappaS_scale(cov_i),
       ctx.kappaT_by_covariate(cov_i),
+      ctx.term_start(term),
       cov_needs_system_solver[cov_i] == 1,
       lu_system_by_covariate[cov_i],
+      lu_space_by_covariate[cov_i],
       transformed_vertex_time
     );
     if (!solved) {

@@ -616,6 +616,24 @@ test_that("minimal areal do_fit FALSE model builds TMB object", {
   expect_true("logit_rho_sar" %in% names(fit$tmb_obj$par))
 })
 
+test_that("get_cog() errors for areal models", {
+  skip_if_not_installed("TMB")
+
+  smoke <- build_areal_smoke_domain()
+  smoke$data$year <- rep(1:2, 6)
+  fit <- sdmTMB(
+    y ~ 1,
+    data = smoke$data,
+    mesh = smoke$domain,
+    time = "year",
+    spatial_model = "sar",
+    spatiotemporal = "off",
+    family = gaussian(),
+    silent = TRUE
+  )
+  expect_error(get_cog(fit, newdata = smoke$data), "areal")
+})
+
 test_that("areal domains require explicit SAR or CAR spatial_model", {
   skip_if_not_installed("TMB")
 

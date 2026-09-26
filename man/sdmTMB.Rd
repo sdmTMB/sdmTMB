@@ -46,7 +46,10 @@ representing groups. Penalized splines are possible via \pkg{mgcv} with
 \code{s()}. Optionally a list for delta (hurdle) models.  See
 examples and details below.}
 
-\item{data}{A data frame.}
+\item{data}{A data frame. Rows with missing values in the response or any
+variable the model uses (including \code{weights} and \code{offset}) are omitted
+before fitting, as with \code{na.action = na.omit} in \code{\link[stats:glm]{stats::glm()}}. The
+rows used are stored in the returned object as \code{data}.}
 
 \item{mesh}{An object from \code{\link[=make_mesh]{make_mesh()}} for \code{spatial_model = "spde"} or
 from \code{\link[=make_areal_domain]{make_areal_domain()}} for \code{"sar"} or \code{"car"}.}
@@ -162,7 +165,11 @@ lag terms with \code{diffusion()} or \code{time_lag()} wrappers.
 Example: \code{~ diffusion(x) + time_lag(x)}. When both wrappers use the same
 covariate, they select parts of one joint operator and produce one
 transformed predictor and coefficient. Different covariates produce
-separate transformed predictors and coefficients. Note that spatial-only
+separate transformed predictors and coefficients. \code{time_lag()} takes an
+optional \code{start} argument for the transformed state before the first time
+slice: \code{"stationary"} (default) assumes the covariate held at its first
+slice beforehand, and \code{"zero"} starts from zero as in Thorson et al.
+(2026), e.g. \code{~ time_lag(x, start = "zero")}. Note that spatial-only
 covariates will be held constant across time slices unless the \code{time}
 argument is specified. See the non-local covariates vignette for the
 MSDK and RMSDK definitions.

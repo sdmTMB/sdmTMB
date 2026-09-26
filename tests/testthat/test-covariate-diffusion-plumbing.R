@@ -38,11 +38,11 @@ test_that("covariate diffusion tmb_data includes safe defaults when feature is o
   expect_length(fit$tmb_data$covariate_diffusion$term_covariate, 0L)
   expect_null(fit$nonlocal_parsed)
 
-  expect_true(all(c("log_kappaS_nl", "kappaT_nl_raw") %in% names(fit$tmb_params)))
+  expect_true(all(c("log_kappaS_nl", "log_kappaT_nl") %in% names(fit$tmb_params)))
   expect_length(fit$tmb_params$log_kappaS_nl, 0L)
-  expect_length(fit$tmb_params$kappaT_nl_raw, 0L)
+  expect_length(fit$tmb_params$log_kappaT_nl, 0L)
   expect_equal(length(fit$tmb_map[["log_kappaS_nl", exact = TRUE]]), 0L)
-  expect_equal(length(fit$tmb_map[["kappaT_nl_raw", exact = TRUE]]), 0L)
+  expect_equal(length(fit$tmb_map[["log_kappaT_nl", exact = TRUE]]), 0L)
 })
 
 test_that("covariate diffusion coefficient slots are appended and lag parameters are length-aware", {
@@ -83,10 +83,10 @@ test_that("covariate diffusion coefficient slots are appended and lag parameters
 
   expect_null(fit$tmb_map[["b_j", exact = TRUE]])
   expect_length(fit$tmb_params$log_kappaS_nl, 2L)
-  expect_length(fit$tmb_params$kappaT_nl_raw, 2L)
-  expect_equal(fit$tmb_params$kappaT_nl_raw, c(1, 1))
+  expect_length(fit$tmb_params$log_kappaT_nl, 2L)
+  expect_equal(fit$tmb_params$log_kappaT_nl, c(0, 0))
   expect_equal(as.integer(fit$tmb_map$log_kappaS_nl), c(1L, NA_integer_))
-  expect_equal(as.integer(fit$tmb_map$kappaT_nl_raw), c(NA_integer_, 1L))
+  expect_equal(as.integer(fit$tmb_map$log_kappaT_nl), c(NA_integer_, 1L))
 })
 
 test_that("joint covariate diffusion slot is appended once to both delta components", {
@@ -156,57 +156,16 @@ test_that("covariate diffusion control names set start and map values", {
     nonlocal_formula = ~ diffusion(x2) + time_lag(x1),
     nonlocal_data = grid,
     control = sdmTMBcontrol(
-      start = list(log_kappaS_nl = c(0, 0.4), kappaT_nl_raw = c(0.2, 0.3)),
-      map = list(log_kappaS_nl = factor(c(NA, 1L)), kappaT_nl_raw = factor(c(1L, NA)))
+      start = list(log_kappaS_nl = c(0, 0.4), log_kappaT_nl = c(0.2, 0.3)),
+      map = list(log_kappaS_nl = factor(c(NA, 1L)), log_kappaT_nl = factor(c(1L, NA)))
     ),
     do_fit = FALSE
   )
 
   expect_equal(fit$tmb_params$log_kappaS_nl, c(0, 0.4))
-  expect_equal(fit$tmb_params$kappaT_nl_raw, c(0.2, 0.3))
+  expect_equal(fit$tmb_params$log_kappaT_nl, c(0.2, 0.3))
   expect_equal(as.integer(fit$tmb_map$log_kappaS_nl), c(NA_integer_, 1L))
-  expect_equal(as.integer(fit$tmb_map$kappaT_nl_raw), c(1L, NA_integer_))
-})
-
-test_that("temporal nonlocal starts must be non-negative", {
-  dat <- make_nl_plumbing_data()
-  mesh <- make_nl_plumbing_mesh(dat)
-  grid <- make_nl_plumbing_grid(mesh, sort(unique(dat$year)))
-
-  expect_error(
-    sdmTMB(
-      y ~ 1,
-      data = dat,
-      mesh = mesh,
-      time = "year",
-      spatial = "off",
-      spatiotemporal = "off",
-      nonlocal_formula = ~ time_lag(x1),
-      nonlocal_data = grid,
-      control = sdmTMBcontrol(
-        start = list(kappaT_nl_raw = -0.1)
-      ),
-      do_fit = FALSE
-    ),
-    "must be finite and non-negative"
-  )
-
-  fit_zero <- sdmTMB(
-    y ~ 1,
-    data = dat,
-    mesh = mesh,
-    time = "year",
-    spatial = "off",
-    spatiotemporal = "off",
-    nonlocal_formula = ~ time_lag(x1),
-    nonlocal_data = grid,
-    control = sdmTMBcontrol(
-      start = list(kappaT_nl_raw = 0),
-      map = list(kappaT_nl_raw = factor(NA))
-    ),
-    do_fit = FALSE
-  )
-  expect_equal(fit_zero$tmb_params$kappaT_nl_raw, 0)
+  expect_equal(as.integer(fit$tmb_map$log_kappaT_nl), c(1L, NA_integer_))
 })
 
 test_that("no-lag fit remains numerically identical with explicit nonlocal_formula = NULL", {
@@ -258,7 +217,11 @@ test_that("predict tmb_data keeps covariate diffusion columns aligned with b_j",
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x1) + time_lag(x2),
     nonlocal_data = grid,
-    control = sdmTMBcontrol(newton_loops = 0, getsd = FALSE)
+    # Fix kappaS_nl: it is not identified in this tiny data set.
+    control = sdmTMBcontrol(
+      newton_loops = 0, getsd = FALSE,
+      map = list(log_kappaS_nl = factor(c(NA, NA)))
+    )
   )
 
   td <- predict(fit, newdata = dat, return_tmb_data = TRUE)

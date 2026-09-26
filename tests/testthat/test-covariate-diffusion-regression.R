@@ -104,7 +104,8 @@ test_that("covariate diffusion regression estimates and logLik stay stable", {
     spatial = "off",
     spatiotemporal = "off",
     family = gaussian(),
-    nonlocal_formula = ~ time_lag(x_time),
+    # Values pinned from before the stationary start became the default
+    nonlocal_formula = ~ time_lag(x_time, start = "zero"),
     nonlocal_data = grid,
     control = ctrl
   )

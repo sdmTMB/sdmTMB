@@ -93,7 +93,7 @@ and spatiotemporal ranges will be unique.}
 
 \item{sigma_O}{SD of spatial process (Omega).}
 
-\item{sigma_E}{SD of spatiotemporal process (Epsilon).}
+\item{sigma_E}{SD of spatiotemporal process (Epsilon). A single value.}
 
 \item{sigma_Z}{SD of spatially varying coefficient field (Zeta).}
 
@@ -118,7 +118,9 @@ corresponding random effects should be simulated.}
 An optional previous \code{\link[=sdmTMB]{sdmTMB()}} fit to pull parameter values.
 Will be overridden by any non-\code{NULL} parameter arguments supplied directly.}
 
-\item{seed}{Seed number.}
+\item{seed}{Seed number. The TMB and RTMB backends (see the \code{backend}
+argument of \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}}, passed via \code{control}) draw random numbers
+differently, so the same seed gives different simulated values with each.}
 
 \item{time_varying}{An optional one-sided formula describing time-varying
 covariates passed through to \code{\link[=sdmTMB]{sdmTMB()}} for building a time-varying random
@@ -137,14 +139,15 @@ be supplied as a single value or a vector the same length as \code{sigma_V}.}
 \item{nonlocal_formula}{An optional one-sided formula describing
 covariate-diffusion terms to pass to \code{\link[=sdmTMB]{sdmTMB()}}. Supported wrappers are
 \code{diffusion()} and \code{time_lag()}. Same-covariate wrappers select one joint
-operator and coefficient.}
+operator and coefficient. See \code{\link[=sdmTMB]{sdmTMB()}} for the \code{time_lag()} \code{start}
+argument.}
 
 \item{lags_kappaS}{Spatial diffusion scale for \code{diffusion()} terms.
 Must be positive and finite. Supply a single value or
 one value per covariate needing a spatial scale.}
 
 \item{lags_rhoT}{Temporal diffusion persistence for \code{time_lag()} terms.
-Must be finite and satisfy \verb{0 <= rhoT < 1}. Supply a single value or one
+Must satisfy \verb{0 < rhoT < 1}. Supply a single value or one
 value per covariate needing temporal diffusion.}
 
 \item{...}{Any other arguments to pass to \code{\link[=sdmTMB]{sdmTMB()}}.}
