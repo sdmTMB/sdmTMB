@@ -1,5 +1,13 @@
 # sdmTMB (development version)
 
+* Add an RTMB backend. The default for now remains TMB, but eventually the
+  TMB backend will be dropped in favour of RTMB. Set it per model fit with
+  `control = sdmTMBcontrol(backend = "rtmb")` or per session with
+  `options(sdmTMB.backend = "rtmb")`. Unit tests and extensive local testing of
+  cached models shows them to produce identical results. Model code transitions
+  from C++ to R and has ~50% fewer lines of code. This transition uncovered
+  many bugs that have been fixed as documented in this file.
+
 * Fix calling the index functions directly on a `do_index = TRUE` fit:
   `get_index()` now honours an explicit `area` argument instead of silently
   ignoring it, `get_eao()` and `get_weighted_average()` no longer fail with a
@@ -96,20 +104,6 @@
 * Fix `breakpt()` likelihoods and gradients after the estimated cutpoint
   moves from its starting value. The C++ backend now evaluates the threshold
   branch on the current parameter, matching the RTMB backend.
-
-* Add an experimental `sdmTMBcontrol(backend = "rtmb")` path. It supports all
-  observation families, delta (hurdle) and Poisson-link delta models, and
-  row-wise multi-family models with SPDE (isotropic, anisotropic, or
-  barrier) and areal SAR/CAR spatial and spatiotemporal fields (IID, AR1, or
-  RW), spatially and time-varying coefficients, correlated IID effects,
-  penalized smooths, threshold terms, nonstationary spatiotemporal variance,
-  dispersion formulas, covariate diffusion, restricted spatial regression,
-  priors, REML, and profiled fixed effects, plus `get_index()`, `get_cog()`,
-  `get_eao()`, and `get_weighted_average()` with bias correction. Post-fit
-  methods work on RTMB fits, including `simulate()`, `sdmTMB_simulate()`,
-  `project()`, `cAIC()`, residuals, and tmbstan sampling with
-  `bayesian = TRUE`. The default remains the TMB backend while the RTMB model
-  is migrated in stages.
 
 * Fix `time_varying` models with more than one column (e.g., `~ 1 + x` or a
   factor with several levels). Each term's contribution was previously
