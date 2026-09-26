@@ -301,45 +301,18 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
   )
 }
 
-# IID random intercepts at the frame rows, for `re_form_iid = NULL`. Group
-# levels must be levels of the fitted data: the joint model doesn't add new
-# random-effect levels or average over the group distribution.
-.preferential_iid_design <- function(re_formula, fit_data, data) {
-  groups <- barnames(reformulas::findbars(re_formula))
-  .check_frame_columns(data, groups, "the main model's IID random effects")
-  for (g in groups) {
-    fitted <- fit_data[[g]]
-    levels <- if (is.factor(fitted)) levels(fitted) else
-      unique(as.character(fitted))
-    values <- as.character(data[[g]])
-    new <- setdiff(values, levels)
-    if (length(new)) {
-      cli_abort(c(
-        "The sampling `data` has random-effect group level(s) not in the fitted data.",
-        "x" = "New level(s) of {.field {g}}: {.val {new}}",
-        "i" = "Use `re_form_iid = NA` to exclude IID random effects from the expected-catch surface."
-      ))
-    }
-    data[[g]] <- if (is.factor(fitted)) factor(values, levels = levels) else values
-  }
-  bars <- vapply(reformulas::findbars(re_formula), deparse1, character(1L))
-  .iid_design(stats::reformulate(paste0("(", bars, ")")), fit_data[groups],
-    data[groups])
-}
-
 #' Prepare the preferential-sampling frame and designs
 #'
 #' Validates the sampling `data` against the fitted main model and builds the
 #' nested `preferential` block of the model data, its parameters, and R-only
 #' metadata. The shared catch design is the main model evaluated on the
-#' sampling rows, as prediction does: the fitted fixed-effect `terms` (with
-#' `predvars`), `xlevels`, and `contrasts`; the fitted smoother bases in
-#' `smoothers`; and, if included, the IID random intercepts indexed as in the
-#' fitted data `fit_data`. Indices are zero-based, as elsewhere in the model
-#' data; `rtmb_prepare()` converts them. Row order is kept throughout.
+#' sampling rows by `.newdata_design()`, as prediction evaluates `newdata`.
+#' `model` holds the fitted pieces that it needs (a fitted object, or the same
+#' pieces while fitting); `X_ij` is the fitted fixed-effect design. Indices are
+#' zero-based, as elsewhere in the model data; `rtmb_prepare()` converts them.
+#' Row order is kept throughout.
 #' @noRd
-.prepare_preferential <- function(spec, terms, xlevels, contrasts, X_ij,
-                                  smoothers, fit_data, mesh, time, time_df) {
+.prepare_preferential <- function(spec, model, X_ij, mesh, time, time_df) {
   data <- spec$data
   n <- nrow(data)
   r <- as.numeric(data[[spec$response]])
@@ -380,11 +353,9 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
   }
 
   # Project unique locations once; rows index them by station and time.
-  loc_key <- paste(data[[xy_cols[1L]]], data[[xy_cols[2L]]], sep = "\r")
-  first <- !duplicated(loc_key)
-  station_i <- match(loc_key, loc_key[first]) - 1L
-  A_station <- fmesher::fm_basis(mesh$mesh,
-    loc = as.matrix(data[first, xy_cols, drop = FALSE]))
+  locations <- .project_unique_locations(mesh$mesh, data, xy_cols)
+  A_station <- locations$A
+  station_i <- locations$index
   outside <- Matrix::rowSums(A_station) == 0
   if (any(outside)) {
     rows <- .first_rows(which(outside[station_i + 1L]))
@@ -397,41 +368,32 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
 
   sampling <- .preferential_sampling_design(spec)
 
-  X_pref <- lapply(seq_along(X_ij), function(m) {
-    .check_prediction_safe_terms(terms[[m]])
-    fixed_terms <- stats::delete.response(terms[[m]])
-    .check_frame_columns(data, all.vars(fixed_terms),
-      "the main model's fixed effects")
-    X <- tryCatch(
-      .fixed_effect_design(fixed_terms, data, xlevels[[m]], contrasts[[m]],
-        na.action = stats::na.pass),
-      error = function(e) {
-        cli_abort(c(
-          "Failed to evaluate the main model's fixed effects on the sampling `data`.",
-          "x" = conditionMessage(e),
-          "i" = "Factor levels must be levels present in the fitted `data`."
-        ))
-      }
-    )
-    if (!identical(colnames(X), colnames(X_ij[[m]]))) {
+  # Every covariate of the main model must be complete on every row: the
+  # shared surface is evaluated on all of them.
+  lapply(model$terms, .check_prediction_safe_terms)
+  bars <- reformulas::findbars(model$smoothers$formula_no_sm)
+  include_iid <- spec$include_iid && length(bars) > 0L
+  .check_frame_columns(data, unique(c(
+    unlist(lapply(model$terms, function(x) all.vars(stats::delete.response(x)))),
+    all.vars(stats::delete.response(
+      stats::terms(model$smoothers$formula_no_bars))),
+    if (include_iid) barnames(bars)
+  )), "the main model")
+  design <- tryCatch(
+    .newdata_design(model, data, include_iid = include_iid,
+      new_levels = "error", na.action = stats::na.pass),
+    error = function(e) {
+      cli_abort(c(
+        "Failed to evaluate the main model on the sampling `data`.",
+        "x" = conditionMessage(e),
+        "i" = "Factor levels must be levels present in the fitted `data`."
+      ))
+    }
+  )
+  for (m in seq_along(X_ij)) {
+    if (!identical(colnames(design$X_ij[[m]]), colnames(X_ij[[m]]))) {
       cli_abort("Internal error: the shared catch design doesn't match the fitted design.")
     }
-    X
-  })
-
-  sm <- list(Zs = list(), Xs = matrix(0, 0L, 0L))
-  if (smoothers$has_smooths) {
-    .check_frame_columns(data,
-      all.vars(stats::delete.response(stats::terms(smoothers$formula_no_bars))),
-      "the main model's smoothers")
-    sm <- parse_smoothers(smoothers$formula_no_bars, data = fit_data,
-      newdata = data, basis_prev = smoothers$basis_out)
-  }
-  re_formula <- smoothers$formula_no_sm
-  Zt_list <- list()
-  if (spec$include_iid && length(reformulas::findbars(re_formula))) {
-    Zt_list <- rep(list(.preferential_iid_design(re_formula, fit_data, data)),
-      length(X_ij))
   }
 
   # Start the sampling coefficients at the sampling-only logistic regression
@@ -449,10 +411,10 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
       n_pref = n,
       R_i = r,
       Z_ij = sampling$Z,
-      X_ij = X_pref,
-      Zs = sm$Zs,
-      Xs = sm$Xs,
-      Zt_list = Zt_list,
+      X_ij = design$X_ij,
+      Zs = design$Zs,
+      Xs = design$Xs,
+      Zt_list = design$Zt_list,
       offset_i = spec$offset,
       A_station = A_station,
       station_i = station_i,

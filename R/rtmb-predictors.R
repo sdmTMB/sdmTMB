@@ -118,17 +118,10 @@ rtmb_combined_projection <- function(projected, theta, prepared) {
   for (f in unique(rows$family_id)) {
     family <- prepared$families[[f]]
     i <- which(rows$family_id == f)
-    link <- function(x1, x2) {
-      switch(family$combine,
-        single = x1,
-        delta = rtmb_link(
-          rtmb_inverse_link(x1, family$link[[1L]]) *
-            rtmb_inverse_link(x2, family$link[[2L]]),
-          family$link[[2L]]),
-        poisson_link = x1 + x2)
-    }
-    fe[i] <- link(projected$fe[i, 1L], projected$fe[i, 2L])
-    eta[i] <- link(projected$eta[i, 1L], projected$eta[i, 2L])
+    fe[i] <- rtmb_combined_link(projected$fe[i, 1L], projected$fe[i, 2L],
+      family)
+    eta[i] <- rtmb_combined_link(projected$eta[i, 1L], projected$eta[i, 2L],
+      family)
     response[i] <- switch(family$combine,
       single = rtmb_component_mean(response_eta[i, 1L], family, 1L, theta),
       delta = rtmb_component_mean(response_eta[i, 1L], family, 1L, theta) *
@@ -136,6 +129,24 @@ rtmb_combined_projection <- function(projected, theta, prepared) {
       poisson_link = exp(response_eta[i, 1L] + response_eta[i, 2L]))
   }
   list(fe = fe, eta = eta, response = response)
+}
+
+# Link-scale value of both components' combined mean, following the C++
+# `combined_link_value()`. With a log positive link, log(p mu) is computed as
+# log(p) + eta2, which stays finite when p underflows. `x2` is unused for a
+# single-component family.
+rtmb_combined_link <- function(x1, x2, family) {
+  switch(family$combine,
+    single = x1,
+    delta = if (identical(family$link[[2L]], "log")) {
+      rtmb_log_inverse_link(x1, family$link[[1L]]) + x2
+    } else {
+      rtmb_link(
+        rtmb_inverse_link(x1, family$link[[1L]]) *
+          rtmb_inverse_link(x2, family$link[[2L]]),
+        family$link[[2L]])
+    },
+    poisson_link = x1 + x2)
 }
 
 # Mixture families project the mean of both components: the positive

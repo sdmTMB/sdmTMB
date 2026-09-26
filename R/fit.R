@@ -1243,11 +1243,13 @@ sdmTMB <- function(
   preferential_prep <- if (!is.null(preferential)) {
     .prepare_preferential(
       preferential,
-      terms = mt,
-      xlevels = lapply(seq_along(mf), function(i) stats::.getXlevels(mt[[i]], mf[[i]])),
-      contrasts = lapply(X_ij, attr, which = "contrasts"),
-      X_ij = X_ij, smoothers = sm, fit_data = data, mesh = spde, time = time,
-      time_df = time_df
+      model = list(
+        split_formula = split_formula, terms = mt,
+        xlevels = lapply(seq_along(mf), function(i) stats::.getXlevels(mt[[i]], mf[[i]])),
+        contrasts = lapply(X_ij, attr, which = "contrasts"),
+        smoothers = sm, data = data
+      ),
+      X_ij = X_ij, mesh = spde, time = time, time_df = time_df
     )
   }
 

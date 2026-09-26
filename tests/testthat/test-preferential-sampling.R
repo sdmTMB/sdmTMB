@@ -81,8 +81,7 @@ pref_joint_fit <- fit_once(function() pref_joint(pref_sim()))
 pref_names <- c("gamma_pref", "b_pref", "ln_tau_xi", "ln_kappa_xi", "xi_s")
 
 prepare_for <- function(fit, spec) {
-  .prepare_preferential(spec, fit$terms, fit$xlevels, fit$contrasts,
-    fit$tmb_data$X_ij, fit$smoothers, fit$data, fit$spde, fit$time,
+  .prepare_preferential(spec, fit, fit$tmb_data$X_ij, fit$spde, fit$time,
     fit$time_lu)
 }
 
@@ -639,7 +638,7 @@ test_that("smoothers and included IID intercepts match ordinary prediction", {
   bad <- grid
   bad$vessel <- factor(rep(c("a", "z"), length.out = nrow(grid)))
   expect_error(prepare_for(fit, preferential_sampling(sampled ~ 1, data = bad,
-    re_form_iid = NULL)), "New level")
+    re_form_iid = NULL)), "new levels")
   expect_error(prepare_for(fit, preferential_sampling(sampled ~ 1,
     data = grid[names(grid) != "depth"])), "Missing: depth")
 })
@@ -667,13 +666,24 @@ test_that("the delta target is the log of the combined expected catch", {
     p <- predict(fit, newdata = grid, offset = rep(0.3, nrow(grid)))
     expect_equal(lp$eta[, 1], p$est1, tolerance = 1e-10)
     expect_equal(lp$eta[, 2], p$est2, tolerance = 1e-10)
-    h <- rtmb_log_mean(lp$eta, rtmb_prepare(fit$tmb_data)$families[[1]])
+    h <- rtmb_combined_link(lp$eta[, 1], lp$eta[, 2],
+      rtmb_prepare(fit$tmb_data)$families[[1]])
     p_response <- predict(fit, newdata = grid, offset = rep(0.3, nrow(grid)),
       type = "response")
     expect_equal(h, log(p_response$est), tolerance = 1e-10)
     # Not the sum of the link predictors.
     expect_gt(max(abs(h - (p$est1 + p$est2))), 0.1)
   }
+  # Columns used only by the positive component are checked too.
+  fit_2 <- update(fits[[1]], formula = list(catch ~ depth, catch ~ effort),
+    do_fit = FALSE)
+  expect_error(prepare_for(fit_2, preferential_sampling(sampled ~ 1, grid)),
+    "Missing: effort")
+  bad <- transform(grid, effort = 1)
+  bad$effort[3] <- NA
+  expect_error(prepare_for(fit_2, preferential_sampling(sampled ~ 1, bad)),
+    "can't contain `NA`")
+
   # The offset enters only the positive component, as in prediction.
   prep0 <- prepare_for(fits[[1]], preferential_sampling(sampled ~ 1, grid))
   lp0 <- shared_predictor(fits[[1]], prep0)
@@ -686,7 +696,7 @@ test_that("the delta target is the log of the combined expected catch", {
   # log(plogis()) stays finite for extreme encounter predictors.
   family <- rtmb_prepare(fits[[1]]$tmb_data)$families[[1]]
   eta <- cbind(c(-800, 0, 800), 1)
-  expect_equal(rtmb_log_mean(eta, family),
+  expect_equal(rtmb_combined_link(eta[, 1], eta[, 2], family),
     stats::plogis(eta[, 1], log.p = TRUE) + 1)
 })
 
