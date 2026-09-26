@@ -28,10 +28,8 @@
 #' `baseline`), and \eqn{\xi} is an optional sampling-only spatial field.
 #' For a delta model, \eqn{h} is the log of the encounter probability times the positive mean,
 #' \eqn{\log(\mathrm{logit}^{-1}(\eta_1)) + \eta_2}. For a Poisson-link delta
-#' model (`type = "poisson-link"`), it is \eqn{o + \eta_1 + \eta_2}, where
-#' \eqn{o} is `offset`: as in the observation model (but unlike
-#' [predict.sdmTMB()], which ignores offsets for these models), the offset
-#' scales the expected catch.
+#' model (`type = "poisson-link"`), it is \eqn{\eta_1 + \eta_2}. As in
+#' prediction, `offset` enters \eqn{\eta_2} only.
 #'
 #' This feature is under development: it requires the RTMB backend
 #' (`control = sdmTMBcontrol(backend = "rtmb")`), a main model with a spatial

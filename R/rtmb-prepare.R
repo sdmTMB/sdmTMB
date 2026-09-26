@@ -108,13 +108,9 @@ rtmb_preferential_inputs <- function(data, families) {
     time = pref$year_i + 1L,
     family_id = rep(1L, pref$n_pref)
   )
-  rows <- rtmb_row_family_flags(rows, families)
-  # A Poisson-link delta applies the offset inside both component means, so
-  # the log expected catch is offset + eta1 + eta2. Adding it to component 1
-  # gives that combined target (ordinary prediction ignores these offsets).
-  if (families[[1L]]$combine == "poisson_link") rows$offset_applies[, 1L] <- TRUE
   list(
-    rows = rows,
+    # Offsets are placed as in prediction.
+    rows = rtmb_row_family_flags(rows, families, projection = TRUE),
     R = pref$R_i,
     observed = which(!is.na(pref$R_i)),
     Z = pref$Z_ij,
@@ -154,9 +150,12 @@ rtmb_family_inputs <- function(data) {
       link = rtmb_code_name(data$link_code[f, ], .valid_link),
       # Offsets enter a single family's only component and a standard delta
       # family's positive component. Poisson-link deltas apply them in the
-      # response mean instead.
+      # response mean instead, except in projections, where they enter
+      # component 2 so exp(eta1 + eta2) is the expected catch at that offset.
       offset_applies = c(combine == "single",
         combine == "delta")[seq_len(ncol(data$y_i))],
+      proj_offset_applies = c(combine == "single",
+        combine != "single")[seq_len(ncol(data$y_i))],
       phi = slot(data$ln_phi_slot, f),
       thetaf = slot(data$thetaf_slot, f),
       student_df = slot(data$ln_student_df_slot, f),
@@ -202,15 +201,16 @@ rtmb_row_inputs <- function(data, families, projection) {
       upr = rep_len(data$upr, nrow(data$y_i)), Xdisp = data$Xdisp_ij
     )
   }
-  rtmb_row_family_flags(out, families)
+  rtmb_row_family_flags(out, families, projection)
 }
 
 # Per-row component activity and offset placement from each row's family.
-rtmb_row_family_flags <- function(rows, families) {
+rtmb_row_family_flags <- function(rows, families, projection) {
   rows$active <- do.call(rbind, lapply(families, `[[`, "active"))[
     rows$family_id, , drop = FALSE]
+  offset_applies <- if (projection) "proj_offset_applies" else "offset_applies"
   rows$offset_applies <- do.call(rbind,
-    lapply(families, `[[`, "offset_applies"))[rows$family_id, , drop = FALSE]
+    lapply(families, `[[`, offset_applies))[rows$family_id, , drop = FALSE]
   rows
 }
 

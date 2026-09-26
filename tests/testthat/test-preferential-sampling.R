@@ -733,7 +733,7 @@ test_that("the delta target is the log of the combined expected catch", {
     stats::plogis(eta[, 1], log.p = TRUE) + 1)
 })
 
-test_that("the Poisson-link delta target includes the offset", {
+test_that("the Poisson-link delta target is the sum of the predictors", {
   skip_on_cran()
   dat <- pref_delta_dat()
   grid <- pref_grid()
@@ -743,21 +743,19 @@ test_that("the Poisson-link delta target includes the offset", {
     offset = log(dat$effort), control = sdmTMBcontrol(backend = "rtmb"))
   expect_true(fit$pos_def_hessian)
   family <- rtmb_prepare(fit$tmb_data)$families[[1]]
-  target <- function(offset) {
+  # As in prediction, the offset enters component 2 only, and h is the log
+  # of the expected catch at that offset.
+  for (offset in c(0, 0.3)) {
     lp <- shared_predictor(fit, prepare_for(fit,
       preferential_sampling(sampled ~ 1, data = grid, offset = offset)))
-    rtmb_combined_link(lp$eta[, 1], lp$eta[, 2], family)
+    p <- predict(fit, newdata = grid, offset = rep(offset, nrow(grid)))
+    expect_equal(lp$eta[, 1], p$est1, tolerance = 1e-10)
+    expect_equal(lp$eta[, 2], p$est2, tolerance = 1e-10)
+    h <- rtmb_combined_link(lp$eta[, 1], lp$eta[, 2], family)
+    p_response <- predict(fit, newdata = grid,
+      offset = rep(offset, nrow(grid)), type = "response")
+    expect_equal(h, log(p_response$est), tolerance = 1e-10)
   }
-  # At unit exposure, h is the log of the predicted expected catch.
-  p <- predict(fit, newdata = grid, offset = rep(0, nrow(grid)))
-  p_response <- predict(fit, newdata = grid, offset = rep(0, nrow(grid)),
-    type = "response")
-  expect_equal(target(0), p$est1 + p$est2, tolerance = 1e-10)
-  expect_equal(target(0), log(p_response$est), tolerance = 1e-10)
-  # Prediction ignores these offsets, but the target shifts by the offset,
-  # as the observation model's expected catch does.
-  expect_equal(target(0.3) - target(0), rep(0.3, nrow(grid)),
-    tolerance = 1e-12)
 
   joint <- update(fit, preferential = preferential_sampling(
     sampled ~ 0 + factor(year), data = grid))

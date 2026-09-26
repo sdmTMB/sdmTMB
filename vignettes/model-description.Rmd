@@ -481,8 +481,7 @@ h_{g,t} = \log \left( \mathrm{logit}^{-1} \left( \eta^{*}_{1,g,t} \right) \right
 $$
 
 not the sum of the two link predictors. As in prediction, the offset enters only the positive component.
-For a Poisson-link delta model [@thorson2018poisson], the log expected catch is $h_{g,t} = O^{*}_{g,t} + \eta^{*}_{1,g,t} + \eta^{*}_{2,g,t}$, where here $O^{*}_{g,t}$ is excluded from $\eta^{*}_{1,g,t}$ and $\eta^{*}_{2,g,t}$.
-As in the observation model, the offset scales expected catch; `predict()` instead ignores offsets for these models.
+For a Poisson-link delta model [@thorson2018poisson], the log expected catch is the sum of the two link predictors, $h_{g,t} = \eta^{*}_{1,g,t} + \eta^{*}_{2,g,t}$, again with the offset in the second component only.
 
 Whether each cell was sampled is then modeled as
 
