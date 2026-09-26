@@ -101,9 +101,12 @@ rtmb_family_inputs <- function(data) {
       link = rtmb_code_name(data$link_code[f, ], .valid_link),
       # Offsets enter a single family's only component and a standard delta
       # family's positive component. Poisson-link deltas apply them in the
-      # response mean instead.
+      # response mean instead, except in projections, where they enter
+      # component 2 so exp(eta1 + eta2) is the expected catch at that offset.
       offset_applies = c(combine == "single",
         combine == "delta")[seq_len(ncol(data$y_i))],
+      proj_offset_applies = c(combine == "single",
+        combine != "single")[seq_len(ncol(data$y_i))],
       phi = slot(data$ln_phi_slot, f),
       thetaf = slot(data$thetaf_slot, f),
       student_df = slot(data$ln_student_df_slot, f),
@@ -151,8 +154,9 @@ rtmb_row_inputs <- function(data, families, projection) {
   }
   out$active <- do.call(rbind, lapply(families, `[[`, "active"))[
     out$family_id, , drop = FALSE]
+  offset_applies <- if (projection) "proj_offset_applies" else "offset_applies"
   out$offset_applies <- do.call(rbind,
-    lapply(families, `[[`, "offset_applies"))[out$family_id, , drop = FALSE]
+    lapply(families, `[[`, offset_applies))[out$family_id, , drop = FALSE]
   out
 }
 

@@ -1656,7 +1656,10 @@ Type objective_function<Type>::operator()()
     for (int m = 0; m < n_m; m++) {
       for (int i = 0; i < n_p; i++) {
         resolved_family_component_t<Type> resolved = family_resolver.resolve_family_component(proj_family_id(i), m);
-        if (resolved.offset_applies) proj_fe(i, m) += proj_offset_i(i);
+        // Predictions carry a Poisson-link delta's offset in component 2, so
+        // exp(eta1 + eta2) is the expected catch at that offset.
+        if (resolved.offset_applies || (resolved.is_poisson_link_delta() && m == 1))
+          proj_fe(i, m) += proj_offset_i(i);
       }
     }
 
