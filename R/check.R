@@ -217,6 +217,12 @@ sanity <- function(object, big_sd_log10 = 2, gradient_thresh = 0.001, silent = F
     b2[, names(b)[!names(b) %in% names(b2)]] <- NA
     b <- rbind(b, b2)
   }
+  if (!is.null(object$preferential)) {
+    bs <- tidy(object, "ran_pars", model = "sampling", conf.int = TRUE,
+      silent = TRUE)
+    bs[, names(b)[!names(b) %in% names(bs)]] <- NA
+    b <- rbind(b, bs[names(b)])
+  }
   s <- grep("sigma", b$term)
   sigmas_ok <- TRUE
   if (length(s)) {
@@ -294,14 +300,18 @@ sanity <- function(object, big_sd_log10 = 2, gradient_thresh = 0.001, silent = F
 
 par_df <- function() {
   data.frame(
-    internal = c("ln_tau_O", "ln_tau_E", "ln_tau_V", "ln_tau_Z", "ln_kappa"),
-    external = c("sigma_O", "sigma_E", "sigma_V", "sigma_Z", "range"),
+    internal = c("ln_tau_O", "ln_tau_E", "ln_tau_V", "ln_tau_Z", "ln_kappa",
+      "ln_tau_xi", "ln_kappa_xi"),
+    external = c("sigma_O", "sigma_E", "sigma_V", "sigma_Z", "range",
+      "sigma_xi", "range_xi"),
     meaning = c(
       "spatial standard deviation",
       "spatiotemporal standard deviation",
       "time-varying coefficient standard deviation",
       "spatially varying coefficient standard deviation",
-      "distance at which data are effectively independent"
+      "distance at which data are effectively independent",
+      "sampling-only field standard deviation",
+      "sampling-only field range"
     ),
     stringsAsFactors = FALSE
   )

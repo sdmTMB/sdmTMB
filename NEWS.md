@@ -8,6 +8,14 @@
   from C++ to R and has ~50% fewer lines of code. This transition uncovered
   many bugs that have been fixed as documented in this file.
 
+* Add experimental joint preferential-sampling models (RTMB backend only):
+  `sdmTMB(..., preferential = preferential_sampling(...))`. A Bernoulli
+  model for which cells of an eligible sampling frame were sampled is linked
+  to the main model's standardized expected catch through a shared
+  preference coefficient, with its own fixed effects and an optional
+  sampling-only spatial field. See `predict_sampling()`,
+  `tidy(fit, model = "sampling")`, and the preferential-sampling article.
+
 * Fix calling the index functions directly on a `do_index = TRUE` fit:
   `get_index()` now honours an explicit `area` argument instead of silently
   ignoring it, `get_eao()` and `get_weighted_average()` no longer fail with a

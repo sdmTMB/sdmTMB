@@ -41,7 +41,8 @@
 #' * [predict.sdmTMB()], [get_index()], and related functions predict catch
 #'   as usual. Their prediction rows are not sampling observations, and their
 #'   uncertainty comes from the joint model, including the sampling
-#'   likelihood.
+#'   likelihood. Use `bias_correct = TRUE` (the default) in [get_index()]:
+#'   in simulations, the plug-in index was biased low for delta models.
 #' * [logLik()] and [AIC()] use the joint likelihood of the catch data and
 #'   the sampling indicators. Don't compare them with a catch-only model or a
 #'   model with a different sampling frame. [nobs()] still counts catch

@@ -84,7 +84,8 @@ sampling frame.
 \item \code{\link[=predict.sdmTMB]{predict.sdmTMB()}}, \code{\link[=get_index]{get_index()}}, and related functions predict catch
 as usual. Their prediction rows are not sampling observations, and their
 uncertainty comes from the joint model, including the sampling
-likelihood.
+likelihood. Use \code{bias_correct = TRUE} (the default) in \code{\link[=get_index]{get_index()}}:
+in simulations, the plug-in index was biased low for delta models.
 \item \code{\link[=logLik]{logLik()}} and \code{\link[=AIC]{AIC()}} use the joint likelihood of the catch data and
 the sampling indicators. Don't compare them with a catch-only model or a
 model with a different sampling frame. \code{\link[=nobs]{nobs()}} still counts catch

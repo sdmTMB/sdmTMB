@@ -553,6 +553,18 @@ test_that("a sampling-only field can be estimated", {
   expect_equal(p$est, p$est_fixed + p$est_preference + p$est_xi)
   expect_gt(stats::sd(p$est_xi), 0)
   expect_identical(attr(logLik(fit), "df"), length(fit$model$par))
+  expect_true(sanity(fit, silent = TRUE)$sigmas_ok)
+
+  # sanity() checks the sampling field's SD.
+  suppressWarnings(suppressMessages({
+    tiny <- pref_joint(pref_sim(xi_sd = 0.8), spatial = "on",
+      control = list(map = list(ln_tau_xi = factor(NA)),
+        start = list(ln_tau_xi = 8)))
+    sigma_xi <- tidy(tiny, "ran_pars", model = "sampling")$estimate[2]
+    checks <- sanity(tiny, silent = TRUE)
+  }))
+  expect_lt(sigma_xi, 0.01)
+  expect_false(checks$sigmas_ok)
 })
 
 test_that("with the preference coefficient fixed at 0 the models decouple", {
@@ -864,4 +876,101 @@ test_that("unsupported post-fit operations error for preferential fits", {
       control = sdmTMBcontrol(backend = "rtmb")),
     "Cross-validation is not supported"
   )
+})
+
+test_that("interactions and no-intercept designs match ordinary prediction", {
+  skip_on_cran()
+  dat <- pref_dat()
+  fit <- sdmTMB(catch ~ 0 + gear * depth, data = dat, mesh = pref_mesh(dat),
+    time = "year", family = poisson(), spatiotemporal = "off",
+    offset = log(dat$effort), control = sdmTMBcontrol(backend = "rtmb"))
+  grid <- pref_grid()
+  lp <- shared_predictor(fit, prepare_for(fit,
+    preferential_sampling(sampled ~ 1, data = grid)))
+  p <- predict(fit, newdata = grid, offset = rep(0, nrow(grid)))
+  expect_equal(lp$eta[, 1], p$est, tolerance = 1e-10)
+  # Standardizing gear changes the depth slope through the interaction.
+  grid_c <- transform(grid, gear = factor("c", levels = levels(dat$gear)))
+  lp_c <- shared_predictor(fit, prepare_for(fit,
+    preferential_sampling(sampled ~ 1, data = grid_c)))
+  slope <- function(lp) stats::coef(stats::lm(lp$fixed[, 1] ~ grid$depth))[[2]]
+  expect_false(isTRUE(all.equal(slope(lp), slope(lp_c))))
+})
+
+test_that("the TMB guard covers constructions without random effects", {
+  skip_on_cran()
+  fit <- pref_joint_fit()
+  expect_error(
+    make_sdmTMB_adfun(fit$tmb_data, get_pars(fit), fit$tmb_map, random = NULL,
+      backend = "tmb"),
+    "requires backend = \"rtmb\"", fixed = TRUE
+  )
+  # A fit without the multiphase start reaches the same optimum.
+  single <- pref_joint(pref_sim(), control = list(multiphase = FALSE))
+  expect_equal(single$model$objective, fit$model$objective, tolerance = 1e-6)
+  expect_equal(single$model$par, fit$model$par, tolerance = 1e-3)
+})
+
+test_that("a joint fit with only a spatiotemporal shared field works", {
+  skip_on_cran()
+  fit <- pref_joint_fit()
+  st_only <- sdmTMB(catch ~ 1, data = fit$data, mesh = fit$spde,
+    time = "year", family = poisson(), spatial = "off",
+    preferential = fit$preferential$spec,
+    control = sdmTMBcontrol(backend = "rtmb"))
+  expect_true(st_only$pos_def_hessian)
+  expect_false("sigma_O" %in% tidy(st_only, "ran_pars")$term)
+  r <- st_only$tmb_obj$report(st_only$tmb_obj$env$last.par.best)
+  expect_equal(r$sampling_target_i,
+    predict(st_only, newdata = fit$preferential$spec$data)$est,
+    tolerance = 1e-8)
+})
+
+# Coupled simulation with a depth effect and catchability: gear and vessel
+# change observed catches but not the standardized surface used for sampling
+# (gear "a", no vessel effect).
+pref_sim_catchability <- function(b = 0.8, seed = 5) {
+  sim <- pref_sim(b = 0, seed = seed)
+  set.seed(seed)
+  grid <- sim$grid
+  grid$depth <- 50 + 30 * sin(grid$x / 3) + 10 * cos(grid$y / 2)
+  old <- options(sdmTMB.backend = "tmb")
+  on.exit(options(old))
+  field <- sdmTMB_simulate(~1, data = grid,
+    mesh = make_mesh(grid, c("x", "y"), mesh = sim$mesh$mesh), time = "year",
+    family = poisson(), range = 4, sigma_O = 0.6, sigma_E = 0.2, B = 0,
+    seed = seed, spatiotemporal = "iid")$eta
+  h <- log(3) - 0.0004 * (grid$depth - 50)^2 + field
+  grid$sampled <- stats::rbinom(nrow(grid), 1,
+    stats::plogis(c(-2, -1.5, -1)[grid$year] - b * log(3) + b * h))
+  dat <- grid[grid$sampled == 1, ]
+  n <- nrow(dat)
+  dat$gear <- factor(sample(c("a", "b"), n, TRUE))
+  dat$vessel <- factor(sample(letters[1:6], n, TRUE))
+  q <- 0.5 * (dat$gear == "b") + c(-0.4, -0.2, 0, 0.1, 0.2, 0.3)[dat$vessel]
+  dat$catch <- stats::rpois(n, exp(h[grid$sampled == 1] + q))
+  grid$gear <- factor("a", levels = c("a", "b"))
+  list(grid = grid, dat = dat, h = h,
+    mesh = make_mesh(dat, c("x", "y"), mesh = sim$mesh$mesh))
+}
+
+test_that("a coupled fit with a smoother, standardized gear, and excluded vessels", {
+  skip_on_cran()
+  sim <- pref_sim_catchability()
+  fit <- sdmTMB(catch ~ s(depth, k = 5) + gear + (1 | vessel),
+    data = sim$dat, mesh = sim$mesh, time = "year", family = poisson(),
+    preferential = preferential_sampling(sampled ~ 0 + factor(year),
+      data = sim$grid, re_form_iid = NA),
+    control = sdmTMBcontrol(backend = "rtmb"))
+  expect_true(fit$pos_def_hessian)
+  expect_lt(max(abs(fit$gradients)), 1e-3)
+  td <- tidy(fit, model = "sampling")
+  b <- td[td$term == "b_pref", ]
+  expect_lt(abs(b$estimate - 0.8), 3 * b$std.error)
+  expect_gt(b$estimate / b$std.error, 3)
+  gear <- tidy(fit)
+  expect_lt(abs(gear$estimate[gear$term == "gearb"] - 0.5), 0.2)
+  # The fitted surface tracks the true standardized surface.
+  p <- predict_sampling(fit)
+  expect_gt(stats::cor(p$est_target, sim$h), 0.8)
 })
