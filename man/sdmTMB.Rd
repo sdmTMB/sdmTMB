@@ -187,9 +187,8 @@ Defaults to \code{NULL}, in which case \code{data} is used.}
 
 \item{preferential}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}} An optional
 preferential-sampling specification from \code{\link[=preferential_sampling]{preferential_sampling()}}.
-Requires \code{control = sdmTMBcontrol(backend = "rtmb")}. The joint
-likelihood is not implemented yet, so fitting currently stops with an
-error.}
+Requires \code{control = sdmTMBcontrol(backend = "rtmb")}. The sampling
+indicators are then modeled jointly with the catch data.}
 
 \item{weights}{A numeric vector representing optional likelihood weights for
 the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have

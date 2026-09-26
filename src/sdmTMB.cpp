@@ -3,7 +3,6 @@
 #include <TMB.hpp>
 #include "utils.h"
 #include "covariate-diffusion.h"
-#include "preferential-sampling.h"
 // #include <omp.h>
 
 enum valid_family {
@@ -312,10 +311,6 @@ Type objective_function<Type>::operator()()
   DATA_INTEGER(n_t);  // number of years
   // Covariate-diffusion metadata and vertex-by-time covariate arrays.
   DATA_STRUCT(covariate_diffusion, sdmTMB::covariate_diffusion_data_t);
-  // Preferential-sampling grid-cell presence/absence sub-model (see
-  // src/preferential-sampling.h). `preferential.n_pref == 0` means the
-  // feature is off.
-  DATA_STRUCT(preferential, sdmTMB::preferential_data_t);
 
   // Random effects
   DATA_IMATRIX(re_cov_df); // dataframe describing the random effects covariance parameters
@@ -444,18 +439,6 @@ Type objective_function<Type>::operator()()
   PARAMETER_ARRAY(ln_kappa);    // Matern parameter
   PARAMETER_VECTOR(log_kappaS_nl);    // covariate diffusion spatial scale
   PARAMETER_VECTOR(log_kappaT_nl);    // covariate diffusion temporal scale
-
-  // Preferential-sampling sub-model parameters. All are length 0 when the
-  // feature is off (preferential.n_pref == 0); `gamma_0`/`ln_tau_xi`/
-  // `ln_kappa_xi`/`xi_s` are length 1 (or n_s for `xi_s`) whenever it's on;
-  // `b_pref` is length 1 for `b_pref_type == 0` ("constant") or length n_t
-  // otherwise; `log_sigma_b_pref` is length 1 unless `b_pref_type == 0`.
-  PARAMETER_VECTOR(gamma_0);          // sampling sub-model intercept
-  PARAMETER_VECTOR(b_pref);           // multiplies the projected catch-model surface
-  PARAMETER_VECTOR(log_sigma_b_pref); // rw/iid sd for b_pref
-  PARAMETER_VECTOR(ln_tau_xi);        // xi_s precision scale
-  PARAMETER_VECTOR(ln_kappa_xi);      // xi_s spatial decay
-  PARAMETER_VECTOR(xi_s);             // independent nuisance field, local to the sampling sub-model
 
   PARAMETER_VECTOR(thetaf);           // tweedie only
   PARAMETER_VECTOR(ln_student_df);    // student-t df (log(df - 1))
@@ -1103,95 +1086,6 @@ Type objective_function<Type>::operator()()
   add_nl_obs_for_model(b_j, 0);
   if (n_m > 1) add_nl_obs_for_model(b_j2, 1);
   REPORT(covariate_diffusion_values);
-
-  // ------------------------------------------------------------------
-  // Preferential sampling: grid-cell presence/absence sub-model. See
-  // src/preferential-sampling.h for the DATA_STRUCT reader
-  // Reuses the catch model's
-  // own b_j / omega_s / epsilon_st (model column 0 only -- not
-  // delta-model-aware)
-  // ------------------------------------------------------------------
-  if (preferential.n_pref > 0) {
-    int n_pref = preferential.n_pref;
-
-    // Grid-level fixed-effect contribution: same b_j, but X_pref_ij is
-    // zeroed out (on the R side, see .build_preferential_X()) in every
-    // column not selected by `preferential_formula` (default `~1`, i.e.
-    // the intercept only), so only that user-chosen subset of b_j actually
-    // contributes here -- no new parameters, and no other fixed effects
-    // leak into the grid the way they would from a naive full reuse.
-    vector<Type> grid_fe = preferential.X_pref_ij * b_j;
-
-    // Grid-level spatial field, projected via A_pref (model column 0 only).
-    vector<Type> grid_omega(n_pref);
-    grid_omega.setZero();
-    if (!omit_spatial_intercept) {
-      grid_omega = preferential.A_pref * vector<Type>(omega_s.col(0));
-    }
-
-    // Grid-level spatiotemporal field, projected via A_pref, indexed by year.
-    vector<Type> grid_eps(n_pref);
-    grid_eps.setZero();
-    if (!no_spatial) {
-      matrix<Type> eps_m = epsilon_st.col(0).matrix(); // n_s x n_t
-      matrix<Type> eps_grid_all_t = preferential.A_pref * eps_m; // n_pref x n_t
-      for (int i = 0; i < n_pref; i++) {
-        grid_eps(i) = eps_grid_all_t(i, preferential.year_i_pref(i));
-      }
-    }
-
-    vector<Type> grid_eta = grid_fe + grid_omega + grid_eps;
-    REPORT(grid_eta);
-
-    // Independent nuisance field, local to the sampling sub-model only
-    // (not shared with the catch model).
-    Type kappa_xi = exp(ln_kappa_xi(0));
-    Eigen::SparseMatrix<Type> Q_xi = R_inla::Q_spde(spde, kappa_xi);
-    PARALLEL_REGION jnll += SCALE(GMRF(Q_xi), Type(1.0) / exp(ln_tau_xi(0)))(xi_s);
-    vector<Type> xi_grid = preferential.A_pref * xi_s;
-
-    // b_pref: constant (plain fixed effect, no extra penalty), iid, or rw by
-    // time slice. The rw first value is intentionally
-    // left flat/unconstrained, like other
-    // `time_varying_type = "rw"` parameter elsewhere in sdmTMB.
-    if (preferential.b_pref_type == 1) { // iid
-      Type sigma_b_pref = exp(log_sigma_b_pref(0));
-      for (int t = 0; t < n_t; t++) {
-        PARALLEL_REGION jnll -= dnorm(b_pref(t), Type(0.0), sigma_b_pref, true);
-      }
-    } else if (preferential.b_pref_type == 2) { // rw
-      Type sigma_b_pref = exp(log_sigma_b_pref(0));
-      for (int t = 1; t < n_t; t++) {
-        PARALLEL_REGION jnll -= dnorm(b_pref(t), b_pref(t - 1), sigma_b_pref, true);
-      }
-    }
-
-    vector<Type> logit_R(n_pref);
-    for (int i = 0; i < n_pref; i++) {
-      Type b_pref_i = (preferential.b_pref_type == 0) ? b_pref(0) : b_pref(preferential.year_i_pref(i));
-      logit_R(i) = gamma_0(0) + b_pref_i * grid_eta(i) + xi_grid(i);
-      PARALLEL_REGION jnll -= dbinom_robust(preferential.R_i(i), Type(1.0), logit_R(i), true);
-    }
-    REPORT(logit_R);
-
-    ADREPORT(gamma_0);
-    ADREPORT(b_pref);
-    Type range_xi = sqrt(Type(8.0)) / kappa_xi;
-    Type sigma_xi = sdmTMB::calc_rf_sigma(ln_tau_xi(0), ln_kappa_xi(0));
-    ADREPORT(range_xi);
-    ADREPORT(sigma_xi);
-    // log-scale duals, purely so R/tidy.R can compute delta-method CIs the
-    // same way it already does for range/sigma_O (exponentiate a symmetric
-    // log-scale CI rather than a possibly-negative natural-scale one).
-    Type log_range_xi = log(sqrt(Type(8.0))) - ln_kappa_xi(0);
-    Type log_sigma_xi = log(sigma_xi);
-    ADREPORT(log_range_xi);
-    ADREPORT(log_sigma_xi);
-    if (preferential.b_pref_type != 0) {
-      Type sigma_b_pref_report = exp(log_sigma_b_pref(0));
-      ADREPORT(sigma_b_pref_report);
-    }
-  }
 
   // FIXME delta must be same in 2 components:
   // p-splines/smoothers

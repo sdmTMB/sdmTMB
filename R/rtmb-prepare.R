@@ -94,7 +94,9 @@ has_preferential <- function(data) isTRUE(data$preferential$n_pref > 0L)
 # rtmb_linear_predictors(). Like projection rows, these select from the
 # unique frame locations. Terms that preferential sampling doesn't support
 # yet (smoothers, SVCs, thresholds, time-varying, and diffusion) are rejected
-# before this point and have no inputs here.
+# before this point and have no inputs here. The optional sampling field
+# `xi` always uses an isotropic SPDE precision on the model mesh, even in the
+# first multiphase fit, when the catch fields are off.
 rtmb_preferential_inputs <- function(data, families) {
   pref <- data$preferential
   station_index <- pref$station_i + 1L
@@ -111,7 +113,11 @@ rtmb_preferential_inputs <- function(data, families) {
     R = pref$R_i,
     observed = which(!is.na(pref$R_i)),
     Z = pref$Z_ij,
-    xi = pref$spatial_xi == 1L
+    xi = pref$spatial_xi == 1L,
+    precision = if (pref$spatial_xi == 1L) {
+      rtmb_precision_inputs(list(spatial_model = 0L, no_spatial = 0L,
+        barrier = 0L, anisotropy = 0L, spde = data$spde))
+    }
   )
 }
 
@@ -249,11 +255,6 @@ rtmb_validate <- function(data, prepared, parameters, random, ...) {
   if (!all(names(list(...)) %in% c("intern", "inner.control"))) {
     cli::cli_abort("Additional MakeADFun options are not supported by the RTMB backend yet.")
   }
-  # Temporary: the objective doesn't evaluate the sampling likelihood yet,
-  # so it would silently fit the catch model alone.
-  if (!is.null(prepared$preferential)) {
-    cli::cli_abort("The preferential-sampling likelihood is not implemented yet.")
-  }
   # Random parameters must be translated effects. The first multiphase fit
   # integrates none of them.
   expected_random <- c(
@@ -265,7 +266,8 @@ rtmb_validate <- function(data, prepared, parameters, random, ...) {
     if ("b_j" %in% random) "b_j",
     if ("b_j2" %in% random) "b_j2",
     if (prepared$smooths && "bs" %in% random) "bs",
-    if (prepared$smooths) "b_smooth"
+    if (prepared$smooths) "b_smooth",
+    if (isTRUE(prepared$preferential$xi)) "xi_s"
   )
   unexpected <- setdiff(random, expected_random)
   if (length(unexpected)) {

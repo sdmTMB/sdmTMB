@@ -458,9 +458,10 @@ CAR requires a symmetric adjacency matrix.
 
 ## Preferential sampling
 
-**This feature is under development and can't be fitted yet.** It will be available only with the RTMB backend, via `sdmTMB(..., preferential = preferential_sampling(...))`.
+**This feature is experimental and under development.** It is available only with the RTMB backend, via `sdmTMB(..., preferential = preferential_sampling(...))`, and currently supports single log-link families (Poisson, NB2, Gamma, Tweedie, lognormal) without smoothers.
+For these families, the link-scale predictor is the log of the response mean.
 
-The planned joint model couples the main observation model to a Bernoulli model for whether each eligible cell $g$ of a sampling frame was sampled in time step $t$.
+The joint model couples the main observation model to a Bernoulli model for whether each eligible cell $g$ of a sampling frame was sampled in time step $t$.
 This is useful when sample locations depend on the process being measured (e.g., a fishery that preferentially returns to productive grounds).
 
 The shared surface is the log of standardized expected catch, $h_{g,t}$.
@@ -483,7 +484,7 @@ $$
 \end{aligned}
 $$
 
-where $R_{g,t}$ is the 0/1 sampling indicator (`NA` indicators contribute no likelihood); $\bZ_{g,t} \boldsymbol{\gamma}$ is a separate sampling regression with its own coefficients (e.g., free annual intercepts); $b$ is a constant preference coefficient; and $\xi_g$ is an optional, time-invariant spatial field with its own range and marginal standard deviation that enters only the sampling model.
+where $R_{g,t}$ is the 0/1 sampling indicator (`NA` indicators contribute no likelihood); $\bZ_{g,t} \boldsymbol{\gamma}$ is a separate sampling regression with its own coefficients (e.g., free annual intercepts); $b$ is a constant preference coefficient; and $\xi_g$ is an optional, time-invariant, isotropic SPDE spatial field on the model mesh with its own range and marginal standard deviation (reported as `range_xi` and `sigma_xi`) that enters only the sampling model.
 The shared surface is recomputed inside the joint likelihood, which integrates over the shared and sampling-only latent effects.
 
 # Observation model families

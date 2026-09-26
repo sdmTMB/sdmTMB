@@ -1,7 +1,7 @@
 # Register reports with the C++ template's names and dimensions. Post-fit
 # methods index these names.
 rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
-                        projected, derived, simulating) {
+                        projected, derived, sampling, simulating) {
   n_m <- prepared$n_m
   any_field <- prepared$any_field
   spde_field <- any_field && !rtmb_areal(prepared$precision)
@@ -78,6 +78,17 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
         proj_eta_combined = projected$combined$eta,
         proj_response_combined = projected$combined$response)
     },
+    # Preferential-sampling frame rows, in the frame's row order
+    if (!is.null(sampling)) {
+      list(sampling_target_i = sampling$target,
+        sampling_fixed_i = sampling$fixed,
+        sampling_preference_i = sampling$preference,
+        sampling_field_i = sampling$field, sampling_eta_i = sampling$eta,
+        sampling_p_i = RTMB::plogis(sampling$eta))
+    },
+    if (!is.null(theta$xi)) {
+      list(sigma_xi = theta$xi$sigma, range_xi = theta$xi$range)
+    },
     if (requested[["total"]]) derived["link_total"],
     if (requested[["weighted_avg"]]) derived["weighted_avg"],
     if (requested[["eao"]]) derived[c("eao", "mean_dens")],
@@ -88,7 +99,7 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
   # Reported values that also get standard errors; sdreport() is read by name.
   with_se <- c("sigma_O", "sigma_E", "sigma_Z", "sigma_V", "re_cov_pars",
     "re_b_pars", "b_j_prime", "b_j2_prime", names(theta$threshold),
-    "b_epsilon", "rho_sar", "alpha_car", "range",
+    "b_epsilon", "rho_sar", "alpha_car", "range", "sigma_xi", "range_xi",
     "log_range", names(diffusion_scales), "phi", "tweedie_p", "student_df",
     "link_total", "weighted_avg", "eao",
     if (any(prepared$temporal & prepared$epsilon_ar1)) "rho",
@@ -101,6 +112,10 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
       list(`ln_phi_i(0)` = obs$ln_phi_i[[1L]], `phi_i(0)` = obs$phi_i[[1L]])
     },
     if (prepared$mixture) par[c("logit_p_extreme", "log_ratio_mix")],
+    if (!is.null(theta$xi)) {
+      list(log_sigma_xi = theta$xi$log_sigma,
+        log_range_xi = log(theta$xi$range))
+    },
     if (requested[["total"]]) derived["total"],
     if (requested[["eao"]]) derived["log_eao"]
   )

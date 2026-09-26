@@ -54,9 +54,19 @@ Specify a model for which cells of an eligible sampling frame were sampled
 in each time step, linked to the main model's standardized expected catch.
 Pass the result to the \code{preferential} argument of \code{\link[=sdmTMB]{sdmTMB()}}.
 
-\strong{The joint likelihood is not implemented yet.} This constructor and the
-preparation of its inputs are in place, but \code{\link[=sdmTMB]{sdmTMB()}} currently stops
-before fitting a model with a \code{preferential} specification.
+The sampling indicators are modeled jointly with the catch data:
+\deqn{\mathrm{logit}(p) = Z\gamma + b h + \xi,}
+where \eqn{Z\gamma} is the sampling \code{formula}, \eqn{h} is the main model's
+log expected catch evaluated on the sampling \code{data} (including its spatial
+and spatiotemporal fields), \eqn{b} is a preference coefficient, and
+\eqn{\xi} is an optional sampling-only spatial field.
+
+This feature is under development: it requires the RTMB backend
+(\code{control = sdmTMBcontrol(backend = "rtmb")}), a single log-link family
+(Poisson, NB2, Gamma, Tweedie, or lognormal), and a main model with a
+spatial or spatiotemporal field, and it doesn't yet support smoothers or
+delta models in the main model. Post-fit methods such as \code{\link[=tidy]{tidy()}} and
+\code{\link[=print]{print()}} don't report the sampling model yet.
 }
 \examples{
 grid <- data.frame(

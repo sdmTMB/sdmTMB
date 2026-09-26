@@ -145,8 +145,10 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
   "[<-" <- RTMB::ADoverload("[<-")
   inputs <- prepared$precision
   n_m <- prepared$n_m
+  # The preferential-sampling field `xi_s` has no simulation option yet, so
+  # it is never drawn.
   simulate <- function(name) {
-    name %in% simulating && prepared$simulate_re[[name]]
+    name %in% simulating && isTRUE(prepared$simulate_re[name])
   }
   effects <- c(list(nll = 0), par[c("omega_s", "epsilon_st", "zeta_s",
     "b_rw_t", "re_b_pars", "b_smooth")],
@@ -199,6 +201,16 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
       add(rtmb_smooth_effects(effects$b_smooth, par, prepared$smooth_index,
         simulate("b_smooth"), m), "b_smooth")
     }
+  }
+  # Sampling-only field of a preferential-sampling model: time invariant,
+  # isotropic, and independent of the catch fields.
+  if (!is.null(prepared$preferential) && prepared$preferential$xi) {
+    inputs <- prepared$preferential$precision
+    kappa <- theta$xi$kappa
+    dim(kappa) <- c(1L, 1L)
+    Q <- rtmb_precision(inputs, list(kappa = kappa), 1L, 1L)
+    scale <- rtmb_gmrf_scale(theta$xi$log_sigma, par$ln_kappa_xi, inputs)
+    effects$xi_s <- gmrf(par$xi_s, Q, scale, "xi_s")
   }
   effects
 }

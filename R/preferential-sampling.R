@@ -4,9 +4,8 @@
 # model's fitted design evaluated on the sampling frame, like prediction
 # `newdata`, so the frame's covariate values define the standardization.
 #
-# Only the RTMB backend will support it. The specification and frame/design
-# preparation live here; the joint likelihood is not implemented yet, so
-# `rtmb_validate()` still rejects preferential data.
+# Only the RTMB backend supports it. The specification and frame/design
+# preparation live here; the likelihood is in `R/rtmb-preferential.R`.
 
 #' Preferential-sampling specification
 #'
@@ -17,9 +16,19 @@
 #' in each time step, linked to the main model's standardized expected catch.
 #' Pass the result to the `preferential` argument of [sdmTMB()].
 #'
-#' **The joint likelihood is not implemented yet.** This constructor and the
-#' preparation of its inputs are in place, but [sdmTMB()] currently stops
-#' before fitting a model with a `preferential` specification.
+#' The sampling indicators are modeled jointly with the catch data:
+#' \deqn{\mathrm{logit}(p) = Z\gamma + b h + \xi,}
+#' where \eqn{Z\gamma} is the sampling `formula`, \eqn{h} is the main model's
+#' log expected catch evaluated on the sampling `data` (including its spatial
+#' and spatiotemporal fields), \eqn{b} is a preference coefficient, and
+#' \eqn{\xi} is an optional sampling-only spatial field.
+#'
+#' This feature is under development: it requires the RTMB backend
+#' (`control = sdmTMBcontrol(backend = "rtmb")`), a single log-link family
+#' (Poisson, NB2, Gamma, Tweedie, or lognormal), and a main model with a
+#' spatial or spatiotemporal field, and it doesn't yet support smoothers or
+#' delta models in the main model. Post-fit methods such as [tidy()] and
+#' [print()] don't report the sampling model yet.
 #'
 #' @param formula A two-sided formula for the sampling model, e.g.
 #'   `sampled ~ 0 + factor(year) + distance_to_port`. The response column
@@ -122,7 +131,7 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
 #' once the corresponding support is implemented and tested.
 #' @noRd
 .validate_preferential_scope <- function(spec, formula, delta, multi_family,
-                                         areal, mesh, mesh_missing,
+                                         family, areal, mesh, mesh_missing,
                                          anisotropy, time_varying,
                                          spatial_varying, nonlocal_formula,
                                          normalize, backend, no_spatial) {
@@ -140,8 +149,13 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
   has_iid <- any(vapply(formulas, function(f) {
     length(reformulas::findbars(f)) > 0L
   }, logical(1L)))
+  log_link_family <- !delta && !multi_family &&
+    family$family[[1L]] %in% .preferential_families &&
+    identical(family$link[[1L]], "log")
   unsupported <- c(
     "delta models" = delta,
+    "families other than log-link Poisson, NB2, Gamma, Tweedie, or lognormal" =
+      !delta && !multi_family && !log_link_family,
     "multi-family models" = multi_family,
     "areal (SAR/CAR) models" = areal,
     "barrier meshes" = "spde_barrier" %in% names(mesh),
@@ -170,6 +184,10 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
   }
   invisible(NULL)
 }
+
+# Families whose log-link predictor is the log of the response mean.
+.preferential_families <- c("poisson", "nbinom2", "Gamma", "tweedie",
+  "lognormal")
 
 # Functions that summarize the data they are given. In a formula they are
 # recomputed on new data unless the fitted values are kept in `predvars`, as
@@ -265,9 +283,9 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
 #' Prepare the preferential-sampling frame and designs
 #'
 #' Validates the sampling `data` against the fitted main model and builds the
-#' nested `preferential` block of the model data plus R-only metadata. The
-#' shared catch design is the main model's fitted fixed-effect design
-#' evaluated on the sampling rows (as prediction does), using the fitted
+#' nested `preferential` block of the model data, its parameters, and R-only
+#' metadata. The shared catch design is the main model's fitted fixed-effect
+#' design evaluated on the sampling rows (as prediction does), using the fitted
 #' `terms` (with `predvars`), `xlevels`, and `contrasts`. Indices are
 #' zero-based, as elsewhere in the model data; `rtmb_prepare()` converts them.
 #' Row order is kept throughout.
@@ -353,6 +371,16 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
     X
   })
 
+  # Start the sampling coefficients at the sampling-only logistic regression
+  # estimates; separation was ruled out above.
+  start <- tryCatch(
+    stats::glm.fit(sampling$Z[observed, , drop = FALSE], r[observed],
+      family = stats::binomial())$coefficients,
+    error = function(e) rep(0, ncol(sampling$Z)),
+    warning = function(w) rep(0, ncol(sampling$Z))
+  )
+  xi <- spec$spatial == "on"
+
   list(
     data = list(
       n_pref = n,
@@ -364,7 +392,13 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
       station_i = station_i,
       year_i = as.integer(year_i),
       include_iid = as.integer(spec$include_iid),
-      spatial_xi = as.integer(spec$spatial == "on")
+      spatial_xi = as.integer(xi)
+    ),
+    parameters = c(
+      list(gamma_pref = unname(start), b_pref = 0),
+      if (xi) {
+        list(ln_tau_xi = 0, ln_kappa_xi = 0, xi_s = rep(0, ncol(A_station)))
+      }
     ),
     info = list(
       spec = spec,
@@ -375,38 +409,5 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
       n_unknown = sum(!observed),
       n_sampled = sum(r == 1, na.rm = TRUE)
     )
-  )
-}
-
-#' Placeholder preferential-sampling TMB data when the feature is off
-#'
-#' The C++ template still reads the retired experimental preferential block,
-#' so ordinary models pass it with zero-length fields. Remove this with the
-#' C++ preferential code.
-#' @noRd
-.default_preferential_tmb <- function(n_b_j) {
-  list(
-    n_pref = 0L,
-    R_i = numeric(0),
-    X_pref_ij = matrix(0, nrow = 0, ncol = n_b_j),
-    A_pref = Matrix::sparseMatrix(i = integer(0), j = integer(0), x = numeric(0), dims = c(0L, 0L)),
-    year_i_pref = integer(0),
-    b_pref_type = 0L
-  )
-}
-
-#' Zero-length parameters of the retired C++ preferential block
-#'
-#' The C++ template still declares these parameters. Remove this with the
-#' C++ preferential code.
-#' @noRd
-.default_preferential_params <- function() {
-  list(
-    gamma_0 = numeric(0),
-    b_pref = numeric(0),
-    log_sigma_b_pref = numeric(0),
-    ln_tau_xi = numeric(0),
-    ln_kappa_xi = numeric(0),
-    xi_s = numeric(0)
   )
 }

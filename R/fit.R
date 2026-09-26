@@ -150,9 +150,8 @@ NULL
 #'   Defaults to `NULL`, in which case `data` is used.
 #' @param preferential `r lifecycle::badge("experimental")` An optional
 #'   preferential-sampling specification from [preferential_sampling()].
-#'   Requires `control = sdmTMBcontrol(backend = "rtmb")`. The joint
-#'   likelihood is not implemented yet, so fitting currently stops with an
-#'   error.
+#'   Requires `control = sdmTMBcontrol(backend = "rtmb")`. The sampling
+#'   indicators are then modeled jointly with the catch data.
 #' @param weights A numeric vector representing optional likelihood weights for
 #'   the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
 #'   to sum to one and are not internally modified. Can also be used for trials
@@ -1005,7 +1004,8 @@ sdmTMB <- function(
   if (!is.null(preferential)) {
     .validate_preferential_scope(
       spec = preferential, formula = formula, delta = has_two_components,
-      multi_family = is_multi_family, areal = is_areal, mesh = spde,
+      multi_family = is_multi_family, family = family, areal = is_areal,
+      mesh = spde,
       mesh_missing = mesh_missing, anisotropy = anisotropy,
       time_varying = time_varying, spatial_varying = spatial_varying,
       nonlocal_formula = nonlocal_formula_parsed, normalize = normalize,
@@ -1182,11 +1182,6 @@ sdmTMB <- function(
       contrasts = lapply(X_ij, attr, which = "contrasts"),
       X_ij = X_ij, mesh = spde, time = time, time_df = time_df
     )
-  }
-  preferential_tmb <- if (!is.null(preferential_prep)) {
-    preferential_prep$data
-  } else {
-    .default_preferential_tmb(n_b_j = ncol(X_ij[[1]]))
   }
 
   if (has_two_components) {
@@ -1456,7 +1451,6 @@ sdmTMB <- function(
     A_spatial_index = A_spatial_index,
     year_i = year_i_data,
     covariate_diffusion = nonlocal_tmb,
-    preferential = preferential_tmb,
     ar1_fields = ar1_fields,
     simulate_t = rep(1L, n_t),
     rw_fields = rw_fields,
@@ -1541,6 +1535,7 @@ sdmTMB <- function(
     exclude_RE = 0L
   )
   tmb_data <- c(tmb_data, family_tmb)
+  tmb_data$preferential <- preferential_prep$data
   tmb_data$poisson_link_delta <- as.integer(fit_poisson_link_delta)
   b_thresh <- matrix(0, 2L, n_m)
   if (thresh[[1]]$threshold_func == 2L) b_thresh <- matrix(0, 3L, n_m) # logistic #TODO: change hard coding on index of thresh[[1]]
@@ -1585,7 +1580,7 @@ sdmTMB <- function(
     b_smooth = if (sm$has_smooths) matrix(0, sum(sm$sm_dims), n_m) else array(0),
     ln_smooth_sigma = if (sm$has_smooths) matrix(0, length(sm$sm_dims), n_m) else array(0)
   )
-  tmb_params <- c(tmb_params, .default_preferential_params())
+  tmb_params <- c(tmb_params, preferential_prep$parameters)
   if (family_spec$n_f == 1L && identical(family$link, "inverse") && family$family[1] %in% c("Gamma", "gaussian", "student") && !has_two_components) {
     fam <- family
     if (family$family == "student") fam$family <- "gaussian"
@@ -1596,6 +1591,9 @@ sdmTMB <- function(
   # Map off parameters not needed
   tmb_map <- map_all_params(tmb_params)
   tmb_map$b_j <- NULL
+  # The sampling coefficients are estimated in every phase. The preference
+  # coefficient and sampling field wait for the catch fields (below).
+  tmb_map$gamma_pref <- NULL
   if (!is_multi_family && has_dispformula) {
     tmb_map <- unmap(tmb_map, "b_disp_k")
   } else {
@@ -1715,6 +1713,10 @@ sdmTMB <- function(
     if (reml) tmb_random <- c(tmb_random, "bs")
     tmb_random <- c(tmb_random, "b_smooth") # smooth random effects
     tmb_map <- unmap(tmb_map, c("b_smooth", "ln_smooth_sigma", "bs"))
+  }
+  if (!is.null(preferential_prep)) {
+    tmb_map <- unmap(tmb_map, names(preferential_prep$parameters))
+    if (preferential$spatial == "on") tmb_random <- c(tmb_random, "xi_s")
   }
 
   if (!is.null(previous_fit)) {

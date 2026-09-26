@@ -29,12 +29,12 @@ knitr::opts_chunk$set(
 
 **This feature is under development.** The previous experimental interface
 (the `preferential_*` arguments to `sdmTMBcontrol()`) has been removed. Its
-replacement is being implemented for the RTMB backend only. The
-specification below can be created, but `sdmTMB()` currently stops before
-fitting it because the joint likelihood is not implemented yet. This article
-will be rewritten with a worked example once fitting works.
+replacement is being implemented for the RTMB backend only. The joint
+likelihood can now be fitted for single log-link families, but post-fit
+methods don't report the sampling model yet. This article will be rewritten
+with a worked example.
 
-The planned model couples the usual catch model to a Bernoulli model for
+The model couples the usual catch model to a Bernoulli model for
 whether each eligible cell of a sampling frame was sampled in each time step:
 
 ```
