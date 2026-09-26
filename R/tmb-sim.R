@@ -611,6 +611,12 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
 
   # re_form stuff
   conditional_re <- !(!is.null(re_form) && ((re_form == ~0) || identical(re_form, NA)))
+  if (!conditional_re && !is.null(object$preferential)) {
+    cli_abort(c(
+      "`re_form = NA` or `~0` is not supported for preferential-sampling models.",
+      "i" = "New catch fields would no longer match the fitted sampling process. Use `re_form = NULL` to simulate conditional on the fitted fields."
+    ))
+  }
   tmb_dat <- object$tmb_data
   if (conditional_re) {
     tmb_dat$sim_re <- rep(0L, length(object$tmb_data$sim_re)) # don't simulate any REs

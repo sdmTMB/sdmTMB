@@ -17,7 +17,13 @@
 #' @param exponentiate Whether to exponentiate the fixed-effect coefficient
 #'   estimates and confidence intervals.
 #' @param model Which model to tidy if a delta model (1 or 2). The `model` will be
-#'   ignored when effects is `"ran_vals"` (all returned in a single dataframe)
+#'   ignored when effects is `"ran_vals"` (all returned in a single dataframe).
+#'   For a model fit with `preferential` (see [preferential_sampling()]),
+#'   `"sampling"` tidies the sampling model instead: `effects = "fixed"` gives
+#'   its coefficients and the preference coefficient `b_pref`, and
+#'   `effects = "ran_pars"` gives the SD and range of the sampling field
+#'   (`sigma_xi`, `range_xi`) if it was estimated. These rows are never part
+#'   of the output for `model = 1` or `2`.
 #'
 #' @param silent Omit any messages?
 #' @param ... Extra arguments (not used).
@@ -83,6 +89,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   if (exponentiate) trans <- exp else trans <- I
 
   reinitialize(x)
+  if (identical(model, "sampling")) {
+    return(.tidy_sampling(x, effects, conf.int, crit, trans))
+  }
   is_areal <- is_areal_fit(x)
   is_car <- is_car_fit(x)
   family_spec <- .object_family_spec(x, caller = "`tidy()`")

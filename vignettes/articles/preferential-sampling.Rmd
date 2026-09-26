@@ -31,9 +31,10 @@ knitr::opts_chunk$set(
 (the `preferential_*` arguments to `sdmTMBcontrol()`) has been removed. Its
 replacement is being implemented for the RTMB backend only. The joint
 likelihood can now be fitted for single log-link families and conventional
-logit/log delta families, but post-fit
-methods don't report the sampling model yet. This article will be rewritten
-with a worked example.
+logit/log delta families. `print()`, `tidy(fit, model = "sampling")`, and
+`predict_sampling()` report the sampling model; see `?preferential_sampling`
+for which other post-fit methods are supported. This article will be
+rewritten with a worked example.
 
 The model couples the usual catch model to a Bernoulli model for
 whether each eligible cell of a sampling frame was sampled in each time step:

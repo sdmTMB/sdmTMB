@@ -757,20 +757,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
     }
 
     if (sims > 0 && is.null(mcmc_samples)) {
-      if (!"jointPrecision" %in% names(object$sd_report) && !has_no_random_effects(object)) {
-        message("Rerunning TMB::sdreport() with `getJointPrecision = TRUE`.")
-        sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
-      } else {
-        sd_report <- object$sd_report
-      }
-      if (has_no_random_effects(object)) {
-        t_draws <- t(mvtnorm::rmvnorm(n = sims, mean = sd_report$par.fixed,
-          sigma = sd_report$cov.fixed))
-        row.names(t_draws) <- NULL
-      } else {
-        t_draws <- rmvnorm_prec(mu = lp,
-          tmb_sd = sd_report, n_sims = sims)
-      }
+      t_draws <- .joint_par_draws(object, lp, sims)
       r <- apply(t_draws, 2L, new_tmb_obj$report)
     }
     if (!is.null(mcmc_samples)) {
@@ -1325,4 +1312,23 @@ check_visreg <- function(sys_calls) {
     A = fmesher::fm_basis(mesh, loc = as.matrix(unique_xy)),
     index = index - 1L
   )
+}
+
+# Draws of all parameters (columns) from the joint precision matrix, centred
+# on `lp`, or from the fixed-effect covariance without random effects.
+.joint_par_draws <- function(object, lp, nsim) {
+  if (has_no_random_effects(object)) {
+    sd_report <- object$sd_report
+    draws <- t(mvtnorm::rmvnorm(n = nsim, mean = sd_report$par.fixed,
+      sigma = sd_report$cov.fixed))
+    row.names(draws) <- NULL
+    return(draws)
+  }
+  if (!"jointPrecision" %in% names(object$sd_report)) {
+    message("Rerunning TMB::sdreport() with `getJointPrecision = TRUE`.")
+    sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
+  } else {
+    sd_report <- object$sd_report
+  }
+  rmvnorm_prec(mu = lp, tmb_sd = sd_report, n_sims = nsim)
 }

@@ -541,6 +541,18 @@ test_that("a sampling-only field can be estimated", {
   sdr <- summary(fit$sd_report, "report")
   expect_true(all(c("sigma_xi", "range_xi") %in% rownames(sdr)))
   expect_gt(sdr["sigma_xi", "Estimate"], 0.3)
+
+  # Post-fit: the field's parameters, its piece of the sampling predictor,
+  # and it isn't counted as a fixed parameter.
+  td <- tidy(fit, "ran_pars", model = "sampling")
+  expect_identical(td$term, c("range_xi", "sigma_xi"))
+  expect_equal(td$estimate, unname(sdr[c("range_xi", "sigma_xi"), "Estimate"]))
+  expect_true(all(td$conf.low < td$estimate & td$estimate < td$conf.high))
+  expect_output(print(fit), "Sampling field SD")
+  p <- predict_sampling(fit, type = "link")
+  expect_equal(p$est, p$est_fixed + p$est_preference + p$est_xi)
+  expect_gt(stats::sd(p$est_xi), 0)
+  expect_identical(attr(logLik(fit), "df"), length(fit$model$par))
 })
 
 test_that("with the preference coefficient fixed at 0 the models decouple", {
@@ -720,6 +732,17 @@ test_that("joint fits work with delta families, smoothers, and IID effects", {
     type = "response")
   expect_equal(r$sampling_target_i, log(p$est), tolerance = 1e-8)
 
+  # Excluding the IID effects and fields from a catch prediction doesn't
+  # change the included IID effects of the fitted sampling surface.
+  data <- predict(fit, newdata = grid, re_form = NA, re_form_iid = NA,
+    offset = rep(0, nrow(grid)), return_tmb_data = TRUE)
+  expect_identical(data$exclude_RE, 1L)
+  obj <- make_sdmTMB_adfun(data, get_pars(fit), fit$tmb_map, fit$tmb_random,
+    backend = "rtmb")
+  expect_equal(obj$fn(fit$model$par), fit$model$objective, tolerance = 1e-6)
+  expect_equal(tidy(fit, model = "sampling")$term,
+    c(paste0("factor(year)", 2018:2020), "b_pref"))
+
   # AD gradients through both components and the smoother agree with
   # central differences when the latent effects are held fixed.
   par <- fit$tmb_obj$env$parList(par = fit$tmb_obj$env$last.par.best)
@@ -738,4 +761,107 @@ test_that("joint fits work with delta families, smoothers, and IID effects", {
     (obj$fn(up) - obj$fn(down)) / (2 * step)
   }, numeric(1))
   expect_equal(as.vector(obj$gr(x))[check], numeric_gr, tolerance = 1e-5)
+})
+
+test_that("tidy() and print() report the sampling model", {
+  skip_on_cran()
+  fit <- pref_joint_fit()
+  td <- tidy(fit, model = "sampling")
+  expect_identical(td$term, c(paste0("factor(year)", 1:3), "b_pref"))
+  par <- fit$model$par
+  expect_equal(td$estimate, unname(par[names(par) %in% c("gamma_pref", "b_pref")]))
+  sdr <- summary(fit$sd_report, "fixed")
+  expect_equal(td$std.error,
+    unname(sdr[rownames(sdr) %in% c("gamma_pref", "b_pref"), "Std. Error"]))
+  expect_equal(td$conf.low, td$estimate - stats::qnorm(0.975) * td$std.error)
+  expect_named(tidy(fit, model = "sampling", conf.int = FALSE),
+    c("term", "estimate", "std.error"))
+  expect_equal(tidy(fit, model = "sampling", exponentiate = TRUE)$estimate,
+    exp(td$estimate))
+  expect_identical(nrow(tidy(fit, "ran_pars", model = "sampling")), 0L)
+  expect_error(tidy(fit, "ran_vals", model = "sampling"), "must be")
+  expect_error(tidy(pref_fit(), model = "sampling"), "requires a model fit")
+
+  # The main-model output is unchanged.
+  expect_identical(tidy(fit)$term, "(Intercept)")
+  expect_false("b_pref" %in% tidy(fit, "ran_pars")$term)
+
+  out <- utils::capture.output(print(fit))
+  expect_true(any(grepl("Sampling model", out)))
+  expect_true(any(grepl("^b_pref", out)))
+  expect_true(any(grepl("1200 rows; 1200 observed", out)))
+  expect_true(any(grepl("IID effects excluded; offset 0", out)))
+  expect_true(any(grepl("includes the sampling likelihood", out)))
+
+  # The joint likelihood counts every fixed parameter; nobs() counts catches.
+  expect_identical(attr(logLik(fit), "df"), length(fit$model$par))
+  expect_identical(nobs(fit), nrow(fit$data))
+})
+
+test_that("predict_sampling() returns fitted probabilities and joint draws", {
+  skip_on_cran()
+  fit <- pref_joint_fit()
+  grid <- fit$preferential$spec$data
+  p <- predict_sampling(fit)
+  expect_equal(p[names(grid)], grid, ignore_attr = "out.attrs")
+  expect_false("est_xi" %in% names(p))
+  r <- fit$tmb_obj$report(fit$tmb_obj$env$last.par.best)
+  expect_equal(p$est, r$sampling_p_i)
+  expect_equal(stats::qlogis(p$est), p$est_fixed + p$est_preference)
+  b <- fit$model$par[["b_pref"]]
+  expect_equal(p$est_preference, b * p$est_target)
+  # The target is the ordinary catch prediction on the frame.
+  expect_equal(p$est_target, predict(fit, newdata = grid)$est,
+    tolerance = 1e-8)
+  expect_equal(predict_sampling(fit, type = "link")$est, stats::qlogis(p$est))
+
+  set.seed(1)
+  draws <- predict_sampling(fit, type = "link", nsim = 200)
+  expect_identical(dim(draws), c(nrow(grid), 200L))
+  expect_gt(stats::cor(rowMeans(draws), stats::qlogis(p$est)), 0.99)
+  # Draws vary with the sampling coefficients: every row has spread.
+  expect_true(all(apply(draws, 1, stats::sd) > 0.01))
+  set.seed(1)
+  expect_equal(predict_sampling(fit, nsim = 200), stats::plogis(draws))
+
+  expect_error(predict_sampling(fit, nsim = -1), "nsim")
+  expect_error(predict_sampling(pref_fit()), "requires a model fit")
+})
+
+test_that("catch predictions and indices keep the joint likelihood", {
+  skip_on_cran()
+  fit <- pref_joint_fit()
+  grid <- fit$preferential$spec$data
+  for (re_form in list(NULL, NA)) {
+    data <- predict(fit, newdata = grid, re_form = re_form,
+      return_tmb_data = TRUE)
+    data$calc_index_totals <- 1L
+    obj <- make_sdmTMB_adfun(data, get_pars(fit), fit$tmb_map,
+      fit$tmb_random, backend = "rtmb")
+    expect_equal(obj$fn(fit$model$par), fit$model$objective,
+      tolerance = 1e-6)
+    expect_true(all(c("gamma_pref", "b_pref") %in% names(obj$par)))
+  }
+  index <- suppressMessages(get_index(fit, newdata = grid, bias_correct = FALSE))
+  expect_identical(nrow(index), 3L)
+  expect_true(all(is.finite(index$se) & index$se > 0))
+})
+
+test_that("unsupported post-fit operations error for preferential fits", {
+  skip_on_cran()
+  fit <- pref_joint_fit()
+  sims <- simulate(fit, nsim = 2, silent = TRUE)
+  expect_identical(dim(sims), c(nrow(fit$data), 2L))
+  expect_error(simulate(fit, re_form = NA, silent = TRUE), "not supported")
+  expect_error(simulate(fit, re_form = ~0, silent = TRUE), "not supported")
+  expect_error(project(fit, fit$preferential$spec$data), "not supported")
+  sim <- pref_sim()
+  expect_error(
+    sdmTMB_cv(catch ~ 1, data = sim$dat, mesh = sim$mesh, time = "year",
+      family = poisson(), k_folds = 2,
+      preferential = preferential_sampling(sampled ~ 0 + factor(year),
+        data = sim$grid),
+      control = sdmTMBcontrol(backend = "rtmb")),
+    "Cross-validation is not supported"
+  )
 })

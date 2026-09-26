@@ -71,9 +71,31 @@ This feature is under development: it requires the RTMB backend
 or spatiotemporal field, and either a single log-link family (Poisson,
 NB2, Gamma, Tweedie, or lognormal) or a logit/log \code{\link[=delta_gamma]{delta_gamma()}} or
 \code{\link[=delta_lognormal]{delta_lognormal()}} family. Smoothers in the main model must be univariate
-\code{s()} terms without \code{by} variables. Post-fit methods such as \code{\link[=tidy]{tidy()}} and
-\code{\link[=print]{print()}} don't report the sampling model yet.
+\code{s()} terms without \code{by} variables.
 }
+\section{Fitted models}{
+
+\itemize{
+\item \code{\link[=print]{print()}} adds a sampling-model section. \code{tidy(fit, model = "sampling")}
+gives the sampling coefficients and \code{b_pref}, and
+\code{tidy(fit, "ran_pars", model = "sampling")} the sampling field's SD and
+range. \code{\link[=predict_sampling]{predict_sampling()}} gives fitted sampling probabilities for the
+sampling frame.
+\item \code{\link[=predict.sdmTMB]{predict.sdmTMB()}}, \code{\link[=get_index]{get_index()}}, and related functions predict catch
+as usual. Their prediction rows are not sampling observations, and their
+uncertainty comes from the joint model, including the sampling
+likelihood.
+\item \code{\link[=logLik]{logLik()}} and \code{\link[=AIC]{AIC()}} use the joint likelihood of the catch data and
+the sampling indicators. Don't compare them with a catch-only model or a
+model with a different sampling frame. \code{\link[=nobs]{nobs()}} still counts catch
+observations only.
+\item \code{\link[=simulate.sdmTMB]{simulate.sdmTMB()}} and \code{\link[=residuals.sdmTMB]{residuals.sdmTMB()}} are conditional on the
+fitted fields and describe the catch data only: they don't check the
+sampling model or draw new sampling locations. \code{simulate()} with
+\code{re_form = NA}, \code{\link[=sdmTMB_cv]{sdmTMB_cv()}}, and \code{\link[=project]{project()}} aren't supported yet.
+}
+}
+
 \examples{
 grid <- data.frame(
   X = c(0, 1, 0, 1), Y = c(0, 0, 1, 1), year = 2020,

@@ -30,8 +30,26 @@
 #' or spatiotemporal field, and either a single log-link family (Poisson,
 #' NB2, Gamma, Tweedie, or lognormal) or a logit/log [delta_gamma()] or
 #' [delta_lognormal()] family. Smoothers in the main model must be univariate
-#' `s()` terms without `by` variables. Post-fit methods such as [tidy()] and
-#' [print()] don't report the sampling model yet.
+#' `s()` terms without `by` variables.
+#'
+#' @section Fitted models:
+#' * [print()] adds a sampling-model section. `tidy(fit, model = "sampling")`
+#'   gives the sampling coefficients and `b_pref`, and
+#'   `tidy(fit, "ran_pars", model = "sampling")` the sampling field's SD and
+#'   range. [predict_sampling()] gives fitted sampling probabilities for the
+#'   sampling frame.
+#' * [predict.sdmTMB()], [get_index()], and related functions predict catch
+#'   as usual. Their prediction rows are not sampling observations, and their
+#'   uncertainty comes from the joint model, including the sampling
+#'   likelihood.
+#' * [logLik()] and [AIC()] use the joint likelihood of the catch data and
+#'   the sampling indicators. Don't compare them with a catch-only model or a
+#'   model with a different sampling frame. [nobs()] still counts catch
+#'   observations only.
+#' * [simulate.sdmTMB()] and [residuals.sdmTMB()] are conditional on the
+#'   fitted fields and describe the catch data only: they don't check the
+#'   sampling model or draw new sampling locations. `simulate()` with
+#'   `re_form = NA`, [sdmTMB_cv()], and [project()] aren't supported yet.
 #'
 #' @param formula A two-sided formula for the sampling model, e.g.
 #'   `sampled ~ 0 + factor(year) + distance_to_port`. The response column
@@ -438,4 +456,145 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
       n_sampled = sum(r == 1, na.rm = TRUE)
     )
   )
+}
+
+# Post-fit methods ------------------------------------------------------------
+
+.check_preferential_fit <- function(object, what) {
+  if (is.null(object$preferential)) {
+    cli_abort("{what} requires a model fit with `preferential` (see `preferential_sampling()`).")
+  }
+}
+
+# Sampling-model rows for tidy(x, model = "sampling"). The coefficients and
+# `b_pref` are fixed effects; the sampling field's SD and range are
+# random-effect parameters, with intervals on the log scale.
+.tidy_sampling <- function(x, effects, conf.int, crit, trans) {
+  .check_preferential_fit(x, "`model = \"sampling\"`")
+  if (!effects %in% c("fixed", "ran_pars")) {
+    cli_abort("With `model = \"sampling\"`, `effects` must be \"fixed\" or \"ran_pars\".")
+  }
+  est <- as.list(x$sd_report, "Estimate")
+  se <- as.list(x$sd_report, "Std. Error")
+  if (effects == "fixed") {
+    out <- data.frame(
+      term = c(colnames(x$tmb_data$preferential$Z_ij), "b_pref"),
+      estimate = c(est$gamma_pref, est$b_pref),
+      std.error = c(se$gamma_pref, se$b_pref),
+      stringsAsFactors = FALSE
+    )
+    if (conf.int) {
+      out$conf.low <- as.numeric(trans(out$estimate - crit * out$std.error))
+      out$conf.high <- as.numeric(trans(out$estimate + crit * out$std.error))
+    }
+    out$estimate <- as.numeric(trans(out$estimate))
+    if (!identical(trans, I)) out$std.error <- NULL
+  } else {
+    out <- data.frame(term = character(0), estimate = numeric(0),
+      std.error = numeric(0), conf.low = numeric(0), conf.high = numeric(0))
+    if (x$preferential$spec$spatial == "on") {
+      est <- as.list(x$sd_report, "Estimate", report = TRUE)
+      se <- as.list(x$sd_report, "Std. Error", report = TRUE)
+      log_est <- c(est$log_range_xi, est$log_sigma_xi)
+      log_se <- c(se$log_range_xi, se$log_sigma_xi)
+      out <- data.frame(
+        term = c("range_xi", "sigma_xi"),
+        estimate = c(est$range_xi, est$sigma_xi),
+        std.error = c(se$range_xi, se$sigma_xi),
+        conf.low = exp(log_est - crit * log_se),
+        conf.high = exp(log_est + crit * log_se),
+        stringsAsFactors = FALSE
+      )
+    }
+    if (!conf.int) out$conf.low <- out$conf.high <- NULL
+  }
+  row.names(out) <- NULL
+  tibble::as_tibble(out)
+}
+
+# Sampling-model section of print.sdmTMB().
+print_sampling <- function(x) {
+  info <- x$preferential
+  spec <- info$spec
+  offset <- unique(range(spec$offset))
+  cat("\nSampling model (preferential sampling): ----------------------\n")
+  cat("Formula: ", deparse1(spec$formula), "\n", sep = "")
+  cat("Sampling frame: ", nrow(spec$data), " rows; ", info$n_observed,
+    " observed (", info$n_sampled, " sampled), ", info$n_unknown,
+    " unknown\n", sep = "")
+  cat("Shared target: log standardized expected catch (IID effects ",
+    if (spec$include_iid) "included" else "excluded", "; offset ",
+    paste(format(offset, digits = 3L), collapse = " to "), ")\n\n", sep = "")
+  b <- tidy(x, model = "sampling", silent = TRUE)
+  mm <- cbind(round(b$estimate, 2L), round(b$std.error, 2L))
+  dimnames(mm) <- list(b$term, c("coef.est", "coef.se"))
+  print(mm)
+  cat("\n")
+  if (spec$spatial == "on") {
+    r <- tidy(x, "ran_pars", model = "sampling", silent = TRUE)
+    cat("Sampling field range: ", mround(r$estimate[r$term == "range_xi"], 2L),
+      "\n", sep = "")
+    cat("Sampling field SD: ", mround(r$estimate[r$term == "sigma_xi"], 2L),
+      "\n", sep = "")
+  }
+  cat("The criterion below includes the sampling likelihood.\n")
+}
+
+#' Predict sampling probabilities from a preferential-sampling model
+#'
+#' @description
+#' `r lifecycle::badge("experimental")`
+#'
+#' Fitted sampling probabilities, and their predictor pieces, for the
+#' sampling frame of a model fit with `preferential` (see
+#' [preferential_sampling()]). Predictions for a new sampling frame or new
+#' time steps are not supported yet.
+#'
+#' @param object A model fit by [sdmTMB()] with `preferential`.
+#' @param type `"response"` for sampling probabilities or `"link"` for the
+#'   logit scale. Applies to `est` and to the draws with `nsim > 0`; the
+#'   predictor pieces are always on the logit scale.
+#' @param nsim If `> 0`, return a matrix of `nsim` draws (columns) of `est`
+#'   for each frame row (rows), from the joint precision matrix of all fixed
+#'   and random effects. Use these draws for uncertainty intervals.
+#'
+#' @return
+#' With `nsim = 0`, the sampling `data` in its original row order with these
+#' columns added:
+#' * `est`: the sampling probability (or its logit, for `type = "link"`).
+#' * `est_target`: the shared target \eqn{h}, the main model's log
+#'   standardized expected catch.
+#' * `est_fixed`: the sampling formula's contribution \eqn{Z\gamma}.
+#' * `est_preference`: the preference contribution \eqn{b h}.
+#' * `est_xi`: the sampling field \eqn{\xi}, if estimated.
+#'
+#' On the link scale, `est` is the sum of `est_fixed`, `est_preference`, and
+#' `est_xi`. With `nsim > 0`, a matrix with one row per frame row.
+#' @export
+predict_sampling <- function(object, type = c("response", "link"), nsim = 0) {
+  assert_that(inherits(object, "sdmTMB"))
+  .check_preferential_fit(object, "`predict_sampling()`")
+  type <- match.arg(type)
+  if (!is.numeric(nsim) || length(nsim) != 1L || is.na(nsim) || nsim < 0 ||
+      nsim != floor(nsim)) {
+    cli_abort("`nsim` must be one non-negative whole number.")
+  }
+  reinitialize(object)
+  inv <- if (type == "response") stats::plogis else identity
+  lp <- object$tmb_obj$env$last.par.best
+  if (nsim > 0) {
+    draws <- .joint_par_draws(object, lp, nsim)
+    out <- apply(draws, 2L, function(par) {
+      object$tmb_obj$report(par)$sampling_eta_i
+    })
+    return(inv(matrix(out, ncol = nsim)))
+  }
+  r <- object$tmb_obj$report(lp)
+  nd <- object$preferential$spec$data
+  nd$est <- inv(r$sampling_eta_i)
+  nd$est_target <- r$sampling_target_i
+  nd$est_fixed <- r$sampling_fixed_i
+  nd$est_preference <- r$sampling_preference_i
+  if (object$preferential$spec$spatial == "on") nd$est_xi <- r$sampling_field_i
+  nd
 }

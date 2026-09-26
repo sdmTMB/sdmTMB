@@ -493,6 +493,7 @@ $$
 
 where $R_{g,t}$ is the 0/1 sampling indicator (`NA` indicators contribute no likelihood); $\bZ_{g,t} \boldsymbol{\gamma}$ is a separate sampling regression with its own coefficients (e.g., free annual intercepts); $b$ is a constant preference coefficient; and $\xi_g$ is an optional, time-invariant, isotropic SPDE spatial field on the model mesh with its own range and marginal standard deviation (reported as `range_xi` and `sigma_xi`) that enters only the sampling model.
 The shared surface is recomputed inside the joint likelihood, which integrates over the shared and sampling-only latent effects.
+The reported log likelihood and AIC are therefore for the catch and sampling data jointly.
 
 # Observation model families
 
