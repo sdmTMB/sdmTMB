@@ -24,13 +24,16 @@ terms.}
 \item{data}{A data frame with one row per eligible cell and time step. It
 must contain the mesh coordinates, the \code{time} column of the main model,
 the sampling response and covariates, and every covariate in the main
-model's fixed-effect formula. The main model is evaluated on these rows
-as with \code{newdata} in \code{\link[=predict.sdmTMB]{predict.sdmTMB()}}, so set catchability covariates
-(e.g., gear) to reference values here.}
+model's fixed effects and smoothers. The main model is evaluated on these
+rows as with \code{newdata} in \code{\link[=predict.sdmTMB]{predict.sdmTMB()}}, so set catchability
+covariates (e.g., gear) to reference values here. Holding a smoothed
+covariate at a reference value holds its smoother at that value.}
 
 \item{re_form_iid}{\code{NA} (default) excludes the main model's IID random
-effects from the expected-catch surface. \code{NULL} would include them, but
-this is not supported yet for models with IID random effects.}
+effects from the expected-catch surface, so their grouping columns aren't
+needed. \code{NULL} includes the fitted random intercepts at the group levels
+in \code{data}; these must be levels in the fitted data, and random slopes
+aren't supported.}
 
 \item{offset}{Offset for the main model's expected-catch surface on the
 link scale (not an offset for the sampling model). A single value or one
@@ -59,13 +62,16 @@ The sampling indicators are modeled jointly with the catch data:
 where \eqn{Z\gamma} is the sampling \code{formula}, \eqn{h} is the main model's
 log expected catch evaluated on the sampling \code{data} (including its spatial
 and spatiotemporal fields), \eqn{b} is a preference coefficient, and
-\eqn{\xi} is an optional sampling-only spatial field.
+\eqn{\xi} is an optional sampling-only spatial field. For a delta model,
+\eqn{h} is the log of the encounter probability times the positive mean,
+\eqn{\log(\mathrm{logit}^{-1}(\eta_1)) + \eta_2}.
 
 This feature is under development: it requires the RTMB backend
-(\code{control = sdmTMBcontrol(backend = "rtmb")}), a single log-link family
-(Poisson, NB2, Gamma, Tweedie, or lognormal), and a main model with a
-spatial or spatiotemporal field, and it doesn't yet support smoothers or
-delta models in the main model. Post-fit methods such as \code{\link[=tidy]{tidy()}} and
+(\code{control = sdmTMBcontrol(backend = "rtmb")}), a main model with a spatial
+or spatiotemporal field, and either a single log-link family (Poisson,
+NB2, Gamma, Tweedie, or lognormal) or a logit/log \code{\link[=delta_gamma]{delta_gamma()}} or
+\code{\link[=delta_lognormal]{delta_lognormal()}} family. Smoothers in the main model must be univariate
+\code{s()} terms without \code{by} variables. Post-fit methods such as \code{\link[=tidy]{tidy()}} and
 \code{\link[=print]{print()}} don't report the sampling model yet.
 }
 \examples{

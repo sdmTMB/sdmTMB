@@ -458,8 +458,7 @@ CAR requires a symmetric adjacency matrix.
 
 ## Preferential sampling
 
-**This feature is experimental and under development.** It is available only with the RTMB backend, via `sdmTMB(..., preferential = preferential_sampling(...))`, and currently supports single log-link families (Poisson, NB2, Gamma, Tweedie, lognormal) without smoothers.
-For these families, the link-scale predictor is the log of the response mean.
+**This feature is experimental and under development.** It is available only with the RTMB backend, via `sdmTMB(..., preferential = preferential_sampling(...))`, and currently supports single log-link families (Poisson, NB2, Gamma, Tweedie, lognormal) and conventional logit/log `delta_gamma()` and `delta_lognormal()` families.
 
 The joint model couples the main observation model to a Bernoulli model for whether each eligible cell $g$ of a sampling frame was sampled in time step $t$.
 This is useful when sample locations depend on the process being measured (e.g., a fishery that preferentially returns to productive grounds).
@@ -468,12 +467,20 @@ The shared surface is the log of standardized expected catch, $h_{g,t}$.
 It is the main model evaluated on the sampling frame, as with prediction `newdata`:
 
 $$
-h_{g,t} = \bX^{*}_{g,t} \bbeta + O^{*}_{g,t} + \bA^{*}_{g} \bomega + \bA^{*}_{g} \beps_t,
+\eta^{*}_{g,t} = \bX^{*}_{g,t} \bbeta + f^{*}_{g,t} + \alpha^{*}_{g,t} + O^{*}_{g,t} + \bA^{*}_{g} \bomega + \bA^{*}_{g} \beps_t,
 $$
 
-where $\bX^{*}_{g,t}$ is the main model's fixed-effect design evaluated on the frame's covariate values, using the fitted terms, factor levels, contrasts, and transformation bases; $\bbeta$ are the main model's coefficients; $O^{*}_{g,t}$ is an offset for the surface (by default 0, i.e., unit exposure); and $\bA^{*}_{g}$ projects the main model's spatial and spatiotemporal fields to the frame locations.
+where $\bX^{*}_{g,t}$ is the main model's fixed-effect design evaluated on the frame's covariate values, using the fitted terms, factor levels, contrasts, and transformation bases; $\bbeta$ are the main model's coefficients; $f^{*}_{g,t}$ are the main model's (univariate) smoothers evaluated with their fitted bases; $\alpha^{*}_{g,t}$ are the main model's fitted IID random intercepts at the frame's group levels, included only with `re_form_iid = NULL` (by default they are excluded, i.e., 0); $O^{*}_{g,t}$ is an offset for the surface (by default 0, i.e., unit exposure); and $\bA^{*}_{g}$ projects the main model's spatial and spatiotemporal fields to the frame locations.
 The frame's covariate values define the standardization (e.g., gear set to a reference level).
-IID random effects of the main model are excluded from the surface.
+
+For a log-link family, $h_{g,t} = \eta^{*}_{g,t}$.
+For a delta model, $\eta^{*}_{1,g,t}$ and $\eta^{*}_{2,g,t}$ are evaluated with each component's own design, coefficients, and fields, and $h$ is the log of encounter probability times positive mean,
+
+$$
+h_{g,t} = \log \left( \mathrm{logit}^{-1} \left( \eta^{*}_{1,g,t} \right) \right) + \eta^{*}_{2,g,t},
+$$
+
+not the sum of the two link predictors. As in prediction, the offset enters only the positive component.
 
 Whether each cell was sampled is then modeled as
 

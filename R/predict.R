@@ -587,25 +587,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
           }
         }
 
-        # now do with a joint data frame to ensure factor levels match
-        common_cols <- intersect(colnames(object$data), colnames(nd))
-        nd_aligned <- nd[, common_cols, drop = FALSE]
-        for (col_name in common_cols) {
-          if (is.factor(object$data[[col_name]]) && is.factor(nd_aligned[[col_name]])) {
-            nd_aligned[[col_name]] <- factor(
-              as.character(nd_aligned[[col_name]]),
-              levels = levels(object$data[[col_name]])
-            )
-            if (anyNA(nd_aligned[[col_name]])) {
-              nd_aligned[[col_name]][is.na(nd_aligned[[col_name]])] <-
-                levels(object$data[[col_name]])[1]
-            }
-          }
-        }
-        joint_df <- rbind(object$data[, common_cols, drop = FALSE], nd_aligned)
-        xx <- parse_formula(re_formula_no_response, joint_df)
-        # drop the original data:
-        Zt <- xx$re_cov_terms$Zt[, seq(nrow(object$data) + 1, nrow(object$data) + nrow(nd)), drop = FALSE]
+        Zt <- .iid_design(re_formula_no_response, object$data, nd)
         if (length(new_level_rows) > 0) {
           Zt[, new_level_rows] <- 0
         }
@@ -1324,4 +1306,25 @@ check_visreg <- function(sys_calls) {
 .fixed_effect_design <- function(terms, newdata, xlevels, contrasts, ...) {
   mf <- stats::model.frame(terms, newdata, xlev = xlevels, ...)
   stats::model.matrix(terms, mf, contrasts.arg = contrasts)
+}
+
+# Transposed IID random-effect design for `newdata`, indexed like the fitted
+# random effects: the terms are parsed on the fitted and new rows together so
+# that factor levels match, and only the new rows are kept. New factor levels
+# get the first fitted level; callers deal with them.
+.iid_design <- function(re_formula, data, newdata) {
+  common_cols <- intersect(colnames(data), colnames(newdata))
+  nd <- newdata[, common_cols, drop = FALSE]
+  for (col_name in common_cols) {
+    if (is.factor(data[[col_name]]) && is.factor(nd[[col_name]])) {
+      nd[[col_name]] <- factor(as.character(nd[[col_name]]),
+        levels = levels(data[[col_name]]))
+      if (anyNA(nd[[col_name]])) {
+        nd[[col_name]][is.na(nd[[col_name]])] <- levels(data[[col_name]])[1]
+      }
+    }
+  }
+  joint <- rbind(data[, common_cols, drop = FALSE], nd)
+  Zt <- parse_formula(re_formula, joint)$re_cov_terms$Zt
+  Zt[, nrow(data) + seq_len(nrow(nd)), drop = FALSE]
 }

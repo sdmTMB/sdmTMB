@@ -93,16 +93,16 @@ has_preferential <- function(data) isTRUE(data$preferential$n_pref > 0L)
 # `rows`, the frame's shared catch-predictor rows for
 # rtmb_linear_predictors(). Like projection rows, these select from the
 # unique frame locations. Terms that preferential sampling doesn't support
-# yet (smoothers, SVCs, thresholds, time-varying, and diffusion) are rejected
-# before this point and have no inputs here. The optional sampling field
+# yet (SVCs, thresholds, time-varying, and diffusion) are rejected before
+# this point and have no inputs here. The optional sampling field
 # `xi` always uses an isotropic SPDE precision on the model mesh, even in the
 # first multiphase fit, when the catch fields are off.
 rtmb_preferential_inputs <- function(data, families) {
   pref <- data$preferential
   station_index <- pref$station_i + 1L
   rows <- list(
-    X = pref$X_ij, offset = pref$offset_i,
-    Zt = list(), include_iid = pref$include_iid == 1L,
+    X = pref$X_ij, offset = pref$offset_i, Zs = pref$Zs, Xs = pref$Xs,
+    Zt = pref$Zt_list, include_iid = pref$include_iid == 1L,
     A_rows = pref$A_station[station_index, , drop = FALSE],
     A_station = pref$A_station, station_index = station_index,
     time = pref$year_i + 1L,

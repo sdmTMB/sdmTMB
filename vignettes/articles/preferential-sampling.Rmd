@@ -30,7 +30,8 @@ knitr::opts_chunk$set(
 **This feature is under development.** The previous experimental interface
 (the `preferential_*` arguments to `sdmTMBcontrol()`) has been removed. Its
 replacement is being implemented for the RTMB backend only. The joint
-likelihood can now be fitted for single log-link families, but post-fit
+likelihood can now be fitted for single log-link families and conventional
+logit/log delta families, but post-fit
 methods don't report the sampling model yet. This article will be rewritten
 with a worked example.
 

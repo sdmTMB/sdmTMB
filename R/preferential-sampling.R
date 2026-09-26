@@ -21,13 +21,16 @@
 #' where \eqn{Z\gamma} is the sampling `formula`, \eqn{h} is the main model's
 #' log expected catch evaluated on the sampling `data` (including its spatial
 #' and spatiotemporal fields), \eqn{b} is a preference coefficient, and
-#' \eqn{\xi} is an optional sampling-only spatial field.
+#' \eqn{\xi} is an optional sampling-only spatial field. For a delta model,
+#' \eqn{h} is the log of the encounter probability times the positive mean,
+#' \eqn{\log(\mathrm{logit}^{-1}(\eta_1)) + \eta_2}.
 #'
 #' This feature is under development: it requires the RTMB backend
-#' (`control = sdmTMBcontrol(backend = "rtmb")`), a single log-link family
-#' (Poisson, NB2, Gamma, Tweedie, or lognormal), and a main model with a
-#' spatial or spatiotemporal field, and it doesn't yet support smoothers or
-#' delta models in the main model. Post-fit methods such as [tidy()] and
+#' (`control = sdmTMBcontrol(backend = "rtmb")`), a main model with a spatial
+#' or spatiotemporal field, and either a single log-link family (Poisson,
+#' NB2, Gamma, Tweedie, or lognormal) or a logit/log [delta_gamma()] or
+#' [delta_lognormal()] family. Smoothers in the main model must be univariate
+#' `s()` terms without `by` variables. Post-fit methods such as [tidy()] and
 #' [print()] don't report the sampling model yet.
 #'
 #' @param formula A two-sided formula for the sampling model, e.g.
@@ -39,12 +42,15 @@
 #' @param data A data frame with one row per eligible cell and time step. It
 #'   must contain the mesh coordinates, the `time` column of the main model,
 #'   the sampling response and covariates, and every covariate in the main
-#'   model's fixed-effect formula. The main model is evaluated on these rows
-#'   as with `newdata` in [predict.sdmTMB()], so set catchability covariates
-#'   (e.g., gear) to reference values here.
+#'   model's fixed effects and smoothers. The main model is evaluated on these
+#'   rows as with `newdata` in [predict.sdmTMB()], so set catchability
+#'   covariates (e.g., gear) to reference values here. Holding a smoothed
+#'   covariate at a reference value holds its smoother at that value.
 #' @param re_form_iid `NA` (default) excludes the main model's IID random
-#'   effects from the expected-catch surface. `NULL` would include them, but
-#'   this is not supported yet for models with IID random effects.
+#'   effects from the expected-catch surface, so their grouping columns aren't
+#'   needed. `NULL` includes the fitted random intercepts at the group levels
+#'   in `data`; these must be levels in the fitted data, and random slopes
+#'   aren't supported.
 #' @param offset Offset for the main model's expected-catch surface on the
 #'   link scale (not an offset for the sampling model). A single value or one
 #'   value per row of `data`. The default `0` means unit exposure.
@@ -146,14 +152,28 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
   }
   formulas <- .formula_list(formula)
   term_labels <- unlist(lapply(formulas, all_terms))
-  has_iid <- any(vapply(formulas, function(f) {
-    length(reformulas::findbars(f)) > 0L
-  }, logical(1L)))
+  bars <- unlist(lapply(formulas, reformulas::findbars))
+  random_slopes <- !all(vapply(bars, function(b) identical(b[[2L]], 1),
+    logical(1L)))
+  smooths <- term_labels[get_smooth_terms(term_labels)]
+  # Ordinary univariate smooths only: no `by` variables, tensor products,
+  # or Markov random fields.
+  univariate <- vapply(smooths, function(x) {
+    s <- eval(str2expression(x))
+    length(s$term) == 1L && identical(s$by, "NA") &&
+      !inherits(s, c("t2.smooth.spec", "tensor.smooth.spec", "mrf.smooth.spec"))
+  }, logical(1L))
   log_link_family <- !delta && !multi_family &&
     family$family[[1L]] %in% .preferential_families &&
     identical(family$link[[1L]], "log")
+  conventional_delta <- delta && !multi_family &&
+    identical(family$type, "standard") &&
+    identical(family$family[[1L]], "binomial") &&
+    family$family[[2L]] %in% c("Gamma", "lognormal") &&
+    identical(unname(family$link), c("logit", "log"))
   unsupported <- c(
-    "delta models" = delta,
+    "delta models other than logit/log `delta_gamma()` or `delta_lognormal()`" =
+      delta && !multi_family && !conventional_delta,
     "families other than log-link Poisson, NB2, Gamma, Tweedie, or lognormal" =
       !delta && !multi_family && !log_link_family,
     "multi-family models" = multi_family,
@@ -165,9 +185,10 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
     "`nonlocal_formula`" = !is.null(nonlocal_formula),
     "threshold (`breakpt()`/`logistic()`) terms" =
       any(grepl("^(breakpt|logistic)\\(", term_labels)),
-    "smoothers in `formula`" = length(get_smooth_terms(term_labels)) > 0L,
-    "including IID random effects (`re_form_iid = NULL`)" =
-      has_iid && spec$include_iid,
+    "smoothers other than univariate `s()` terms without `by`" =
+      !all(univariate),
+    "including random slopes (`re_form_iid = NULL`)" =
+      random_slopes && spec$include_iid,
     "`normalize = TRUE`" = isTRUE(normalize)
   )
   if (any(unsupported)) {
@@ -280,18 +301,45 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
   )
 }
 
+# IID random intercepts at the frame rows, for `re_form_iid = NULL`. Group
+# levels must be levels of the fitted data: the joint model doesn't add new
+# random-effect levels or average over the group distribution.
+.preferential_iid_design <- function(re_formula, fit_data, data) {
+  groups <- barnames(reformulas::findbars(re_formula))
+  .check_frame_columns(data, groups, "the main model's IID random effects")
+  for (g in groups) {
+    fitted <- fit_data[[g]]
+    levels <- if (is.factor(fitted)) levels(fitted) else
+      unique(as.character(fitted))
+    values <- as.character(data[[g]])
+    new <- setdiff(values, levels)
+    if (length(new)) {
+      cli_abort(c(
+        "The sampling `data` has random-effect group level(s) not in the fitted data.",
+        "x" = "New level(s) of {.field {g}}: {.val {new}}",
+        "i" = "Use `re_form_iid = NA` to exclude IID random effects from the expected-catch surface."
+      ))
+    }
+    data[[g]] <- if (is.factor(fitted)) factor(values, levels = levels) else values
+  }
+  bars <- vapply(reformulas::findbars(re_formula), deparse1, character(1L))
+  .iid_design(stats::reformulate(paste0("(", bars, ")")), fit_data[groups],
+    data[groups])
+}
+
 #' Prepare the preferential-sampling frame and designs
 #'
 #' Validates the sampling `data` against the fitted main model and builds the
 #' nested `preferential` block of the model data, its parameters, and R-only
-#' metadata. The shared catch design is the main model's fitted fixed-effect
-#' design evaluated on the sampling rows (as prediction does), using the fitted
-#' `terms` (with `predvars`), `xlevels`, and `contrasts`. Indices are
-#' zero-based, as elsewhere in the model data; `rtmb_prepare()` converts them.
-#' Row order is kept throughout.
+#' metadata. The shared catch design is the main model evaluated on the
+#' sampling rows, as prediction does: the fitted fixed-effect `terms` (with
+#' `predvars`), `xlevels`, and `contrasts`; the fitted smoother bases in
+#' `smoothers`; and, if included, the IID random intercepts indexed as in the
+#' fitted data `fit_data`. Indices are zero-based, as elsewhere in the model
+#' data; `rtmb_prepare()` converts them. Row order is kept throughout.
 #' @noRd
 .prepare_preferential <- function(spec, terms, xlevels, contrasts, X_ij,
-                                  mesh, time, time_df) {
+                                  smoothers, fit_data, mesh, time, time_df) {
   data <- spec$data
   n <- nrow(data)
   r <- as.numeric(data[[spec$response]])
@@ -371,6 +419,21 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
     X
   })
 
+  sm <- list(Zs = list(), Xs = matrix(0, 0L, 0L))
+  if (smoothers$has_smooths) {
+    .check_frame_columns(data,
+      all.vars(stats::delete.response(stats::terms(smoothers$formula_no_bars))),
+      "the main model's smoothers")
+    sm <- parse_smoothers(smoothers$formula_no_bars, data = fit_data,
+      newdata = data, basis_prev = smoothers$basis_out)
+  }
+  re_formula <- smoothers$formula_no_sm
+  Zt_list <- list()
+  if (spec$include_iid && length(reformulas::findbars(re_formula))) {
+    Zt_list <- rep(list(.preferential_iid_design(re_formula, fit_data, data)),
+      length(X_ij))
+  }
+
   # Start the sampling coefficients at the sampling-only logistic regression
   # estimates; separation was ruled out above.
   start <- tryCatch(
@@ -387,6 +450,9 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
       R_i = r,
       Z_ij = sampling$Z,
       X_ij = X_pref,
+      Zs = sm$Zs,
+      Xs = sm$Xs,
+      Zt_list = Zt_list,
       offset_i = spec$offset,
       A_station = A_station,
       station_i = station_i,

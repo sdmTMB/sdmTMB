@@ -1174,16 +1174,6 @@ sdmTMB <- function(
     sm[[ii]]$formula_no_bars_no_sm <- formula_no_bars_no_sm
   }
 
-  preferential_prep <- if (!is.null(preferential)) {
-    .prepare_preferential(
-      preferential,
-      terms = mt,
-      xlevels = lapply(seq_along(mf), function(i) stats::.getXlevels(mt[[i]], mf[[i]])),
-      contrasts = lapply(X_ij, attr, which = "contrasts"),
-      X_ij = X_ij, mesh = spde, time = time, time_df = time_df
-    )
-  }
-
   if (has_two_components) {
     random_effects <- lapply(split_formula, function(x) {
       vapply(x$bars, safe_deparse, character(1))
@@ -1249,6 +1239,17 @@ sdmTMB <- function(
 
   # always shared; only keep track of one:
   sm <- sm[[1]]
+
+  preferential_prep <- if (!is.null(preferential)) {
+    .prepare_preferential(
+      preferential,
+      terms = mt,
+      xlevels = lapply(seq_along(mf), function(i) stats::.getXlevels(mt[[i]], mf[[i]])),
+      contrasts = lapply(X_ij, attr, which = "contrasts"),
+      X_ij = X_ij, smoothers = sm, fit_data = data, mesh = spde, time = time,
+      time_df = time_df
+    )
+  }
 
   y_i <- model.response(mf[[1]], "any")
 
