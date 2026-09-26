@@ -12,8 +12,10 @@
   `sdmTMB(..., preferential = preferential_sampling(...))`. A Bernoulli
   model for which cells of an eligible sampling frame were sampled is linked
   to the main model's standardized expected catch through a shared
-  preference coefficient, with its own fixed effects and an optional
-  sampling-only spatial field. See `predict_sampling()`,
+  preference coefficient, with its own fixed effects, an optional
+  sampling-only spatial field, and optional IID or random-walk time-step
+  processes for the preference coefficient (`coefficient`) and the sampling
+  baseline (`baseline`). See `predict_sampling()`,
   `tidy(fit, model = "sampling")`, and the preferential-sampling article.
 
 * Fix calling the index functions directly on a `do_index = TRUE` fit:

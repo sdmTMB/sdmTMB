@@ -25,12 +25,15 @@ columns added:
 \item \code{est_target}: the shared target \eqn{h}, the main model's log
 standardized expected catch.
 \item \code{est_fixed}: the sampling formula's contribution \eqn{Z\gamma}.
-\item \code{est_preference}: the preference contribution \eqn{b h}.
+\item \code{est_baseline}: the baseline deviation \eqn{\alpha_t}, if \code{baseline}
+was used.
+\item \code{est_preference}: the preference contribution, \eqn{b h} plus
+\eqn{(b_t - b)(h - \bar{h}_t)} for a temporal \code{coefficient}.
 \item \code{est_xi}: the sampling field \eqn{\xi}, if estimated.
 }
 
-On the link scale, \code{est} is the sum of \code{est_fixed}, \code{est_preference}, and
-\code{est_xi}. With \code{nsim > 0}, a matrix with one row per frame row.
+On the link scale, \code{est} is the sum of \code{est_fixed}, \code{est_baseline},
+\code{est_preference}, and \code{est_xi}. With \code{nsim > 0}, a matrix with one row per frame row.
 }
 \description{
 \ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}}

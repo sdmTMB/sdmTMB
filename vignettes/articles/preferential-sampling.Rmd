@@ -370,8 +370,10 @@ component only.
   Gamma, Tweedie, or lognormal families, or logit/log delta-gamma and
   delta-lognormal; univariate `s()` smoothers; IID random intercepts
   (excluded, or included at known levels); ordinary isotropic spatial and
-  spatiotemporal fields; ordinary fixed effects in the sampling formula; and
-  one constant preference coefficient. Other features give an error.
+  spatiotemporal fields; ordinary fixed effects in the sampling formula; a
+  constant preference coefficient or one that varies by time step
+  (`coefficient = "iid"` or `"rw"`); and an optional IID or random-walk
+  sampling baseline (`baseline`). Other features give an error.
 
 ## Troubleshooting
 
@@ -385,6 +387,12 @@ component only.
 * **The sampling-field SD goes to zero,** with a non-positive-definite
   Hessian. The data don't support the field (see above). Turn it off, or
   report it as a boundary estimate.
+* **`sigma_b_pref` (or `sigma_alpha_pref`) goes to zero.** With
+  `coefficient = "iid"` or `"rw"`, the data may not show year-to-year
+  variation in preference beyond sampling noise. With 8 or so time steps,
+  this also happens by chance when the preference does vary. A collapsed SD
+  gives the constant model's estimates; report it as a boundary estimate or
+  use `coefficient = "constant"`.
 * **`b_pref` is uncertain or strongly correlated with other parameters.**
   The preference coefficient is identified by variation in the shared fields
   that the sampling covariates don't explain. A sampling formula that

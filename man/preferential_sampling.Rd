@@ -9,7 +9,8 @@ preferential_sampling(
   data,
   re_form_iid = NA,
   offset = 0,
-  coefficient = "constant",
+  coefficient = c("constant", "iid", "rw"),
+  baseline = c("off", "iid", "rw"),
   spatial = c("off", "on")
 )
 }
@@ -40,8 +41,51 @@ link scale (not an offset for the sampling model). A single value or one
 value per row of \code{data}. The default \code{0} means unit exposure.
 Observation offsets are not copied.}
 
-\item{coefficient}{How the preference coefficient varies. Only
-\code{"constant"} (one coefficient) is currently supported.}
+\item{coefficient}{How the preference coefficient \eqn{b} varies over
+the main model's time steps:
+\itemize{
+\item \code{"constant"} (default): one coefficient, \code{b_pref}.
+\item \code{"iid"}: \eqn{b_t = \bar{b} + u_t} with independent
+\eqn{u_t \sim \mathrm{Normal}(0, \sigma_b^2)}. \code{b_pref} is
+\eqn{\bar{b}}.
+\item \code{"rw"}: a random walk, \eqn{b_1} = \code{b_pref} and
+\eqn{b_t = b_{t-1} + d_t} with independent
+\eqn{d_t \sim \mathrm{Normal}(0, \sigma_b^2)}. Time steps must be
+equally spaced; fill gaps with \code{extra_time} in \code{\link[=sdmTMB]{sdmTMB()}}.
+}
+
+The deviations \eqn{b_t - \bar{b}} (with \eqn{\bar{b}} = \code{b_pref})
+multiply \eqn{h - \bar{h}_t}, where \eqn{\bar{h}_t} is the mean over
+the rows of \code{data} in time step \eqn{t} of \eqn{h} without its spatial
+and spatiotemporal fields (i.e., of the fixed effects, smoothers, IID
+effects, and \code{offset}). The deviations therefore change how strongly
+sampling concentrates on high expected catch within a time step, not
+(to the extent the fields average to about 0 over the frame) the time
+step's sampling rate. With free time-step intercepts in \code{formula}, this
+changes only what the intercepts mean, but it keeps the deviations' SD
+estimable: an uncentered deviation also shifts the rate that the
+intercept already pins down, and its SD then tends to be estimated as 0.
+The fields are left out of \eqn{\bar{h}_t} because their frame mean
+would link every sampling row to every mesh vertex of its time step and
+make fitting slow. So if the main model's time-step means come from a
+random-walk or AR(1) spatiotemporal field rather than fixed effects,
+consider adding time-step fixed effects (e.g., \code{0 + factor(year)}) to the
+main model.
+
+Every time step of the main model (including \code{extra_time}) gets a
+coefficient; time steps without observed sampling indicators get theirs
+from the IID or random-walk distribution alone. At least two time steps
+are required, but a handful of time steps carries little information
+about \eqn{\sigma_b}: check its estimate and interval, and prefer
+\code{"constant"} unless the data support more.}
+
+\item{baseline}{An optional temporal process for the sampling intercept,
+added to the sampling \code{formula}: \code{"off"} (default), \code{"iid"}, or \code{"rw"},
+defined as for \code{coefficient}. The \code{formula}'s intercept is the mean
+(\code{"iid"}) or first-time-step value (\code{"rw"}) of the baseline. This
+shrinks the time-step baselines towards each other instead of
+estimating them freely with \code{0 + factor(year)}, and so requires a
+\code{formula} with an intercept and without free time-step effects.}
 
 \item{spatial}{Whether to add a time-invariant spatial random field to the
 sampling model (\code{"off"} or \code{"on"}). This does not affect the main
@@ -58,12 +102,16 @@ in each time step, linked to the main model's standardized expected catch.
 Pass the result to the \code{preferential} argument of \code{\link[=sdmTMB]{sdmTMB()}}.
 
 The sampling indicators are modeled jointly with the catch data:
-\deqn{\mathrm{logit}(p) = Z\gamma + b h + \xi,}
+\deqn{\mathrm{logit}(p) = Z\gamma + \alpha_t + b h + (b_t - b)(h -
+\bar{h}_t) + \xi,}
 where \eqn{Z\gamma} is the sampling \code{formula}, \eqn{h} is the main model's
 log expected catch evaluated on the sampling \code{data} (including its spatial
-and spatiotemporal fields), \eqn{b} is a preference coefficient, and
-\eqn{\xi} is an optional sampling-only spatial field. For a delta model,
-\eqn{h} is the log of the encounter probability times the positive mean,
+and spatiotemporal fields), \eqn{b} is the preference coefficient
+\code{b_pref} and \eqn{b_t} its value in time step \eqn{t} (\eqn{b_t = b} by
+default; see \code{coefficient}, which also defines \eqn{\bar{h}_t}),
+\eqn{\alpha_t} is an optional temporal baseline process (see
+\code{baseline}), and \eqn{\xi} is an optional sampling-only spatial field.
+For a delta model, \eqn{h} is the log of the encounter probability times the positive mean,
 \eqn{\log(\mathrm{logit}^{-1}(\eta_1)) + \eta_2}.
 
 This feature is under development: it requires the RTMB backend
@@ -77,10 +125,12 @@ NB2, Gamma, Tweedie, or lognormal) or a logit/log \code{\link[=delta_gamma]{delt
 
 \itemize{
 \item \code{\link[=print]{print()}} adds a sampling-model section. \code{tidy(fit, model = "sampling")}
-gives the sampling coefficients and \code{b_pref}, and
+gives the sampling coefficients and \code{b_pref},
 \code{tidy(fit, "ran_pars", model = "sampling")} the sampling field's SD and
-range. \code{\link[=predict_sampling]{predict_sampling()}} gives fitted sampling probabilities for the
-sampling frame.
+range and the SDs of any temporal processes, and
+\code{tidy(fit, "ran_vals", model = "sampling")} the preference coefficient
+and baseline deviation by time step. \code{\link[=predict_sampling]{predict_sampling()}} gives fitted
+sampling probabilities for the sampling frame.
 \item \code{\link[=predict.sdmTMB]{predict.sdmTMB()}}, \code{\link[=get_index]{get_index()}}, and related functions predict catch
 as usual. Their prediction rows are not sampling observations, and their
 uncertainty comes from the joint model, including the sampling

@@ -301,9 +301,9 @@ sanity <- function(object, big_sd_log10 = 2, gradient_thresh = 0.001, silent = F
 par_df <- function() {
   data.frame(
     internal = c("ln_tau_O", "ln_tau_E", "ln_tau_V", "ln_tau_Z", "ln_kappa",
-      "ln_tau_xi", "ln_kappa_xi"),
+      "ln_tau_xi", "ln_kappa_xi", "ln_sigma_b_pref", "ln_sigma_alpha_pref"),
     external = c("sigma_O", "sigma_E", "sigma_V", "sigma_Z", "range",
-      "sigma_xi", "range_xi"),
+      "sigma_xi", "range_xi", "sigma_b_pref", "sigma_alpha_pref"),
     meaning = c(
       "spatial standard deviation",
       "spatiotemporal standard deviation",
@@ -311,7 +311,9 @@ par_df <- function() {
       "spatially varying coefficient standard deviation",
       "distance at which data are effectively independent",
       "sampling-only field standard deviation",
-      "sampling-only field range"
+      "sampling-only field range",
+      "SD of the preference coefficient's time-step deviations",
+      "SD of the sampling baseline's time-step deviations"
     ),
     stringsAsFactors = FALSE
   )

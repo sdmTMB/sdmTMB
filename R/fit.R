@@ -1595,7 +1595,8 @@ sdmTMB <- function(
   tmb_map <- map_all_params(tmb_params)
   tmb_map$b_j <- NULL
   # The sampling coefficients are estimated in every phase. The preference
-  # coefficient and sampling field wait for the catch fields (below).
+  # coefficient, sampling field, and temporal processes wait for the catch
+  # fields (below).
   tmb_map$gamma_pref <- NULL
   if (!is_multi_family && has_dispformula) {
     tmb_map <- unmap(tmb_map, "b_disp_k")
@@ -1719,7 +1720,7 @@ sdmTMB <- function(
   }
   if (!is.null(preferential_prep)) {
     tmb_map <- unmap(tmb_map, names(preferential_prep$parameters))
-    if (preferential$spatial == "on") tmb_random <- c(tmb_random, "xi_s")
+    tmb_random <- c(tmb_random, preferential_prep$random)
   }
 
   if (!is.null(previous_fit)) {

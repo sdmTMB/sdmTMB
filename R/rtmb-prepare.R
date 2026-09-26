@@ -114,6 +114,17 @@ rtmb_preferential_inputs <- function(data, families) {
     observed = which(!is.na(pref$R_i)),
     Z = pref$Z_ij,
     xi = pref$spatial_xi == 1L,
+    # Temporal processes for the preference coefficient and the baseline:
+    # "none", "iid", or "rw".
+    coefficient = c("none", "iid", "rw")[pref$coefficient_type + 1L],
+    baseline = c("none", "iid", "rw")[pref$baseline_type + 1L],
+    # Averages the frame rows of each time step present in the frame (time
+    # by row); `time_mean_index` gives each row's time step among those.
+    time_mean = if (pref$coefficient_type > 0L) {
+      x <- Matrix::fac2sparse(factor(pref$year_i))
+      Matrix::Diagonal(x = 1 / Matrix::rowSums(x)) %*% x
+    },
+    time_mean_index = as.integer(factor(pref$year_i)),
     precision = if (pref$spatial_xi == 1L) {
       rtmb_precision_inputs(list(spatial_model = 0L, no_spatial = 0L,
         barrier = 0L, anisotropy = 0L, spde = data$spde))
@@ -267,7 +278,9 @@ rtmb_validate <- function(data, prepared, parameters, random, ...) {
     if ("b_j2" %in% random) "b_j2",
     if (prepared$smooths && "bs" %in% random) "bs",
     if (prepared$smooths) "b_smooth",
-    if (isTRUE(prepared$preferential$xi)) "xi_s"
+    if (isTRUE(prepared$preferential$xi)) "xi_s",
+    if (isTRUE(prepared$preferential$coefficient != "none")) "b_pref_dev",
+    if (isTRUE(prepared$preferential$baseline != "none")) "alpha_pref_dev"
   )
   unexpected <- setdiff(random, expected_random)
   if (length(unexpected)) {

@@ -130,7 +130,7 @@ logLik.sdmTMB <- function(object, ...) {
   nobs <- nobs.sdmTMB(object)
   lpb <- names(object$tmb_obj$env$last.par.best)
   ran <- c("omega_s", "epsilon_st", "zeta_s", "b_rw_t", "RE", "b_smooth", "re_b_pars",
-    "xi_s")
+    "xi_s", "b_pref_dev", "alpha_pref_dev")
   df <- sum(!lpb %in% ran)
   structure(val,
     nobs = nobs, nall = nobs, df = df,

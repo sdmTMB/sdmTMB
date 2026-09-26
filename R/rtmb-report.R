@@ -82,12 +82,21 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
     if (!is.null(sampling)) {
       list(sampling_target_i = sampling$target,
         sampling_fixed_i = sampling$fixed,
+        sampling_baseline_i = sampling$baseline,
         sampling_preference_i = sampling$preference,
         sampling_field_i = sampling$field, sampling_eta_i = sampling$eta,
         sampling_p_i = RTMB::plogis(sampling$eta))
     },
     if (!is.null(theta$xi)) {
       list(sigma_xi = theta$xi$sigma, range_xi = theta$xi$range)
+    },
+    # Preference coefficient and baseline deviation by time step
+    if (!is.null(theta$sigma_b_pref)) {
+      list(b_pref_t = sampling$b_t, sigma_b_pref = theta$sigma_b_pref)
+    },
+    if (!is.null(theta$sigma_alpha_pref)) {
+      list(alpha_pref_t = sampling$alpha_t,
+        sigma_alpha_pref = theta$sigma_alpha_pref)
     },
     if (requested[["total"]]) derived["link_total"],
     if (requested[["weighted_avg"]]) derived["weighted_avg"],
@@ -100,6 +109,7 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
   with_se <- c("sigma_O", "sigma_E", "sigma_Z", "sigma_V", "re_cov_pars",
     "re_b_pars", "b_j_prime", "b_j2_prime", names(theta$threshold),
     "b_epsilon", "rho_sar", "alpha_car", "range", "sigma_xi", "range_xi",
+    "b_pref_t", "sigma_b_pref", "alpha_pref_t", "sigma_alpha_pref",
     "log_range", names(diffusion_scales), "phi", "tweedie_p", "student_df",
     "link_total", "weighted_avg", "eao",
     if (any(prepared$temporal & prepared$epsilon_ar1)) "rho",
@@ -115,6 +125,12 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
     if (!is.null(theta$xi)) {
       list(log_sigma_xi = theta$xi$log_sigma,
         log_range_xi = log(theta$xi$range))
+    },
+    if (!is.null(theta$sigma_b_pref)) {
+      list(log_sigma_b_pref = log(theta$sigma_b_pref))
+    },
+    if (!is.null(theta$sigma_alpha_pref)) {
+      list(log_sigma_alpha_pref = log(theta$sigma_alpha_pref))
     },
     if (requested[["total"]]) derived["total"],
     if (requested[["eao"]]) derived["log_eao"]

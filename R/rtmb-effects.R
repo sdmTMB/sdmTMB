@@ -212,5 +212,29 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
     scale <- rtmb_gmrf_scale(theta$xi$log_sigma, par$ln_kappa_xi, inputs)
     effects$xi_s <- gmrf(par$xi_s, Q, scale, "xi_s")
   }
+  # Temporal processes of a preferential-sampling model, as deviations by
+  # time step. Like `xi_s`, they are never simulated.
+  pref <- prepared$preferential
+  if (!is.null(pref) && pref$coefficient != "none") {
+    add(rtmb_sampling_process(par$b_pref_dev, theta$sigma_b_pref,
+      pref$coefficient), "b_pref_t")
+  }
+  if (!is.null(pref) && pref$baseline != "none") {
+    add(rtmb_sampling_process(par$alpha_pref_dev, theta$sigma_alpha_pref,
+      pref$baseline), "alpha_pref_t")
+  }
   effects
+}
+
+# Proper temporal deviations, one per time step: `x` are IID deviations, or
+# the increments of a random walk anchored at 0 in the first time step (its
+# level there is a fixed parameter).
+rtmb_sampling_process <- function(x, sigma, type) {
+  "[<-" <- RTMB::ADoverload("[<-")
+  value <- x
+  if (type == "rw") {
+    value <- numeric(length(x) + 1L)
+    value[-1L] <- cumsum(x)
+  }
+  list(nll = -sum(RTMB::dnorm(x, 0, sigma, log = TRUE)), value = value)
 }

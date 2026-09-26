@@ -22,8 +22,11 @@
 #'   `"sampling"` tidies the sampling model instead: `effects = "fixed"` gives
 #'   its coefficients and the preference coefficient `b_pref`, and
 #'   `effects = "ran_pars"` gives the SD and range of the sampling field
-#'   (`sigma_xi`, `range_xi`) if it was estimated. These rows are never part
-#'   of the output for `model = 1` or `2`.
+#'   (`sigma_xi`, `range_xi`) and the SDs of the temporal preference
+#'   coefficient and baseline processes (`sigma_b_pref`, `sigma_alpha_pref`)
+#'   if they were estimated, and `effects = "ran_vals"` gives the preference
+#'   coefficient (`b_pref_t`) and baseline deviation (`alpha_pref_t`) by time
+#'   step. These rows are never part of the output for `model = 1` or `2`.
 #'
 #' @param silent Omit any messages?
 #' @param ... Extra arguments (not used).

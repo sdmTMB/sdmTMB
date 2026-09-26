@@ -102,6 +102,11 @@ rtmb_transform <- function(par, prepared) {
       list(kappa = exp(par$ln_kappa_xi), log_sigma = log_sigma,
         sigma = exp(log_sigma), range = sqrt(8) / exp(par$ln_kappa_xi))
     },
+    # Preferential-sampling temporal process SDs
+    sigma_b_pref = if (!is.null(par$ln_sigma_b_pref)) exp(par$ln_sigma_b_pref),
+    sigma_alpha_pref = if (!is.null(par$ln_sigma_alpha_pref)) {
+      exp(par$ln_sigma_alpha_pref)
+    },
     # Time-varying coefficients
     sigma_V = sigma_V,
     rho_time = rho_time,

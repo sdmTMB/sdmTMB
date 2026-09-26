@@ -17,12 +17,16 @@
 #' Pass the result to the `preferential` argument of [sdmTMB()].
 #'
 #' The sampling indicators are modeled jointly with the catch data:
-#' \deqn{\mathrm{logit}(p) = Z\gamma + b h + \xi,}
+#' \deqn{\mathrm{logit}(p) = Z\gamma + \alpha_t + b h + (b_t - b)(h -
+#' \bar{h}_t) + \xi,}
 #' where \eqn{Z\gamma} is the sampling `formula`, \eqn{h} is the main model's
 #' log expected catch evaluated on the sampling `data` (including its spatial
-#' and spatiotemporal fields), \eqn{b} is a preference coefficient, and
-#' \eqn{\xi} is an optional sampling-only spatial field. For a delta model,
-#' \eqn{h} is the log of the encounter probability times the positive mean,
+#' and spatiotemporal fields), \eqn{b} is the preference coefficient
+#' `b_pref` and \eqn{b_t} its value in time step \eqn{t} (\eqn{b_t = b} by
+#' default; see `coefficient`, which also defines \eqn{\bar{h}_t}),
+#' \eqn{\alpha_t} is an optional temporal baseline process (see
+#' `baseline`), and \eqn{\xi} is an optional sampling-only spatial field.
+#' For a delta model, \eqn{h} is the log of the encounter probability times the positive mean,
 #' \eqn{\log(\mathrm{logit}^{-1}(\eta_1)) + \eta_2}.
 #'
 #' This feature is under development: it requires the RTMB backend
@@ -34,10 +38,12 @@
 #'
 #' @section Fitted models:
 #' * [print()] adds a sampling-model section. `tidy(fit, model = "sampling")`
-#'   gives the sampling coefficients and `b_pref`, and
+#'   gives the sampling coefficients and `b_pref`,
 #'   `tidy(fit, "ran_pars", model = "sampling")` the sampling field's SD and
-#'   range. [predict_sampling()] gives fitted sampling probabilities for the
-#'   sampling frame.
+#'   range and the SDs of any temporal processes, and
+#'   `tidy(fit, "ran_vals", model = "sampling")` the preference coefficient
+#'   and baseline deviation by time step. [predict_sampling()] gives fitted
+#'   sampling probabilities for the sampling frame.
 #' * [predict.sdmTMB()], [get_index()], and related functions predict catch
 #'   as usual. Their prediction rows are not sampling observations, and their
 #'   uncertainty comes from the joint model, including the sampling
@@ -74,8 +80,48 @@
 #'   link scale (not an offset for the sampling model). A single value or one
 #'   value per row of `data`. The default `0` means unit exposure.
 #'   Observation offsets are not copied.
-#' @param coefficient How the preference coefficient varies. Only
-#'   `"constant"` (one coefficient) is currently supported.
+#' @param coefficient How the preference coefficient \eqn{b} varies over
+#'   the main model's time steps:
+#'   * `"constant"` (default): one coefficient, `b_pref`.
+#'   * `"iid"`: \eqn{b_t = \bar{b} + u_t} with independent
+#'     \eqn{u_t \sim \mathrm{Normal}(0, \sigma_b^2)}. `b_pref` is
+#'     \eqn{\bar{b}}.
+#'   * `"rw"`: a random walk, \eqn{b_1} = `b_pref` and
+#'     \eqn{b_t = b_{t-1} + d_t} with independent
+#'     \eqn{d_t \sim \mathrm{Normal}(0, \sigma_b^2)}. Time steps must be
+#'     equally spaced; fill gaps with `extra_time` in [sdmTMB()].
+#'
+#'   The deviations \eqn{b_t - \bar{b}} (with \eqn{\bar{b}} = `b_pref`)
+#'   multiply \eqn{h - \bar{h}_t}, where \eqn{\bar{h}_t} is the mean over
+#'   the rows of `data` in time step \eqn{t} of \eqn{h} without its spatial
+#'   and spatiotemporal fields (i.e., of the fixed effects, smoothers, IID
+#'   effects, and `offset`). The deviations therefore change how strongly
+#'   sampling concentrates on high expected catch within a time step, not
+#'   (to the extent the fields average to about 0 over the frame) the time
+#'   step's sampling rate. With free time-step intercepts in `formula`, this
+#'   changes only what the intercepts mean, but it keeps the deviations' SD
+#'   estimable: an uncentered deviation also shifts the rate that the
+#'   intercept already pins down, and its SD then tends to be estimated as 0.
+#'   The fields are left out of \eqn{\bar{h}_t} because their frame mean
+#'   would link every sampling row to every mesh vertex of its time step and
+#'   make fitting slow. So if the main model's time-step means come from a
+#'   random-walk or AR(1) spatiotemporal field rather than fixed effects,
+#'   consider adding time-step fixed effects (e.g., `0 + factor(year)`) to the
+#'   main model.
+#'
+#'   Every time step of the main model (including `extra_time`) gets a
+#'   coefficient; time steps without observed sampling indicators get theirs
+#'   from the IID or random-walk distribution alone. At least two time steps
+#'   are required, but a handful of time steps carries little information
+#'   about \eqn{\sigma_b}: check its estimate and interval, and prefer
+#'   `"constant"` unless the data support more.
+#' @param baseline An optional temporal process for the sampling intercept,
+#'   added to the sampling `formula`: `"off"` (default), `"iid"`, or `"rw"`,
+#'   defined as for `coefficient`. The `formula`'s intercept is the mean
+#'   (`"iid"`) or first-time-step value (`"rw"`) of the baseline. This
+#'   shrinks the time-step baselines towards each other instead of
+#'   estimating them freely with `0 + factor(year)`, and so requires a
+#'   `formula` with an intercept and without free time-step effects.
 #' @param spatial Whether to add a time-invariant spatial random field to the
 #'   sampling model (`"off"` or `"on"`). This does not affect the main
 #'   model's fields.
@@ -89,7 +135,8 @@
 #' )
 #' preferential_sampling(sampled ~ 1, data = grid)
 preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
-                                  coefficient = "constant",
+                                  coefficient = c("constant", "iid", "rw"),
+                                  baseline = c("off", "iid", "rw"),
                                   spatial = c("off", "on")) {
   if (!inherits(formula, "formula") || length(formula) != 3L) {
     cli_abort("`formula` must be a two-sided formula such as `sampled ~ 1`.")
@@ -133,16 +180,15 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
       !length(offset) %in% c(1L, nrow(data))) {
     cli_abort("`offset` must be finite, with length 1 or `nrow(data)`.")
   }
-  if (!identical(coefficient, "constant")) {
-    cli_abort("Only `coefficient = \"constant\"` is currently supported.")
-  }
+  coefficient <- match.arg(coefficient)
+  baseline <- match.arg(baseline)
   spatial <- match.arg(spatial)
   structure(
     list(
       formula = formula, data = data, response = response,
       include_iid = is.null(re_form_iid),
       offset = rep_len(as.numeric(offset), nrow(data)),
-      coefficient = coefficient, spatial = spatial
+      coefficient = coefficient, baseline = baseline, spatial = spatial
     ),
     class = "sdmTMB_preferential"
   )
@@ -320,6 +366,53 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
   )
 }
 
+# Check the time grid and sampling design for the temporal preference and
+# baseline processes, and return the number of random deviations of each: one
+# per time step for IID, one per step after the first for a random walk.
+.check_preferential_temporal <- function(spec, Z_obs, year_obs, time_df) {
+  n_t <- nrow(time_df)
+  type <- c(coefficient = spec$coefficient, baseline = spec$baseline)
+  type[type == "off"] <- "constant"
+  temporal <- type != "constant"
+  if (any(temporal) && n_t < 2L) {
+    cli_abort(c(
+      "A temporal preference coefficient or baseline needs at least two time steps.",
+      "i" = "Use `coefficient = \"constant\"` and `baseline = \"off\"`."
+    ))
+  }
+  if (any(type == "rw")) {
+    t <- time_df$time_from_data
+    if (!is.numeric(t) || length(unique(diff(t))) > 1L) {
+      missed <- if (is.numeric(t)) find_missing_time(t)
+      cli_abort(c(
+        "A random-walk preference coefficient or baseline needs numeric, equally spaced time steps.",
+        "i" = "Fill gaps in time with `extra_time` in `sdmTMB()`.",
+        if (length(missed)) {
+          "i" = paste0("`extra_time = c(", paste(missed, collapse = ", "), ")`")
+        }
+      ))
+    }
+  }
+  if (temporal[["baseline"]]) {
+    rank <- function(x) qr(x)$rank
+    k <- rank(Z_obs)
+    if (rank(cbind(Z_obs, 1)) > k) {
+      cli_abort(c(
+        "`baseline` needs a sampling `formula` with an intercept.",
+        "i" = "The intercept is the mean (IID) or first value (random walk) of the baseline."
+      ))
+    }
+    steps <- stats::model.matrix(~ 0 + factor(year_obs))
+    if (ncol(steps) > 1L && rank(cbind(Z_obs, steps)) == k) {
+      cli_abort(c(
+        "The sampling `formula` already has a free baseline for each time step.",
+        "i" = "Use either `baseline` or time-step effects such as `0 + factor(year)`, not both."
+      ))
+    }
+  }
+  ifelse(type == "iid", n_t, ifelse(type == "rw", n_t - 1L, 0L))
+}
+
 #' Prepare the preferential-sampling frame and designs
 #'
 #' Validates the sampling `data` against the fitted main model and builds the
@@ -424,6 +517,8 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
     warning = function(w) rep(0, ncol(sampling$Z))
   )
   xi <- spec$spatial == "on"
+  n_dev <- .check_preferential_temporal(spec, sampling$Z[observed, , drop = FALSE],
+    year_i[observed], time_df)
 
   list(
     data = list(
@@ -439,14 +534,27 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
       station_i = station_i,
       year_i = as.integer(year_i),
       include_iid = as.integer(spec$include_iid),
-      spatial_xi = as.integer(xi)
+      spatial_xi = as.integer(xi),
+      # 0 = none, 1 = IID, 2 = random walk
+      coefficient_type = match(spec$coefficient, c("constant", "iid", "rw")) - 1L,
+      baseline_type = match(spec$baseline, c("off", "iid", "rw")) - 1L
     ),
     parameters = c(
       list(gamma_pref = unname(start), b_pref = 0),
       if (xi) {
         list(ln_tau_xi = 0, ln_kappa_xi = 0, xi_s = rep(0, ncol(A_station)))
+      },
+      if (spec$coefficient != "constant") {
+        list(ln_sigma_b_pref = 0, b_pref_dev = rep(0, n_dev[["coefficient"]]))
+      },
+      if (spec$baseline != "off") {
+        list(ln_sigma_alpha_pref = 0,
+          alpha_pref_dev = rep(0, n_dev[["baseline"]]))
       }
     ),
+    random = c(if (xi) "xi_s",
+      if (spec$coefficient != "constant") "b_pref_dev",
+      if (spec$baseline != "off") "alpha_pref_dev"),
     info = list(
       spec = spec,
       sampling_terms = sampling$terms,
@@ -468,16 +576,19 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
 }
 
 # Sampling-model rows for tidy(x, model = "sampling"). The coefficients and
-# `b_pref` are fixed effects; the sampling field's SD and range are
-# random-effect parameters, with intervals on the log scale.
+# `b_pref` are fixed effects. The sampling field's SD and range and the SDs of
+# the temporal processes are random-effect parameters, with intervals on the
+# log scale. "ran_vals" gives the preference coefficient and baseline
+# deviation by time step.
 .tidy_sampling <- function(x, effects, conf.int, crit, trans) {
   .check_preferential_fit(x, "`model = \"sampling\"`")
-  if (!effects %in% c("fixed", "ran_pars")) {
-    cli_abort("With `model = \"sampling\"`, `effects` must be \"fixed\" or \"ran_pars\".")
+  if (!effects %in% c("fixed", "ran_pars", "ran_vals")) {
+    cli_abort("With `model = \"sampling\"`, `effects` must be \"fixed\", \"ran_pars\", or \"ran_vals\".")
   }
-  est <- as.list(x$sd_report, "Estimate")
-  se <- as.list(x$sd_report, "Std. Error")
+  spec <- x$preferential$spec
   if (effects == "fixed") {
+    est <- as.list(x$sd_report, "Estimate")
+    se <- as.list(x$sd_report, "Std. Error")
     out <- data.frame(
       term = c(colnames(x$tmb_data$preferential$Z_ij), "b_pref"),
       estimate = c(est$gamma_pref, est$b_pref),
@@ -491,21 +602,37 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
     out$estimate <- as.numeric(trans(out$estimate))
     if (!identical(trans, I)) out$std.error <- NULL
   } else {
-    out <- data.frame(term = character(0), estimate = numeric(0),
-      std.error = numeric(0), conf.low = numeric(0), conf.high = numeric(0))
-    if (x$preferential$spec$spatial == "on") {
-      est <- as.list(x$sd_report, "Estimate", report = TRUE)
-      se <- as.list(x$sd_report, "Std. Error", report = TRUE)
-      log_est <- c(est$log_range_xi, est$log_sigma_xi)
-      log_se <- c(se$log_range_xi, se$log_sigma_xi)
-      out <- data.frame(
-        term = c("range_xi", "sigma_xi"),
-        estimate = c(est$range_xi, est$sigma_xi),
-        std.error = c(se$range_xi, se$sigma_xi),
-        conf.low = exp(log_est - crit * log_se),
-        conf.high = exp(log_est + crit * log_se),
-        stringsAsFactors = FALSE
+    est <- as.list(x$sd_report, "Estimate", report = TRUE)
+    se <- as.list(x$sd_report, "Std. Error", report = TRUE)
+    if (effects == "ran_pars") {
+      terms <- c(
+        if (spec$spatial == "on") c("range_xi", "sigma_xi"),
+        if (spec$coefficient != "constant") "sigma_b_pref",
+        if (spec$baseline != "off") "sigma_alpha_pref"
       )
+      log_est <- unlist(est[paste0("log_", terms)])
+      log_se <- unlist(se[paste0("log_", terms)])
+      lower <- exp(log_est - crit * log_se)
+      upper <- exp(log_est + crit * log_se)
+    } else {
+      terms <- c(
+        if (spec$coefficient != "constant") "b_pref_t",
+        if (spec$baseline != "off") "alpha_pref_t"
+      )
+      lower <- unlist(est[terms]) - crit * unlist(se[terms])
+      upper <- unlist(est[terms]) + crit * unlist(se[terms])
+    }
+    out <- data.frame(
+      term = rep(terms, lengths(est[terms])),
+      estimate = as.numeric(unlist(est[terms])),
+      std.error = as.numeric(unlist(se[terms])),
+      conf.low = as.numeric(lower), conf.high = as.numeric(upper),
+      stringsAsFactors = FALSE
+    )
+    if (effects == "ran_vals") {
+      time <- x$time_lu$time_from_data
+      out <- data.frame(out[1L], time = rep(time, length.out = nrow(out)),
+        out[-1L])
     }
     if (!conf.int) out$conf.low <- out$conf.high <- NULL
   }
@@ -525,18 +652,29 @@ print_sampling <- function(x) {
     " unknown\n", sep = "")
   cat("Shared target: log standardized expected catch (IID effects ",
     if (spec$include_iid) "included" else "excluded", "; offset ",
-    paste(format(offset, digits = 3L), collapse = " to "), ")\n\n", sep = "")
+    paste(format(offset, digits = 3L), collapse = " to "), ")\n", sep = "")
+  process <- c(iid = "IID by time step", rw = "random walk over time steps")
+  cat("Preference coefficient: ", if (spec$coefficient == "constant") {
+    "constant"
+  } else {
+    process[[spec$coefficient]]
+  }, "\n", sep = "")
+  if (spec$baseline != "off") {
+    cat("Baseline: ", process[[spec$baseline]], "\n", sep = "")
+  }
+  cat("\n")
   b <- tidy(x, model = "sampling", silent = TRUE)
   mm <- cbind(round(b$estimate, 2L), round(b$std.error, 2L))
   dimnames(mm) <- list(b$term, c("coef.est", "coef.se"))
   print(mm)
   cat("\n")
-  if (spec$spatial == "on") {
-    r <- tidy(x, "ran_pars", model = "sampling", silent = TRUE)
-    cat("Sampling field range: ", mround(r$estimate[r$term == "range_xi"], 2L),
-      "\n", sep = "")
-    cat("Sampling field SD: ", mround(r$estimate[r$term == "sigma_xi"], 2L),
-      "\n", sep = "")
+  r <- tidy(x, "ran_pars", model = "sampling", silent = TRUE)
+  labels <- c(range_xi = "Sampling field range",
+    sigma_xi = "Sampling field SD",
+    sigma_b_pref = "Preference coefficient SD over time",
+    sigma_alpha_pref = "Baseline SD over time")
+  for (i in seq_len(nrow(r))) {
+    cat(labels[[r$term[i]]], ": ", mround(r$estimate[i], 2L), "\n", sep = "")
   }
   cat("The criterion below includes the sampling likelihood.\n")
 }
@@ -566,11 +704,14 @@ print_sampling <- function(x) {
 #' * `est_target`: the shared target \eqn{h}, the main model's log
 #'   standardized expected catch.
 #' * `est_fixed`: the sampling formula's contribution \eqn{Z\gamma}.
-#' * `est_preference`: the preference contribution \eqn{b h}.
+#' * `est_baseline`: the baseline deviation \eqn{\alpha_t}, if `baseline`
+#'   was used.
+#' * `est_preference`: the preference contribution, \eqn{b h} plus
+#'   \eqn{(b_t - b)(h - \bar{h}_t)} for a temporal `coefficient`.
 #' * `est_xi`: the sampling field \eqn{\xi}, if estimated.
 #'
-#' On the link scale, `est` is the sum of `est_fixed`, `est_preference`, and
-#' `est_xi`. With `nsim > 0`, a matrix with one row per frame row.
+#' On the link scale, `est` is the sum of `est_fixed`, `est_baseline`,
+#' `est_preference`, and `est_xi`. With `nsim > 0`, a matrix with one row per frame row.
 #' @export
 predict_sampling <- function(object, type = c("response", "link"), nsim = 0) {
   assert_that(inherits(object, "sdmTMB"))
@@ -595,6 +736,9 @@ predict_sampling <- function(object, type = c("response", "link"), nsim = 0) {
   nd$est <- inv(r$sampling_eta_i)
   nd$est_target <- r$sampling_target_i
   nd$est_fixed <- r$sampling_fixed_i
+  if (object$preferential$spec$baseline != "off") {
+    nd$est_baseline <- r$sampling_baseline_i
+  }
   nd$est_preference <- r$sampling_preference_i
   if (object$preferential$spec$spatial == "on") nd$est_xi <- r$sampling_field_i
   nd

@@ -67,18 +67,21 @@ pref_sim <- function(b = 0.8, xi_sd = 0, seed = 1) {
     mesh = make_mesh(dat, c("x", "y"), mesh = mesh$mesh))
 }
 
-pref_joint <- function(sim, spatial = "off", control = list(), ...) {
+pref_joint <- function(sim, spatial = "off", control = list(),
+                       formula = sampled ~ 0 + factor(year),
+                       coefficient = "constant", baseline = "off", ...) {
   sdmTMB(catch ~ 1, data = sim$dat, mesh = sim$mesh, time = "year",
     family = poisson(),
-    preferential = preferential_sampling(sampled ~ 0 + factor(year),
-      data = sim$grid, spatial = spatial),
+    preferential = preferential_sampling(formula, data = sim$grid,
+      spatial = spatial, coefficient = coefficient, baseline = baseline),
     control = do.call(sdmTMBcontrol, c(list(backend = "rtmb"), control)), ...
   )
 }
 
 pref_joint_fit <- fit_once(function() pref_joint(pref_sim()))
 
-pref_names <- c("gamma_pref", "b_pref", "ln_tau_xi", "ln_kappa_xi", "xi_s")
+pref_names <- c("gamma_pref", "b_pref", "ln_tau_xi", "ln_kappa_xi", "xi_s",
+  "ln_sigma_b_pref", "b_pref_dev", "ln_sigma_alpha_pref", "alpha_pref_dev")
 
 prepare_for <- function(fit, spec) {
   .prepare_preferential(spec, fit, fit$tmb_data$X_ij, fit$spde, fit$time,
@@ -122,7 +125,14 @@ test_that("preferential_sampling() validates its specification", {
   expect_error(preferential_sampling(sampled ~ 1, grid, re_form_iid = ~0), "re_form_iid")
   expect_error(preferential_sampling(sampled ~ 1, grid, offset = c(1, 2)), "offset")
   expect_error(preferential_sampling(sampled ~ 1, grid, offset = NA_real_), "offset")
-  expect_error(preferential_sampling(sampled ~ 1, grid, coefficient = "rw"), "constant")
+  expect_identical(spec$coefficient, "constant")
+  expect_identical(spec$baseline, "off")
+  spec <- preferential_sampling(sampled ~ 1, grid, coefficient = "rw",
+    baseline = "iid")
+  expect_identical(spec[c("coefficient", "baseline")],
+    list(coefficient = "rw", baseline = "iid"))
+  expect_error(preferential_sampling(sampled ~ 1, grid, coefficient = "ar1"))
+  expect_error(preferential_sampling(sampled ~ 1, grid, baseline = "constant"))
   expect_error(preferential_sampling(sampled ~ 1, grid, spatial = "maybe"))
 })
 
@@ -791,7 +801,8 @@ test_that("tidy() and print() report the sampling model", {
   expect_equal(tidy(fit, model = "sampling", exponentiate = TRUE)$estimate,
     exp(td$estimate))
   expect_identical(nrow(tidy(fit, "ran_pars", model = "sampling")), 0L)
-  expect_error(tidy(fit, "ran_vals", model = "sampling"), "must be")
+  expect_identical(nrow(tidy(fit, "ran_vals", model = "sampling")), 0L)
+  expect_error(tidy(fit, "ran_vcov", model = "sampling"), "must be")
   expect_error(tidy(pref_fit(), model = "sampling"), "requires a model fit")
 
   # The main-model output is unchanged.
@@ -973,4 +984,276 @@ test_that("a coupled fit with a smoother, standardized gear, and excluded vessel
   # The fitted surface tracks the true standardized surface.
   p <- predict_sampling(fit)
   expect_gt(stats::cor(p$est_target, sim$h), 0.8)
+})
+
+# Temporal preference and baseline processes ----------------------------------
+
+test_that("temporal processes check the time grid and sampling design", {
+  skip_on_cran()
+  sim <- pref_sim()
+  build <- function(formula = sampled ~ 0 + factor(year), grid = sim$grid,
+                    dat = sim$dat, ...) {
+    args <- list(...)
+    extra <- args$extra_time
+    args$extra_time <- NULL
+    sdmTMB(catch ~ 1, data = dat,
+      mesh = make_mesh(dat, c("x", "y"), mesh = sim$mesh$mesh), time = "year",
+      family = poisson(), extra_time = extra, do_fit = FALSE,
+      preferential = do.call(preferential_sampling,
+        c(list(formula, data = grid), args)),
+      control = sdmTMBcontrol(backend = "rtmb"))
+  }
+
+  # Parameters, map, and random effects.
+  fit <- build(coefficient = "iid")
+  expect_length(fit$tmb_params$b_pref_dev, 3L)
+  expect_identical(fit$tmb_params$ln_sigma_b_pref, 0)
+  expect_false(any(c("ln_sigma_alpha_pref", "alpha_pref_dev") %in%
+    names(fit$tmb_params)))
+  expect_true("b_pref_dev" %in% fit$tmb_random)
+  expect_false(any(c("b_pref_dev", "ln_sigma_b_pref") %in% names(fit$tmb_map)))
+  fit <- build(sampled ~ 1, coefficient = "rw", baseline = "rw")
+  expect_length(fit$tmb_params$b_pref_dev, 2L)
+  expect_length(fit$tmb_params$alpha_pref_dev, 2L)
+  expect_true(all(c("b_pref_dev", "alpha_pref_dev") %in% fit$tmb_random))
+  expect_length(build(sampled ~ year, baseline = "iid")$tmb_params$alpha_pref_dev, 3L)
+
+  # One time step.
+  grid1 <- sim$grid[sim$grid$year == 1L, names(sim$grid) != "year"]
+  dat1 <- sim$dat[sim$dat$year == 1L, ]
+  expect_error(sdmTMB(catch ~ 1, data = dat1,
+    mesh = make_mesh(dat1, c("x", "y"), mesh = sim$mesh$mesh),
+    family = poisson(), do_fit = FALSE,
+    preferential = preferential_sampling(sampled ~ 1, grid1,
+      coefficient = "iid"),
+    control = sdmTMBcontrol(backend = "rtmb")), "at least two time steps")
+
+  # A random walk needs equally spaced time steps; IID doesn't.
+  gap_grid <- sim$grid
+  gap_dat <- sim$dat
+  gap_grid$year[gap_grid$year == 3L] <- 4L
+  gap_dat$year[gap_dat$year == 3L] <- 4L
+  expect_error(build(grid = gap_grid, dat = gap_dat, coefficient = "rw"),
+    "extra_time = c\\(3\\)")
+  expect_error(build(sampled ~ 1, grid = gap_grid, dat = gap_dat,
+    baseline = "rw"), "equally spaced")
+  expect_length(build(grid = gap_grid, dat = gap_dat,
+    coefficient = "iid")$tmb_params$b_pref_dev, 3L)
+  # The extra time step has no frame rows.
+  fit <- build(grid = gap_grid, dat = gap_dat, coefficient = "rw",
+    extra_time = 3L)
+  expect_length(fit$tmb_params$b_pref_dev, 3L)
+  expect_true(is.finite(fit$tmb_obj$fn()))
+
+  # A baseline process needs an intercept and no free time-step effects.
+  expect_error(build(baseline = "iid"), "already has a free baseline")
+  expect_error(build(sampled ~ 1 + factor(year), baseline = "rw"),
+    "already has a free baseline")
+  expect_error(build(sampled ~ 0 + x, baseline = "iid"), "intercept")
+})
+
+test_that("the joint objective adds centered temporal deviations and their densities", {
+  skip_on_cran()
+  sim <- pref_sim()
+  # A covariate that varies within and between years.
+  sim$grid$z <- sim$grid$x / 10 + sim$grid$year / 5
+  sim$dat$z <- sim$dat$x / 10 + sim$dat$year / 5
+  grid <- sim$grid
+  # Unknown indicators still count in the time-step means of the target.
+  grid$sampled[seq(2, nrow(grid), by = 7)] <- NA
+  configs <- list(
+    list(formula = sampled ~ 0 + factor(year), coefficient = "iid",
+      baseline = "off"),
+    list(formula = sampled ~ 1, coefficient = "rw", baseline = "iid"),
+    list(formula = sampled ~ 1, coefficient = "constant", baseline = "rw")
+  )
+  for (cfg in configs) {
+    # Year 4 is an extra time step without frame rows.
+    fit <- sdmTMB(catch ~ z, data = sim$dat, mesh = sim$mesh, time = "year",
+      family = poisson(), extra_time = 4L, do_fit = FALSE,
+      preferential = preferential_sampling(cfg$formula, data = grid,
+        coefficient = cfg$coefficient, baseline = cfg$baseline),
+      control = sdmTMBcontrol(backend = "rtmb"))
+    par <- fit$tmb_params
+    set.seed(4)
+    par$b_j <- c(1.1, 0.8)
+    par$omega_s[] <- stats::rnorm(length(par$omega_s), 0, 0.5)
+    par$epsilon_st[] <- stats::rnorm(length(par$epsilon_st), 0, 0.3)
+    par$ln_tau_O <- -0.5
+    par$ln_tau_E <- 0.2
+    par$ln_kappa[] <- -0.3
+    par$gamma_pref[] <- stats::rnorm(length(par$gamma_pref), -1.5, 0.3)
+    par$b_pref <- 0.7
+    n_t <- 4L
+    b_dev <- alpha <- numeric(n_t)
+    nll_dev <- 0
+    if (cfg$coefficient != "constant") {
+      par$b_pref_dev[] <- stats::rnorm(length(par$b_pref_dev), 0, 0.3)
+      par$ln_sigma_b_pref <- log(0.4)
+      b_dev <- if (cfg$coefficient == "rw") cumsum(c(0, par$b_pref_dev)) else
+        par$b_pref_dev
+      nll_dev <- nll_dev - sum(stats::dnorm(par$b_pref_dev, 0, 0.4, log = TRUE))
+    }
+    if (cfg$baseline != "off") {
+      par$alpha_pref_dev[] <- stats::rnorm(length(par$alpha_pref_dev), 0, 0.5)
+      par$ln_sigma_alpha_pref <- log(0.6)
+      alpha <- if (cfg$baseline == "rw") cumsum(c(0, par$alpha_pref_dev)) else
+        par$alpha_pref_dev
+      nll_dev <- nll_dev -
+        sum(stats::dnorm(par$alpha_pref_dev, 0, 0.6, log = TRUE))
+    }
+
+    A <- fmesher::fm_basis(sim$mesh$mesh, loc = as.matrix(grid[, c("x", "y")]))
+    eps <- as.matrix(A %*% par$epsilon_st[, , 1])
+    h_fixed <- par$b_j[1] + par$b_j[2] * grid$z
+    h <- h_fixed + as.vector(A %*% par$omega_s[, 1]) +
+      eps[cbind(seq_len(nrow(grid)), grid$year)]
+    # Centered on the time step's mean target without the fields.
+    h_bar <- stats::ave(h_fixed, grid$year)
+    Z <- stats::model.matrix(stats::delete.response(stats::terms(cfg$formula)),
+      grid)
+    eta <- as.vector(Z %*% par$gamma_pref) + alpha[grid$year] +
+      par$b_pref * h + b_dev[grid$year] * (h - h_bar)
+    known <- !is.na(grid$sampled)
+    bern_nll <- -sum(stats::dbinom(grid$sampled[known], 1,
+      stats::plogis(eta[known]), log = TRUE))
+
+    obj <- fixed_latent_objectives(fit, par)
+    expect_equal(obj$joint$fn(obj$joint$par) - obj$catch$fn(obj$catch$par),
+      bern_nll + nll_dev, tolerance = 1e-8)
+    r <- obj$joint$report(obj$joint$par)
+    expect_equal(r$sampling_eta_i, eta, tolerance = 1e-10)
+    expect_equal(r$sampling_fixed_i + r$sampling_baseline_i +
+      r$sampling_preference_i, r$sampling_eta_i, tolerance = 1e-10)
+    if (cfg$coefficient != "constant") {
+      expect_equal(r$b_pref_t, par$b_pref + b_dev, tolerance = 1e-12)
+    }
+    if (cfg$baseline != "off") {
+      expect_equal(r$alpha_pref_t, alpha, tolerance = 1e-12)
+      expect_equal(r$sampling_baseline_i, alpha[grid$year], tolerance = 1e-12)
+    }
+
+    # Permuting frame rows doesn't change the objective.
+    perm <- sdmTMB(catch ~ z, data = sim$dat, mesh = sim$mesh, time = "year",
+      family = poisson(), extra_time = 4L, do_fit = FALSE,
+      preferential = preferential_sampling(cfg$formula,
+        data = grid[rev(seq_len(nrow(grid))), ],
+        coefficient = cfg$coefficient, baseline = cfg$baseline),
+      control = sdmTMBcontrol(backend = "rtmb"))
+    expect_equal(fixed_latent_objectives(perm, par)$joint$fn(obj$joint$par),
+      obj$joint$fn(obj$joint$par), tolerance = 1e-8)
+
+    # AD gradients agree with central differences.
+    x <- obj$joint$par
+    check <- which(names(x) %in% c("b_j", "b_pref", "ln_sigma_b_pref",
+      "b_pref_dev", "ln_sigma_alpha_pref", "alpha_pref_dev", "gamma_pref"))
+    numeric_gr <- vapply(check, function(i) {
+      up <- down <- x
+      up[i] <- x[i] + 1e-5
+      down[i] <- x[i] - 1e-5
+      (obj$joint$fn(up) - obj$joint$fn(down)) / 2e-5
+    }, numeric(1))
+    expect_equal(as.vector(obj$joint$gr(x))[check], numeric_gr,
+      tolerance = 1e-5)
+  }
+})
+
+# Coupled simulation with a preference coefficient and baseline that vary by
+# year.
+pref_sim_temporal <- function(b_t = c(0.3, 0.5, 0.8, 1.1, 0.9, 0.6, 0.4, 0.7),
+                              gamma_t = seq(-2, -1, length.out = 8),
+                              seed = 1) {
+  old <- options(sdmTMB.backend = "tmb")
+  on.exit(options(old))
+  set.seed(seed)
+  s <- seq(0.25, 9.75, length.out = 20)
+  grid <- expand.grid(x = s, y = s, year = seq_along(b_t))
+  mesh <- make_mesh(grid, c("x", "y"), cutoff = 1)
+  sim <- sdmTMB_simulate(~1, data = grid, mesh = mesh, time = "year",
+    family = poisson(), range = 4, sigma_O = 0.7, sigma_E = 0.3,
+    B = log(3), seed = seed, spatiotemporal = "iid")
+  grid$sampled <- stats::rbinom(nrow(grid), 1,
+    stats::plogis(gamma_t[grid$year] + b_t[grid$year] * sim$eta))
+  dat <- grid[grid$sampled == 1, ]
+  dat$catch <- stats::rpois(nrow(dat), exp(sim$eta[grid$sampled == 1]))
+  list(grid = grid, dat = dat, b_t = b_t,
+    mesh = make_mesh(dat, c("x", "y"), mesh = mesh$mesh))
+}
+
+pref_temporal_fit <- fit_once(function() {
+  sim <- pref_sim_temporal()
+  pref_joint(sim, formula = sampled ~ 0 + factor(year), coefficient = "iid")
+})
+
+test_that("a coupled simulation recovers a time-varying preference coefficient", {
+  skip_on_cran()
+  fit <- pref_temporal_fit()
+  b_t <- pref_sim_temporal()$b_t
+  expect_true(fit$pos_def_hessian)
+  expect_lt(max(abs(fit$gradients)), 1e-3)
+  expect_true(sanity(fit, silent = TRUE)$all_ok)
+
+  rp <- tidy(fit, "ran_pars", model = "sampling")
+  expect_identical(rp$term, "sigma_b_pref")
+  expect_gt(rp$estimate, 0.1)
+  expect_true(rp$conf.low < stats::sd(b_t) && stats::sd(b_t) < rp$conf.high)
+  rv <- tidy(fit, "ran_vals", model = "sampling")
+  expect_identical(rv$term, rep("b_pref_t", 8L))
+  expect_identical(rv$time, 1:8)
+  expect_gt(stats::cor(rv$estimate, b_t), 0.7)
+  sdr <- summary(fit$sd_report, "report")
+  expect_equal(rv$std.error,
+    unname(sdr[rownames(sdr) == "b_pref_t", "Std. Error"]))
+  expect_identical(attr(logLik(fit), "df"), length(fit$model$par))
+
+  out <- utils::capture.output(print(fit))
+  expect_true(any(grepl("Preference coefficient: IID by time step", out)))
+  expect_true(any(grepl("Preference coefficient SD over time", out)))
+
+  # Predictor pieces: b h plus the deviation times h centered on its
+  # field-free part, here the intercept.
+  p <- predict_sampling(fit, type = "link")
+  b <- tidy(fit, model = "sampling")
+  b <- b$estimate[b$term == "b_pref"]
+  h_bar <- tidy(fit)$estimate
+  expect_equal(p$est_preference, b * p$est_target +
+    (rv$estimate[p$year] - b) * (p$est_target - h_bar), tolerance = 1e-8)
+  expect_equal(p$est, p$est_fixed + p$est_preference, tolerance = 1e-10)
+  expect_null(p$est_baseline)
+
+  # A prediction retape keeps the joint likelihood.
+  lifecycle::expect_deprecated(
+    retape <- predict(fit, newdata = fit$preferential$spec$data,
+      return_tmb_object = TRUE),
+    "return_tmb_object"
+  )
+  expect_equal(retape$obj$fn(fit$model$par), fit$model$objective,
+    tolerance = 1e-6)
+})
+
+test_that("random-walk preference and baseline processes fit", {
+  skip_on_cran()
+  sim <- pref_sim_temporal()
+  fit <- pref_joint(sim, formula = sampled ~ 1, coefficient = "rw",
+    baseline = "rw")
+  expect_true(fit$pos_def_hessian)
+  expect_lt(max(abs(fit$gradients)), 1e-3)
+  rp <- tidy(fit, "ran_pars", model = "sampling")
+  expect_identical(rp$term, c("sigma_b_pref", "sigma_alpha_pref"))
+  expect_true(all(rp$estimate > 0.05))
+  rv <- tidy(fit, "ran_vals", model = "sampling")
+  expect_identical(rv$term, rep(c("b_pref_t", "alpha_pref_t"), each = 8L))
+  # Both walks start at their fixed level.
+  b <- tidy(fit, model = "sampling")
+  expect_equal(rv$estimate[1], b$estimate[b$term == "b_pref"])
+  expect_identical(rv$estimate[9], 0)
+  # The baseline tracks the rising sampling rate. (The true baseline isn't
+  # exactly `gamma_t`: it also absorbs the preference deviations at the mean
+  # target.)
+  expect_gt(stats::cor(rv$estimate[9:16], seq(-2, -1, length.out = 8)), 0.5)
+  expect_output(print(fit), "Baseline: random walk over time steps")
+  p <- predict_sampling(fit, type = "link")
+  expect_equal(p$est, p$est_fixed + p$est_baseline + p$est_preference,
+    tolerance = 1e-10)
+  expect_equal(p$est_baseline, rv$estimate[9:16][p$year])
 })

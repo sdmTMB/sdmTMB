@@ -486,12 +486,22 @@ Whether each cell was sampled is then modeled as
 
 $$
 \begin{aligned}
-\Pr(R_{g,t} = 1) &= \mathrm{logit}^{-1}\left(\bZ_{g,t} \boldsymbol{\gamma} + b\, h_{g,t} + \xi_{g}\right),\\
+\Pr(R_{g,t} = 1) &= \mathrm{logit}^{-1}\left(\bZ_{g,t} \boldsymbol{\gamma} + \delta_t + b\, h_{g,t} + (b_t - b) (h_{g,t} - \bar{h}_t) + \xi_{g}\right),\\
 \bxi &\sim \RM{MVNormal} \left( \bs{0}, \bSigma_\xi \right),
 \end{aligned}
 $$
 
-where $R_{g,t}$ is the 0/1 sampling indicator (`NA` indicators contribute no likelihood); $\bZ_{g,t} \boldsymbol{\gamma}$ is a separate sampling regression with its own coefficients (e.g., free annual intercepts); $b$ is a constant preference coefficient; and $\xi_g$ is an optional, time-invariant, isotropic SPDE spatial field on the model mesh with its own range and marginal standard deviation (reported as `range_xi` and `sigma_xi`) that enters only the sampling model.
+where $R_{g,t}$ is the 0/1 sampling indicator (`NA` indicators contribute no likelihood); $\bZ_{g,t} \boldsymbol{\gamma}$ is a separate sampling regression with its own coefficients (e.g., free annual intercepts); $b$ is the preference coefficient (`b_pref`); and $\xi_g$ is an optional, time-invariant, isotropic SPDE spatial field on the model mesh with its own range and marginal standard deviation (reported as `range_xi` and `sigma_xi`) that enters only the sampling model.
+
+By default the preference coefficient is constant ($b_t = b$) and there is no baseline process ($\delta_t = 0$).
+With `coefficient = "iid"`, $b_t = b + u_t$ with $u_t \sim \RM{Normal}(0, \sigma_b^2)$; with `coefficient = "rw"`, $b_1 = b$ and $b_t = b_{t-1} + d_t$ with $d_t \sim \RM{Normal}(0, \sigma_b^2)$ on an equally spaced time grid.
+The baseline $\delta_t$ is defined in the same way with `baseline = "iid"` or `"rw"` (with $\delta_1 = 0$ for a random walk), with SD $\sigma_\delta$; it replaces free time-step intercepts in $\bZ_{g,t} \boldsymbol{\gamma}$, whose intercept is then the mean or first-time-step baseline.
+Every time step of the main model, including `extra_time`, has a $b_t$ and $\delta_t$.
+The deviations $b_t - b$ multiply the target centered on $\bar{h}_t$, the mean over the frame rows of time step $t$ of $\eta^{*}_{g,t}$ without its spatial and spatiotemporal fields (for a delta model, the combined target of the two components without their fields).
+They therefore change how strongly sampling concentrates on high expected catch within a time step rather than the time step's overall sampling rate, which the intercepts already determine precisely.
+Without centering, the Laplace-approximated marginal likelihood tends to estimate $\sigma_b = 0$ even when the slopes vary.
+The fields are left out of $\bar{h}_t$ because their frame average would couple every sampling row to every mesh vertex of its time step.
+The deviations are reported as `sigma_b_pref`, `sigma_alpha_pref`, `b_pref_t`, and `alpha_pref_t`.
 The shared surface is recomputed inside the joint likelihood, which integrates over the shared and sampling-only latent effects.
 The reported log likelihood and AIC are therefore for the catch and sampling data jointly.
 
