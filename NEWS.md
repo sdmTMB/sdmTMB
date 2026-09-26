@@ -17,6 +17,9 @@
   processes for the preference coefficient (`coefficient`) and the sampling
   baseline (`baseline`). See `predict_sampling()`,
   `tidy(fit, model = "sampling")`, and the preferential-sampling article.
+  Supported families are single log-link Poisson, NB2, Gamma, Tweedie, and
+  lognormal, and `delta_gamma()` and `delta_lognormal()` with default links,
+  including `type = "poisson-link"`.
 
 * Fix calling the index functions directly on a `do_index = TRUE` fit:
   `get_index()` now honours an explicit `area` argument instead of silently

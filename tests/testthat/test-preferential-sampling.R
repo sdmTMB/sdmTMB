@@ -153,7 +153,6 @@ test_that("preferential sampling requires RTMB and rejects unsupported features"
     "requires backend = \"rtmb\"; set control = sdmTMBcontrol(backend = \"rtmb\")",
     fixed = TRUE)
   expect_error(build(preferential = list()), "preferential_sampling()", fixed = TRUE)
-  expect_error(build(family = delta_gamma(type = "poisson-link")), "delta models")
   expect_error(build(family = delta_gamma(link1 = "cloglog")), "delta models")
   expect_error(build(family = delta_truncated_nbinom2()), "delta models")
   expect_error(build(catch ~ s(depth, by = gear)), "univariate `s()`", fixed = TRUE)
@@ -732,6 +731,41 @@ test_that("the delta target is the log of the combined expected catch", {
   eta <- cbind(c(-800, 0, 800), 1)
   expect_equal(rtmb_combined_link(eta[, 1], eta[, 2], family),
     stats::plogis(eta[, 1], log.p = TRUE) + 1)
+})
+
+test_that("the Poisson-link delta target includes the offset", {
+  skip_on_cran()
+  dat <- pref_delta_dat()
+  grid <- pref_grid()
+  fit <- sdmTMB(list(catch ~ depth + gear, catch ~ gear), data = dat,
+    mesh = pref_mesh(dat), time = "year",
+    family = delta_lognormal(type = "poisson-link"), spatiotemporal = "off",
+    offset = log(dat$effort), control = sdmTMBcontrol(backend = "rtmb"))
+  expect_true(fit$pos_def_hessian)
+  family <- rtmb_prepare(fit$tmb_data)$families[[1]]
+  target <- function(offset) {
+    lp <- shared_predictor(fit, prepare_for(fit,
+      preferential_sampling(sampled ~ 1, data = grid, offset = offset)))
+    rtmb_combined_link(lp$eta[, 1], lp$eta[, 2], family)
+  }
+  # At unit exposure, h is the log of the predicted expected catch.
+  p <- predict(fit, newdata = grid, offset = rep(0, nrow(grid)))
+  p_response <- predict(fit, newdata = grid, offset = rep(0, nrow(grid)),
+    type = "response")
+  expect_equal(target(0), p$est1 + p$est2, tolerance = 1e-10)
+  expect_equal(target(0), log(p_response$est), tolerance = 1e-10)
+  # Prediction ignores these offsets, but the target shifts by the offset,
+  # as the observation model's expected catch does.
+  expect_equal(target(0.3) - target(0), rep(0.3, nrow(grid)),
+    tolerance = 1e-12)
+
+  joint <- update(fit, preferential = preferential_sampling(
+    sampled ~ 0 + factor(year), data = grid))
+  expect_true(joint$pos_def_hessian)
+  r <- joint$tmb_obj$report(joint$tmb_obj$env$last.par.best)
+  p <- predict(joint, newdata = grid, offset = rep(0, nrow(grid)),
+    type = "response")
+  expect_equal(r$sampling_target_i, log(p$est), tolerance = 1e-8)
 })
 
 test_that("joint fits work with delta families, smoothers, and IID effects", {

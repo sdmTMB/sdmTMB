@@ -108,8 +108,13 @@ rtmb_preferential_inputs <- function(data, families) {
     time = pref$year_i + 1L,
     family_id = rep(1L, pref$n_pref)
   )
+  rows <- rtmb_row_family_flags(rows, families)
+  # A Poisson-link delta applies the offset inside both component means, so
+  # the log expected catch is offset + eta1 + eta2. Adding it to component 1
+  # gives that combined target (ordinary prediction ignores these offsets).
+  if (families[[1L]]$combine == "poisson_link") rows$offset_applies[, 1L] <- TRUE
   list(
-    rows = rtmb_row_family_flags(rows, families),
+    rows = rows,
     R = pref$R_i,
     observed = which(!is.na(pref$R_i)),
     Z = pref$Z_ij,

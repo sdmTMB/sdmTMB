@@ -21,8 +21,9 @@
 rtmb_sampling <- function(par, theta, effects, prepared) {
   inputs <- prepared$preferential
   shared <- rtmb_linear_predictors(par, theta, effects, prepared, inputs$rows)
-  # Supported families have a log link (a log positive link for deltas), so
-  # the combined link-scale value is the log expected catch.
+  # Supported families have a log link (a log positive link for deltas, and
+  # log links with the offset in component 1 for Poisson-link deltas), so the
+  # combined link-scale value is the log expected catch.
   target <- rtmb_combined_link(shared$eta[, 1L], shared$eta[, prepared$n_m],
     prepared$families[[1L]])
   fixed <- rtmb_product(inputs$Z, par$gamma_pref)

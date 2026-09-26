@@ -458,7 +458,7 @@ CAR requires a symmetric adjacency matrix.
 
 ## Preferential sampling
 
-**This feature is experimental.** It is available only with the RTMB backend, via `sdmTMB(..., preferential = preferential_sampling(...))`, and currently supports single log-link families (Poisson, NB2, Gamma, Tweedie, lognormal) and conventional logit/log `delta_gamma()` and `delta_lognormal()` families.
+**This feature is experimental.** It is available only with the RTMB backend, via `sdmTMB(..., preferential = preferential_sampling(...))`, and currently supports single log-link families (Poisson, NB2, Gamma, Tweedie, lognormal) and `delta_gamma()` and `delta_lognormal()` families with their default links (standard or Poisson-link).
 
 The joint model couples the main observation model to a Bernoulli model for whether each eligible cell $g$ of a sampling frame was sampled in time step $t$.
 This is useful when sample locations depend on the process being measured (e.g., a fishery that preferentially returns to productive grounds).
@@ -481,6 +481,8 @@ h_{g,t} = \log \left( \mathrm{logit}^{-1} \left( \eta^{*}_{1,g,t} \right) \right
 $$
 
 not the sum of the two link predictors. As in prediction, the offset enters only the positive component.
+For a Poisson-link delta model [@thorson2018poisson], the log expected catch is $h_{g,t} = O^{*}_{g,t} + \eta^{*}_{1,g,t} + \eta^{*}_{2,g,t}$, where here $O^{*}_{g,t}$ is excluded from $\eta^{*}_{1,g,t}$ and $\eta^{*}_{2,g,t}$.
+As in the observation model, the offset scales expected catch; `predict()` instead ignores offsets for these models.
 
 Whether each cell was sampled is then modeled as
 

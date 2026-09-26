@@ -112,13 +112,17 @@ default; see \code{coefficient}, which also defines \eqn{\bar{h}_t}),
 \eqn{\alpha_t} is an optional temporal baseline process (see
 \code{baseline}), and \eqn{\xi} is an optional sampling-only spatial field.
 For a delta model, \eqn{h} is the log of the encounter probability times the positive mean,
-\eqn{\log(\mathrm{logit}^{-1}(\eta_1)) + \eta_2}.
+\eqn{\log(\mathrm{logit}^{-1}(\eta_1)) + \eta_2}. For a Poisson-link delta
+model (\code{type = "poisson-link"}), it is \eqn{o + \eta_1 + \eta_2}, where
+\eqn{o} is \code{offset}: as in the observation model (but unlike
+\code{\link[=predict.sdmTMB]{predict.sdmTMB()}}, which ignores offsets for these models), the offset
+scales the expected catch.
 
 This feature is under development: it requires the RTMB backend
 (\code{control = sdmTMBcontrol(backend = "rtmb")}), a main model with a spatial
 or spatiotemporal field, and either a single log-link family (Poisson,
-NB2, Gamma, Tweedie, or lognormal) or a logit/log \code{\link[=delta_gamma]{delta_gamma()}} or
-\code{\link[=delta_lognormal]{delta_lognormal()}} family. Smoothers in the main model must be univariate
+NB2, Gamma, Tweedie, or lognormal) or a \code{\link[=delta_gamma]{delta_gamma()}} or
+\code{\link[=delta_lognormal]{delta_lognormal()}} family with default links (standard or Poisson-link). Smoothers in the main model must be univariate
 \code{s()} terms without \code{by} variables.
 }
 \section{Fitted models}{

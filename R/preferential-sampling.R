@@ -27,13 +27,17 @@
 #' \eqn{\alpha_t} is an optional temporal baseline process (see
 #' `baseline`), and \eqn{\xi} is an optional sampling-only spatial field.
 #' For a delta model, \eqn{h} is the log of the encounter probability times the positive mean,
-#' \eqn{\log(\mathrm{logit}^{-1}(\eta_1)) + \eta_2}.
+#' \eqn{\log(\mathrm{logit}^{-1}(\eta_1)) + \eta_2}. For a Poisson-link delta
+#' model (`type = "poisson-link"`), it is \eqn{o + \eta_1 + \eta_2}, where
+#' \eqn{o} is `offset`: as in the observation model (but unlike
+#' [predict.sdmTMB()], which ignores offsets for these models), the offset
+#' scales the expected catch.
 #'
 #' This feature is under development: it requires the RTMB backend
 #' (`control = sdmTMBcontrol(backend = "rtmb")`), a main model with a spatial
 #' or spatiotemporal field, and either a single log-link family (Poisson,
-#' NB2, Gamma, Tweedie, or lognormal) or a logit/log [delta_gamma()] or
-#' [delta_lognormal()] family. Smoothers in the main model must be univariate
+#' NB2, Gamma, Tweedie, or lognormal) or a [delta_gamma()] or
+#' [delta_lognormal()] family with default links (standard or Poisson-link). Smoothers in the main model must be univariate
 #' `s()` terms without `by` variables.
 #'
 #' @section Fitted models:
@@ -231,14 +235,17 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
   log_link_family <- !delta && !multi_family &&
     family$family[[1L]] %in% .preferential_families &&
     identical(family$link[[1L]], "log")
-  conventional_delta <- delta && !multi_family &&
-    identical(family$type, "standard") &&
+  # Standard deltas use logit/log links; Poisson-link deltas log/log.
+  supported_delta <- delta && !multi_family &&
     identical(family$family[[1L]], "binomial") &&
-    family$family[[2L]] %in% c("Gamma", "lognormal") &&
-    identical(unname(family$link), c("logit", "log"))
+    family$family[[2L]] %in% c("Gamma", "lognormal") && (
+      (identical(family$type, "standard") &&
+        identical(unname(family$link), c("logit", "log"))) ||
+      (identical(family$type, "poisson_link_delta") &&
+        identical(unname(family$link), c("log", "log"))))
   unsupported <- c(
-    "delta models other than logit/log `delta_gamma()` or `delta_lognormal()`" =
-      delta && !multi_family && !conventional_delta,
+    "delta models other than `delta_gamma()` or `delta_lognormal()` with default links" =
+      delta && !multi_family && !supported_delta,
     "families other than log-link Poisson, NB2, Gamma, Tweedie, or lognormal" =
       !delta && !multi_family && !log_link_family,
     "multi-family models" = multi_family,

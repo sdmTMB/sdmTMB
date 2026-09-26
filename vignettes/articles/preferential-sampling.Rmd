@@ -346,6 +346,13 @@ Conventional logit/log `delta_gamma()` and `delta_lognormal()` are
 supported. As in prediction, the surface's `offset` enters the positive
 component only.
 
+Poisson-link delta models (`delta_gamma(type = "poisson-link")` or
+`delta_lognormal(type = "poisson-link")`) are also supported. Their
+expected catch is $\exp(o + \eta_1 + \eta_2)$ for offset $o$, so here the
+target is the sum of the linear predictors plus the surface's `offset`.
+Unlike the target, `predict()` ignores offsets for these models, so the two
+agree only at the default `offset = 0`.
+
 ## Interpretation and limitations
 
 * **A model for cell visits.** The sampling model says whether a cell was
@@ -367,8 +374,8 @@ component only.
   `simulate(re_form = NA)`, `project()`, and `sdmTMB_cv()` aren't supported.
   `predict_sampling()` covers the fitted frame only.
 * **Currently supported.** The RTMB backend; single log-link Poisson, NB2,
-  Gamma, Tweedie, or lognormal families, or logit/log delta-gamma and
-  delta-lognormal; univariate `s()` smoothers; IID random intercepts
+  Gamma, Tweedie, or lognormal families, or delta-gamma and
+  delta-lognormal with default links (standard or Poisson-link); univariate `s()` smoothers; IID random intercepts
   (excluded, or included at known levels); ordinary isotropic spatial and
   spatiotemporal fields; ordinary fixed effects in the sampling formula; a
   constant preference coefficient or one that varies by time step
