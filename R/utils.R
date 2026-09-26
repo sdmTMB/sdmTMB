@@ -147,10 +147,8 @@
 #'   `preferential_response` is supplied.
 #' @param preferential_b_type How the preferential-sampling coefficient
 #'   `b_pref` (which multiplies the projected log-density surface in the
-#'   sampling sub-model) is allowed to vary by time slice: `"constant"`
-#'   (one shared value), `"rw"` (a random walk, with the first value left
-#'   flat/unconstrained like other `"rw"` time-varying parameters in
-#'   \pkg{sdmTMB}), or `"iid"` (independent by time slice). Ignored unless
+#'   sampling sub-model) is allowed to vary by time slice. Currently only
+#'   `"constant"` (one shared value) is supported. Ignored unless
 #'   `preferential_response` is supplied.
 #' @param ... Anything else. See the 'Control parameters' section of
 #'   [stats::nlminb()].

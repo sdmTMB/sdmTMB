@@ -1008,6 +1008,16 @@ sdmTMB <- function(
     preferential_formula = preferential_formula_arg,
     mesh_missing = mesh_missing
   )
+  if (!is.null(preferential_response)) {
+    .validate_preferential_scope(
+      formula = formula, delta = has_two_components,
+      multi_family = is_multi_family, areal = is_areal, mesh = spde,
+      anisotropy = anisotropy, time_varying = time_varying,
+      spatial_varying = spatial_varying,
+      nonlocal_formula = nonlocal_formula_parsed, normalize = normalize,
+      backend = backend, b_type = preferential_b_type
+    )
+  }
   preferential_grid_arg <- .default_preferential_grid(
     preferential_grid = preferential_grid_arg,
     preferential_response = preferential_response,

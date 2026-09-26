@@ -29,10 +29,10 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
     data = dat, mesh = mesh, time = "year",
     family = poisson(),
     control = sdmTMBcontrol(
+      backend = "tmb",
       preferential_grid = pref_grid,
       preferential_response = "sampled",
-      preferential_formula = ~region,
-      preferential_b_type = "rw"
+      preferential_formula = ~region
     ),
     do_fit = FALSE
   )
@@ -44,7 +44,7 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
   expect_identical(nrow(pref$A_pref), nrow(pref_grid))
   expect_identical(ncol(pref$A_pref), mesh$mesh$n)
   expect_length(pref$year_i_pref, nrow(pref_grid))
-  expect_identical(pref$b_pref_type, 2L) # "rw"
+  expect_identical(pref$b_pref_type, 0L) # "constant"
   # `preferential_formula = ~region` selected both columns, so neither is
   # zeroed out.
   expect_true(all(pref$X_pref_ij[, "(Intercept)"] == 1))
@@ -58,6 +58,7 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
     data = dat, mesh = mesh, time = "year",
     family = poisson(),
     control = sdmTMBcontrol(
+      backend = "tmb",
       preferential_grid = pref_grid,
       preferential_response = "sampled"
     ),
@@ -76,6 +77,7 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
     data = dat, mesh = mesh, time = "year",
     family = poisson(),
     control = sdmTMBcontrol(
+      backend = "tmb",
       preferential_grid = pref_grid_no_region,
       preferential_response = "sampled"
     ),
@@ -90,7 +92,7 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
     catch ~ region,
     data = dat2, mesh = mesh, time = "year",
     family = poisson(),
-    control = sdmTMBcontrol(preferential_response = "sampled"),
+    control = sdmTMBcontrol(backend = "tmb", preferential_response = "sampled"),
     do_fit = FALSE
   )
   expect_identical(fit2$tmb_data$preferential$n_pref, nrow(dat2))
@@ -105,7 +107,7 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
   expect_identical(fit3$tmb_data$preferential$n_pref, 0L)
   expect_length(fit3$tmb_data$preferential$R_i, 0L)
 
-  # hard error: novel factor level in preferential_grid
+  # hard error: novel factor level in a factor preferential_formula uses
   bad_grid <- pref_grid
   bad_grid$region <- factor(sample(c("A", "B", "C"), nrow(bad_grid), replace = TRUE))
   expect_error(
@@ -114,8 +116,10 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
       data = dat, mesh = mesh, time = "year",
       family = poisson(),
       control = sdmTMBcontrol(
+        backend = "tmb",
         preferential_grid = bad_grid,
-        preferential_response = "sampled"
+        preferential_response = "sampled",
+        preferential_formula = ~region
       ),
       do_fit = FALSE
     ),
@@ -134,6 +138,7 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
       data = dat, mesh = mesh, time = "year",
       family = poisson(),
       control = sdmTMBcontrol(
+        backend = "tmb",
         preferential_grid = bad_grid2,
         preferential_response = "sampled",
         preferential_formula = ~region
@@ -150,6 +155,7 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
       data = dat, mesh = mesh, time = "year",
       family = poisson(),
       control = sdmTMBcontrol(
+        backend = "tmb",
         preferential_grid = pref_grid,
         preferential_response = "sampled",
         preferential_formula = catch ~ region
@@ -170,6 +176,7 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
       data = dat, mesh = mesh, time = "year",
       family = poisson(),
       control = sdmTMBcontrol(
+        backend = "tmb",
         preferential_grid = bad_grid5,
         preferential_response = "sampled",
         preferential_formula = ~not_in_formula
@@ -187,6 +194,7 @@ test_that("preferential-sampling R-side wiring validates and assembles tmb_data"
       data = dat, mesh = mesh, time = "year",
       family = poisson(),
       control = sdmTMBcontrol(
+        backend = "tmb",
         preferential_grid = bad_grid3,
         preferential_response = "sampled"
       ),
@@ -224,7 +232,8 @@ test_that("preferential sampling fits, converges, and supports tidy()/simulate()
   mesh_grid <- make_mesh(grid_xy, xy_cols = c("x", "y"), cutoff = 1.4)
   sim_xi <- simulate_new(
     formula = ~1, data = grid_xy, mesh = mesh_grid, family = gaussian(),
-    range = 3, sigma_O = 0.8, phi = 0.01, B = 0, seed = 99
+    range = 3, sigma_O = 0.8, phi = 0.01, B = 0, seed = 99,
+    control = sdmTMBcontrol(backend = "tmb")
   )
   xi_true <- sim_xi$omega_s
 
@@ -235,57 +244,115 @@ test_that("preferential sampling fits, converges, and supports tidy()/simulate()
     g
   }))
 
-  fit_one <- function(preferential_b_type) {
+  # Legacy C++ assembly smoke test only: catch and sampling are simulated
+  # independently, so this is not evidence of bias correction.
+  fit <- sdmTMB(
+    catch ~ 1,
+    data = dat, mesh = mesh, time = "year",
+    family = poisson(),
+    control = sdmTMBcontrol(
+      backend = "tmb",
+      newton_loops = 0,
+      preferential_grid = pref_grid,
+      preferential_response = "sampled"
+    )
+  )
+  expect_lt(max(abs(fit$gradients)), 1e-2)
+  expect_identical(fit$model$convergence, 0L)
+  expect_true(fit$sd_report$pdHess)
+  expect_true(all(c("gamma_0", "b_pref", "range_xi", "sigma_xi") %in%
+    names(fit$sd_report$value)))
+
+  td <- tidy(fit, "ran_pars")
+  expect_true(all(c("gamma_0", "b_pref", "range_xi", "sigma_xi") %in% td$term))
+
+  sims <- simulate(fit, nsim = 3, seed = 1)
+  expect_true(is.matrix(sims))
+  expect_identical(dim(sims), c(nrow(dat), 3L))
+})
+
+test_that("preferential sampling rejects unsupported backends and features", {
+  skip_on_cran()
+  set.seed(1)
+  dat <- data.frame(
+    x = runif(60, 0, 10), y = runif(60, 0, 10),
+    year = rep(2018:2020, length.out = 60), depth = runif(60)
+  )
+  dat$catch <- rpois(60, 5)
+  dat$sampled <- rbinom(60, 1, 0.5)
+  mesh <- make_mesh(dat, xy_cols = c("x", "y"), cutoff = 2)
+  build <- function(formula = catch ~ 1, family = poisson(), backend = "tmb",
+                    b_type = "constant", ...) {
     sdmTMB(
-      catch ~ 1,
-      data = dat, mesh = mesh, time = "year",
-      family = poisson(),
+      formula,
+      data = dat, mesh = mesh, time = "year", family = family,
       control = sdmTMBcontrol(
-        newton_loops = 0,
-        preferential_grid = pref_grid,
+        backend = backend,
         preferential_response = "sampled",
-        preferential_b_type = preferential_b_type
+        preferential_b_type = b_type
       ),
-      do_fit = TRUE
+      do_fit = FALSE, ...
     )
   }
+  expect_error(build(backend = "rtmb"), "not yet implemented for the RTMB")
+  expect_error(build(family = delta_gamma()), "delta models")
+  expect_error(build(b_type = "rw"), "other than")
+  expect_error(build(b_type = "iid"), "other than")
+  expect_error(build(catch ~ s(depth)), "smoothers")
+  expect_error(build(catch ~ breakpt(depth)), "threshold")
+  expect_error(build(time_varying = ~depth), "time_varying")
+  expect_error(build(spatial_varying = ~depth), "spatial_varying")
+  expect_error(build(anisotropy = TRUE), "anisotropy")
+  expect_error(
+    sdmTMB(
+      catch ~ 1,
+      data = dat, mesh = mesh, time = "year", family = poisson(),
+      control = sdmTMBcontrol(
+        backend = "tmb", normalize = TRUE,
+        preferential_response = "sampled"
+      ),
+      do_fit = FALSE
+    ),
+    "normalize"
+  )
 
-  for (b_type in c("constant", "rw", "iid")) {
-    fit <- suppressWarnings(fit_one(b_type)) # rw/iid: see NaN-SE note below
-    expect_lt(max(abs(fit$gradients)), 1e-2)
-    nms <- names(fit$sd_report$value)
-    expect_true(all(c("gamma_0", "b_pref", "range_xi", "sigma_xi") %in% nms))
-    if (b_type == "constant") {
-      # no temporal-variance parameter for b_pref here, so this reliably
-      # reaches a genuine interior optimum given xi_s's real signal above.
-      expect_identical(fit$model$convergence, 0L)
-      expect_true(fit$sd_report$pdHess)
-    } else {
-      # rw/iid add a b_pref temporal-variance parameter with no true
-      # year-to-year signal to detect in this data, so it can sit at a
-      # zero-variance boundary (same phenomenon as xi_s above, just for a
-      # different parameter -- see scratch/tests/test-preferential-rw-
-      # diagnostic*.R). convergence/pdHess aren't asserted here as a result.
-      expect_true(fit$model$convergence %in% c(0L, 1L))
-    }
-  }
+  # The RTMB objective must also refuse preferential data from internal
+  # callers that bypass sdmTMB(), rather than omitting the likelihood.
+  fit <- build()
+  expect_error(
+    make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
+      fit$tmb_random, backend = "rtmb"),
+    "not yet implemented for the RTMB"
+  )
+})
 
-  fit_rw <- suppressWarnings(fit_one("rw"))
-  fit_constant <- fit_one("constant")
-
-  # fit_rw's b_pref variance sits at the ~0 boundary (see above), producing
-  # harmless NaN-SE warnings from TMB's delta method.
-  td <- suppressWarnings(tidy(fit_rw, "ran_pars"))
-  expect_true(any(grepl("^gamma_0$", td$term)))
-  expect_true(any(grepl("^b_pref:", td$term))) # rw -> one row per time slice
-  expect_true(any(grepl("^range_xi$", td$term)))
-  expect_true(any(grepl("^sigma_xi$", td$term)))
-
-  td_const <- tidy(fit_constant, "ran_pars")
-  expect_true("b_pref" %in% td_const$term) # constant -> single row, no time suffix
-
-  sims <- simulate(fit_rw, nsim = 3, seed = 1)
-  expect_true(is.matrix(sims))
-  expect_identical(ncol(sims), 3L)
-  expect_identical(nrow(sims), nrow(dat))
+test_that("preferential shared design reuses the fitted poly() basis", {
+  # Regression case for the legacy builder, which rebuilds terms from
+  # `preferential_formula` and so recomputes poly() on the grid values.
+  # Enable once the shared design is built from the fitted terms (phase 1).
+  skip("Legacy preferential design ignores fitted predvars")
+  dat <- data.frame(
+    x = seq(0, 9), y = seq(0, 9), year = 1L, depth = 1:10,
+    catch = rpois(10, 5)
+  )
+  grid <- data.frame(x = 0, y = 0, year = 1L, depth = c(2, 4, 7, 9),
+    sampled = c(0, 1, 0, 1))
+  mesh <- make_mesh(dat, xy_cols = c("x", "y"), n_knots = 4, type = "kmeans")
+  fit <- sdmTMB(
+    catch ~ poly(depth, 2),
+    data = dat, mesh = mesh, time = "year", family = poisson(),
+    spatial = "off",
+    control = sdmTMBcontrol(
+      backend = "tmb",
+      preferential_grid = grid,
+      preferential_response = "sampled",
+      preferential_formula = ~ poly(depth, 2)
+    ),
+    do_fit = FALSE
+  )
+  # The fitted terms carry poly()'s basis in `predvars`.
+  fitted_terms <- stats::terms(stats::model.frame(catch ~ poly(depth, 2), dat))
+  expected <- stats::model.matrix(stats::delete.response(fitted_terms), grid)
+  expect_equal(fit$tmb_data$preferential$X_pref_ij, expected,
+    ignore_attr = TRUE)
 })

@@ -213,6 +213,11 @@ rtmb_validate <- function(data, prepared, parameters, random, ...) {
   if (!all(names(list(...)) %in% c("intern", "inner.control"))) {
     cli::cli_abort("Additional MakeADFun options are not supported by the RTMB backend yet.")
   }
+  # Temporary: `rtmb_prepare()` doesn't translate the sampling sub-model, so
+  # the objective would silently omit its likelihood.
+  if (isTRUE(data$preferential$n_pref > 0L)) {
+    cli::cli_abort("Preferential sampling is not yet implemented for the RTMB backend.")
+  }
   # Random parameters must be translated effects. The first multiphase fit
   # integrates none of them.
   expected_random <- c(

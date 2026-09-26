@@ -50,9 +50,11 @@ sampling-location structure the density surface doesn't explain:
 logit(Pr(sampled)) = gamma_0 + b_pref * grid_eta + xi_grid
 ```
 
-`b_pref` governs how strongly sampling tracks the modeled density and can be
-constant across time, a random walk, or IID by time slice via
-`preferential_b_type`.
+`b_pref` governs how strongly sampling tracks the modeled density and is
+constant across time. This experimental implementation currently requires
+the TMB backend and a single-family, non-delta model without smoothers,
+time-varying or spatially varying coefficients, thresholds, anisotropy,
+barrier meshes, or `nonlocal_formula`.
 
 Four arguments turn this on, all supplied through `sdmTMBcontrol()`:
 
@@ -70,10 +72,9 @@ Four arguments turn this on, all supplied through `sdmTMBcontrol()`:
   must already appear in `formula` -- the sampling sub-model reuses the main
   model's own fitted coefficients rather than estimating new ones. Defaults
   to `NULL`, treated as `~1` (the fitted intercept only).
-* `preferential_b_type`: `"constant"` (one shared value), `"rw"` (a random
-  walk), or `"iid"` (independent by time slice).
+* `preferential_b_type`: currently only `"constant"` (one shared value).
 
-## Example 1: a constant sampling-preference coefficient
+## Example: a constant sampling-preference coefficient
 
 We simulate catch data and a spatial grid of sampling indicators. To give
 the sampling sub-model's own nuisance field (`xi_s`) a genuine spatial
@@ -99,7 +100,8 @@ grid_xy <- expand.grid(
 mesh_grid <- make_mesh(grid_xy, xy_cols = c("x", "y"), cutoff = 1.4)
 sim_xi <- simulate_new(
   formula = ~1, data = grid_xy, mesh = mesh_grid, family = gaussian(),
-  range = 3, sigma_O = 0.8, phi = 0.01, B = 0, seed = 99
+  range = 3, sigma_O = 0.8, phi = 0.01, B = 0, seed = 99,
+  control = sdmTMBcontrol(backend = "tmb")
 )
 xi_true <- sim_xi$omega_s
 
@@ -128,6 +130,7 @@ fit <- sdmTMB(
   data = dat, mesh = mesh, time = "year",
   family = poisson(),
   control = sdmTMBcontrol(
+    backend = "tmb",
     preferential_grid = pref_grid,
     preferential_response = "sampled",
     preferential_b_type = "constant"
@@ -144,38 +147,9 @@ parameters under `tidy(fit, "ran_pars")`:
 tidy(fit, "ran_pars")
 ```
 
-## Example 2: a time-varying sampling-preference coefficient
-
-`preferential_b_type = "rw"` (or `"iid"`) lets `b_pref` vary by time slice,
-useful if sampling preference itself has drifted over time (e.g., a fishery
-gradually shifting toward historically productive grounds). Everything else
-is unchanged:
-
-```{r fit-rw}
-fit_rw <- sdmTMB(
-  catch ~ 1,
-  data = dat, mesh = mesh, time = "year",
-  family = poisson(),
-  control = sdmTMBcontrol(
-    preferential_grid = pref_grid,
-    preferential_response = "sampled",
-    preferential_b_type = "rw"
-  )
-)
-tidy(fit_rw, "ran_pars")
-```
-
-`b_pref` now has one row per time slice. Note that a `"rw"`/`"iid"` `b_pref`
-adds its own temporal-variance parameter on top of the nuisance field's
-spatial variance; if the data don't have much real year-to-year signal in
-the sampling-preference relationship (as in this simulated example), that
-variance parameter can sit near a zero-variance boundary, the same way any
-random effect does when fit to a near-flat process. This shows up as `NaN`
-standard errors from the delta method rather than as a fitting failure.
-
 As with any sdmTMB model, `simulate()` works on the fitted object:
 
-```{r simulate-rw}
-sims <- simulate(fit_rw, nsim = 3, seed = 1)
+```{r simulate}
+sims <- simulate(fit, nsim = 3, seed = 1)
 dim(sims)
 ```

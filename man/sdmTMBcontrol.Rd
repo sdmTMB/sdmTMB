@@ -211,10 +211,8 @@ has no intercept, no fixed-effect contribution at all. Ignored unless
 
 \item{preferential_b_type}{How the preferential-sampling coefficient
 \code{b_pref} (which multiplies the projected log-density surface in the
-sampling sub-model) is allowed to vary by time slice: \code{"constant"}
-(one shared value), \code{"rw"} (a random walk, with the first value left
-flat/unconstrained like other \code{"rw"} time-varying parameters in
-\pkg{sdmTMB}), or \code{"iid"} (independent by time slice). Ignored unless
+sampling sub-model) is allowed to vary by time slice. Currently only
+\code{"constant"} (one shared value) is supported. Ignored unless
 \code{preferential_response} is supplied.}
 
 \item{...}{Anything else. See the 'Control parameters' section of

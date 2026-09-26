@@ -45,6 +45,46 @@
   match.arg(preferential_b_type[1L], c("constant", "rw", "iid"))
 }
 
+#' Reject model features the preferential-sampling likelihood doesn't support
+#'
+#' Called before any mesh projection or objective construction so that an
+#' unsupported combination errors instead of silently fitting a model whose
+#' shared catch surface omits part of the main model. Relax each guard only
+#' once the corresponding support is implemented and tested.
+#' @noRd
+.validate_preferential_scope <- function(formula, delta, multi_family, areal,
+                                         mesh, anisotropy, time_varying,
+                                         spatial_varying, nonlocal_formula,
+                                         normalize, backend, b_type) {
+  # Temporary: the RTMB likelihood is not implemented yet.
+  if (identical(backend, "rtmb")) {
+    cli_abort("Preferential sampling is not yet implemented for the RTMB backend.")
+  }
+  term_labels <- unlist(lapply(.formula_list(formula), all_terms))
+  unsupported <- c(
+    "delta models" = delta,
+    "multi-family models" = multi_family,
+    "areal (SAR/CAR) models" = areal,
+    "barrier meshes" = "spde_barrier" %in% names(mesh),
+    "anisotropy" = isTRUE(anisotropy),
+    "`time_varying`" = !is.null(time_varying),
+    "`spatial_varying`" = !is.null(spatial_varying),
+    "`nonlocal_formula`" = !is.null(nonlocal_formula),
+    "threshold (`breakpt()`/`logistic()`) terms" =
+      any(grepl("^(breakpt|logistic)\\(", term_labels)),
+    "smoothers in `formula`" = length(get_smooth_terms(term_labels)) > 0L,
+    "`normalize = TRUE`" = isTRUE(normalize),
+    "`preferential_b_type` other than \"constant\"" = !identical(b_type, "constant")
+  )
+  if (any(unsupported)) {
+    cli_abort(c(
+      "Preferential sampling does not yet support some requested model features.",
+      "x" = "Unsupported: {names(unsupported)[unsupported]}."
+    ))
+  }
+  invisible(NULL)
+}
+
 #' @noRd
 .default_preferential_grid <- function(preferential_grid, preferential_response, data) {
   if (is.null(preferential_response)) {
@@ -178,6 +218,10 @@
       "x" = "Missing: {.code {paste(missing_vars, collapse = ', ')}}"
     ))
   }
+  # Pass only the factor metadata for variables this formula uses.
+  pref_vars <- vapply(as.list(attr(pref_terms, "variables"))[-1L], deparse1, "")
+  xlev <- xlev[intersect(names(xlev), pref_vars)]
+  contrasts <- contrasts[intersect(names(contrasts), pref_vars)]
   mf_pref <- tryCatch(
     stats::model.frame(pref_terms, grid, xlev = xlev, na.action = stats::na.pass),
     error = function(e) {
