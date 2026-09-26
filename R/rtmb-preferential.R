@@ -12,18 +12,18 @@
 #
 # The deviations multiply the centered target, so they change how sampling
 # concentrates within a time step, not (roughly) its rate at the average
-# target. An
-# uncentered deviation would also shift that rate, which the time step's
-# intercept pins down well: the marginal likelihood then penalizes any
-# deviation, and the SD of the deviations collapses to 0 even when the
-# slopes vary.
+# target. An uncentered deviation would mostly shift that rate, which fixed
+# time-step intercepts already fit: maximum likelihood then estimates the
+# SD of the deviations as 0 even when the slopes vary. Centering is a
+# different marginal model, not just a reparameterization.
 # Returns the negative log likelihood and the predictor pieces by frame row.
 rtmb_sampling <- function(par, theta, effects, prepared) {
   inputs <- prepared$preferential
   shared <- rtmb_linear_predictors(par, theta, effects, prepared, inputs$rows)
   # Supported families have a log link (a log positive link for deltas, and
-  # log links with the offset in component 1 for Poisson-link deltas), so the
-  # combined link-scale value is the log expected catch.
+  # log links for Poisson-link deltas), so the combined link-scale value is
+  # the log expected catch. As in prediction, the offset is in component 2 of
+  # both kinds of delta.
   target <- rtmb_combined_link(shared$eta[, 1L], shared$eta[, prepared$n_m],
     prepared$families[[1L]])
   fixed <- rtmb_product(inputs$Z, par$gamma_pref)

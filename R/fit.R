@@ -1647,6 +1647,7 @@ sdmTMB <- function(
   }
   if (!is.null(preferential_prep)) {
     tmb_map <- unmap(tmb_map, names(preferential_prep$parameters))
+    tmb_map[names(preferential_prep$map)] <- preferential_prep$map
     tmb_random <- c(tmb_random, preferential_prep$random)
   }
 

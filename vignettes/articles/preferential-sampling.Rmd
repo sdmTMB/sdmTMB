@@ -307,6 +307,32 @@ replicated simulations in the package's
 include cases where the joint model helps little (e.g., $b = 0$) and cases
 where a misspecified sampling model biases it.
 
+## Is there evidence of preferential sampling?
+
+Following Conn et al. (2017), compare the joint model with one in which sampling
+doesn't depend on expected catch: `coefficient = "zero"` fixes $b = 0$ but
+keeps the same sampling frame and formula. The two fits share the catch
+data and sampling indicators, so a likelihood ratio test on 1 degree of
+freedom and AIC are both valid. With $b = 0$ the two likelihoods are
+independent, and the catch estimates match `fit_catch`.
+
+```{r fit-zero}
+fit_zero <- update(fit,
+  preferential = preferential_sampling(
+    sampled ~ 0 + factor(year) + dist_port,
+    data = frame, coefficient = "zero"
+  )
+)
+AIC(fit_zero, fit)
+lr <- 2 * (as.numeric(logLik(fit)) - as.numeric(logLik(fit_zero)))
+stats::pchisq(lr, df = 1, lower.tail = FALSE)
+```
+
+Don't compare either joint fit with `fit_catch` this way: its likelihood
+doesn't include the sampling indicators. If $b = 0$ does about as well, the
+catch-only model is adequate, as long as the sampling model is adequate.
+A misspecified sampling model can also mislead this test.
+
 ## Is a sampling-only field warranted?
 
 Unexplained spatial structure in sampling, such as access or tradition, can

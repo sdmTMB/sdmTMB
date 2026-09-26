@@ -580,8 +580,17 @@ test_that("a sampling-only field can be estimated", {
 test_that("with the preference coefficient fixed at 0 the models decouple", {
   skip_on_cran()
   sim <- pref_sim()
-  joint <- pref_joint(sim,
+  joint <- pref_joint(sim, coefficient = "zero")
+  mapped <- pref_joint(sim,
     control = list(map = list(b_pref = factor(NA)), start = list(b_pref = 0)))
+  expect_false("b_pref" %in% names(joint$model$par))
+  expect_equal(joint$model$objective, mapped$model$objective, tolerance = 1e-8)
+  expect_equal(tidy(joint, model = "sampling")$estimate[
+    tidy(joint, model = "sampling")$term == "b_pref"], 0)
+  expect_output(print(joint), "Preference coefficient: fixed at 0")
+  # The joint fit with b estimated nests the b = 0 fit.
+  expect_gt(as.numeric(logLik(pref_joint_fit())),
+    as.numeric(logLik(joint)))
   catch <- sdmTMB(catch ~ 1, data = sim$dat, mesh = sim$mesh, time = "year",
     family = poisson(), control = sdmTMBcontrol(backend = "rtmb"))
   shared <- names(catch$model$par)

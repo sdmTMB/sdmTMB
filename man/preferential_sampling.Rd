@@ -9,7 +9,7 @@ preferential_sampling(
   data,
   re_form_iid = NA,
   offset = 0,
-  coefficient = c("constant", "iid", "rw"),
+  coefficient = c("constant", "iid", "rw", "zero"),
   baseline = c("off", "iid", "rw"),
   spatial = c("off", "on")
 )
@@ -52,6 +52,12 @@ the main model's time steps:
 \eqn{b_t = b_{t-1} + d_t} with independent
 \eqn{d_t \sim \mathrm{Normal}(0, \sigma_b^2)}. Time steps must be
 equally spaced; fill gaps with \code{extra_time} in \code{\link[=sdmTMB]{sdmTMB()}}.
+\item \code{"zero"}: \eqn{b = 0}. The sampling indicators are still modeled, but
+independently of the catch data. Compare this fit with a
+\code{"constant"} fit (same sampling \code{data} and \code{formula}) to test for
+preferential sampling, e.g., with a likelihood ratio test on 1 degree
+of freedom or AIC (Conn et al. 2017). The catch-model estimates then
+match a fit without \code{preferential}.
 }
 
 The deviations \eqn{b_t - \bar{b}} (with \eqn{\bar{b}} = \code{b_pref})
@@ -61,10 +67,16 @@ and spatiotemporal fields (i.e., of the fixed effects, smoothers, IID
 effects, and \code{offset}). The deviations therefore change how strongly
 sampling concentrates on high expected catch within a time step, not
 (to the extent the fields average to about 0 over the frame) the time
-step's sampling rate. With free time-step intercepts in \code{formula}, this
-changes only what the intercepts mean, but it keeps the deviations' SD
-estimable: an uncentered deviation also shifts the rate that the
-intercept already pins down, and its SD then tends to be estimated as 0.
+step's sampling rate. Given the deviations, centering changes only what
+free time-step intercepts in \code{formula} mean. It still changes the fitted
+model: it is equivalent to an uncentered deviation whose time-step
+intercept moves with it, by \eqn{-(b_t - \bar{b})\bar{h}_t}. Without
+centering, a deviation mostly shifts the time step's sampling rate, which
+the intercept already fits. Maximum likelihood then tends to estimate
+\eqn{\sigma_b} as 0 even when the slopes vary. Without free time-step
+intercepts (e.g., \code{sampled ~ 1} or with \code{baseline}), centering is also
+an assumption: a change in preference doesn't change a time step's
+sampling rate at its mean expected catch.
 The fields are left out of \eqn{\bar{h}_t} because their frame mean
 would link every sampling row to every mesh vertex of its time step and
 make fitting slow. So if the main model's time-step means come from a
@@ -140,8 +152,9 @@ likelihood. Use \code{bias_correct = TRUE} (the default) in \code{\link[=get_ind
 in simulations, the plug-in index was biased low for delta models.
 \item \code{\link[=logLik]{logLik()}} and \code{\link[=AIC]{AIC()}} use the joint likelihood of the catch data and
 the sampling indicators. Don't compare them with a catch-only model or a
-model with a different sampling frame. \code{\link[=nobs]{nobs()}} still counts catch
-observations only.
+model with a different sampling frame. To test for preferential
+sampling, compare with a fit using \code{coefficient = "zero"}. \code{\link[=nobs]{nobs()}}
+still counts catch observations only.
 \item \code{\link[=simulate.sdmTMB]{simulate.sdmTMB()}} and \code{\link[=residuals.sdmTMB]{residuals.sdmTMB()}} are conditional on the
 fitted fields and describe the catch data only: they don't check the
 sampling model or draw new sampling locations. \code{simulate()} with

@@ -53,8 +53,9 @@
 #'   in simulations, the plug-in index was biased low for delta models.
 #' * [logLik()] and [AIC()] use the joint likelihood of the catch data and
 #'   the sampling indicators. Don't compare them with a catch-only model or a
-#'   model with a different sampling frame. [nobs()] still counts catch
-#'   observations only.
+#'   model with a different sampling frame. To test for preferential
+#'   sampling, compare with a fit using `coefficient = "zero"`. [nobs()]
+#'   still counts catch observations only.
 #' * [simulate.sdmTMB()] and [residuals.sdmTMB()] are conditional on the
 #'   fitted fields and describe the catch data only: they don't check the
 #'   sampling model or draw new sampling locations. `simulate()` with
@@ -92,6 +93,12 @@
 #'     \eqn{b_t = b_{t-1} + d_t} with independent
 #'     \eqn{d_t \sim \mathrm{Normal}(0, \sigma_b^2)}. Time steps must be
 #'     equally spaced; fill gaps with `extra_time` in [sdmTMB()].
+#'   * `"zero"`: \eqn{b = 0}. The sampling indicators are still modeled, but
+#'     independently of the catch data. Compare this fit with a
+#'     `"constant"` fit (same sampling `data` and `formula`) to test for
+#'     preferential sampling, e.g., with a likelihood ratio test on 1 degree
+#'     of freedom or AIC (Conn et al. 2017). The catch-model estimates then
+#'     match a fit without `preferential`.
 #'
 #'   The deviations \eqn{b_t - \bar{b}} (with \eqn{\bar{b}} = `b_pref`)
 #'   multiply \eqn{h - \bar{h}_t}, where \eqn{\bar{h}_t} is the mean over
@@ -100,10 +107,16 @@
 #'   effects, and `offset`). The deviations therefore change how strongly
 #'   sampling concentrates on high expected catch within a time step, not
 #'   (to the extent the fields average to about 0 over the frame) the time
-#'   step's sampling rate. With free time-step intercepts in `formula`, this
-#'   changes only what the intercepts mean, but it keeps the deviations' SD
-#'   estimable: an uncentered deviation also shifts the rate that the
-#'   intercept already pins down, and its SD then tends to be estimated as 0.
+#'   step's sampling rate. Given the deviations, centering changes only what
+#'   free time-step intercepts in `formula` mean. It still changes the fitted
+#'   model: it is equivalent to an uncentered deviation whose time-step
+#'   intercept moves with it, by \eqn{-(b_t - \bar{b})\bar{h}_t}. Without
+#'   centering, a deviation mostly shifts the time step's sampling rate, which
+#'   the intercept already fits. Maximum likelihood then tends to estimate
+#'   \eqn{\sigma_b} as 0 even when the slopes vary. Without free time-step
+#'   intercepts (e.g., `sampled ~ 1` or with `baseline`), centering is also
+#'   an assumption: a change in preference doesn't change a time step's
+#'   sampling rate at its mean expected catch.
 #'   The fields are left out of \eqn{\bar{h}_t} because their frame mean
 #'   would link every sampling row to every mesh vertex of its time step and
 #'   make fitting slow. So if the main model's time-step means come from a
@@ -137,7 +150,7 @@
 #' )
 #' preferential_sampling(sampled ~ 1, data = grid)
 preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
-                                  coefficient = c("constant", "iid", "rw"),
+                                  coefficient = c("constant", "iid", "rw", "zero"),
                                   baseline = c("off", "iid", "rw"),
                                   spatial = c("off", "on")) {
   if (!inherits(formula, "formula") || length(formula) != 3L) {
@@ -377,7 +390,7 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
 .check_preferential_temporal <- function(spec, Z_obs, year_obs, time_df) {
   n_t <- nrow(time_df)
   type <- c(coefficient = spec$coefficient, baseline = spec$baseline)
-  type[type == "off"] <- "constant"
+  type[type %in% c("off", "zero")] <- "constant"
   temporal <- type != "constant"
   if (any(temporal) && n_t < 2L) {
     cli_abort(c(
@@ -522,6 +535,7 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
     warning = function(w) rep(0, ncol(sampling$Z))
   )
   xi <- spec$spatial == "on"
+  temporal_b <- spec$coefficient %in% c("iid", "rw")
   n_dev <- .check_preferential_temporal(spec, sampling$Z[observed, , drop = FALSE],
     year_i[observed], time_df)
 
@@ -541,7 +555,7 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
       include_iid = as.integer(spec$include_iid),
       spatial_xi = as.integer(xi),
       # 0 = none, 1 = IID, 2 = random walk
-      coefficient_type = match(spec$coefficient, c("constant", "iid", "rw")) - 1L,
+      coefficient_type = match(spec$coefficient, c("iid", "rw"), nomatch = 0L),
       baseline_type = match(spec$baseline, c("off", "iid", "rw")) - 1L
     ),
     parameters = c(
@@ -549,7 +563,7 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
       if (xi) {
         list(ln_tau_xi = 0, ln_kappa_xi = 0, xi_s = rep(0, ncol(A_station)))
       },
-      if (spec$coefficient != "constant") {
+      if (temporal_b) {
         list(ln_sigma_b_pref = 0, b_pref_dev = rep(0, n_dev[["coefficient"]]))
       },
       if (spec$baseline != "off") {
@@ -557,8 +571,10 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
           alpha_pref_dev = rep(0, n_dev[["baseline"]]))
       }
     ),
+    # `coefficient = "zero"` holds `b_pref` at its start of 0.
+    map = if (spec$coefficient == "zero") list(b_pref = factor(NA)),
     random = c(if (xi) "xi_s",
-      if (spec$coefficient != "constant") "b_pref_dev",
+      if (temporal_b) "b_pref_dev",
       if (spec$baseline != "off") "alpha_pref_dev"),
     info = list(
       spec = spec,
@@ -612,7 +628,7 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
     if (effects == "ran_pars") {
       terms <- c(
         if (spec$spatial == "on") c("range_xi", "sigma_xi"),
-        if (spec$coefficient != "constant") "sigma_b_pref",
+        if (spec$coefficient %in% c("iid", "rw")) "sigma_b_pref",
         if (spec$baseline != "off") "sigma_alpha_pref"
       )
       log_est <- unlist(est[paste0("log_", terms)])
@@ -621,7 +637,7 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
       upper <- exp(log_est + crit * log_se)
     } else {
       terms <- c(
-        if (spec$coefficient != "constant") "b_pref_t",
+        if (spec$coefficient %in% c("iid", "rw")) "b_pref_t",
         if (spec$baseline != "off") "alpha_pref_t"
       )
       lower <- unlist(est[terms]) - crit * unlist(se[terms])
@@ -659,11 +675,9 @@ print_sampling <- function(x) {
     if (spec$include_iid) "included" else "excluded", "; offset ",
     paste(format(offset, digits = 3L), collapse = " to "), ")\n", sep = "")
   process <- c(iid = "IID by time step", rw = "random walk over time steps")
-  cat("Preference coefficient: ", if (spec$coefficient == "constant") {
-    "constant"
-  } else {
-    process[[spec$coefficient]]
-  }, "\n", sep = "")
+  cat("Preference coefficient: ", switch(spec$coefficient,
+    constant = "constant", zero = "fixed at 0", process[[spec$coefficient]]),
+    "\n", sep = "")
   if (spec$baseline != "off") {
     cat("Baseline: ", process[[spec$baseline]], "\n", sep = "")
   }
