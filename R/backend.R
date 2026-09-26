@@ -4,6 +4,11 @@ make_sdmTMB_adfun <- function(data, parameters, map, random = NULL,
                               backend = "tmb", profile = NULL,
                               silent = TRUE, ...) {
   backend <- match.arg(backend, c("tmb", "rtmb"))
+  # The C++ template has no preferential-sampling likelihood; refuse rather
+  # than fit the catch model alone.
+  if (backend == "tmb" && has_preferential(data)) {
+    cli::cli_abort("Preferential sampling requires backend = \"rtmb\"; set control = sdmTMBcontrol(backend = \"rtmb\").")
+  }
   if (backend == "tmb") {
     obj <- TMB::MakeADFun(data = data, parameters = parameters, map = map,
       random = random, profile = profile, DLL = "sdmTMB", silent = silent, ...)

@@ -1,48 +1,117 @@
-# Preferential-sampling grid-cell presence/absence sub-model.
+# Preferential sampling: a Bernoulli model for which cells of an eligible
+# sampling frame were visited in each time step, linked to a standardized
+# expected-catch surface from the main model. The surface is the main
+# model's fitted design evaluated on the sampling frame, like prediction
+# `newdata`, so the frame's covariate values define the standardization.
 #
-# Mirrors the shape of R/covariate-diffusion.R: a self-contained set of
-# internal helpers, threaded into sdmTMB() in R/fit.R at the same points
-# nonlocal_formula/nonlocal_data are threaded in. See the project design
-# doc "preferential-sampling-integration-design.md" for the full rationale.
-#
-# First-pass scope (deliberately excluded, matching the RTMB reference this
-# was ported from): smooths, time-varying effects, IID random effects/
-# slopes, threshold effects, and spatially varying coefficients do not
-# contribute to the grid-level linear predictor. Only a user-selected
-# *subset* of the plain fixed-effect design matrix -- `preferential_formula`,
-# defaulting to `~1` (intercept only) -- plus the spatial (omega_s) and
-# spatiotemporal (epsilon_st) fields, reprojected onto the grid via
-# A_pref, are reused from the catch model (model column 0 only -- not
-# delta-aware). `preferential_formula`'s terms must already appear in
-# `formula`: the same fitted `b_j` coefficients are reused verbatim (no new
-# parameters are estimated for the grid), with every column of `b_j` not
-# selected by `preferential_formula` contributing zero. This mirrors the
-# RTMB reference, where the grid-level density (`log_dens_grid_t`) reuses
-# only `year_effects_pos` -- a single term from the full catch-model linear
-# predictor -- and deliberately excludes the rest (e.g. effort, tidal,
-# spline, and EM-instrument effects have no meaningful value at a grid
-# cell/time and were never part of it).
+# Only the RTMB backend will support it. The specification and frame/design
+# preparation live here; the joint likelihood is not implemented yet, so
+# `rtmb_validate()` still rejects preferential data.
 
-#' @noRd
-.validate_preferential_args <- function(preferential_grid, preferential_response,
-                                         preferential_b_type, preferential_formula,
-                                         mesh_missing) {
-  if (!is.null(preferential_grid) && is.null(preferential_response)) {
-    cli_abort("`preferential_grid` was supplied but `preferential_response` was not.")
+#' Preferential-sampling specification
+#'
+#' @description
+#' `r lifecycle::badge("experimental")`
+#'
+#' Specify a model for which cells of an eligible sampling frame were sampled
+#' in each time step, linked to the main model's standardized expected catch.
+#' Pass the result to the `preferential` argument of [sdmTMB()].
+#'
+#' **The joint likelihood is not implemented yet.** This constructor and the
+#' preparation of its inputs are in place, but [sdmTMB()] currently stops
+#' before fitting a model with a `preferential` specification.
+#'
+#' @param formula A two-sided formula for the sampling model, e.g.
+#'   `sampled ~ 0 + factor(year) + distance_to_port`. The response column
+#'   must be 0 (eligible but not sampled), 1 (sampled), or `NA` (unknown).
+#'   These coefficients belong to the sampling model alone. Only ordinary
+#'   fixed effects are supported: no smoothers, random effects, or `offset()`
+#'   terms.
+#' @param data A data frame with one row per eligible cell and time step. It
+#'   must contain the mesh coordinates, the `time` column of the main model,
+#'   the sampling response and covariates, and every covariate in the main
+#'   model's fixed-effect formula. The main model is evaluated on these rows
+#'   as with `newdata` in [predict.sdmTMB()], so set catchability covariates
+#'   (e.g., gear) to reference values here.
+#' @param re_form_iid `NA` (default) excludes the main model's IID random
+#'   effects from the expected-catch surface. `NULL` would include them, but
+#'   this is not supported yet for models with IID random effects.
+#' @param offset Offset for the main model's expected-catch surface on the
+#'   link scale (not an offset for the sampling model). A single value or one
+#'   value per row of `data`. The default `0` means unit exposure.
+#'   Observation offsets are not copied.
+#' @param coefficient How the preference coefficient varies. Only
+#'   `"constant"` (one coefficient) is currently supported.
+#' @param spatial Whether to add a time-invariant spatial random field to the
+#'   sampling model (`"off"` or `"on"`). This does not affect the main
+#'   model's fields.
+#'
+#' @return A list of class `sdmTMB_preferential`.
+#' @export
+#' @examples
+#' grid <- data.frame(
+#'   X = c(0, 1, 0, 1), Y = c(0, 0, 1, 1), year = 2020,
+#'   sampled = c(1, 0, NA, 1), depth = 100
+#' )
+#' preferential_sampling(sampled ~ 1, data = grid)
+preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
+                                  coefficient = "constant",
+                                  spatial = c("off", "on")) {
+  if (!inherits(formula, "formula") || length(formula) != 3L) {
+    cli_abort("`formula` must be a two-sided formula such as `sampled ~ 1`.")
   }
-  if (!is.null(preferential_response)) {
-    if (!is.character(preferential_response) || length(preferential_response) != 1L) {
-      cli_abort("`preferential_response` must be a single column name (character string).")
-    }
-    if (mesh_missing) {
-      cli_abort("`mesh` must be supplied when using `preferential_response`.")
-    }
-    if (!is.null(preferential_formula) &&
-        (!inherits(preferential_formula, "formula") || length(preferential_formula) != 2L)) {
-      cli_abort("`preferential_formula` must be a one-sided formula (e.g. `~1` or `~ 0 + as.factor(year)`).")
-    }
+  if (!is.name(formula[[2L]])) {
+    cli_abort("The left side of `formula` must be the name of the sampling response column.")
   }
-  match.arg(preferential_b_type[1L], c("constant", "rw", "iid"))
+  rhs <- stats::delete.response(stats::terms(formula))
+  if (length(reformulas::findbars(formula))) {
+    cli_abort("Random effects are not supported in the sampling `formula` yet.")
+  }
+  if (length(get_smooth_terms(all_terms(rhs)))) {
+    cli_abort("Smoothers are not supported in the sampling `formula` yet.")
+  }
+  if (!is.null(attr(rhs, "offset"))) {
+    cli_abort(c(
+      "`offset()` terms are not supported in the sampling `formula`.",
+      "i" = "The `offset` argument is an offset for the main model's expected-catch surface, not for the sampling model."
+    ))
+  }
+  if (!inherits(data, "data.frame")) {
+    cli_abort("`data` must be a data frame.")
+  }
+  data <- as.data.frame(data)
+  if (!nrow(data)) cli_abort("`data` has no rows.")
+  response <- as.character(formula[[2L]])
+  if (!response %in% names(data)) {
+    cli_abort("`data` is missing the sampling response column {.field {response}}.")
+  }
+  r <- data[[response]]
+  if (!(is.logical(r) || is.numeric(r)) || !all(r %in% c(0, 1, NA))) {
+    cli_abort(c(
+      "The sampling response {.field {response}} must be 0, 1, or `NA` (or logical).",
+      "i" = "1 = sampled, 0 = eligible but not sampled, `NA` = unknown."
+    ))
+  }
+  if (!(is.null(re_form_iid) || identical(re_form_iid, NA))) {
+    cli_abort("`re_form_iid` must be `NA` (exclude IID random effects) or `NULL` (include them).")
+  }
+  if (!is.numeric(offset) || !all(is.finite(offset)) ||
+      !length(offset) %in% c(1L, nrow(data))) {
+    cli_abort("`offset` must be finite, with length 1 or `nrow(data)`.")
+  }
+  if (!identical(coefficient, "constant")) {
+    cli_abort("Only `coefficient = \"constant\"` is currently supported.")
+  }
+  spatial <- match.arg(spatial)
+  structure(
+    list(
+      formula = formula, data = data, response = response,
+      include_iid = is.null(re_form_iid),
+      offset = rep_len(as.numeric(offset), nrow(data)),
+      coefficient = coefficient, spatial = spatial
+    ),
+    class = "sdmTMB_preferential"
+  )
 }
 
 #' Reject model features the preferential-sampling likelihood doesn't support
@@ -52,15 +121,25 @@
 #' shared catch surface omits part of the main model. Relax each guard only
 #' once the corresponding support is implemented and tested.
 #' @noRd
-.validate_preferential_scope <- function(formula, delta, multi_family, areal,
-                                         mesh, anisotropy, time_varying,
+.validate_preferential_scope <- function(spec, formula, delta, multi_family,
+                                         areal, mesh, mesh_missing,
+                                         anisotropy, time_varying,
                                          spatial_varying, nonlocal_formula,
-                                         normalize, backend, b_type) {
-  # Temporary: the RTMB likelihood is not implemented yet.
-  if (identical(backend, "rtmb")) {
-    cli_abort("Preferential sampling is not yet implemented for the RTMB backend.")
+                                         normalize, backend, no_spatial) {
+  if (!inherits(spec, "sdmTMB_preferential")) {
+    cli_abort("`preferential` must be created with `preferential_sampling()`.")
   }
-  term_labels <- unlist(lapply(.formula_list(formula), all_terms))
+  if (!identical(backend, "rtmb")) {
+    cli_abort("Preferential sampling requires backend = \"rtmb\"; set control = sdmTMBcontrol(backend = \"rtmb\").")
+  }
+  if (mesh_missing) {
+    cli_abort("`mesh` must be supplied when using `preferential`.")
+  }
+  formulas <- .formula_list(formula)
+  term_labels <- unlist(lapply(formulas, all_terms))
+  has_iid <- any(vapply(formulas, function(f) {
+    length(reformulas::findbars(f)) > 0L
+  }, logical(1L)))
   unsupported <- c(
     "delta models" = delta,
     "multi-family models" = multi_family,
@@ -73,8 +152,9 @@
     "threshold (`breakpt()`/`logistic()`) terms" =
       any(grepl("^(breakpt|logistic)\\(", term_labels)),
     "smoothers in `formula`" = length(get_smooth_terms(term_labels)) > 0L,
-    "`normalize = TRUE`" = isTRUE(normalize),
-    "`preferential_b_type` other than \"constant\"" = !identical(b_type, "constant")
+    "including IID random effects (`re_form_iid = NULL`)" =
+      has_iid && spec$include_iid,
+    "`normalize = TRUE`" = isTRUE(normalize)
   )
   if (any(unsupported)) {
     cli_abort(c(
@@ -82,229 +162,227 @@
       "x" = "Unsupported: {names(unsupported)[unsupported]}."
     ))
   }
+  if (no_spatial) {
+    cli_abort(c(
+      "Preferential sampling requires a spatial or spatiotemporal field in the main model.",
+      "i" = "The shared field is what identifies the preference coefficient separately from the sampling covariates."
+    ))
+  }
   invisible(NULL)
 }
 
-#' @noRd
-.default_preferential_grid <- function(preferential_grid, preferential_response, data) {
-  if (is.null(preferential_response)) {
-    return(NULL)
+# Functions that summarize the data they are given. In a formula they are
+# recomputed on new data unless the fitted values are kept in `predvars`, as
+# `poly()` and spline bases do.
+.data_dependent_calls <- c("scale", "mean", "sd", "var", "min", "max",
+  "median", "range", "quantile")
+
+.check_prediction_safe_terms <- function(terms) {
+  predvars <- attr(terms, "predvars")
+  if (is.null(predvars)) predvars <- attr(terms, "variables")
+  calls <- all.names(predvars)
+  bad <- intersect(calls, .data_dependent_calls)
+  if (length(bad)) {
+    cli_abort(c(
+      "The main model formula uses {.fn {bad}}, which would be recomputed on the sampling `data`.",
+      "i" = "Precompute the transformed covariate as a column in both `data` and the sampling `data`."
+    ))
   }
-  if (is.null(preferential_grid)) data else preferential_grid
 }
 
-#' Validate and prepare the preferential-sampling grid
-#'
-#' Checks `grid` has usable coordinates, a usable response column, and full
-#' time coverage, then builds the mesh-projection matrix and per-row year
-#' index used by the sampling sub-model. Mirrors
-#' `.prepare_nonlocal_grid_inputs()`.
-#' @noRd
-.prepare_preferential_grid_inputs <- function(grid,
-                                               xy_cols,
-                                               time,
-                                               time_df,
-                                               full_time_vec,
-                                               preferential_response,
-                                               mesh) {
-  if (!inherits(grid, "data.frame")) {
-    cli_abort("`preferential_grid` must be `NULL` or a data frame.")
+.check_frame_columns <- function(data, vars, what) {
+  missing <- setdiff(vars, names(data))
+  if (length(missing)) {
+    cli_abort(c(
+      "The sampling `data` is missing column(s) required by {what}.",
+      "x" = "Missing: {.field {missing}}"
+    ))
   }
-  if (is.null(xy_cols) || length(xy_cols) != 2L) {
-    cli_abort("The preferential-sampling grid requires a mesh built with known `xy_cols` (e.g., from `make_mesh()`).")
+  has_na <- vars[vapply(vars, function(v) anyNA(data[[v]]), logical(1L))]
+  if (length(has_na)) {
+    cli_abort(c(
+      "Columns required by {what} can't contain `NA` values in the sampling `data`.",
+      "x" = "Column(s) with `NA`: {.field {has_na}}"
+    ))
   }
+  not_finite <- vars[vapply(vars, function(v) {
+    is.numeric(data[[v]]) && any(!is.finite(data[[v]]))
+  }, logical(1L))]
+  if (length(not_finite)) {
+    cli_abort(c(
+      "Numeric columns required by {what} must be finite in the sampling `data`.",
+      "x" = "Column(s) with Inf/-Inf: {.field {not_finite}}"
+    ))
+  }
+}
 
-  missing_xy <- setdiff(xy_cols, names(grid))
-  if (length(missing_xy)) {
-    cli_abort(c(
-      "`preferential_grid` is missing required coordinate column(s).",
-      "x" = "Missing: {.code {paste(missing_xy, collapse = ', ')}}"
-    ))
-  }
-  non_numeric_xy <- xy_cols[!vapply(xy_cols, function(col) is.numeric(grid[[col]]), logical(1L))]
-  if (length(non_numeric_xy)) {
-    cli_abort(c(
-      "`preferential_grid` coordinates must be numeric.",
-      "x" = "Non-numeric coordinate column(s): {.code {paste(non_numeric_xy, collapse = ', ')}}"
-    ))
-  }
-  invalid_xy <- xy_cols[!vapply(xy_cols, function(col) all(is.finite(grid[[col]])), logical(1L))]
-  if (length(invalid_xy)) {
-    cli_abort(c(
-      "`preferential_grid` coordinates must be finite and cannot contain `NA` values.",
-      "x" = "Invalid coordinate column(s): {.code {paste(invalid_xy, collapse = ', ')}}"
-    ))
-  }
+.first_rows <- function(i) cli::cli_vec(i, list("vec-trunc" = 5L))
 
-  if (!preferential_response %in% names(grid)) {
-    cli_abort("`preferential_grid` is missing the `preferential_response` column {.code {preferential_response}}.")
+# Sampling fixed-effect design, with its terms, factor levels, and contrasts
+# kept for later sampling predictions. The rank is checked on rows with an
+# observed indicator: other rows add no information.
+.preferential_sampling_design <- function(spec) {
+  data <- spec$data
+  terms <- stats::delete.response(stats::terms(spec$formula))
+  .check_frame_columns(data, all.vars(terms), "the sampling `formula`")
+  mf <- stats::model.frame(terms, data, na.action = stats::na.pass)
+  Z <- stats::model.matrix(terms, mf)
+  if (!ncol(Z)) {
+    cli_abort("The sampling `formula` must have at least one term, e.g., `sampled ~ 1`.")
   }
-  r_raw <- grid[[preferential_response]]
-  if (is.logical(r_raw)) r_raw <- as.numeric(r_raw)
-  if (!is.numeric(r_raw) || anyNA(r_raw) || !all(r_raw %in% c(0, 1))) {
+  r <- as.numeric(data[[spec$response]])
+  observed <- !is.na(r)
+  Z_obs <- Z[observed, , drop = FALSE]
+  q <- qr(Z_obs)
+  if (q$rank < ncol(Z)) {
+    aliased <- colnames(Z)[q$pivot[-seq_len(q$rank)]]
     cli_abort(c(
-      "`preferential_grid${preferential_response}` must be a 0/1 (or logical) indicator with no missing values.",
-      "i" = "It represents whether each grid cell/row was sampled (1) or not (0) in that time slice."
+      "The sampling design is not full rank on rows with an observed sampling indicator.",
+      "x" = "Unidentified column(s): {.code {aliased}}",
+      "i" = "A time step whose indicators are all `NA` gives its intercept no information. Drop that level from the sampling `data`, or use a pooled baseline (e.g., `sampled ~ 1`)."
     ))
   }
-
-  if (!time %in% names(grid)) {
-    if (identical(time, "_sdmTMB_time")) {
-      grid[[time]] <- 0L # internal placeholder time column; not user-facing
-    } else {
-      cli_abort("`preferential_grid` is missing the time column {.code {time}}.")
+  # A 0/1 column whose observed rows have a constant indicator where it is 1
+  # has an infinite maximum likelihood estimate.
+  for (k in seq_len(ncol(Z))) {
+    z <- Z_obs[, k]
+    if (!all(z %in% c(0, 1)) || !any(z == 1)) next
+    value <- unique(r[observed][z == 1])
+    if (length(value) == 1L) {
+      cli_abort(c(
+        "Observed sampling indicators are all {value} wherever column {.code {colnames(Z)[k]}} is 1.",
+        "i" = "Its coefficient has no finite estimate. A time step with all or no eligible cells sampled can't have a free intercept."
+      ))
     }
   }
-  missing_slices <- setdiff(full_time_vec, grid[[time]])
-  if (length(missing_slices)) {
-    cli_abort(c(
-      "`preferential_grid` does not cover all fitted (+ `extra_time`) time slices.",
-      "x" = "Missing time slice(s): {.code {paste(missing_slices, collapse = ', ')}}",
-      "i" = "`preferential_grid` must be pre-expanded by the user across every modeled time slice (one row per grid cell per time slice)."
-    ))
+  list(
+    Z = Z, terms = attr(mf, "terms"),
+    xlevels = stats::.getXlevels(attr(mf, "terms"), mf),
+    contrasts = attr(Z, "contrasts")
+  )
+}
+
+#' Prepare the preferential-sampling frame and designs
+#'
+#' Validates the sampling `data` against the fitted main model and builds the
+#' nested `preferential` block of the model data plus R-only metadata. The
+#' shared catch design is the main model's fitted fixed-effect design
+#' evaluated on the sampling rows (as prediction does), using the fitted
+#' `terms` (with `predvars`), `xlevels`, and `contrasts`. Indices are
+#' zero-based, as elsewhere in the model data; `rtmb_prepare()` converts them.
+#' Row order is kept throughout.
+#' @noRd
+.prepare_preferential <- function(spec, terms, xlevels, contrasts, X_ij,
+                                  mesh, time, time_df) {
+  data <- spec$data
+  n <- nrow(data)
+  r <- as.numeric(data[[spec$response]])
+  observed <- !is.na(r)
+  if (!any(r[observed] == 0) || !any(r[observed] == 1)) {
+    cli_abort("The observed sampling indicators must include both 0s and 1s.")
   }
-  year_i <- time_df$year_i[match(grid[[time]], time_df$time_from_data)]
+
+  xy_cols <- mesh$xy_cols
+  if (length(xy_cols) != 2L) {
+    cli_abort("Preferential sampling requires a mesh built with known `xy_cols` (e.g., from `make_mesh()`).")
+  }
+  .check_frame_columns(data, xy_cols, "the mesh coordinates")
+  if (!all(vapply(xy_cols, function(v) is.numeric(data[[v]]), logical(1L)))) {
+    cli_abort("The sampling `data` coordinates must be numeric.")
+  }
+  if (identical(time, "_sdmTMB_time")) {
+    time_values <- rep(0L, n)
+  } else {
+    .check_frame_columns(data, time, "the main model's `time`")
+    time_values <- data[[time]]
+  }
+  year_i <- time_df$year_i[match(time_values, time_df$time_from_data)]
   if (anyNA(year_i)) {
-    cli_abort("`preferential_grid` contains time value(s) not present in the fitted (+ `extra_time`) time slices.")
-  }
-
-  A_pref <- fmesher::fm_basis(mesh, loc = as.matrix(grid[, xy_cols, drop = FALSE]))
-
-  list(
-    data = grid,
-    A_pref = A_pref,
-    year_i = year_i,
-    R_i = as.numeric(r_raw),
-    n_pref = nrow(grid)
-  )
-}
-
-#' Build the preferential-sampling fixed-effect design matrix
-#'
-#' Builds a design matrix for `preferential_formula` (defaulting to `~1`,
-#' intercept only) from `preferential_grid`, then embeds it into a matrix
-#' with the *same* columns (names and order) as the fitted model's own
-#' `X_main` (`X_ij[[1]]`) -- every column not selected by
-#' `preferential_formula` is filled with zeros. `X_pref_ij %*% b_j` in
-#' `src/sdmTMB.cpp` therefore reuses exactly the fitted `b_j` coefficients
-#' for the selected terms and contributes nothing for the rest; no new
-#' parameters are introduced for the grid. `preferential_formula`'s terms
-#' must already be columns of `X_main` -- this reuses the main model's own
-#' `xlev`/`contrasts` (the same mechanism `predict.sdmTMB()` uses for
-#' `newdata`) so that a factor level in `preferential_grid` that was never
-#' observed in `data` triggers R's standard "factor ... has new levels"
-#' error from `model.matrix()`, caught and re-raised as a `cli_abort()`. No
-#' attempt is made to pad, reorder, or otherwise reconcile a mismatch --
-#' fitting stops.
-#' @noRd
-.build_preferential_X <- function(grid, preferential_formula, xlev, contrasts, X_main) {
-  used_default <- is.null(preferential_formula)
-  pref_formula <- if (used_default) ~1 else preferential_formula
-
-  # Default (`~1`) is a no-op -- contributes nothing -- when the fitted
-  # model has no intercept column to reuse, rather than an error: this
-  # mirrors the RTMB reference case where the grid had no meaningful
-  # fixed-effect term at all, just the reused fields.
-  if (used_default && !"(Intercept)" %in% colnames(X_main)) {
-    return(matrix(0, nrow = nrow(grid), ncol = ncol(X_main), dimnames = list(NULL, colnames(X_main))))
-  }
-
-  pref_terms <- stats::terms(pref_formula)
-  required_vars <- all.vars(pref_terms)
-  missing_vars <- setdiff(required_vars, names(grid))
-  if (length(missing_vars)) {
+    rows <- .first_rows(which(is.na(year_i)))
     cli_abort(c(
-      "`preferential_grid` is missing predictor column(s) required by `preferential_formula`.",
-      "x" = "Missing: {.code {paste(missing_vars, collapse = ', ')}}"
+      "The sampling `data` has time value(s) outside the fitted time steps (including `extra_time`).",
+      "x" = "Row(s): {rows}"
     ))
   }
-  # Pass only the factor metadata for variables this formula uses.
-  pref_vars <- vapply(as.list(attr(pref_terms, "variables"))[-1L], deparse1, "")
-  xlev <- xlev[intersect(names(xlev), pref_vars)]
-  contrasts <- contrasts[intersect(names(contrasts), pref_vars)]
-  mf_pref <- tryCatch(
-    stats::model.frame(pref_terms, grid, xlev = xlev, na.action = stats::na.pass),
-    error = function(e) {
-      cli_abort(c(
-        "Failed to build the preferential-sampling fixed-effect design matrix from `preferential_grid` using `preferential_formula`.",
-        "x" = conditionMessage(e)
-      ))
-    }
-  )
-  X_pref_sub <- tryCatch(
-    stats::model.matrix(pref_terms, mf_pref, contrasts.arg = contrasts),
-    error = function(e) {
-      cli_abort(c(
-        "Failed to build the preferential-sampling fixed-effect design matrix from `preferential_grid` using `preferential_formula`.",
-        "i" = "This usually means `preferential_grid` has a factor level that was not present in `data` when the model was fit.",
-        "x" = conditionMessage(e)
-      ))
-    }
-  )
-  if (anyNA(X_pref_sub)) {
-    cli_abort("`preferential_grid` predictor(s) used by `preferential_formula` cannot contain missing values.")
-  }
-  unmatched <- setdiff(colnames(X_pref_sub), colnames(X_main))
-  if (length(unmatched)) {
+  key <- data.frame(data[, xy_cols, drop = FALSE], time = time_values)
+  if (anyDuplicated(key)) {
+    rows <- .first_rows(which(duplicated(key)))
     cli_abort(c(
-      "`preferential_formula` produced column(s) not present in the fitted model's fixed-effect design matrix (`formula`).",
-      "x" = "Unmatched column(s): {.code {paste(unmatched, collapse = ', ')}}",
-      "i" = "The preferential sub-model reuses the main model's own fitted `b_j` coefficients -- it does not estimate new ones -- so every term in `preferential_formula` must also appear in `formula`."
+      "The sampling `data` must have one row per cell and time step.",
+      "x" = "Duplicated coordinate/time row(s): {rows}"
     ))
   }
-  X_pref <- matrix(0, nrow = nrow(grid), ncol = ncol(X_main), dimnames = list(NULL, colnames(X_main)))
-  X_pref[, colnames(X_pref_sub)] <- X_pref_sub
-  X_pref
-}
 
-#' Assemble the TMB data list for the preferential-sampling sub-model
-#'
-#' Takes the grid inputs already validated/projected by
-#' `.prepare_preferential_grid_inputs()` (computed earlier in `sdmTMB()`,
-#' right after `time_df` is built -- mirroring where nonlocal's grid inputs
-#' are prepared) and combines them with the fixed-effect design matrix built
-#' from the fitted model's own `formula` terms (available only later in
-#' `sdmTMB()`, once `X_ij`/`mf`/`mt` exist). Returns `NULL` when
-#' preferential sampling is off (`grid_inputs` is `NULL`), so callers can
-#' gate all downstream wiring on `is.null(preferential_tmb)`.
-#' @noRd
-.build_preferential_tmb_data <- function(grid_inputs,
-                                          preferential_b_type,
-                                          preferential_formula,
-                                          xlev,
-                                          contrasts,
-                                          X_main) {
-  if (is.null(grid_inputs)) {
-    return(NULL)
+  # Project unique locations once; rows index them by station and time.
+  loc_key <- paste(data[[xy_cols[1L]]], data[[xy_cols[2L]]], sep = "\r")
+  first <- !duplicated(loc_key)
+  station_i <- match(loc_key, loc_key[first]) - 1L
+  A_station <- fmesher::fm_basis(mesh$mesh,
+    loc = as.matrix(data[first, xy_cols, drop = FALSE]))
+  outside <- Matrix::rowSums(A_station) == 0
+  if (any(outside)) {
+    rows <- .first_rows(which(outside[station_i + 1L]))
+    cli_abort(c(
+      "Some sampling `data` locations are outside the mesh.",
+      "x" = "Row(s): {rows}",
+      "i" = "Remove them from the sampling frame or extend the mesh."
+    ))
   }
-  X_pref <- .build_preferential_X(
-    grid = grid_inputs$data,
-    preferential_formula = preferential_formula,
-    xlev = xlev,
-    contrasts = contrasts,
-    X_main = X_main
-  )
-  b_type_int <- switch(preferential_b_type,
-    constant = 0L,
-    iid       = 1L,
-    rw        = 2L
-  )
+
+  sampling <- .preferential_sampling_design(spec)
+
+  X_pref <- lapply(seq_along(X_ij), function(m) {
+    .check_prediction_safe_terms(terms[[m]])
+    fixed_terms <- stats::delete.response(terms[[m]])
+    .check_frame_columns(data, all.vars(fixed_terms),
+      "the main model's fixed effects")
+    X <- tryCatch(
+      .fixed_effect_design(fixed_terms, data, xlevels[[m]], contrasts[[m]],
+        na.action = stats::na.pass),
+      error = function(e) {
+        cli_abort(c(
+          "Failed to evaluate the main model's fixed effects on the sampling `data`.",
+          "x" = conditionMessage(e),
+          "i" = "Factor levels must be levels present in the fitted `data`."
+        ))
+      }
+    )
+    if (!identical(colnames(X), colnames(X_ij[[m]]))) {
+      cli_abort("Internal error: the shared catch design doesn't match the fitted design.")
+    }
+    X
+  })
+
   list(
-    n_pref = as.integer(grid_inputs$n_pref),
-    R_i = grid_inputs$R_i,
-    X_pref_ij = X_pref,
-    A_pref = grid_inputs$A_pref,
-    year_i_pref = as.integer(grid_inputs$year_i),
-    b_pref_type = b_type_int
+    data = list(
+      n_pref = n,
+      R_i = r,
+      Z_ij = sampling$Z,
+      X_ij = X_pref,
+      offset_i = spec$offset,
+      A_station = A_station,
+      station_i = station_i,
+      year_i = as.integer(year_i),
+      include_iid = as.integer(spec$include_iid),
+      spatial_xi = as.integer(spec$spatial == "on")
+    ),
+    info = list(
+      spec = spec,
+      sampling_terms = sampling$terms,
+      sampling_xlevels = sampling$xlevels,
+      sampling_contrasts = sampling$contrasts,
+      n_observed = sum(observed),
+      n_unknown = sum(!observed),
+      n_sampled = sum(r == 1, na.rm = TRUE)
+    )
   )
 }
 
 #' Placeholder preferential-sampling TMB data when the feature is off
 #'
-#' Always-present, zero-length fields, mirroring how `covariate_diffusion`
-#' is always passed to TMB with `n_terms = 0` when `nonlocal_formula` is
-#' unused. Keeps the `tmb_data` list shape constant regardless of whether
-#' preferential sampling is requested.
+#' The C++ template still reads the retired experimental preferential block,
+#' so ordinary models pass it with zero-length fields. Remove this with the
+#' C++ preferential code.
 #' @noRd
 .default_preferential_tmb <- function(n_b_j) {
   list(
@@ -317,66 +395,18 @@
   )
 }
 
-#' Initial parameter values for the preferential-sampling sub-model
+#' Zero-length parameters of the retired C++ preferential block
 #'
-#' Zero-length for every element when the feature is off, matching how
-#' `tmb_data$preferential` is always present but empty. When on: `gamma_0`,
-#' `ln_tau_xi`, `ln_kappa_xi` start at 0, matching how the main model's own
-#' `ln_tau_O`/`ln_kappa` start at 0 (no domain-aware heuristic is used
-#' elsewhere in \pkg{sdmTMB}, so none is added here either); `xi_s` starts
-#' at all zeros, length `n_s` (mesh vertex count); `b_pref` is length 1 for
-#' `preferential_b_type == "constant"` or length `n_t` otherwise;
-#' `log_sigma_b_pref` is length 0 for `"constant"` (no rw/iid penalty
-#' applies) or length 1 (starting at `log(0.3)`) otherwise.
+#' The C++ template still declares these parameters. Remove this with the
+#' C++ preferential code.
 #' @noRd
-.preferential_init_params <- function(is_on, preferential_b_type, n_s, n_t) {
-  if (!is_on) {
-    return(list(
-      gamma_0 = numeric(0),
-      b_pref = numeric(0),
-      log_sigma_b_pref = numeric(0),
-      ln_tau_xi = numeric(0),
-      ln_kappa_xi = numeric(0),
-      xi_s = numeric(0)
-    ))
-  }
+.default_preferential_params <- function() {
   list(
-    gamma_0 = 0,
-    b_pref = if (identical(preferential_b_type, "constant")) 0 else rep(0, n_t),
-    log_sigma_b_pref = if (identical(preferential_b_type, "constant")) numeric(0) else log(0.3),
-    ln_tau_xi = 0,
-    ln_kappa_xi = 0,
-    xi_s = rep(0, n_s)
+    gamma_0 = numeric(0),
+    b_pref = numeric(0),
+    log_sigma_b_pref = numeric(0),
+    ln_tau_xi = numeric(0),
+    ln_kappa_xi = numeric(0),
+    xi_s = numeric(0)
   )
-}
-
-#' Names of preferential-sampling parameters to unmap (freely estimate)
-#'
-#' `map_all_params()` in `R/fit.R` starts every parameter mapped off
-#' (`factor(NA)`); callers explicitly unmap whatever should actually be
-#' estimated. Unmapping a zero-length parameter is a no-op, so this can be
-#' called unconditionally even when the feature is off.
-#' @noRd
-.preferential_map_names <- function(is_on) {
-  if (!is_on) {
-    return(character(0))
-  }
-  c("gamma_0", "b_pref", "log_sigma_b_pref", "ln_tau_xi", "ln_kappa_xi", "xi_s")
-}
-
-#' Names of preferential-sampling parameters that are random effects
-#'
-#' `xi_s` is always a random effect (a GMRF field) whenever the feature is
-#' on. `b_pref` is a random effect only for `"rw"`/`"iid"` -- for
-#' `"constant"` it's a plain length-1 fixed effect, same treatment as `b_j`.
-#' @noRd
-.preferential_random_names <- function(is_on, preferential_b_type) {
-  if (!is_on) {
-    return(character(0))
-  }
-  nms <- "xi_s"
-  if (!identical(preferential_b_type, "constant")) {
-    nms <- c(nms, "b_pref")
-  }
-  nms
 }

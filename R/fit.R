@@ -148,6 +148,11 @@ NULL
 #'   (`time_lag()` terms, or `diffusion()` terms with `time` specified). In
 #'   that case, it must cover every fitted (+ `extra_time`) time slice.
 #'   Defaults to `NULL`, in which case `data` is used.
+#' @param preferential `r lifecycle::badge("experimental")` An optional
+#'   preferential-sampling specification from [preferential_sampling()].
+#'   Requires `control = sdmTMBcontrol(backend = "rtmb")`. The joint
+#'   likelihood is not implemented yet, so fitting currently stops with an
+#'   error.
 #' @param weights A numeric vector representing optional likelihood weights for
 #'   the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
 #'   to sum to one and are not internally modified. Can also be used for trials
@@ -662,6 +667,7 @@ sdmTMB <- function(
     dispformula = ~ 1,
     nonlocal_formula = NULL,
     nonlocal_data = NULL,
+    preferential = NULL,
     weights = NULL,
     offset = NULL,
     extra_time = NULL,
@@ -878,10 +884,6 @@ sdmTMB <- function(
   collapse_ar1_threshold <- control$collapse_ar1_threshold
   sar_weight_style <- control$sar_weight_style
   do_rsr <- as.integer(isTRUE(control$get_rsr))
-  preferential_grid_arg <- control$preferential_grid
-  preferential_response <- control$preferential_response
-  preferential_formula_arg <- control$preferential_formula
-  preferential_b_type <- control$preferential_b_type
 
   dot_checks <- c(
     "lower", "upper", "profile", "parallel", "censored_upper", "getsd",
@@ -890,8 +892,7 @@ sdmTMB <- function(
     "suppress_nlminb_warnings", "collapse_spatial_variance",
     "collapse_spatial_variance_threshold",
     "collapse_spatiotemporal_ar1", "collapse_ar1_threshold",
-    "sar_weight_style", "get_rsr", "backend", "preferential_grid",
-    "preferential_response", "preferential_formula", "preferential_b_type"
+    "sar_weight_style", "get_rsr", "backend"
   )
   .control <- control
   # FIXME; automate this from sdmTMcontrol args?
@@ -1001,40 +1002,15 @@ sdmTMB <- function(
     )
   }
 
-  preferential_b_type <- .validate_preferential_args(
-    preferential_grid = preferential_grid_arg,
-    preferential_response = preferential_response,
-    preferential_b_type = preferential_b_type,
-    preferential_formula = preferential_formula_arg,
-    mesh_missing = mesh_missing
-  )
-  if (!is.null(preferential_response)) {
+  if (!is.null(preferential)) {
     .validate_preferential_scope(
-      formula = formula, delta = has_two_components,
+      spec = preferential, formula = formula, delta = has_two_components,
       multi_family = is_multi_family, areal = is_areal, mesh = spde,
-      anisotropy = anisotropy, time_varying = time_varying,
-      spatial_varying = spatial_varying,
+      mesh_missing = mesh_missing, anisotropy = anisotropy,
+      time_varying = time_varying, spatial_varying = spatial_varying,
       nonlocal_formula = nonlocal_formula_parsed, normalize = normalize,
-      backend = backend, b_type = preferential_b_type
+      backend = backend, no_spatial = no_spatial
     )
-  }
-  preferential_grid_arg <- .default_preferential_grid(
-    preferential_grid = preferential_grid_arg,
-    preferential_response = preferential_response,
-    data = data
-  )
-  preferential_grid_inputs <- if (!is.null(preferential_response)) {
-    .prepare_preferential_grid_inputs(
-      grid = preferential_grid_arg,
-      xy_cols = spde$xy_cols,
-      time = time,
-      time_df = time_df,
-      full_time_vec = time_df$time_from_data,
-      preferential_response = preferential_response,
-      mesh = spde$mesh
-    )
-  } else {
-    NULL
   }
 
   domain <- prepare_spatial_domain(
@@ -1198,16 +1174,19 @@ sdmTMB <- function(
     sm[[ii]]$formula_no_bars_no_sm <- formula_no_bars_no_sm
   }
 
-  preferential_tmb <- .build_preferential_tmb_data(
-    grid_inputs = preferential_grid_inputs,
-    preferential_b_type = preferential_b_type,
-    preferential_formula = preferential_formula_arg,
-    xlev = stats::.getXlevels(mt[[1]], mf[[1]]),
-    contrasts = attr(X_ij[[1]], "contrasts"),
-    X_main = X_ij[[1]]
-  )
-  if (is.null(preferential_tmb)) {
-    preferential_tmb <- .default_preferential_tmb(n_b_j = ncol(X_ij[[1]]))
+  preferential_prep <- if (!is.null(preferential)) {
+    .prepare_preferential(
+      preferential,
+      terms = mt,
+      xlevels = lapply(seq_along(mf), function(i) stats::.getXlevels(mt[[i]], mf[[i]])),
+      contrasts = lapply(X_ij, attr, which = "contrasts"),
+      X_ij = X_ij, mesh = spde, time = time, time_df = time_df
+    )
+  }
+  preferential_tmb <- if (!is.null(preferential_prep)) {
+    preferential_prep$data
+  } else {
+    .default_preferential_tmb(n_b_j = ncol(X_ij[[1]]))
   }
 
   if (has_two_components) {
@@ -1606,12 +1585,7 @@ sdmTMB <- function(
     b_smooth = if (sm$has_smooths) matrix(0, sum(sm$sm_dims), n_m) else array(0),
     ln_smooth_sigma = if (sm$has_smooths) matrix(0, length(sm$sm_dims), n_m) else array(0)
   )
-  tmb_params <- c(tmb_params, .preferential_init_params(
-    is_on = !is.null(preferential_response),
-    preferential_b_type = preferential_b_type,
-    n_s = n_s,
-    n_t = tmb_data$n_t
-  ))
+  tmb_params <- c(tmb_params, .default_preferential_params())
   if (family_spec$n_f == 1L && identical(family$link, "inverse") && family$family[1] %in% c("Gamma", "gaussian", "student") && !has_two_components) {
     fam <- family
     if (family$family == "student") fam$family <- "gaussian"
@@ -1621,7 +1595,6 @@ sdmTMB <- function(
 
   # Map off parameters not needed
   tmb_map <- map_all_params(tmb_params)
-  tmb_map <- unmap(tmb_map, .preferential_map_names(!is.null(preferential_response)))
   tmb_map$b_j <- NULL
   if (!is_multi_family && has_dispformula) {
     tmb_map <- unmap(tmb_map, "b_disp_k")
@@ -1690,7 +1663,6 @@ sdmTMB <- function(
   tmb_map$log_kappaT_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_temporal)
 
   tmb_random <- c()
-  tmb_random <- c(tmb_random, .preferential_random_names(!is.null(preferential_response), preferential_b_type))
   if (any(spatial == "on") && !omit_spatial_intercept) {
     tmb_random <- c(tmb_random, "omega_s")
     tmb_map <- unmap(tmb_map, c("omega_s", "ln_tau_O"))
@@ -1939,6 +1911,7 @@ sdmTMB <- function(
       nonlocal_formula_parsed = nonlocal_formula_parsed,
       nonlocal_parsed = nonlocal_parsed,
       nonlocal_grid_supplied = nonlocal_grid_supplied,
+      preferential = preferential_prep$info,
       spatial = spatial_user,
       spatiotemporal = spatiotemporal,
       spatial_varying_formula = spatial_varying_formula,

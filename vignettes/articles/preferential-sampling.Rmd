@@ -8,7 +8,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-`sdmTMB` implements a preferential sampling model described in 
+`sdmTMB` is adding a preferential sampling model motivated by
 
 Ward, E.J., K.L. Oken, Y.A. Chen, K.E. Richerson, C. Barnes, and D. Holland 2026. Correcting trend bias from preferential sampling in fishery-dependent indices. In review
 
@@ -27,129 +27,49 @@ knitr::opts_chunk$set(
 )
 ```
 
-```{r packages, message=FALSE, warning=FALSE}
-library(sdmTMB)
-library(ggplot2)
-theme_set(theme_light())
-```
+**This feature is under development.** The previous experimental interface
+(the `preferential_*` arguments to `sdmTMBcontrol()`) has been removed. Its
+replacement is being implemented for the RTMB backend only. The
+specification below can be created, but `sdmTMB()` currently stops before
+fitting it because the joint likelihood is not implemented yet. This article
+will be rewritten with a worked example once fitting works.
 
-Preferential sampling can occur when the locations at which data are
-collected are not independent. For example, fishing
-vessels that preferentially return to sites with historically high catch
-rates. Ignoring this can bias estimates of the underlying spatial process.
-
-sdmTMB can fit a joint model that couples the usual catch/observation model
-to a second, Bernoulli sub-model for whether each cell of a spatial grid was
-sampled in a given time slice. The sampling log-odds partly track the main
-model's own fitted log-density surface (a user-selected subset of the
-fixed effects, plus the spatial and spatiotemporal fields), reprojected onto
-the grid, plus an independent nuisance spatial field capturing
-sampling-location structure the density surface doesn't explain:
+The planned model couples the usual catch model to a Bernoulli model for
+whether each eligible cell of a sampling frame was sampled in each time step:
 
 ```
-logit(Pr(sampled)) = gamma_0 + b_pref * grid_eta + xi_grid
+logit(Pr(sampled)) = Z * gamma + b * log(standardized expected catch)
+                     [+ optional sampling-only spatial field]
 ```
 
-`b_pref` governs how strongly sampling tracks the modeled density and is
-constant across time. This experimental implementation currently requires
-the TMB backend and a single-family, non-delta model without smoothers,
-time-varying or spatially varying coefficients, thresholds, anisotropy,
-barrier meshes, or `nonlocal_formula`.
+`Z * gamma` is a separate sampling regression, for example free annual
+intercepts plus distance to port. The standardized expected catch is the
+main model evaluated on the sampling frame, like prediction `newdata`. The
+covariate values in the frame define the standardization, so catchability
+covariates such as gear should be set to a reference value there. The
+catch model's spatial and spatiotemporal fields are shared, and `b` is a
+constant preference coefficient.
 
-Four arguments turn this on, all supplied through `sdmTMBcontrol()`:
+```{r spec, eval = FALSE}
+# One row per eligible cell and year, including known unsampled cells (0).
+# Unknown sampling history is NA. Main-model covariates in `grid` define the
+# standardized catch surface.
+grid$gear <- factor("reference", levels = levels(catches$gear))
 
-* `preferential_response`: the name of a 0/1 (or logical) column indicating
-  whether a grid cell/row was sampled. Supplying this is what turns the
-  feature on.
-* `preferential_grid`: a data frame of grid cells, pre-expanded across every
-  fitted time slice (one row per grid cell per time slice), containing the
-  mesh coordinates, the `preferential_response` column, and whatever
-  predictor column(s) `preferential_formula` needs. Defaults to `data`
-  itself if left as `NULL` (only sensible if `data` already has that shape).
-* `preferential_formula`: an optional one-sided formula (e.g. `~1` or
-  `~ 0 + as.factor(year)`) selecting which term(s) of the main model's
-  *already-fitted* fixed effects are reprojected onto the grid. Every term
-  must already appear in `formula` -- the sampling sub-model reuses the main
-  model's own fitted coefficients rather than estimating new ones. Defaults
-  to `NULL`, treated as `~1` (the fitted intercept only).
-* `preferential_b_type`: currently only `"constant"` (one shared value).
-
-## Example: a constant sampling-preference coefficient
-
-We simulate catch data and a spatial grid of sampling indicators. To give
-the sampling sub-model's own nuisance field (`xi_s`) a genuine spatial
-signal to find, we simulate it with `simulate_new()` rather than as pure
-noise:
-
-```{r sim-constant}
-set.seed(42)
-years <- 1:40
-n <- 1500
-dat <- data.frame(
-  x = runif(n, 0, 10),
-  y = runif(n, 0, 10),
-  year = rep(years, length.out = n)
-)
-dat$catch <- rpois(n, exp(1 + 0.15 * dat$y))
-mesh <- make_mesh(dat, xy_cols = c("x", "y"), cutoff = 2.5)
-
-grid_xy <- expand.grid(
-  x = seq(0.5, 9.5, length.out = 7),
-  y = seq(0.5, 9.5, length.out = 7)
-)
-mesh_grid <- make_mesh(grid_xy, xy_cols = c("x", "y"), cutoff = 1.4)
-sim_xi <- simulate_new(
-  formula = ~1, data = grid_xy, mesh = mesh_grid, family = gaussian(),
-  range = 3, sigma_O = 0.8, phi = 0.01, B = 0, seed = 99,
-  control = sdmTMBcontrol(backend = "tmb")
-)
-xi_true <- sim_xi$omega_s
-
-pref_grid <- do.call(rbind, lapply(years, function(yr) {
-  g <- grid_xy
-  g$year <- yr
-  g$sampled <- rbinom(nrow(g), 1, plogis(-1 + 0.3 * g$y + xi_true))
-  g
-}))
-```
-
-A single year's sampling indicators illustrate the preference for higher `y`
-plus the added spatial structure from `xi_true`:
-
-```{r plot-grid}
-ggplot(pref_grid[pref_grid$year == 1, ], aes(x, y, colour = factor(sampled))) +
-  geom_point(size = 4) +
-  labs(colour = "Sampled")
-```
-
-Now fit the joint model with `preferential_b_type = "constant"`:
-
-```{r fit-constant}
 fit <- sdmTMB(
-  catch ~ 1,
-  data = dat, mesh = mesh, time = "year",
-  family = poisson(),
-  control = sdmTMBcontrol(
-    backend = "tmb",
-    preferential_grid = pref_grid,
-    preferential_response = "sampled",
-    preferential_b_type = "constant"
-  )
+  catch ~ depth_scaled + gear + (1 | vessel),
+  data = catches,
+  mesh = mesh,
+  time = "year",
+  family = tweedie(link = "log"),
+  offset = log(catches$effort),
+  preferential = preferential_sampling(
+    sampled ~ 0 + factor(year) + distance_to_port,
+    data = grid,
+    re_form_iid = NA, # exclude vessel effects from the shared surface
+    offset = 0, # unit effort in the shared surface
+    spatial = "off"
+  ),
+  control = sdmTMBcontrol(backend = "rtmb")
 )
-fit
-```
-
-The preferential-sampling parameters (`gamma_0`, `b_pref`, and the nuisance
-field's `range_xi`/`sigma_xi`) get reported alongside the usual random-field
-parameters under `tidy(fit, "ran_pars")`:
-
-```{r tidy-constant}
-tidy(fit, "ran_pars")
-```
-
-As with any sdmTMB model, `simulate()` works on the fitted object:
-
-```{r simulate}
-sims <- simulate(fit, nsim = 3, seed = 1)
-dim(sims)
 ```

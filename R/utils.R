@@ -107,49 +107,6 @@
 #'   `get_rsr = TRUE`, these will be available via
 #'   `tidy(fit, effects = "rsr")`. See Hanks et al. (2015) and
 #'   Diaz and Thorson (2025).
-#' @param preferential_grid An optional data frame of grid-cell
-#'   presence/absence records used to fit a joint preferential-sampling
-#'   sub-model alongside the main catch/observation model: a Bernoulli model
-#'   for whether each grid cell was sampled, where the sampling log-odds
-#'   partly track a (typically restricted, see `preferential_formula`)
-#'   subset of the main model's own fitted fixed effects, plus its spatial
-#'   and spatiotemporal fields, reprojected onto the grid. Must contain the
-#'   mesh `xy_cols`, the `time` column (pre-expanded by the user to cover
-#'   every fitted (+ `extra_time`) time slice -- one row per grid cell per
-#'   time slice), the `preferential_response` column, and whatever
-#'   predictor column(s) `preferential_formula` needs (smooths, time-varying
-#'   effects, random effects/slopes, threshold effects, and spatially
-#'   varying coefficients are not supported in the grid-level predictor
-#'   regardless of `preferential_formula`). Factor predictors must use
-#'   levels that are a subset of those observed in `data`; a novel level
-#'   triggers a hard error rather than being silently reconciled. Defaults
-#'   to `NULL`, in which case `data` is used (only meaningful if `data`
-#'   already has the shape described above). Supplying `preferential_grid`
-#'   without also supplying `preferential_response` is an error, not a
-#'   silent no-op.
-#' @param preferential_response Optional. The name of the column (in
-#'   `preferential_grid`, or in `data` if `preferential_grid` is `NULL`)
-#'   holding the 0/1 (or logical) "was this grid cell/row sampled" indicator.
-#'   Supplying this turns on the joint preferential-sampling sub-model;
-#'   leaving it `NULL` (the default) fits the main model exactly as if
-#'   `preferential_grid` had never been mentioned.
-#' @param preferential_formula Optional one-sided formula (e.g. `~1` or
-#'   `~ 0 + as.factor(year)`) selecting which term(s) of the main model's
-#'   *already-fitted* fixed effects (`b_j`) are reprojected onto
-#'   `preferential_grid` and reused in the sampling sub-model's linear
-#'   predictor. Every term must already appear in `formula` -- this reuses
-#'   `b_j`'s existing columns rather than estimating new coefficients, so
-#'   `preferential_grid` only needs to supply whatever predictor(s)
-#'   `preferential_formula` actually uses, not every predictor in `formula`.
-#'   Defaults to `NULL`, treated as `~1` (the fitted intercept only,
-#'   reprojected onto every grid cell/time as a constant) -- or, if `formula`
-#'   has no intercept, no fixed-effect contribution at all. Ignored unless
-#'   `preferential_response` is supplied.
-#' @param preferential_b_type How the preferential-sampling coefficient
-#'   `b_pref` (which multiplies the projected log-density surface in the
-#'   sampling sub-model) is allowed to vary by time slice. Currently only
-#'   `"constant"` (one shared value) is supported. Ignored unless
-#'   `preferential_response` is supplied.
 #' @param ... Anything else. See the 'Control parameters' section of
 #'   [stats::nlminb()].
 #'
@@ -201,10 +158,6 @@ sdmTMBcontrol <- function(
   sar_weight_style = c("row", "raw"),
   get_rsr = FALSE,
   backend = getOption("sdmTMB.backend", "tmb"),
-  preferential_grid = NULL,
-  preferential_response = NULL,
-  preferential_formula = NULL,
-  preferential_b_type = c("constant", "rw", "iid"),
   ...) {
 
   assert_that(is.numeric(nlminb_loops), is.numeric(newton_loops))
@@ -275,11 +228,7 @@ sdmTMBcontrol <- function(
     collapse_spatiotemporal_ar1,
     collapse_ar1_threshold,
     sar_weight_style,
-    get_rsr,
-    preferential_grid,
-    preferential_response,
-    preferential_formula,
-    preferential_b_type
+    get_rsr
   )
   c(out, list(...))
 }

@@ -21,6 +21,7 @@ sdmTMB(
   dispformula = ~1,
   nonlocal_formula = NULL,
   nonlocal_data = NULL,
+  preferential = NULL,
   weights = NULL,
   offset = NULL,
   extra_time = NULL,
@@ -183,6 +184,12 @@ columns, and the \code{time} column if \code{nonlocal_formula} is time-indexed
 (\code{time_lag()} terms, or \code{diffusion()} terms with \code{time} specified). In
 that case, it must cover every fitted (+ \code{extra_time}) time slice.
 Defaults to \code{NULL}, in which case \code{data} is used.}
+
+\item{preferential}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}} An optional
+preferential-sampling specification from \code{\link[=preferential_sampling]{preferential_sampling()}}.
+Requires \code{control = sdmTMBcontrol(backend = "rtmb")}. The joint
+likelihood is not implemented yet, so fitting currently stops with an
+error.}
 
 \item{weights}{A numeric vector representing optional likelihood weights for
 the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have

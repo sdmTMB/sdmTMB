@@ -82,6 +82,7 @@ reference:
   - update.sdmTMB
   - dharma_residuals
   - sdmTMBcontrol
+  - preferential_sampling
   - run_extra_optimization
   - replicate_df
   - set_delta_model

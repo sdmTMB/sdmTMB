@@ -458,46 +458,33 @@ CAR requires a symmetric adjacency matrix.
 
 ## Preferential sampling
 
-sdmTMB can fit a joint model that couples the main observation model to a second, auxiliary Bernoulli model describing whether each cell of a spatial sampling grid was sampled in a given time slice, letting the sampling probability itself depend on the modeled process.
-This is useful when sample locations are not independent of the process being measured (e.g., a fishery that preferentially returns to historically productive grounds), which can otherwise bias estimates of the underlying spatial process if ignored.
-This is a newer, experimental feature, enabled via the `preferential_grid`, `preferential_response`, `preferential_formula`, and `preferential_b_type` arguments to `sdmTMBcontrol()`.
+**This feature is under development and can't be fitted yet.** It will be available only with the RTMB backend, via `sdmTMB(..., preferential = preferential_sampling(...))`.
 
-The sampling sub-model reuses a restricted version of the main model's linear predictor -- a user-selected *subset* of the fixed effects, plus the spatial and spatiotemporal random fields (smooths, time-varying coefficients, spatially varying coefficients, random intercepts/slopes, and nonlocal covariate terms are not included, regardless of that subset) -- projected from mesh vertices onto the sampling grid with its own projection matrix $\bA_{\RM{pref}}$:
+The planned joint model couples the main observation model to a Bernoulli model for whether each eligible cell $g$ of a sampling frame was sampled in time step $t$.
+This is useful when sample locations depend on the process being measured (e.g., a fishery that preferentially returns to productive grounds).
+
+The shared surface is the log of standardized expected catch, $h_{g,t}$.
+It is the main model evaluated on the sampling frame, as with prediction `newdata`:
 
 $$
-\eta^{*}_{\s,t} = \bX^{\RM{pref}}_{\s,t} \bbeta + \bA_{\RM{pref}} \bomega + \bA_{\RM{pref}} \beps_t,
+h_{g,t} = \bX^{*}_{g,t} \bbeta + O^{*}_{g,t} + \bA^{*}_{g} \bomega + \bA^{*}_{g} \beps_t,
 $$
 
-where $\bX^{\RM{pref}}_{\s,t}$ is a fixed-effect design matrix evaluated on the sampling grid using only the term(s) named in `preferential_formula` (an ordinary one-sided formula, e.g. `~1` or `~ 0 + as.factor(year)`, defaulting to `~1`, the intercept only), with every other column set to zero; and $\bbeta$ is the *same* fixed-effect coefficient vector fitted by the main model -- `preferential_formula`'s terms must already appear in `formula`, since the sampling sub-model reuses those already-fitted coefficients rather than estimating new ones. This mirrors how a preferential-sampling model reprojects only a specific piece of the catch model's linear predictor (e.g. a year effect) onto the grid, rather than the model's entire fixed-effect structure, since most covariates (e.g. effort, gear, or day-of-year effects) have no meaningful value at an unsampled grid cell/time.
+where $\bX^{*}_{g,t}$ is the main model's fixed-effect design evaluated on the frame's covariate values, using the fitted terms, factor levels, contrasts, and transformation bases; $\bbeta$ are the main model's coefficients; $O^{*}_{g,t}$ is an offset for the surface (by default 0, i.e., unit exposure); and $\bA^{*}_{g}$ projects the main model's spatial and spatiotemporal fields to the frame locations.
+The frame's covariate values define the standardization (e.g., gear set to a reference level).
+IID random effects of the main model are excluded from the surface.
 
-Whether each grid cell was sampled is then modeled as
+Whether each cell was sampled is then modeled as
 
 $$
 \begin{aligned}
-\Pr(R_{\s,t} = 1) &= \mathrm{logit}^{-1}\left(\gamma_0 + b_{\RM{pref},t}\, \eta^{*}_{\s,t} + \xi_{\s}\right),\\
+\Pr(R_{g,t} = 1) &= \mathrm{logit}^{-1}\left(\bZ_{g,t} \boldsymbol{\gamma} + b\, h_{g,t} + \xi_{g}\right),\\
 \bxi &\sim \RM{MVNormal} \left( \bs{0}, \bSigma_\xi \right),
 \end{aligned}
 $$
 
-where $R_{\s,t}$ is a 0/1 indicator for whether grid cell $\s$ was sampled at time $t$ (the `preferential_response` column of `preferential_grid`); $\gamma_0$ is a sampling sub-model intercept; $b_{\RM{pref},t}$ is a coefficient controlling how strongly sampling probability tracks $\eta^*_{\s,t}$; and $\xi_{\s}$ is an independent spatial GMRF, parameterized internally the same way as $\bomega$ with its own decorrelation rate $\kappa_\xi$ and marginal standard deviation $\sigma_\xi$, capturing residual sampling-location structure not explained by $\eta^*_{\s,t}$.
-This field is local to the sampling sub-model only and does not enter the main observation model.
-
-$b_{\RM{pref},t}$ can be constant over time or time-varying, set via `preferential_b_type`.
-For `preferential_b_type = 'constant'`, $b_{\RM{pref},t} = b_{\RM{pref}}$ for all $t$ (a single shared coefficient).
-For `preferential_b_type = 'rw'`, it follows the same random-walk process as the [time-varying regression parameters](#time-varying-regression-parameters) described above, with the first time step left unconstrained:
-
-$$
-\begin{aligned}
-b_{\RM{pref},t=1} &\sim \RM{Uniform} \left(-\infty, \infty \right) \text{ (treated as an unconstrained parameter)},\\
-b_{\RM{pref},t>1} &\sim \RM{Normal} \left(b_{\RM{pref},t-1}, \sigma_{b}^2 \right).
-\end{aligned}
-$$
-
-For `preferential_b_type = 'iid'`, each time step is independent:
-
-$$
-b_{\RM{pref},t} \sim \RM{Normal} \left(0, \sigma_{b}^2 \right).
-$$
+where $R_{g,t}$ is the 0/1 sampling indicator (`NA` indicators contribute no likelihood); $\bZ_{g,t} \boldsymbol{\gamma}$ is a separate sampling regression with its own coefficients (e.g., free annual intercepts); $b$ is a constant preference coefficient; and $\xi_g$ is an optional, time-invariant spatial field with its own range and marginal standard deviation that enters only the sampling model.
+The shared surface is recomputed inside the joint likelihood, which integrates over the shared and sampling-only latent effects.
 
 # Observation model families
 

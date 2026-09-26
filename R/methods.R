@@ -483,6 +483,11 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
     call$data <- object$data
   }
 
+  # likewise keep the saved preferential-sampling specification
+  if (!"preferential" %in% names(new_args) && !is.null(object$preferential)) {
+    call$preferential <- object$preferential$spec
+  }
+
   # keep the fitted controls and backend unless `control` is replaced;
   # otherwise the backend would re-resolve from the current global option
   if (!"control" %in% names(new_args)) {

@@ -81,7 +81,38 @@ rtmb_prepare <- function(data) {
     prepared$proj <- rtmb_row_inputs(data, prepared$families,
       projection = TRUE)
   }
+  if (has_preferential(data)) {
+    prepared$preferential <- rtmb_preferential_inputs(data, prepared$families)
+  }
   prepared
+}
+
+has_preferential <- function(data) isTRUE(data$preferential$n_pref > 0L)
+
+# Sampling-frame inputs: the observed indicators and sampling design, and
+# `rows`, the frame's shared catch-predictor rows for
+# rtmb_linear_predictors(). Like projection rows, these select from the
+# unique frame locations. Terms that preferential sampling doesn't support
+# yet (smoothers, SVCs, thresholds, time-varying, and diffusion) are rejected
+# before this point and have no inputs here.
+rtmb_preferential_inputs <- function(data, families) {
+  pref <- data$preferential
+  station_index <- pref$station_i + 1L
+  rows <- list(
+    X = pref$X_ij, offset = pref$offset_i,
+    Zt = list(), include_iid = pref$include_iid == 1L,
+    A_rows = pref$A_station[station_index, , drop = FALSE],
+    A_station = pref$A_station, station_index = station_index,
+    time = pref$year_i + 1L,
+    family_id = rep(1L, pref$n_pref)
+  )
+  list(
+    rows = rtmb_row_family_flags(rows, families),
+    R = pref$R_i,
+    observed = which(!is.na(pref$R_i)),
+    Z = pref$Z_ij,
+    xi = pref$spatial_xi == 1L
+  )
 }
 
 # Names for integer codes from `R/enum.R`; unmatched codes give NA.
@@ -149,11 +180,16 @@ rtmb_row_inputs <- function(data, families, projection) {
       upr = rep_len(data$upr, nrow(data$y_i)), Xdisp = data$Xdisp_ij
     )
   }
-  out$active <- do.call(rbind, lapply(families, `[[`, "active"))[
-    out$family_id, , drop = FALSE]
-  out$offset_applies <- do.call(rbind,
-    lapply(families, `[[`, "offset_applies"))[out$family_id, , drop = FALSE]
-  out
+  rtmb_row_family_flags(out, families)
+}
+
+# Per-row component activity and offset placement from each row's family.
+rtmb_row_family_flags <- function(rows, families) {
+  rows$active <- do.call(rbind, lapply(families, `[[`, "active"))[
+    rows$family_id, , drop = FALSE]
+  rows$offset_applies <- do.call(rbind,
+    lapply(families, `[[`, "offset_applies"))[rows$family_id, , drop = FALSE]
+  rows
 }
 
 # Fitted rows grouped by component and family. `observed` excludes missing
@@ -213,10 +249,10 @@ rtmb_validate <- function(data, prepared, parameters, random, ...) {
   if (!all(names(list(...)) %in% c("intern", "inner.control"))) {
     cli::cli_abort("Additional MakeADFun options are not supported by the RTMB backend yet.")
   }
-  # Temporary: `rtmb_prepare()` doesn't translate the sampling sub-model, so
-  # the objective would silently omit its likelihood.
-  if (isTRUE(data$preferential$n_pref > 0L)) {
-    cli::cli_abort("Preferential sampling is not yet implemented for the RTMB backend.")
+  # Temporary: the objective doesn't evaluate the sampling likelihood yet,
+  # so it would silently fit the catch model alone.
+  if (!is.null(prepared$preferential)) {
+    cli::cli_abort("The preferential-sampling likelihood is not implemented yet.")
   }
   # Random parameters must be translated effects. The first multiphase fit
   # integrates none of them.

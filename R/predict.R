@@ -640,9 +640,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
       f2 <- remove_s_and_t2(object$split_formula[[i]]$form_no_bars)#object$smoothers$formula_no_bars_no_sm
       tt <- stats::terms(f2)
       attr(tt, "predvars") <- attr(object$terms[[i]], "predvars")
-      Terms <- stats::delete.response(tt)
-      mf <- model.frame(Terms, newdata, xlev = object$xlevels[[i]])
-      proj_X_ij[[i]] <- model.matrix(Terms, mf, contrasts.arg = object$contrasts[[i]])
+      proj_X_ij[[i]] <- .fixed_effect_design(stats::delete.response(tt),
+        newdata, object$xlevels[[i]], object$contrasts[[i]])
     }
     if (has_nonlocal) {
       proj_X_ij[[1]] <- .append_nonlocal_coef_columns(
@@ -1316,4 +1315,13 @@ check_visreg <- function(sys_calls) {
       se_fit <- TRUE
   }
   named_list(visreg_df, se_fit, re_form)
+}
+
+# Fixed-effect design for new rows from fitted terms (which carry `predvars`,
+# e.g., a fitted poly() basis), factor levels, and contrasts. Shared by
+# prediction and the preferential-sampling surface. `...` goes to
+# model.frame(), e.g., `na.action`.
+.fixed_effect_design <- function(terms, newdata, xlevels, contrasts, ...) {
+  mf <- stats::model.frame(terms, newdata, xlev = xlevels, ...)
+  stats::model.matrix(terms, mf, contrasts.arg = contrasts)
 }
