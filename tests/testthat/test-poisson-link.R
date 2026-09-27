@@ -49,3 +49,24 @@ test_that("Poisson-link delta predictions include the offset", {
     expect_equal(i1$est / i0$est, exp(0.3), tolerance = 1e-6)
   }
 })
+
+test_that("Poisson-link delta response components account for the offset", {
+  skip_on_cran()
+  mesh <- make_mesh(dogfish, c("X", "Y"), cutoff = 30)
+  fit <- sdmTMB(catch_weight ~ 1, family = delta_gamma(type = "poisson-link"),
+    mesh = mesh, data = dogfish, offset = log(dogfish$area_swept))
+  nd <- dogfish[1:20, ]
+  off <- log(nd$area_swept)
+  pl <- predict(fit, newdata = nd, offset = off)
+  pr <- predict(fit, newdata = nd, offset = off, type = "response")
+  a <- exp(off)
+  n <- exp(pl$est1)
+  p <- 1 - exp(-a * n)
+  expect_equal(pr$est1, p)
+  expect_equal(pr$est2, n * exp(pl$est2) / p)
+  expect_equal(pr$est1 * pr$est2, pr$est)
+  expect_equal(pr$est, exp(pl$est))
+  # Same when predicting on the fitted data with the fitted offset:
+  pr0 <- predict(fit, type = "response")
+  expect_equal(pr0$est1 * pr0$est2, pr0$est)
+})

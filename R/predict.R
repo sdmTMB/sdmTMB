@@ -920,7 +920,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
               row_family_id = pred_row_family_id,
               type = type,
               model = model,
-              family_list = family_spec$family_list
+              family_list = family_spec$family_list,
+              offset = tmb_data$proj_offset_i
             )$est
           })
         }
@@ -1005,7 +1006,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
           row_family_id = pred_row_family_id,
           type = component_scale,
           model = model,
-          family_list = family_spec$family_list
+          family_list = family_spec$family_list,
+          offset = tmb_data$proj_offset_i
         )
         pred_fe <- .family_spec_component_prediction_output(
           x = r$proj_fe,
@@ -1063,7 +1065,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
           row_family_id = pred_row_family_id,
           type = component_scale,
           model = model,
-          family_list = family_spec$family_list
+          family_list = family_spec$family_list,
+          offset = tmb_data$proj_offset_i
         )$est
         nd$est_non_rf <- r$proj_fe[,1]
         nd$est_rf <- r$proj_rf[,1]
@@ -1126,7 +1129,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
           row_family_id = pred_row_family_id,
           type = component_scale,
           model = model,
-          family_list = family_spec$family_list
+          family_list = family_spec$family_list,
+          offset = tmb_data$proj_offset_i
         )
         nd$est <- if (is.na(model)) {
           r[[if (component_scale == "response") "proj_response_combined" else "proj_fe_combined"]]
@@ -1146,7 +1150,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
           row_family_id = pred_row_family_id,
           type = component_scale,
           model = model,
-          family_list = family_spec$family_list
+          family_list = family_spec$family_list,
+          offset = tmb_data$proj_offset_i
         )$est
       }
     }

@@ -1,5 +1,20 @@
 # sdmTMB (development version)
 
+* `predict.sdmTMB()` with `newdata = NULL` and `offset = NULL` now uses the
+  offset from the fitted model for all prediction types. Previously, the
+  offset was used for link-scale predictions of single-component models but
+  was set to 0 for delta models and whenever predictions were rebuilt
+  internally (e.g., `type = "response"` or `se_fit = TRUE`) (#274). Set
+  `offset = 0` explicitly to get predictions at an offset of 0. Index
+  calculations with `newdata` are unaffected.
+
+* Fix response-scale `est1` and `est2` from `predict.sdmTMB()` for
+  Poisson-link delta models with a nonzero offset. `est1` is now the
+  encounter probability at the given offset, `1 - exp(-a * n)`, rather than
+  at an offset of 0, and `est2` is the corresponding positive expectation.
+  The combined `est`, indices, residuals, and simulations were already
+  correct.
+
 * Add an RTMB backend. The default for now remains TMB, but eventually the
   TMB backend will be dropped in favour of RTMB. Set it per model fit with
   `control = sdmTMBcontrol(backend = "rtmb")` or per session with

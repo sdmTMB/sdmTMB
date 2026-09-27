@@ -43,7 +43,8 @@
 }
 
 .family_spec_component_prediction_output <- function(x, family_spec, row_family_id,
-  type = c("link", "response"), model = NA_integer_, family_list = NULL) {
+  type = c("link", "response"), model = NA_integer_, family_list = NULL,
+  offset = NULL) {
   type <- match.arg(type)
   x <- as.matrix(x)
   n <- nrow(x)
@@ -85,8 +86,13 @@
       rep(FALSE, n)
     }
     if (any(poisson_link_rows)) {
+      # The offset (log area swept) is carried in component 2, but encounter
+      # probability depends on it too: p = 1 - exp(-a * n) and the positive
+      # expectation is a * n * w / p, where est2_raw = a * w.
+      if (is.null(offset)) offset <- rep(0, n)
+      a <- exp(offset[poisson_link_rows])
       n_groups <- est1_raw[poisson_link_rows]
-      p_encounter <- 1 - exp(-n_groups)
+      p_encounter <- -expm1(-a * n_groups)
       est1[poisson_link_rows] <- p_encounter
       est2[poisson_link_rows] <- n_groups * est2_raw[poisson_link_rows] / p_encounter
     }
