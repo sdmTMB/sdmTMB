@@ -222,10 +222,19 @@ test_that("rmvnorm sim prediction works with various sims_vars", {
   expect_identical(length(p2b), 2L)
 
   p2b <- predict(m2, nsim = 10, sims_var = 'est_rf')
-  expect_identical(dim(p1b), c(nrow(d), 10L))
+  expect_identical(dim(p2b), c(nrow(d), 10L))
 
-  p2b <- predict(m2, nsim = 10, sims_var = 'epsilon_st')
-  expect_identical(dim(p1b), c(nrow(d), 10L))
+  p2b <- predict(m2, nsim = 10, sims_var = 'omega_s')
+  expect_identical(dim(p2b), c(nrow(d), 10L))
+
+  # no time column, so no spatiotemporal fields:
+  expect_error(predict(m2, nsim = 2, sims_var = 'epsilon_st'), "no \"epsilon_st\"")
+  expect_error(predict(m2, nsim = 2, sims_var = 'omega_s_A'), "must be one of")
+
+  expect_error(
+    predict(m2, nsim = 2, sims_var = 'omega_s', type = 'response'),
+    "only supported with `sims_var = 'est'`"
+  )
 
   # Delta models:
 
@@ -255,8 +264,7 @@ test_that("rmvnorm sim prediction works with various sims_vars", {
   p3c <- predict(m3, nsim = 3, sims_var = 'omega_s', model = 1)
   expect_identical(dim(p3c), c(nrow(d), 3L))
 
-  p3c <- predict(m3, nsim = 3, sims_var = 'epsilon_st', model = 1)
-  expect_identical(dim(p3c), c(nrow(d), 3L))
+  expect_error(predict(m3, nsim = 3, sims_var = 'epsilon_st', model = 1), "component 1")
 })
 
 test_that("nsim with s() and no other random effects works", {

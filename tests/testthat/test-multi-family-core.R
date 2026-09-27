@@ -651,7 +651,7 @@ test_that("mixed-family predict returns rowwise combined and masked component ou
 
   expect_error(
     predict(fixture$fit, newdata = fixture$newdata, type = "response", se_fit = TRUE),
-    regexp = "not yet supported"
+    regexp = "link scale"
   )
 })
 

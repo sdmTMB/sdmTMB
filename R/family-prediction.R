@@ -16,35 +16,8 @@
   rep.int(1L, nrow(data))
 }
 
-.family_spec_inverse_link <- function(eta, link) {
-  switch(link,
-    identity = eta, log = exp(eta), logit = stats::plogis(eta), inverse = 1 / eta,
-    cloglog = 1 - exp(-exp(eta)),
-    cli_abort("Unsupported link in family prediction: {.val {link}}")
-  )
-}
-
-.family_spec_link <- function(mu, link) {
-  switch(link,
-    identity = mu, log = log(mu), logit = stats::qlogis(mu), inverse = 1 / mu,
-    cloglog = log(-log1p(-mu)),
-    cli_abort("Unsupported link in family prediction: {.val {link}}")
-  )
-}
-
-.family_spec_apply_link <- function(x, link, inverse = TRUE) {
-  if (!length(x)) return(x)
-  out <- x
-  for (this_link in unique(link[!is.na(link)])) {
-    ii <- link == this_link
-    out[ii] <- if (inverse) .family_spec_inverse_link(x[ii], this_link) else .family_spec_link(x[ii], this_link)
-  }
-  out
-}
-
 .family_spec_component_prediction_output <- function(x, family_spec, row_family_id,
-  type = c("link", "response"), model = NA_integer_, family_list = NULL,
-  offset = NULL) {
+  type = c("link", "response"), model = NA_integer_, offset = NULL) {
   type <- match.arg(type)
   x <- as.matrix(x)
   n <- nrow(x)
@@ -52,31 +25,23 @@
   if (ncol(x) < n_m) cli_abort("Internal family prediction error: prediction matrix has fewer components than expected.")
   active <- .family_spec_component_active(family_spec, row_family_id)
   combine_kind <- family_spec$families$combine_kind[row_family_id]
-  link1 <- .family_spec_component_value(family_spec, row_family_id, 1L, "link_name")
-  link2 <- if (n_m > 1L) .family_spec_component_value(family_spec, row_family_id, 2L, "link_name") else rep(NA_character_, n)
   raw1 <- x[, 1L]
   raw2 <- if (n_m > 1L) x[, 2L] else rep(NA_real_, n)
   if (type == "response") {
-    if (!is.null(family_list)) {
-      est1_raw <- est2_raw <- rep(NA_real_, n)
-      for (fid in seq_len(family_spec$n_f)) {
-        rows <- row_family_id == fid
-        if (!any(rows)) next
-        fam <- family_list[[fid]]
-        has_two_components <- isTRUE(fam$delta) || length(fam$family) == 2L
-        linkinv1 <- if (has_two_components) fam[[1L]]$linkinv else fam$linkinv
-        est1_raw[rows] <- linkinv1(raw1[rows])
-        if (has_two_components) {
-          active_rows <- rows & active[, 2L]
-          if (any(active_rows)) {
-            est2_raw[active_rows] <- fam[[2L]]$linkinv(raw2[active_rows])
-          }
+    est1_raw <- est2_raw <- rep(NA_real_, n)
+    for (fid in seq_len(family_spec$n_f)) {
+      rows <- row_family_id == fid
+      if (!any(rows)) next
+      fam <- family_spec$family_list[[fid]]
+      has_two_components <- isTRUE(fam$delta) || length(fam$family) == 2L
+      linkinv1 <- if (has_two_components) fam[[1L]]$linkinv else fam$linkinv
+      est1_raw[rows] <- linkinv1(raw1[rows])
+      if (has_two_components) {
+        active_rows <- rows & active[, 2L]
+        if (any(active_rows)) {
+          est2_raw[active_rows] <- fam[[2L]]$linkinv(raw2[active_rows])
         }
       }
-    } else {
-      est1_raw <- .family_spec_apply_link(raw1, link1)
-      est2_raw <- rep(NA_real_, n)
-      if (n_m > 1L && any(active[, 2L])) est2_raw[active[, 2L]] <- .family_spec_apply_link(raw2[active[, 2L]], link2[active[, 2L]])
     }
     est1 <- est1_raw
     est2 <- est2_raw

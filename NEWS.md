@@ -1,5 +1,42 @@
 # sdmTMB (development version)
 
+* Population-level predictions from `predict.sdmTMB()` (`re_form = NA`) now
+  order columns as full predictions do: `est`, `est1`, `est2`, then `est_se`.
+
+* `predict.sdmTMB()` no longer drops the `newdata` coordinate columns for
+  non-spatial models.
+
+* `predict.sdmTMB(sims_var = ...)` now accepts only `"est"`, `"omega_s"`,
+  `"zeta_s"`, `"epsilon_st"`, `"est_rf"`, and `"est_non_rf"`, and errors if
+  the model (or the requested delta component) doesn't include that term.
+  Previously, other names were passed verbatim to the TMB report and missing
+  terms returned zeros. Use `return_tmb_report = TRUE` with `nsim` for other
+  reported variables.
+
+* `predict.sdmTMB(type = "response", se_fit = TRUE)` now errors. Standard
+  errors are only available on the link scale. Previously, it warned and
+  returned link-scale predictions. Use `type = "link"` with `se_fit = TRUE`,
+  or use `nsim` for response-scale uncertainty.
+
+* `predict.sdmTMB()` now warns once, rather than once per component, about
+  new random effect levels in `newdata` for delta models.
+
+* `predict.sdmTMB()` now errors for `type = "response"` with a `sims_var`
+  other than `"est"`. Applying the inverse link to a random field or other
+  single term does not give a meaningful response-scale value, and the
+  combination already errored for delta models.
+
+* `predict.sdmTMB()` without `newdata` now returns the same values as
+  `predict(fit, newdata = fit$data, offset = fit$offset)`. Previously,
+  `est_non_rf` left out smoothers and the offset, `est_rf` left out
+  spatially varying coefficient terms, and `est` for mixture families
+  (e.g., `lognormal_mix()`) lacked the mixture-mean adjustment.
+
+* Draws from `predict.sdmTMB()` (`nsim` or `mcmc_samples`) now honour
+  `re_form = NA`, matching the point predictions. Previously, only
+  response-scale draws of the combined delta-model prediction left out the
+  random fields; all other draws silently included them.
+
 * `predict.sdmTMB()` with `newdata = NULL` and `offset = NULL` now uses the
   offset from the fitted model for all prediction types. Previously, the
   offset was used for link-scale predictions of single-component models but
