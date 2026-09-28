@@ -18,6 +18,21 @@
   random effects are drawn, conditional on the estimated parameters (similar
   to `obj$MC()` in TMB). This matches the argument in `project()`.
 
+* Fix `predict.sdmTMB()` with `newdata` for `spatial_varying`,
+  `time_varying`, and `dispformula` terms with data-dependent transformations
+  such as `poly()`. These bases were previously recomputed from `newdata`,
+  giving incorrect predictions. The fitted encoding (transformation bases,
+  factor levels, and contrasts) is now saved with the model and reused, so
+  changing `options(contrasts = ...)` after fitting no longer affects these
+  predictions. New factor levels or missing values in these terms now give an
+  informative error. Models fit with earlier versions rebuild these terms from
+  the stored data and should be refit for exact reproduction.
+
+* `predict.sdmTMB()` with `newdata = NULL` now honours `return_tmb_report`,
+  `return_tmb_data`, and `nonlocal_newdata`. Previously these were ignored
+  (or `return_tmb_data` failed) unless another argument happened to trigger
+  projection onto the fitted data.
+
 * Population-level predictions from `predict.sdmTMB()` (`re_form = NA`) now
   order columns as full predictions do: `est`, `est1`, `est2`, then `est_se`.
 
@@ -99,10 +114,14 @@
   dispersion parameter with fixed-effect predictors. Not currently supported
   for multi-family models or truncated negative binomial families.
 
-* Remove the experimental `epsilon_model = "re"` and `"trend-re"` options
-  (random year effects on the spatiotemporal SD). They did not recover
-  simulated year-to-year variation in the field SD. The `"trend"` option is
-  unchanged.
+* Remove the experimental `epsilon_model` and `epsilon_predictor` options
+  (models of the spatiotemporal SD over time). The `"re"` and `"trend-re"`
+  options did not recover simulated year-to-year variation in the field SD.
+  The `"trend"` option was rarely used and built its covariate in data row
+  order, so data not sorted by time gave a misaligned trend, and combining it
+  with `extra_time` could crash R. Prediction also rebuilt the covariate from
+  `newdata`, misaligning it with the fitted time steps. Supplying either
+  option is now an error.
 
 * `sdmTMB_simulate()` now errors if `sigma_E` has more than one value. Only
   the first value was used, so a time-varying `sigma_E` silently simulated a

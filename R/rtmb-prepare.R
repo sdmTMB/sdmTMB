@@ -33,8 +33,6 @@ rtmb_prepare <- function(data) {
     epsilon_ar1 = data$ar1_fields[components] == 1L,
     epsilon_rw = data$rw_fields[components] == 1L,
     share_range = data$share_range[components] == 1L,
-    epsilon_trend = on(data$est_epsilon_slope),
-    epsilon_predictor = data$epsilon_predictor,
     # SVC fields enter the predictor whenever present; like the C++ template,
     # their density is only evaluated for components with a spatial field.
     svc = svc,

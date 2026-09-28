@@ -79,7 +79,8 @@
 #'   Defaults to `NULL`: if a grid was supplied at fit time, the fitted field
 #'   is reused as-is (so `newdata` need not contain the diffusion covariate
 #'   columns); otherwise the field is rebuilt from `newdata`'s own covariate
-#'   columns, as before.
+#'   columns, as before. Also applies when `newdata = NULL`, in which case
+#'   predictions are projected onto the fitted data.
 #' @param model Which component to predict from delta/hurdle models when `nsim >
 #'   0` or `mcmc_samples` is supplied. `NA` (default) returns the combined
 #'   prediction from both components; `1` returns the binomial component only; `2`
@@ -95,9 +96,12 @@
 #'   report? For regular prediction, this is all the reported variables
 #'   at the MLE parameter values. For `nsim > 0` or when `mcmc_samples`
 #'   is supplied, this is a list with one element per sample; each element
-#'   contains the report output for that sample.
+#'   contains the report output for that sample. With `newdata = NULL`, this
+#'   is the fitted model's report unless another argument requires projecting
+#'   onto the fitted data, in which case it is the projection report.
 #' @param return_tmb_data Logical: return formatted data for TMB? Used
-#'   internally.
+#'   internally. With `newdata = NULL`, the fitted data are prepared as
+#'   prediction data (with the fitted offset unless `offset` is supplied).
 #' @param ... Unused.
 #'
 #' @return
@@ -346,11 +350,9 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
     re_form = re_form, re_form_iid = re_form_iid,
     allow_new_levels = allow_new_levels, nsim = nsim, model = model,
     offset = offset, mcmc_samples = mcmc_samples, sims_var = sims_var,
-    sample_fe = sample_fe
+    sample_fe = sample_fe, return_tmb_data = return_tmb_data,
+    nonlocal_newdata = nonlocal_newdata
   )
-  newdata <- req$newdata
-
-  reinitialize(object)
 
   tmb_data <- object$tmb_data
   if (is.null(tmb_data$link_pred) && !is.null(tmb_data$link)) {
@@ -359,7 +361,7 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
   tmb_data$do_predict <- 1L
   has_nonlocal <- !is.null(object$nonlocal_parsed)
 
-  if (!is.null(newdata)) {
+  if (req$project) {
     prep <- predict_prepare(object, req, tmb_data, nonlocal_newdata)
     tmb_data <- prep$tmb_data
     if (return_tmb_data) {
@@ -367,24 +369,9 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
     }
     if (!"mgcv" %in% names(object)) object[["mgcv"]] <- FALSE
 
-    has_saved_fit <- !is.null(object$parlist) && !is.null(object$last.par.best)
-    new_tmb_obj <- make_sdmTMB_adfun(
-      data = tmb_data,
-      profile = object$control$profile,
-      parameters = if (has_saved_fit) object$parlist else get_pars(object),
-      map = object$tmb_map,
-      random = object$tmb_random,
-      backend = backend_sdmTMB(object),
-      silent = TRUE
-    )
-
-    if (has_saved_fit) {
-      lp <- object$last.par.best
-    } else {
-      old_par <- object$model$par
-      new_tmb_obj$fn(old_par)
-      lp <- new_tmb_obj$env$last.par.best
-    }
+    objective <- predict_objective(object, tmb_data)
+    new_tmb_obj <- objective$obj
+    lp <- objective$lp
 
     if (req$nsim > 0 || !is.null(req$mcmc_samples)) {
       r <- predict_draw_reports(object, new_tmb_obj, lp, req)
@@ -408,7 +395,7 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
       predict_components(r, req, tmb_data, req$type)[c("est1", "est2")]
     }
     se <- if (req$se_fit) {
-      list(est_se = predict_est(sr_se, req, tmb_data, "link", req$model))
+      list(est_se = predict_select(sr_se, req, tmb_data, req$model))
     }
     terms <- if (!req$pop_pred) {
       predict_terms(
@@ -420,25 +407,16 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
     if (has_nonlocal) {
       cols <- c(predict_nonlocal_cols(object, r$proj_covariate_diffusion_values), cols)
     }
-  } else { # We are not dealing with new data:
+  } else { # Link prediction on the fitted data from the fitted report:
+    reinitialize(object)
     lp <- object$tmb_obj$env$last.par.best
     r <- object$tmb_obj$report(lp)
+    if (return_tmb_report) return(r)
 
-    # Single-component, non-mixture models only. Terms match the
-    # `newdata` path: `est_rf` holds the spatial, spatiotemporal, and SVC
-    # terms, and `est_non_rf` everything else (including the offset).
-    est <- r$eta_i[, 1]
-    est_rf <- r$omega_s_A[, 1] + r$epsilon_st_A_vec[, 1]
-    z_i <- unname(object$tmb_data$z_i)
-    for (z in seq_len(ncol(z_i))) est_rf <- est_rf + r$zeta_s_A[, z, 1] * z_i[, z]
-    terms <- predict_terms(list(
-      est_non_rf = as.matrix(est - est_rf),
-      est_rf = as.matrix(est_rf),
-      omega_s = r$omega_s_A,
-      zeta_s = r$zeta_s_A,
-      epsilon_st = r$epsilon_st_A_vec
-    ), object, req$family_spec, req$family_spec$family_id_i)
-    cols <- c(list(est = est), terms)
+    cols <- c(list(est = r$eta_i[, 1]), predict_terms(
+      predict_fitted_term_reports(r, object),
+      object, req$family_spec, req$family_spec$family_id_i
+    ))
     if (has_nonlocal) {
       cols <- c(predict_nonlocal_cols(object, r$covariate_diffusion_values), cols)
     }
@@ -446,6 +424,30 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
   }
 
   predict_return(cols, req, object, r, obj, tmb_data, return_tmb_object)
+}
+
+# Build the prediction objective from `tmb_data` and return it with the fitted
+# parameter vector `lp`. Fits saved with `parlist` and `last.par.best` need no
+# live fitted objective; older fits recover parameters from `object$tmb_obj`.
+predict_objective <- function(object, tmb_data) {
+  has_saved_fit <- !is.null(object$parlist) && !is.null(object$last.par.best)
+  if (!has_saved_fit) reinitialize(object)
+  obj <- make_sdmTMB_adfun(
+    data = tmb_data,
+    profile = object$control$profile,
+    parameters = if (has_saved_fit) object$parlist else get_pars(object),
+    map = object$tmb_map,
+    random = object$tmb_random,
+    backend = backend_sdmTMB(object),
+    silent = TRUE
+  )
+  if (has_saved_fit) {
+    lp <- object$last.par.best
+  } else {
+    obj$fn(object$model$par)
+    lp <- obj$env$last.par.best
+  }
+  list(obj = obj, lp = lp)
 }
 
 # Nonlocal covariate values as named prediction columns.
@@ -489,7 +491,8 @@ predict_visreg <- function(object, newdata, se_fit) {
 # the returned list.
 predict_request <- function(object, newdata, type, se_fit, re_form,
                             re_form_iid, allow_new_levels, nsim, model,
-                            offset, mcmc_samples, sims_var, sample_fe) {
+                            offset, mcmc_samples, sims_var, sample_fe,
+                            return_tmb_data, nonlocal_newdata) {
   if ("version" %in% names(object)) {
     check_sdmTMB_version(object$version)
   } else {
@@ -549,14 +552,18 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
     cli_inform(msg)
   }
 
-  # Cases where we predict on the fitted data via the `newdata` path;
-  # `use_fitted_data` also carries over the fitted offset. Mixture families
-  # need the mean adjustment only the `newdata` path applies.
-  use_fitted_data <- is.null(newdata) && (multi_family || has_two_components ||
+  # Where the rows come from (`newdata_supplied`, which sets the default
+  # offset) is separate from how they are predicted (`project`). Omitted
+  # `newdata` uses the fitted report unless an option needs the projection
+  # path, which then runs on the fitted data. Mixture families need the mean
+  # adjustment only the projection path applies.
+  newdata_supplied <- !is.null(newdata)
+  project <- newdata_supplied || return_tmb_data ||
+    !is.null(nonlocal_newdata) || multi_family || has_two_components ||
     any(object$family$family %in% rtmb_mixture_families) ||
     nsim > 0 || type == "response" || !is.null(mcmc_samples) || se_fit ||
-    !is.null(re_form) || !is.null(re_form_iid) || !is.null(offset))
-  if (use_fitted_data) newdata <- object$data
+    !is.null(re_form) || !is.null(re_form_iid) || !is.null(offset)
+  if (project && !newdata_supplied) newdata <- object$data
 
   # from glmmTMB:
   pop_pred <- (!is.null(re_form) && ((re_form == ~0) || identical(re_form, NA)))
@@ -569,14 +576,14 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
   named_list(
     family_spec, has_two_components, is_areal, xy_cols, model, type, se_fit,
     pop_pred, pop_pred_iid, allow_new_levels, exclude_RE, newdata,
-    use_fitted_data, offset, nsim, sims_var, sample_fe, mcmc_samples
+    newdata_supplied, project, offset, nsim, sims_var, sample_fe, mcmc_samples
   )
 }
 
-# Offset rule: an explicit `offset` is used as is; otherwise predicting on the
-# fitted data carries over the fitted offset, and new data gets 0.
+# Offset rule: an explicit `offset` is used as is; otherwise omitted `newdata`
+# carries over the fitted offset, and supplied `newdata` gets 0.
 predict_offset <- function(req, object, n) {
-  if (!req$use_fitted_data && is.null(req$offset) && !all(object$offset == 0)) { # #372
+  if (req$newdata_supplied && is.null(req$offset) && !all(object$offset == 0)) { # #372
     cli_inform(c(
       "Fitted object contains an offset but the offset is `NULL` in `predict.sdmTMB()` and `newdata` were supplied.",
       "Prediction will proceed assuming the offset vector is 0 in the prediction.",
@@ -587,7 +594,7 @@ predict_offset <- function(req, object, n) {
       cli_abort("Prediction offset vector does not equal number of rows in prediction dataset.")
     return(req$offset)
   }
-  if (req$use_fitted_data) object$tmb_data$offset_i else rep(0, n)
+  if (req$newdata_supplied) rep(0, n) else object$tmb_data$offset_i
 }
 
 # Each model component on `scale` (`est1`, `est2`), plus `est` for `model`,
@@ -603,21 +610,51 @@ predict_components <- function(r, req, tmb_data, scale, model = NA) {
   )
 }
 
-# The prediction `est` from one report `r`: a point estimate, a draw, or the
-# sdreport() estimates or standard errors. Two-component models with
-# `model = NA` use the combined report; otherwise component `model`.
-predict_est <- function(r, req, tmb_data, scale, model) {
+# Select the link-scale `est` from one report `r` (a point estimate, a draw,
+# or sdreport() estimates or standard errors) without transforming it.
+# Two-component models with `model = NA` use the combined report; otherwise
+# component `model`, NA on rows where that component is inactive.
+predict_select <- function(r, req, tmb_data, model) {
   if (req$has_two_components && is.na(model)) {
-    combined <- if (scale == "response") {
-      "proj_response_combined" # C++ applies `pop_pred` to this one
-    } else if (req$pop_pred) {
-      "proj_fe_combined"
-    } else {
-      "proj_eta_combined"
-    }
-    return(as.numeric(r[[combined]]))
+    return(as.numeric(r[[if (req$pop_pred) "proj_fe_combined" else "proj_eta_combined"]]))
   }
-  predict_components(r, req, tmb_data, scale, model)$est
+  x <- as.matrix(r[[if (req$pop_pred) "proj_fe" else "proj_eta"]])
+  m <- if (is.na(model)) 1L else as.integer(model)
+  if (m > req$family_spec$n_m) return(rep(NA_real_, nrow(x)))
+  out <- x[, m]
+  if (m == 2L) {
+    active <- .family_spec_component_active(req$family_spec, tmb_data$proj_family_id + 1L)
+    out[!active[, 2L]] <- NA_real_
+  }
+  out
+}
+
+# The prediction `est` from one report `r` on `scale`. Response-scale
+# components need both link predictors (e.g., Poisson-link delta models).
+predict_est <- function(r, req, tmb_data, scale, model) {
+  if (scale == "link") return(predict_select(r, req, tmb_data, model))
+  if (req$has_two_components && is.na(model)) {
+    return(as.numeric(r$proj_response_combined)) # C++ applies `pop_pred`
+  }
+  predict_components(r, req, tmb_data, "response", model)$est
+}
+
+# The fitted report's terms in the shapes predict_terms() expects, for the
+# fast path (single-component, non-mixture models only). As in the projection
+# path, `est_rf` holds the spatial, spatiotemporal, and SVC terms, and
+# `est_non_rf` everything else (including the offset).
+predict_fitted_term_reports <- function(r, object) {
+  est <- r$eta_i[, 1]
+  est_rf <- r$omega_s_A[, 1] + r$epsilon_st_A_vec[, 1]
+  z_i <- unname(object$tmb_data$z_i)
+  for (z in seq_len(ncol(z_i))) est_rf <- est_rf + r$zeta_s_A[, z, 1] * z_i[, z]
+  list(
+    est_non_rf = as.matrix(est - est_rf),
+    est_rf = as.matrix(est_rf),
+    omega_s = r$omega_s_A,
+    zeta_s = r$zeta_s_A,
+    epsilon_st = r$epsilon_st_A_vec
+  )
 }
 
 # Linear predictor term columns and the projected report holding each.
@@ -682,6 +719,7 @@ predict_draw_reports <- function(object, obj, lp, req) {
   } else {
     if (!"jointPrecision" %in% names(object$sd_report) && !has_no_random_effects(object)) {
       message("Rerunning TMB::sdreport() with `getJointPrecision = TRUE`.")
+      reinitialize(object)
       sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
     } else {
       sd_report <- object$sd_report

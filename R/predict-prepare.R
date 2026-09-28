@@ -89,7 +89,6 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
   tmb_data$proj_Zs <- sm$Zs
   tmb_data$proj_Xs <- sm$Xs
   tmb_data$proj_z_i <- predict_svc_matrix(object, newdata)
-  tmb_data$epsilon_predictor <- predict_epsilon_covariate(object, tmb_data, newdata)
 
   list(tmb_data = tmb_data, nd = newdata)
 }
@@ -304,60 +303,62 @@ predict_fixed_matrices <- function(object, req, newdata) {
 
 predict_disp_matrix <- function(object, newdata) {
   if (!isTRUE(object$has_dispformula)) return(NULL)
-  tt_disp <- stats::terms(object$dispformula)
-  mf_disp_fit <- model.frame(tt_disp, object$data)
-  xlevels_disp <- stats::.getXlevels(attr(mf_disp_fit, "terms"), mf_disp_fit)
-  mf_disp <- model.frame(tt_disp, newdata, xlev = xlevels_disp, na.action = stats::na.pass)
-  if (sum(is.na(mf_disp)) > 0) {
-    cli_abort("NAs are not allowed in variables used by `dispformula` in `newdata`.")
-  }
-  proj_Xdisp_ij <- model.matrix(tt_disp, mf_disp)
-  fit_disp_cols <- colnames(object$tmb_data$Xdisp_ij)
-  pred_disp_cols <- colnames(proj_Xdisp_ij)
-  missing_cols <- setdiff(fit_disp_cols, pred_disp_cols)
-  extra_cols <- setdiff(pred_disp_cols, fit_disp_cols)
-  if (length(missing_cols) > 0 || length(extra_cols) > 0) {
-    cli_abort(c(
-      "Dispersion model matrix in `newdata` does not match the fitted `dispformula` terms.",
-      if (length(missing_cols) > 0) paste0("x Missing terms: ", paste(missing_cols, collapse = ", ")),
-      if (length(extra_cols) > 0) paste0("x New terms: ", paste(extra_cols, collapse = ", ")),
-      "i" = "Check factor levels and columns used in `dispformula`."
-    ))
-  }
-  proj_Xdisp_ij[, fit_disp_cols, drop = FALSE]
+  predict_design_matrix(object, newdata, "dispformula")
 }
 
 predict_tv_matrix <- function(object, nd) {
   if (is.null(object$time_varying)) {
     return(matrix(0, ncol = 1, nrow = 1)) # dummy
   }
-  tv_terms <- stats::terms(object$time_varying)
-  mf_tv_orig <- stats::model.frame(
-    tv_terms,
-    object$data,
-    na.action = stats::na.pass
+  predict_design_matrix(object, nd, "time_varying")
+}
+
+# Apply a saved auxiliary design (`spatial_varying`, `time_varying`, or
+# `dispformula`) to the prediction rows. New fits always save the design;
+# only fits from earlier versions reconstruct it.
+predict_design_matrix <- function(object, newdata, which) {
+  if (is.null(object$design_specs)) {
+    return(predict_design_matrix_legacy(object, newdata, which))
+  }
+  spec <- object$design_specs[[which]]
+  if (is.null(spec)) {
+    cli_abort("Internal error: no saved `{which}` design specification.")
+  }
+  .apply_design(spec, newdata)
+}
+
+# Fallback for fits saved before `design_specs` existed. This rebuilds the
+# design from the stored fitted data under the current session's options, so
+# the original encoding (e.g., contrasts set by `options()` at fit time)
+# cannot always be recovered exactly.
+predict_design_matrix_legacy <- function(object, newdata, which) {
+  formula <- switch(which,
+    spatial_varying = object$spatial_varying_formula,
+    time_varying = object$time_varying,
+    dispformula = object$dispformula
   )
-  tv_xlevels <- stats::.getXlevels(tv_terms, mf_tv_orig)
-  X_tv_orig <- stats::model.matrix(tv_terms, mf_tv_orig)
-  tv_contrasts <- attr(X_tv_orig, "contrasts")
-  mf_tv_new <- stats::model.frame(
-    tv_terms,
-    nd,
-    xlev = tv_xlevels,
-    na.action = stats::na.pass
+  mf_fit <- stats::model.frame(stats::terms(formula), object$data,
+    na.action = stats::na.pass)
+  tt <- attr(mf_fit, "terms") # with `predvars` from the fitted data
+  X_fit <- stats::model.matrix(tt, mf_fit)
+  mf_new <- stats::model.frame(tt, newdata,
+    xlev = stats::.getXlevels(tt, mf_fit), na.action = stats::na.pass)
+  if (anyNA(mf_new)) {
+    cli_abort("NAs are not allowed in variables used by `{which}` in `newdata`.")
+  }
+  X <- stats::model.matrix(tt, mf_new, contrasts.arg = attr(X_fit, "contrasts"))
+  fit_cols <- switch(which,
+    spatial_varying = object$spatial_varying,
+    time_varying = colnames(X_fit),
+    dispformula = colnames(object$tmb_data$Xdisp_ij)
   )
-  proj_X_rw_ik <- stats::model.matrix(
-    tv_terms,
-    mf_tv_new,
-    contrasts.arg = tv_contrasts
-  )
-  if (!identical(colnames(proj_X_rw_ik), colnames(X_tv_orig))) {
-    cli::cli_abort(c(
-      "The time-varying prediction matrix has different columns than the fitted model.",
-      "This may be caused by changed factor levels, contrasts, or transformed covariates in `newdata`."
+  if (!all(fit_cols %in% colnames(X))) {
+    cli_abort(c(
+      "The `{which}` prediction matrix has different columns than the fitted model.",
+      "i" = "Check factor levels, contrasts, and transformed covariates in `newdata`."
     ))
   }
-  proj_X_rw_ik
+  X[, fit_cols, drop = FALSE]
 }
 
 # Covariate field (vertex x time) for nonlocal (covariate diffusion) terms.
@@ -406,32 +407,5 @@ predict_svc_matrix <- function(object, newdata) {
   if (is.null(object$spatial_varying)) {
     return(matrix(0, nrow(newdata), 0L))
   }
-  # recreate original data SVC formula stuff:
-  z_i_orig <- model.matrix(object$spatial_varying_formula, object$data)
-  svc_contrasts <- attr(z_i_orig, which = "contrasts")
-  ttsv <- stats::terms(object$spatial_varying_formula)
-  mfsv <- model.frame(ttsv, object$data)
-  mtsv <- attr(mfsv, "terms")
-  xlevelssv <- stats::.getXlevels(mtsv, mfsv)
-  # apply it to prediction data:
-  mfsv_new <- model.frame(ttsv, newdata, xlev = xlevelssv)
-  z_i <- model.matrix(ttsv, mfsv_new, contrasts.arg = svc_contrasts)
-  .int <- grep("(Intercept)", colnames(z_i))
-  if (length(.int) > 0L && isTRUE(object$svc_omega_is_intercept)) {
-    z_i <- z_i[, -.int, drop = FALSE]
-  }
-  z_i
-}
-
-# Epsilon-model covariate, one value per time step in `newdata`.
-predict_epsilon_covariate <- function(object, tmb_data, newdata) {
-  time_steps <- unique(newdata[[object$time]])
-  epsilon_covariate <- rep(0, length(time_steps))
-  if (tmb_data$est_epsilon_model) {
-    for (i in seq_along(time_steps)) {
-      epsilon_covariate[i] <- newdata[newdata[[object$time]] == time_steps[i],
-        object$epsilon_predictor, drop = TRUE][[1]]
-    }
-  }
-  epsilon_covariate
+  predict_design_matrix(object, newdata, "spatial_varying")
 }

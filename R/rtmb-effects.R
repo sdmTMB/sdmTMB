@@ -24,14 +24,10 @@ rtmb_gmrf <- function(x, Q, scale, simulate) {
     value = x)
 }
 
-# Log spatiotemporal SD by time step: constant, or log-linear with a slope.
+# Log spatiotemporal SD by time step (constant over time).
 rtmb_log_sigma_E <- function(par, prepared, m) {
-  value <- rep(rtmb_log_field_sd(par$ln_tau_E[[m]], par$ln_kappa[2L, m],
+  rep(rtmb_log_field_sd(par$ln_tau_E[[m]], par$ln_kappa[2L, m],
     prepared$precision), prepared$n_t)
-  if (prepared$epsilon_trend) {
-    value <- value + par$b_epsilon[[m]] * prepared$epsilon_predictor
-  }
-  value
 }
 
 # Spatiotemporal field `epsilon_st` with IID, AR1, or RW time structure.

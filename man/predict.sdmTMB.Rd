@@ -116,7 +116,8 @@ controls where the underlying diffused covariate values come from.
 Defaults to \code{NULL}: if a grid was supplied at fit time, the fitted field
 is reused as-is (so \code{newdata} need not contain the diffusion covariate
 columns); otherwise the field is rebuilt from \code{newdata}'s own covariate
-columns, as before.}
+columns, as before. Also applies when \code{newdata = NULL}, in which case
+predictions are projected onto the fitted data.}
 
 \item{return_tmb_object}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} Logical. If
 \code{TRUE}, include the TMB object in a list-format output. Instead, pass the
@@ -126,10 +127,13 @@ fitted model and \code{newdata} directly to \code{\link[=get_index]{get_index()}
 report? For regular prediction, this is all the reported variables
 at the MLE parameter values. For \code{nsim > 0} or when \code{mcmc_samples}
 is supplied, this is a list with one element per sample; each element
-contains the report output for that sample.}
+contains the report output for that sample. With \code{newdata = NULL}, this
+is the fitted model's report unless another argument requires projecting
+onto the fitted data, in which case it is the projection report.}
 
 \item{return_tmb_data}{Logical: return formatted data for TMB? Used
-internally.}
+internally. With \code{newdata = NULL}, the fitted data are prepared as
+prediction data (with the fitted offset unless \code{offset} is supplied).}
 
 \item{...}{Unused.}
 }

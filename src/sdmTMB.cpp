@@ -407,10 +407,6 @@ Type objective_function<Type>::operator()()
   DATA_VECTOR(X_threshold);
   DATA_VECTOR(proj_X_threshold);
   DATA_INTEGER(threshold_func);
-  // optional model for nonstationary st variance
-  DATA_INTEGER(est_epsilon_model);
-  DATA_INTEGER(est_epsilon_slope);
-  DATA_VECTOR(epsilon_predictor);
 
   // optional stuff for penalized regression splines
   DATA_INTEGER(has_smooths);  // whether or not smooths are included
@@ -461,7 +457,6 @@ Type objective_function<Type>::operator()()
   PARAMETER_ARRAY(zeta_s);    // spatial effects on covariate; n_s length, n_z cols, n_m
   PARAMETER_ARRAY(epsilon_st);  // spatio-temporal effects; n_s by n_t by n_m array
   PARAMETER_ARRAY(b_threshold);  // coefficients for threshold relationship (3) // DELTA TODO
-  PARAMETER_VECTOR(b_epsilon); // slope coefficient for log-linear model on epsilon
   PARAMETER_ARRAY(b_smooth);  // P-spline smooth parameters
   PARAMETER_ARRAY(ln_smooth_sigma);  // variances of spline REs if included
 
@@ -642,44 +637,20 @@ Type objective_function<Type>::operator()()
   //  sigma_E(m) = sdmTMB::calc_rf_sigma(ln_tau_E(m), ln_kappa(1,m));
   //}
 
-  // optional non-stationary model on epsilon
+  // spatiotemporal SD, constant over time
   tmbutils::array<Type> sigma_E(n_t, n_m);
   tmbutils::array<Type> ln_tau_E_vec(n_t, n_m);
-  if (!est_epsilon_model) { // constant model
-    for (int m = 0; m < n_m; m++) {
-      // do calculation once,
-      if (spatial_model == 0) {
-        sigma_E(0,m) = sdmTMB::calc_rf_sigma(ln_tau_E(m), ln_kappa(1,m));
-      } else {
-        sigma_E(0,m) = Type(1.) / exp(ln_tau_E(m));
-      }
-      ln_tau_E_vec(0,m) = ln_tau_E(m);
-      for (int i = 1; i < n_t; i++) {
-        sigma_E(i,m) = sigma_E(0,m);
-        ln_tau_E_vec(i,m) = ln_tau_E_vec(0,m);
-      }
+  for (int m = 0; m < n_m; m++) {
+    // do calculation once,
+    if (spatial_model == 0) {
+      sigma_E(0,m) = sdmTMB::calc_rf_sigma(ln_tau_E(m), ln_kappa(1,m));
+    } else {
+      sigma_E(0,m) = Type(1.) / exp(ln_tau_E(m));
     }
-  }
-  if (est_epsilon_model) { // loglinear model
-    // epsilon_intcpt is the intercept parameter, derived from ln_tau_E.
-    // For models with time as covariate, this is interpreted as sigma when covariate = 0.
-    for (int m = 0; m < n_m; m++) {
-      Type epsilon_intcpt = spatial_model == 0 ?
-        sdmTMB::calc_rf_sigma(ln_tau_E(m), ln_kappa(1,m)) :
-        Type(1.) / exp(ln_tau_E(m));
-      Type log_epsilon_intcpt = log(epsilon_intcpt);
-      Type log_epsilon_temp = 0.0;
-      Type epsilon_cnst = - log(Type(4.0) * M_PI) / Type(2.0) - ln_kappa(1,m);
-      for(int i = 0; i < n_t; i++) {
-        log_epsilon_temp = log_epsilon_intcpt;
-        if (est_epsilon_slope) log_epsilon_temp += b_epsilon(m) * epsilon_predictor(i);
-        sigma_E(i,m) = exp(log_epsilon_temp); // log-linear model
-        if (spatial_model == 0) {
-          ln_tau_E_vec(i,m) = -log_epsilon_temp + epsilon_cnst;
-        } else {
-          ln_tau_E_vec(i,m) = -log_epsilon_temp;
-        }
-      }
+    ln_tau_E_vec(0,m) = ln_tau_E(m);
+    for (int i = 1; i < n_t; i++) {
+      sigma_E(i,m) = sigma_E(0,m);
+      ln_tau_E_vec(i,m) = ln_tau_E_vec(0,m);
     }
   }
   tmbutils::array<Type> log_sigma_E(sigma_E.rows(),sigma_E.cols()); // for SE
@@ -1995,10 +1966,6 @@ Type objective_function<Type>::operator()()
      ADREPORT(s95);
      REPORT(s_max);
      ADREPORT(s_max);
-   }
-   if (est_epsilon_slope) {
-     REPORT(b_epsilon);
-     ADREPORT(b_epsilon);
    }
 
   //  // ------------------ Reporting ----------------------------------------------

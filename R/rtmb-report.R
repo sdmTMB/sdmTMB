@@ -37,7 +37,6 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
     if (areal_type == "car") list(alpha_car = theta$alpha_car),
     if (prepared$anisotropy) list(H = theta$H[[1L]]),
     if (prepared$anisotropy && n_m > 1L) list(H2 = theta$H[[2L]]),
-    if (prepared$epsilon_trend) list(b_epsilon = par$b_epsilon),
     if (prepared$mixture) {
       list(p_extreme = theta$p_extreme, mix_ratio = theta$mix_ratio)
     },
@@ -88,7 +87,7 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
   # Reported values that also get standard errors; sdreport() is read by name.
   with_se <- c("sigma_O", "sigma_E", "sigma_Z", "sigma_V", "re_cov_pars",
     "re_b_pars", "b_j_prime", "b_j2_prime", names(theta$threshold),
-    "b_epsilon", "rho_sar", "alpha_car", "range",
+    "rho_sar", "alpha_car", "range",
     "log_range", names(diffusion_scales), "phi", "tweedie_p", "student_df",
     "link_total", "weighted_avg", "eao",
     if (any(prepared$temporal & prepared$epsilon_ar1)) "rho",

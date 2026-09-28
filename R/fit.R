@@ -204,18 +204,6 @@ NULL
 #'   parameter transformations when priors are applied.
 #' @param experimental A named list for esoteric or in-development options. Here
 #'   be dragons.
-#   (Experimental) A column name (as character) of a predictor of a
-#   linear trend (in log space) of the spatiotemporal standard deviation. By
-#   default, this is `NULL` and fits a model with a constant spatiotemporal
-#   variance. However, this argument can also be a character name in the
-#   original data frame (a covariate that ideally has been standardized to have
-#   mean 0 and standard deviation = 1). Because the spatiotemporal field varies
-#   by time step, the standardization should be done by time. If the name of a
-#   predictor is included, a log-linear model is fit where the predictor is
-#   used to model effects on the standard deviation, e.g. `log(sd(i)) = B0 + B1
-#   * epsilon_predictor(i)`. The 'epsilon_model' argument may also be
-#   specified. This is the name of the model to use for modeling time-varying
-#   epsilon. Currently only "trend" (a log-linear model) is available.
 #' @importFrom methods as is
 #' @importFrom cli cli_abort cli_warn cli_inform
 #' @importFrom mgcv s t2
@@ -839,20 +827,8 @@ sdmTMB <- function(
   if (!mesh_missing && spatial_model %in% c("sar", "car") && !is_areal_domain(spde)) {
     cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain from `make_areal_domain()`.")
   }
-  epsilon_model <- NULL
-  epsilon_predictor <- NULL
-  if (!is.null(experimental)) {
-    if ("epsilon_predictor" %in% names(experimental)) {
-      epsilon_predictor <- experimental$epsilon_predictor
-    } else {
-      epsilon_predictor <- NULL
-    }
-
-    if ("epsilon_model" %in% names(experimental)) {
-      epsilon_model <- experimental$epsilon_model
-    } else {
-      epsilon_model <- NULL
-    }
+  if (any(c("epsilon_model", "epsilon_predictor") %in% names(experimental))) {
+    cli_abort("`experimental$epsilon_model` and `experimental$epsilon_predictor` have been removed.")
   }
 
   normalize <- control$normalize
@@ -1005,7 +981,6 @@ sdmTMB <- function(
     nonlocal_formula = nonlocal_formula_parsed,
     priors = priors,
     normalize = normalize,
-    experimental = experimental,
     share_range_user = share_range_user,
     spatial_model = spatial_model,
     sar_weight_style = sar_weight_style
@@ -1080,7 +1055,8 @@ sdmTMB <- function(
         ))
       }
     }
-    z_i <- model.matrix(spatial_varying, data)
+    svc_design <- .make_design(spatial_varying, data, "`spatial_varying`")
+    z_i <- svc_design$X
     .int <- grep("(Intercept)", colnames(z_i))
     has_intercept <- length(.int) > 0L
     svc_omega_is_intercept <- has_intercept && !omit_spatial_intercept
@@ -1105,10 +1081,10 @@ sdmTMB <- function(
       ))
     }
     spatial_varying <- colnames(z_i)
-    svc_contrasts <- attr(z_i, which = "contrasts")
+    svc_design$spec$columns <- colnames(z_i)
   } else {
     z_i <- matrix(0, nrow(data), 0L)
-    svc_contrasts <- NULL
+    svc_design <- NULL
   }
   n_z <- ncol(z_i)
 
@@ -1117,7 +1093,12 @@ sdmTMB <- function(
   }
   contains_offset <- check_offset(formula[[1]]) # deprecated check
 
-  Xdisp_ij <- model.matrix(dispformula, data = data)
+  # the default `~ 1` is created in this frame; don't capture (and serialize) it
+  if (identical(environment(dispformula), environment())) {
+    environment(dispformula) <- globalenv()
+  }
+  disp_design <- .make_design(dispformula, data, "`dispformula`")
+  Xdisp_ij <- disp_design$X
 
   split_formula <- list() # passed to out structure, not TMB
   X_ij <- list() # main effects, passed into TMB
@@ -1260,9 +1241,11 @@ sdmTMB <- function(
   }
 
   if (!is.null(time_varying)) {
-    X_rw_ik <- model.matrix(time_varying, data)
+    tv_design <- .make_design(time_varying, data, "`time_varying`")
+    X_rw_ik <- tv_design$X
   } else {
     X_rw_ik <- matrix(0, nrow = nrow(data), ncol = 1)
+    tv_design <- NULL
   }
 
   n_s <- domain$n_s
@@ -1275,30 +1258,6 @@ sdmTMB <- function(
     NULL
   }
   estimate_student_df <- has_student_family && is.null(student_df_fixed)
-
-  if (!is.null(epsilon_model) && !identical(epsilon_model, "trend")) {
-    cli_abort("`experimental$epsilon_model` must be \"trend\".")
-  }
-  est_epsilon_model <- 0L
-  epsilon_covariate <- rep(0, length(unique(data[[time]])))
-  if (!is.null(epsilon_predictor) & !is.null(epsilon_model)) {
-    if (epsilon_model == "trend") {
-      # covariate vector dimensioned by number of time steps
-      time_steps <- unique(data[[time]])
-      for (i in seq_along(time_steps)) {
-        epsilon_covariate[i] <- data[data[[time]] == time_steps[i],
-          epsilon_predictor,
-          drop = TRUE
-        ][[1]]
-      }
-      est_epsilon_model <- 1L
-    }
-  }
-  est_epsilon_slope <- 0
-  if (!is.null(epsilon_model)) {
-    est_epsilon_slope <- 1L
-    est_epsilon_model <- 1L
-  }
 
   priors_b <- priors$b
   priors_sigma_V <- priors$sigma_V
@@ -1488,9 +1447,6 @@ sdmTMB <- function(
     X_threshold = thresh[[1]]$X_threshold, # TODO: don't hardcode index thresh[[1]]
     proj_X_threshold = 0, # dummy
     threshold_func = thresh[[1]]$threshold_func, # TODO: don't hardcode index thresh[[1]]
-    est_epsilon_model = as.integer(est_epsilon_model),
-    epsilon_predictor = epsilon_covariate,
-    est_epsilon_slope = as.integer(est_epsilon_slope),
     has_smooths = as.integer(sm$has_smooths),
     has_dispersion_model = as.integer(has_dispformula),
     upr = upr,
@@ -1548,7 +1504,6 @@ sdmTMB <- function(
     zeta_s = array(0, dim = c(n_s, n_z, n_m)),
     epsilon_st = array(0, dim = c(n_s, tmb_data$n_t, n_m)),
     b_threshold = if (thresh[[1]]$threshold_func == 2L) matrix(0, 3L, n_m) else matrix(0, 2L, n_m),
-    b_epsilon = rep(0, n_m),
     b_smooth = if (sm$has_smooths) matrix(0, sum(sm$sm_dims), n_m) else array(0),
     ln_smooth_sigma = if (sm$has_smooths) matrix(0, length(sm$sm_dims), n_m) else array(0)
   )
@@ -1582,10 +1537,6 @@ sdmTMB <- function(
     estimate_student_df = estimate_student_df
   )
   if (!is.null(thresh[[1]]$threshold_parameter)) tmb_map$b_threshold <- NULL
-
-  if (est_epsilon_slope == 1L) {
-    tmb_map <- unmap(tmb_map, "b_epsilon")
-  }
 
   if (multiphase && is.null(previous_fit) && do_fit) {
     original_tmb_data <- tmb_data
@@ -1844,11 +1795,6 @@ sdmTMB <- function(
     control$profile <- NULL
   }
 
-  # the default `~ 1` is created in this frame; don't capture (and serialize) it
-  if (identical(environment(dispformula), environment())) {
-    environment(dispformula) <- globalenv()
-  }
-
   out_structure <- structure(
     list(
       data = data,
@@ -1861,7 +1807,6 @@ sdmTMB <- function(
       time_varying = time_varying,
       threshold_parameter = thresh[[1]]$threshold_parameter,
       threshold_function = thresh[[1]]$threshold_func,
-      epsilon_predictor = epsilon_predictor,
       time = time,
       time_lu = time_df,
       # Keep the public field faithful to the user's input. Internal code uses
@@ -1891,6 +1836,12 @@ sdmTMB <- function(
       nlminb_control = .control,
       control = control,
       contrasts = lapply(X_ij, attr, which = "contrasts"),
+      # encodings of auxiliary designs for prediction (see `.apply_design()`)
+      design_specs = list(
+        spatial_varying = svc_design$spec,
+        time_varying = tv_design$spec,
+        dispformula = disp_design$spec
+      ),
       terms = lapply(mf, attr, which = "terms"),
       extra_time = extra_time,
       fitted_time = sort(unique(data[[time]])),

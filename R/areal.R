@@ -312,7 +312,7 @@ areal_projection_matrix <- function(mesh, data) {
 
 prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
                                    anisotropy = FALSE, nonlocal_formula, priors = sdmTMBpriors(),
-                                   normalize, experimental = NULL,
+                                   normalize,
                                    share_range_user = share_range,
                                    spatial_model = c("spde", "sar", "car"),
                                    sar_weight_style = c("row", "raw")) {
@@ -356,11 +356,6 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
     }
     if (any(c(!is.na(priors$matern_s[1:2]), !is.na(priors$matern_st[1:2])))) {
       cli::cli_abort("PC Matern priors are not supported with areal domains.")
-    }
-    if (!is.null(experimental) &&
-        "epsilon_model" %in% names(experimental) &&
-        !is.null(experimental$epsilon_model)) {
-      cli::cli_abort("`experimental$epsilon_model` is not supported with areal domains.")
     }
     if (spatial_model == "car" && !Matrix::isSymmetric(spde$W_raw)) {
       cli::cli_abort("`spatial_model = \"car\"` requires a symmetric areal adjacency matrix.")
