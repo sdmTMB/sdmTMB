@@ -302,7 +302,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
   return_tmb_data = FALSE,
   ...) {
 
-  # lifecycle only warns for direct user calls, so this stays here:
+  # lifecycle only warns for direct user calls, so check here:
   if (is_present(return_tmb_object)) {
     lifecycle::deprecate_soft(
       "1.2.0",
@@ -318,12 +318,15 @@ predict.sdmTMB <- function(object, newdata = NULL,
   if (is_visreg_call()) {
     return(predict_visreg(object, newdata, se_fit = isTRUE(list(...)$se.fit)))
   }
+  if (missing(model) && .has_delta_attr(object)) {
+    model <- attr(object, "delta_model_predict") # for ggpredict
+  }
   predict_sdmTMB(object,
     newdata = newdata, type = type, se_fit = se_fit, re_form = re_form,
     re_form_iid = re_form_iid, allow_new_levels = allow_new_levels,
     nsim = nsim, sims_var = sims_var, sample_fe = sample_fe, model = model,
-    model_missing = missing(model), offset = offset,
-    mcmc_samples = mcmc_samples, nonlocal_newdata = nonlocal_newdata,
+    offset = offset, mcmc_samples = mcmc_samples,
+    nonlocal_newdata = nonlocal_newdata,
     return_tmb_object = return_tmb_object,
     return_tmb_report = return_tmb_report, return_tmb_data = return_tmb_data
   )
@@ -333,8 +336,8 @@ predict.sdmTMB <- function(object, newdata = NULL,
 predict_sdmTMB <- function(object, newdata = NULL, type = "link",
                            se_fit = FALSE, re_form = NULL, re_form_iid = NULL,
                            allow_new_levels = NULL, nsim = 0, sims_var = "est",
-                           sample_fe = TRUE, model = NA, model_missing = FALSE,
-                           offset = NULL, mcmc_samples = NULL,
+                           sample_fe = TRUE, model = NA, offset = NULL,
+                           mcmc_samples = NULL,
                            nonlocal_newdata = NULL,
                            return_tmb_object = FALSE, return_tmb_report = FALSE,
                            return_tmb_data = FALSE) {
@@ -342,8 +345,8 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
     object = object, newdata = newdata, type = type, se_fit = se_fit,
     re_form = re_form, re_form_iid = re_form_iid,
     allow_new_levels = allow_new_levels, nsim = nsim, model = model,
-    model_missing = model_missing, offset = offset,
-    mcmc_samples = mcmc_samples, sims_var = sims_var, sample_fe = sample_fe
+    offset = offset, mcmc_samples = mcmc_samples, sims_var = sims_var,
+    sample_fe = sample_fe
   )
   newdata <- req$newdata
 
@@ -383,18 +386,16 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
       lp <- new_tmb_obj$env$last.par.best
     }
 
-    if (nsim > 0 || !is.null(mcmc_samples)) {
-      r <- predict_draw_reports(object, new_tmb_obj, lp, nsim, mcmc_samples,
-        sample_fe)
+    if (req$nsim > 0 || !is.null(req$mcmc_samples)) {
+      r <- predict_draw_reports(object, new_tmb_obj, lp, req)
       if (return_tmb_report) return(r)
-      return(predict_draws(r, req, object, tmb_data, prep$nd, sims_var))
+      return(predict_draws(r, req, object, tmb_data, prep$nd))
     }
 
     r <- new_tmb_obj$report(lp)
     if (return_tmb_report) return(r)
     obj <- new_tmb_obj
 
-    pop <- req$pop_pred
     if (req$se_fit) {
       sr <- sdreport_sdmTMB(new_tmb_obj, bias.correct = FALSE)
       sr_est <- as.list(sr, "Estimate", report = TRUE)
@@ -402,20 +403,20 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
     }
 
     cols <- list(est = predict_est(if (req$se_fit) sr_est else r, req, tmb_data,
-      pop, req$type, req$model))
+      req$type, req$model))
     components <- if (req$has_two_components) {
-      predict_components(r, req, tmb_data, pop, req$type)[c("est1", "est2")]
+      predict_components(r, req, tmb_data, req$type)[c("est1", "est2")]
     }
     se <- if (req$se_fit) {
-      list(est_se = predict_est(sr_se, req, tmb_data, pop, "link", req$model))
+      list(est_se = predict_est(sr_se, req, tmb_data, "link", req$model))
     }
-    diagnostics <- if (!pop) {
-      predict_diagnostics(
-        lapply(predict_diagnostic_reports, function(x) r[[x]]),
+    terms <- if (!req$pop_pred) {
+      predict_terms(
+        lapply(predict_term_reports, function(x) r[[x]]),
         object, req$family_spec, tmb_data$proj_family_id + 1L
       )
     }
-    cols <- c(cols, components, diagnostics, se)
+    cols <- c(cols, components, terms, se)
     if (has_nonlocal) {
       cols <- c(predict_nonlocal_cols(object, r$proj_covariate_diffusion_values), cols)
     }
@@ -423,21 +424,21 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
     lp <- object$tmb_obj$env$last.par.best
     r <- object$tmb_obj$report(lp)
 
-    # Single-component, non-mixture models only. Diagnostics match the
+    # Single-component, non-mixture models only. Terms match the
     # `newdata` path: `est_rf` holds the spatial, spatiotemporal, and SVC
     # terms, and `est_non_rf` everything else (including the offset).
     est <- r$eta_i[, 1]
     est_rf <- r$omega_s_A[, 1] + r$epsilon_st_A_vec[, 1]
     z_i <- unname(object$tmb_data$z_i)
     for (z in seq_len(ncol(z_i))) est_rf <- est_rf + r$zeta_s_A[, z, 1] * z_i[, z]
-    diagnostics <- predict_diagnostics(list(
+    terms <- predict_terms(list(
       est_non_rf = as.matrix(est - est_rf),
       est_rf = as.matrix(est_rf),
       omega_s = r$omega_s_A,
       zeta_s = r$zeta_s_A,
       epsilon_st = r$epsilon_st_A_vec
     ), object, req$family_spec, req$family_spec$family_id_i)
-    cols <- c(list(est = est), diagnostics)
+    cols <- c(list(est = est), terms)
     if (has_nonlocal) {
       cols <- c(predict_nonlocal_cols(object, r$covariate_diffusion_values), cols)
     }
@@ -488,8 +489,7 @@ predict_visreg <- function(object, newdata, se_fit) {
 # the returned list.
 predict_request <- function(object, newdata, type, se_fit, re_form,
                             re_form_iid, allow_new_levels, nsim, model,
-                            model_missing, offset, mcmc_samples,
-                            sims_var, sample_fe) {
+                            offset, mcmc_samples, sims_var, sample_fe) {
   if ("version" %in% names(object)) {
     check_sdmTMB_version(object$version)
   } else {
@@ -516,13 +516,10 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
 
   assert_that(model[[1]] %in% c(NA, 1, 2),
     msg = "`model` argument not valid; should be one of NA, 1, 2")
-  if (model_missing) {
-    if (.has_delta_attr(object)) model <- attr(object, "delta_model_predict") # for ggpredict
-  }
   model <- model[[1]]
   type <- match.arg(type, c("link", "response"))
-  if (!sims_var %in% c("est", names(predict_diagnostic_reports))) {
-    cli_abort(c("`sims_var` must be one of {.val {c('est', names(predict_diagnostic_reports))}}.",
+  if (!sims_var %in% c("est", names(predict_term_reports))) {
+    cli_abort(c("`sims_var` must be one of {.val {c('est', names(predict_term_reports))}}.",
       "i" = "For other reported variables, use `return_tmb_report = TRUE` with `nsim`."))
   }
   if (sims_var != "est" && type == "response") {
@@ -570,10 +567,9 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
   exclude_RE <- if (pop_pred_iid) 1L else object$tmb_data$exclude_RE
 
   named_list(
-    family_spec, multi_family, has_two_components,
-    is_areal, xy_cols, model, type, se_fit,
-    re_form, re_form_iid, pop_pred, pop_pred_iid, allow_new_levels,
-    exclude_RE, newdata, use_fitted_data, offset
+    family_spec, has_two_components, is_areal, xy_cols, model, type, se_fit,
+    pop_pred, pop_pred_iid, allow_new_levels, exclude_RE, newdata,
+    use_fitted_data, offset, nsim, sims_var, sample_fe, mcmc_samples
   )
 }
 
@@ -594,19 +590,11 @@ predict_offset <- function(req, object, n) {
   if (req$use_fitted_data) object$tmb_data$offset_i else rep(0, n)
 }
 
-# Report holding the prediction: the full (`proj_eta`) or population
-# (`proj_fe`) linear predictor with one column per component, or the combined
-# value of a two-component model.
-predict_report_name <- function(pop, combined = FALSE, scale = "link") {
-  if (!combined) return(if (pop) "proj_fe" else "proj_eta")
-  if (scale == "response") return("proj_response_combined")
-  if (pop) "proj_fe_combined" else "proj_eta_combined"
-}
-
-# Each model component on `scale` (`est1`, `est2`), plus `est` for `model`.
-predict_components <- function(r, req, tmb_data, pop, scale, model = NA) {
+# Each model component on `scale` (`est1`, `est2`), plus `est` for `model`,
+# from the full (`proj_eta`) or population (`proj_fe`) linear predictor.
+predict_components <- function(r, req, tmb_data, scale, model = NA) {
   .family_spec_component_prediction_output(
-    x = r[[predict_report_name(pop)]],
+    x = r[[if (req$pop_pred) "proj_fe" else "proj_eta"]],
     family_spec = req$family_spec,
     row_family_id = tmb_data$proj_family_id + 1L,
     type = scale,
@@ -618,15 +606,22 @@ predict_components <- function(r, req, tmb_data, pop, scale, model = NA) {
 # The prediction `est` from one report `r`: a point estimate, a draw, or the
 # sdreport() estimates or standard errors. Two-component models with
 # `model = NA` use the combined report; otherwise component `model`.
-predict_est <- function(r, req, tmb_data, pop, scale, model) {
+predict_est <- function(r, req, tmb_data, scale, model) {
   if (req$has_two_components && is.na(model)) {
-    return(as.numeric(r[[predict_report_name(pop, combined = TRUE, scale)]]))
+    combined <- if (scale == "response") {
+      "proj_response_combined" # C++ applies `pop_pred` to this one
+    } else if (req$pop_pred) {
+      "proj_fe_combined"
+    } else {
+      "proj_eta_combined"
+    }
+    return(as.numeric(r[[combined]]))
   }
-  predict_components(r, req, tmb_data, pop, scale, model)$est
+  predict_components(r, req, tmb_data, scale, model)$est
 }
 
-# Diagnostic output columns and the projected report holding each.
-predict_diagnostic_reports <- c(
+# Linear predictor term columns and the projected report holding each.
+predict_term_reports <- c(
   est_non_rf = "proj_fe",
   est_rf = "proj_rf",
   omega_s = "proj_omega_s_A",
@@ -634,40 +629,37 @@ predict_diagnostic_reports <- c(
   epsilon_st = "proj_epsilon_st_A_vec"
 )
 
-# Diagnostic columns from `x`, a list named like `predict_diagnostic_reports`
+# Term columns from `x`, a list named like `predict_term_reports`
 # with one column per component (`zeta_s`: rows x SVCs x components). Names get
 # a component suffix only in two-component models, where component 2 is NA on
 # rows whose family has no second component. Effects the model doesn't have
 # are left out.
-predict_diagnostics <- function(x, object, family_spec, row_family_id) {
+predict_terms <- function(x, object, family_spec, row_family_id) {
   d <- object$tmb_data
   n_m <- family_spec$n_m
   active2 <- if (n_m == 2L) {
     .family_spec_component_active(family_spec, row_family_id)[, 2L]
   }
-  has_effect <- function(col, m) {
-    switch(col,
-      # historically only dropped without a spatial model in single-component models:
-      est_non_rf = , est_rf = n_m == 2L || !as.logical(d$no_spatial),
-      omega_s = as.logical(d$include_spatial[m]),
-      epsilon_st = !as.logical(d$spatial_only[m])
-    )
-  }
   out <- list()
-  add <- function(name, values, m) {
-    if (m == 2L) values[!active2] <- NA_real_
-    out[[if (n_m == 2L) paste0(name, m) else name]] <<- values
-  }
   for (col in names(x)) {
-    if (col == "zeta_s") {
-      for (z in seq_along(object$spatial_varying)) {
-        for (m in seq_len(n_m)) {
-          add(paste0("zeta_s_", object$spatial_varying[z]), x$zeta_s[, z, m], m)
-        }
-      }
+    svc <- col == "zeta_s"
+    names_j <- if (svc) {
+      paste0("zeta_s_", object$spatial_varying, recycle0 = TRUE)
     } else {
+      col
+    }
+    for (j in seq_along(names_j)) {
       for (m in seq_len(n_m)) {
-        if (has_effect(col, m)) add(col, x[[col]][, m], m)
+        include <- switch(col,
+          omega_s = as.logical(d$include_spatial[m]),
+          epsilon_st = !as.logical(d$spatial_only[m]),
+          zeta_s = TRUE,
+          n_m == 2L || !as.logical(d$no_spatial) # est_non_rf, est_rf
+        )
+        if (!include) next
+        values <- if (svc) x[[col]][, j, m] else x[[col]][, m]
+        if (m == 2L) values[!active2] <- NA_real_
+        out[[if (n_m == 2L) paste0(names_j[j], m) else names_j[j]]] <- values
       }
     }
   }
@@ -677,10 +669,10 @@ predict_diagnostics <- function(x, object, family_spec, row_family_id) {
 # Reports for each parameter draw: MCMC samples or draws from the joint
 # precision matrix (or the random effects only, conditional on the fixed
 # effects, if `sample_fe = FALSE`).
-predict_draw_reports <- function(object, obj, lp, nsim, mcmc_samples,
-                                 sample_fe) {
-  if (!is.null(mcmc_samples)) {
-    t_draws <- mcmc_samples
+predict_draw_reports <- function(object, obj, lp, req) {
+  nsim <- req$nsim
+  if (!is.null(req$mcmc_samples)) {
+    t_draws <- req$mcmc_samples
     if (nsim > 0) {
       if (nsim > ncol(t_draws)) {
         cli_abort("`nsim` must be <= number of MCMC samples.")
@@ -695,17 +687,18 @@ predict_draw_reports <- function(object, obj, lp, nsim, mcmc_samples,
       sd_report <- object$sd_report
     }
     t_draws <- project_historical_draws(lp, sd_report, nsim,
-      sample_fe = sample_fe, sample_historical_re = TRUE)
+      sample_fe = req$sample_fe, sample_historical_re = TRUE)
   }
   apply(t_draws, 2L, obj$report)
 }
 
 # Matrix of draws (rows x draws) of `sims_var` from the per-draw reports `r`.
-predict_draws <- function(r, req, object, tmb_data, nd, sims_var) {
+predict_draws <- function(r, req, object, tmb_data, nd) {
+  sims_var <- req$sims_var
   pred_row_family_id <- tmb_data$proj_family_id + 1L
   if (sims_var == "est") {
     out <- lapply(r, predict_est, req = req, tmb_data = tmb_data,
-      pop = req$pop_pred, scale = req$type, model = req$model)
+      scale = req$type, model = req$model)
     out <- do.call("cbind", out)
     rownames(out) <- nd[[object$time]] # for use in index calcs
     attr(out, "time") <- object$time
@@ -732,8 +725,8 @@ predict_draws <- function(r, req, object, tmb_data, nd, sims_var) {
   }
   if (req$has_two_components) cols <- paste0(cols, m)
   draws <- lapply(r, function(x) {
-    predict_diagnostics(
-      stats::setNames(list(x[[predict_diagnostic_reports[[sims_var]]]]), sims_var),
+    predict_terms(
+      stats::setNames(list(x[[predict_term_reports[[sims_var]]]]), sims_var),
       object, req$family_spec, pred_row_family_id
     )
   })

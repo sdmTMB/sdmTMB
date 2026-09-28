@@ -388,7 +388,7 @@ predict_nonlocal_field <- function(object, tmb_data, nd, proj_mesh,
     # reuse the fitted field: same mesh vertices, all time slices already present
     object$nonlocal_parsed$covariate_vertex_time
   } else {
-    # no grid was used at fit: rebuild the field from newdata, as before
+    # no grid was used at fit: rebuild the field from newdata
     .build_nonlocal_tmb_data(
       nonlocal_formula = object$nonlocal_formula_parsed,
       data = nd,
