@@ -65,7 +65,10 @@ as starting values for subsequent folds? Can be faster with many folds.}
 each fold is stored in the output. If \code{FALSE}, models are not saved, which
 can substantially reduce memory usage for large datasets or many folds.
 When \code{FALSE}, functions that require access to the fitted models (e.g.,
-\code{\link[=tidy]{tidy()}}, \code{\link[=cv_to_waywiser]{cv_to_waywiser()}}) will not work.}
+\code{\link[=tidy]{tidy()}}, \code{\link[=cv_to_waywiser]{cv_to_waywiser()}}) will not work. To save space, the fold
+models are fit without the joint precision matrix unless \code{control} is
+supplied (see \code{get_joint_precision} in \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}});
+\code{predict(..., nsim = ...)} recomputes it when needed.}
 
 \item{future_globals}{A character vector of global variables used within
 arguments if an error is returned that \pkg{future.apply} can't find an

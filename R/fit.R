@@ -1844,6 +1844,11 @@ sdmTMB <- function(
     control$profile <- NULL
   }
 
+  # the default `~ 1` is created in this frame; don't capture (and serialize) it
+  if (identical(environment(dispformula), environment())) {
+    environment(dispformula) <- globalenv()
+  }
+
   out_structure <- structure(
     list(
       data = data,

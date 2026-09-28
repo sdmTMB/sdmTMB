@@ -918,3 +918,28 @@ test_that("Cross validation handles covariate diffusion under year-based folds",
   expect_true(all(is.finite(fit_space$data$cv_predicted)))
   expect_true(is.finite(fit_space$sum_loglik))
 })
+
+test_that("CV fold models skip the joint precision and cached Cholesky factor", {
+  skip_on_cran()
+  d <- pcod[pcod$year %in% c(2003, 2004, 2005), ]
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  set.seed(1)
+  x <- sdmTMB_cv(density ~ 1, data = d, mesh = mesh, family = tweedie(),
+    k_folds = 2, parallel = FALSE)
+  m <- x$models[[1]]
+  expect_false("jointPrecision" %in% names(m$sd_report))
+  expect_null(m$tmb_obj$env$L.created.by.newton)
+
+  # MVN draws still work and rebuild the factor on demand
+  r <- residuals(m, type = "mle-mvn")
+  expect_length(r, nrow(d))
+  expect_false(is.null(m$tmb_obj$env$L.created.by.newton))
+  p <- suppressMessages(predict(m, nsim = 2))
+  expect_equal(dim(p), c(nrow(d), 2L))
+
+  # a user-supplied `control` is respected
+  set.seed(1)
+  x <- sdmTMB_cv(density ~ 1, data = d, mesh = mesh, family = tweedie(),
+    k_folds = 2, parallel = FALSE, control = sdmTMBcontrol())
+  expect_true("jointPrecision" %in% names(x$models[[1]]$sd_report))
+})

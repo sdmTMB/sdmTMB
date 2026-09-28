@@ -114,7 +114,10 @@ ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
 #'   each fold is stored in the output. If `FALSE`, models are not saved, which
 #'   can substantially reduce memory usage for large datasets or many folds.
 #'   When `FALSE`, functions that require access to the fitted models (e.g.,
-#'   [tidy()], [cv_to_waywiser()]) will not work.
+#'   [tidy()], [cv_to_waywiser()]) will not work. To save space, the fold
+#'   models are fit without the joint precision matrix unless `control` is
+#'   supplied (see `get_joint_precision` in [sdmTMBcontrol()]);
+#'   `predict(..., nsim = ...)` recomputes it when needed.
 #' @param future_globals A character vector of global variables used within
 #'   arguments if an error is returned that \pkg{future.apply} can't find an
 #'   object. This vector is appended to `TRUE` and passed to the
@@ -365,6 +368,7 @@ sdmTMB_cv <- function(
     dot_args <- list(...)
     dot_args$offset <- NULL
     dot_args$weights <- NULL
+    dot_args$control <- cv_control(dot_args$control)
     experimental <- dot_args$experimental
     if (is.null(experimental)) experimental <- list()
     experimental[[".cv_fold_weights"]] <- fold_weights
@@ -405,6 +409,7 @@ sdmTMB_cv <- function(
       dot_args <- list(...)
       dot_args$offset <- NULL
       dot_args$weights <- NULL
+      dot_args$control <- cv_control(dot_args$control)
       experimental <- dot_args$experimental
       if (is.null(experimental)) experimental <- list()
       experimental[[".cv_fold_weights"]] <- fold_weights
@@ -481,6 +486,9 @@ sdmTMB_cv <- function(
     r <- scoring_obj$report(object$tmb_obj$env$last.par.best)
     cv_data$cv_loglik <- -r$jnll_obs[validation_index]
 
+    # regenerated on demand by `.ensure_inner_cholesky()`
+    if (save_models) object$tmb_obj$env$L.created.by.newton <- NULL
+
     list(
       data = cv_data,
       model = if (save_models) object else NULL,
@@ -539,6 +547,12 @@ sdmTMB_cv <- function(
     max_gradients = max_grad
   )
   `class<-`(out, "sdmTMB_cv")
+}
+
+# CV scoring doesn't need the joint precision; skip it unless the user
+# supplied their own `control`
+cv_control <- function(control) {
+  if (is.null(control)) sdmTMBcontrol(get_joint_precision = FALSE) else control
 }
 
 log_sum_exp <- function(x) {

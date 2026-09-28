@@ -707,6 +707,7 @@ check_overdisp <- function(object) {
   if (!any(object$tmb_obj$env$lrandom())) {
     return(object$tmb_obj$env$last.par.best)
   }
+  .ensure_inner_cholesky(object$tmb_obj)
   tmp <- object$tmb_obj$env$MC(n = 1L, keep = TRUE, antithetic = FALSE)
   re_samp <- as.vector(attr(tmp, "samples"))
   lp <- object$tmb_obj$env$last.par.best
@@ -716,4 +717,20 @@ check_overdisp <- function(object) {
   p[re] <- re_samp
   p[fe] <- lp[fe]
   p
+}
+
+# `obj$env$MC()` needs TMB's cached inner Cholesky factor, which
+# `sdmTMB_cv()` drops from saved models to save space. Rebuild it with one
+# inner optimization at the MLEs, restoring the state `fn()` may overwrite.
+.ensure_inner_cholesky <- function(obj) {
+  env <- obj$env
+  if (!is.null(env$L.created.by.newton)) return(invisible())
+  last_par <- env$last.par
+  last_par_best <- env$last.par.best
+  value_best <- env$value.best
+  obj$fn(last_par_best[env$lfixed()])
+  env$last.par <- last_par
+  env$last.par.best <- last_par_best
+  env$value.best <- value_best
+  invisible()
 }
