@@ -746,24 +746,17 @@ get_response <- function(formula) {
   vars[response]
 }
 
-remove_9000 <- function(x) {
-  as.package_version(paste0(
-    strsplit(as.character(x), ".", fixed = TRUE)[[1]][1:3],
-    collapse = "."
-  ))
-}
-
 check_sdmTMB_version <- function(version) {
-  if (remove_9000(utils::packageVersion("sdmTMB")) >
-    remove_9000(version)) {
-    msg <- paste0(
-      "The installed version of sdmTMB is newer than the version ",
-      "that was used to fit this model. It is possible new parameters ",
-      "have been added to the TMB model since you fit this model and ",
-      "that prediction will fail. We recommend you fit and predict ",
-      "from an sdmTMB model with the same version."
+  fitted <- as.character(version)
+  installed <- as.character(utils::packageVersion("sdmTMB"))
+  if (fitted != installed) {
+    cli_warn(c(
+      "This model was fit with sdmTMB {fitted}, but sdmTMB {installed} is installed.",
+      "i" = paste(
+        "The TMB model may differ between versions, so prediction may fail",
+        "or give different results. We recommend refitting the model with the installed version."
       )
-    cli_warn(msg)
+    ))
   }
 }
 
