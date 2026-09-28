@@ -489,9 +489,6 @@ residuals.sdmTMB <- function(object,
     ))
   }
 
-  # retrieve function that called this:
-  sys_calls <- unlist(lapply(sys.calls(), deparse))
-  visreg_call <- any(grepl("setupV", substr(sys_calls, 1, 7)))
   if (type == "mle-laplace") type <- "mle-eb"
   model_missing <- FALSE
   if (identical(model, c(1, 2))) model_missing <- TRUE

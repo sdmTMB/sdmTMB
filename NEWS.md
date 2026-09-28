@@ -8,6 +8,11 @@
   from C++ to R and has ~50% fewer lines of code. This transition uncovered
   many bugs that have been fixed as documented in this file.
 
+* `sdmTMB_cv()` is a bit faster and, with `save_models = TRUE`, returns
+  smaller objects. Fold models are fit without the joint precision matrix
+  unless `control` is supplied, and TMB's cached inner Cholesky factor is
+  dropped from saved models (it is rebuilt when needed).
+
 * Add `sample_fe` argument to `predict.sdmTMB()`. With `nsim > 0` and
   `sample_fe = FALSE`, fixed effects are held at their estimates and only
   random effects are drawn, conditional on the estimated parameters (similar

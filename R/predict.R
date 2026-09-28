@@ -756,7 +756,7 @@ check_sdmTMB_version <- function(version) {
         "The TMB model may differ between versions, so prediction may fail",
         "or give different results. We recommend refitting the model with the installed version."
       )
-    ))
+    ), .frequency = "once", .frequency_id = paste0("sdmTMB_version_", fitted))
   }
 }
 
@@ -775,8 +775,17 @@ check_time_class <- function(object, newdata) {
 }
 
 # Is predict() being called by visreg (other than via residuals())?
+# Match function names only; deparsing whole calls is slow when arguments
+# are large objects (e.g., from `do.call()`).
 is_visreg_call <- function() {
-  sys_calls <- unlist(lapply(sys.calls(), deparse))
-  any(grepl("setupV|visregPred|build_visreg|build_visreg2d|visreg_pred", sys_calls)) &&
-    !any(sys_calls == "residuals(fit)")
+  fns <- vapply(sys.calls(), call_fn_name, character(1L))
+  visreg_fns <- c("setupV", "visregPred", "build_visreg", "build_visreg2d", "visreg_pred")
+  any(fns %in% visreg_fns) && !any(fns %in% "residuals")
+}
+
+# Name of the function in a call (`f` for `f()` or `pkg::f()`), else NA.
+call_fn_name <- function(x) {
+  f <- x[[1L]]
+  if (is.call(f) && as.character(f[[1L]]) %in% c("::", ":::")) f <- f[[3L]]
+  if (is.name(f)) as.character(f) else NA_character_
 }
