@@ -294,3 +294,40 @@ test_that("gather/spread sims work", {
   expect_true(ncol(x) == 3L)
   expect_s3_class(x, "data.frame")
 })
+
+test_that("predict() can draw random effects only with sample_fe = FALSE", {
+  skip_on_cran()
+  m <- sdmTMB(
+    density ~ depth_scaled, data = pcod_2011, mesh = pcod_mesh_2011,
+    family = tweedie(link = "log"), time = "year", spatiotemporal = "iid"
+  )
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
+  p <- predict(m, newdata = nd)
+
+  set.seed(1)
+  r <- predict(m, newdata = nd, nsim = 5, sample_fe = FALSE, return_tmb_report = TRUE)
+  expect_false(isTRUE(all.equal(r[[1]]$proj_omega_s_A, r[[2]]$proj_omega_s_A)))
+
+  # fixed effects are held at the MLE:
+  set.seed(1)
+  s <- predict(m, newdata = nd, nsim = 50, sims_var = "est_non_rf",
+    sample_fe = FALSE)
+  expect_equal(s[, 1], p$est_non_rf)
+  expect_equal(apply(s, 1, sd), rep(0, nrow(nd)))
+
+  # random effects vary, with less total uncertainty than the joint draws:
+  set.seed(1)
+  s_re <- predict(m, newdata = nd, nsim = 50, sample_fe = FALSE)
+  set.seed(1)
+  s_joint <- predict(m, newdata = nd, nsim = 50)
+  expect_gt(cor(rowMeans(s_re), p$est), 0.99)
+  expect_lt(mean(apply(s_re, 1, sd)), mean(apply(s_joint, 1, sd)))
+
+  expect_error(predict(m, newdata = nd, nsim = 2, sample_fe = NA), "sample_fe")
+  m_fe <- sdmTMB(density ~ depth_scaled, data = pcod_2011,
+    family = tweedie(link = "log"), spatial = "off")
+  expect_error(
+    predict(m_fe, newdata = nd, nsim = 2, sample_fe = FALSE),
+    "requires a model with random effects"
+  )
+})

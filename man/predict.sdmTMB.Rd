@@ -14,6 +14,7 @@
   allow_new_levels = NULL,
   nsim = 0,
   sims_var = "est",
+  sample_fe = TRUE,
   model = c(NA, 1, 2),
   offset = NULL,
   mcmc_samples = NULL,
@@ -79,6 +80,14 @@ Defaults to link-space predictions. Other options are \code{"omega_s"},
 below); the model must include the term. Options other than \code{"est"} are
 returned in link space and cannot be combined with \code{type = "response"}.
 For other reported variables, use \code{return_tmb_report = TRUE}.}
+
+\item{sample_fe}{Logical. When \code{nsim > 0}, sample uncertainty in the fixed
+effects and other estimated parameters? If \code{FALSE}, these are held at
+their estimated values and only the random effects (random fields, IID
+random effects, time-varying coefficients, and smoother coefficients) are
+drawn from their distribution conditional on the estimated parameters
+(similar to \code{obj$MC()} in \pkg{TMB}). Fixed effects are held at their
+estimates even with REML. See also the same argument in \code{\link[=project]{project()}}.}
 
 \item{model}{Which component to predict from delta/hurdle models when \code{nsim > 0} or \code{mcmc_samples} is supplied. \code{NA} (default) returns the combined
 prediction from both components; \code{1} returns the binomial component only; \code{2}

@@ -49,6 +49,13 @@
 #'   random effects. Use this to derive uncertainty on predictions (e.g.,
 #'   `apply(x, 1, sd)`) or propagate uncertainty to derived quantities. This is
 #'   the fastest way to characterize spatial uncertainty with sdmTMB.
+#' @param sample_fe Logical. When `nsim > 0`, sample uncertainty in the fixed
+#'   effects and other estimated parameters? If `FALSE`, these are held at
+#'   their estimated values and only the random effects (random fields, IID
+#'   random effects, time-varying coefficients, and smoother coefficients) are
+#'   drawn from their distribution conditional on the estimated parameters
+#'   (similar to `obj$MC()` in \pkg{TMB}). Fixed effects are held at their
+#'   estimates even with REML. See also the same argument in [project()].
 #' @param sims_var Experimental: Which TMB reported variable from the model
 #'   should be extracted from the joint precision matrix simulation draws?
 #'   Defaults to link-space predictions. Other options are `"omega_s"`,
@@ -285,6 +292,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
   allow_new_levels = NULL,
   nsim = 0,
   sims_var = "est",
+  sample_fe = TRUE,
   model = c(NA, 1, 2),
   offset = NULL,
   mcmc_samples = NULL,
@@ -313,7 +321,7 @@ predict.sdmTMB <- function(object, newdata = NULL,
   predict_sdmTMB(object,
     newdata = newdata, type = type, se_fit = se_fit, re_form = re_form,
     re_form_iid = re_form_iid, allow_new_levels = allow_new_levels,
-    nsim = nsim, sims_var = sims_var, model = model,
+    nsim = nsim, sims_var = sims_var, sample_fe = sample_fe, model = model,
     model_missing = missing(model), offset = offset,
     mcmc_samples = mcmc_samples, nonlocal_newdata = nonlocal_newdata,
     return_tmb_object = return_tmb_object,
@@ -325,8 +333,9 @@ predict.sdmTMB <- function(object, newdata = NULL,
 predict_sdmTMB <- function(object, newdata = NULL, type = "link",
                            se_fit = FALSE, re_form = NULL, re_form_iid = NULL,
                            allow_new_levels = NULL, nsim = 0, sims_var = "est",
-                           model = NA, model_missing = FALSE, offset = NULL,
-                           mcmc_samples = NULL, nonlocal_newdata = NULL,
+                           sample_fe = TRUE, model = NA, model_missing = FALSE,
+                           offset = NULL, mcmc_samples = NULL,
+                           nonlocal_newdata = NULL,
                            return_tmb_object = FALSE, return_tmb_report = FALSE,
                            return_tmb_data = FALSE) {
   req <- predict_request(
@@ -334,7 +343,7 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
     re_form = re_form, re_form_iid = re_form_iid,
     allow_new_levels = allow_new_levels, nsim = nsim, model = model,
     model_missing = model_missing, offset = offset,
-    mcmc_samples = mcmc_samples, sims_var = sims_var
+    mcmc_samples = mcmc_samples, sims_var = sims_var, sample_fe = sample_fe
   )
   newdata <- req$newdata
 
@@ -375,7 +384,8 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
     }
 
     if (nsim > 0 || !is.null(mcmc_samples)) {
-      r <- predict_draw_reports(object, new_tmb_obj, lp, nsim, mcmc_samples)
+      r <- predict_draw_reports(object, new_tmb_obj, lp, nsim, mcmc_samples,
+        sample_fe)
       if (return_tmb_report) return(r)
       return(predict_draws(r, req, object, tmb_data, prep$nd, sims_var))
     }
@@ -479,7 +489,7 @@ predict_visreg <- function(object, newdata, se_fit) {
 predict_request <- function(object, newdata, type, se_fit, re_form,
                             re_form_iid, allow_new_levels, nsim, model,
                             model_missing, offset, mcmc_samples,
-                            sims_var) {
+                            sims_var, sample_fe) {
   if ("version" %in% names(object)) {
     check_sdmTMB_version(object$version)
   } else {
@@ -517,6 +527,17 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
   }
   if (sims_var != "est" && type == "response") {
     cli_abort("`type = 'response'` is only supported with `sims_var = 'est'`.")
+  }
+  if (!is.logical(sample_fe) || length(sample_fe) != 1L || is.na(sample_fe)) {
+    cli_abort("`sample_fe` must be one non-missing logical value.")
+  }
+  if (!sample_fe && nsim > 0) {
+    if (!is.null(mcmc_samples)) {
+      cli_abort("`sample_fe = FALSE` cannot be combined with `mcmc_samples`.")
+    }
+    if (has_no_random_effects(object)) {
+      cli_abort("`sample_fe = FALSE` requires a model with random effects.")
+    }
   }
   if (isTRUE(se_fit) && type == "response") {
     cli_abort(c("Standard errors are only available on the link scale.",
@@ -654,8 +675,10 @@ predict_diagnostics <- function(x, object, family_spec, row_family_id) {
 }
 
 # Reports for each parameter draw: MCMC samples or draws from the joint
-# precision matrix.
-predict_draw_reports <- function(object, obj, lp, nsim, mcmc_samples) {
+# precision matrix (or the random effects only, conditional on the fixed
+# effects, if `sample_fe = FALSE`).
+predict_draw_reports <- function(object, obj, lp, nsim, mcmc_samples,
+                                 sample_fe) {
   if (!is.null(mcmc_samples)) {
     t_draws <- mcmc_samples
     if (nsim > 0) {
@@ -671,13 +694,8 @@ predict_draw_reports <- function(object, obj, lp, nsim, mcmc_samples) {
     } else {
       sd_report <- object$sd_report
     }
-    if (has_no_random_effects(object)) {
-      t_draws <- t(mvtnorm::rmvnorm(n = nsim, mean = sd_report$par.fixed,
-        sigma = sd_report$cov.fixed))
-      row.names(t_draws) <- NULL
-    } else {
-      t_draws <- rmvnorm_prec(mu = lp, tmb_sd = sd_report, n_sims = nsim)
-    }
+    t_draws <- project_historical_draws(lp, sd_report, nsim,
+      sample_fe = sample_fe, sample_historical_re = TRUE)
   }
   apply(t_draws, 2L, obj$report)
 }

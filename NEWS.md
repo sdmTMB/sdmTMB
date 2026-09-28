@@ -1,5 +1,10 @@
 # sdmTMB (development version)
 
+* Add `sample_fe` argument to `predict.sdmTMB()`. With `nsim > 0` and
+  `sample_fe = FALSE`, fixed effects are held at their estimates and only
+  random effects are drawn, conditional on the estimated parameters (similar
+  to `obj$MC()` in TMB). This matches the argument in `project()`.
+
 * Population-level predictions from `predict.sdmTMB()` (`re_form = NA`) now
   order columns as full predictions do: `est`, `est1`, `est2`, then `est_se`.
 
