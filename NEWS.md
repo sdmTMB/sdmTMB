@@ -1,5 +1,13 @@
 # sdmTMB (development version)
 
+* **Add an RTMB backend**. The default for now remains TMB, but eventually the
+  TMB backend will be dropped in favour of RTMB. Set it per model fit with
+  `control = sdmTMBcontrol(backend = "rtmb")` or per session with
+  `options(sdmTMB.backend = "rtmb")`. Unit tests and extensive local testing of
+  cached models shows them to produce identical results. Model code transitions
+  from C++ to R and has ~50% fewer lines of code. This transition uncovered
+  many bugs that have been fixed as documented in this file.
+
 * Add `sample_fe` argument to `predict.sdmTMB()`. With `nsim > 0` and
   `sample_fe = FALSE`, fixed effects are held at their estimates and only
   random effects are drawn, conditional on the estimated parameters (similar
@@ -22,9 +30,6 @@
   errors are only available on the link scale. Previously, it warned and
   returned link-scale predictions. Use `type = "link"` with `se_fit = TRUE`,
   or use `nsim` for response-scale uncertainty.
-
-* `predict.sdmTMB()` now warns once, rather than once per component, about
-  new random effect levels in `newdata` for delta models.
 
 * `predict.sdmTMB()` now errors for `type = "response"` with a `sims_var`
   other than `"est"`. Applying the inverse link to a random field or other
@@ -56,14 +61,6 @@
   at an offset of 0, and `est2` is the corresponding positive expectation.
   The combined `est`, indices, residuals, and simulations were already
   correct.
-
-* Add an RTMB backend. The default for now remains TMB, but eventually the
-  TMB backend will be dropped in favour of RTMB. Set it per model fit with
-  `control = sdmTMBcontrol(backend = "rtmb")` or per session with
-  `options(sdmTMB.backend = "rtmb")`. Unit tests and extensive local testing of
-  cached models shows them to produce identical results. Model code transitions
-  from C++ to R and has ~50% fewer lines of code. This transition uncovered
-  many bugs that have been fixed as documented in this file.
 
 * Fix calling the index functions directly on a `do_index = TRUE` fit:
   `get_index()` now honours an explicit `area` argument instead of silently
@@ -219,7 +216,7 @@
   `K - 1` deviation fields with no reference field. It now fits a genuine
   SVC intercept field plus `K - 1` deviation fields. A one-cycle warning is
   emitted for this specification.
-  
+
   The previous message suggesting `spatial = "off"` when using
   `spatial = "on", spatial_varying = ~ 0 + factor_var` has been removed; this
   is a valid model specification (global spatial field plus per-level SVC
