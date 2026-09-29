@@ -13,6 +13,11 @@
   sparse GMRF evaluation rather than one per time step, and `predict()`
   without `se_fit` or draws evaluates predictions directly rather than
   building an AD object (about 2x faster and half the peak memory on large grids).
+  In a benchmark (`pcod` spatiotemporal model, 285 knots, full `qcs_grid`), the
+  RTMB backend was about 10% faster to fit, 3x faster to `predict()`, 35% faster
+  to `simulate()`, and 30% faster for `get_index(bias_correct = TRUE)` than the
+  TMB backend before these changes. Peak memory was similar for fitting and
+  simulating but ~30% higher for `get_index(bias_correct = TRUE)`.
 
 * `get_index()`, `get_cog()`, `get_eao()`, and `get_weighted_average()` are
   faster by reusing the fitted model's fixed-effect Hessian instead of
