@@ -17,6 +17,9 @@ make_sdmTMB_adfun <- function(data, parameters, map, random = NULL,
     map[removed] <- NULL
     if (!is.null(random)) random <- setdiff(random, removed)
   }
+  # Weighted-average vectors are one per column (x and y for COG); fits
+  # saved before this carry a plain vector
+  if (!is.null(data$proj_vector)) data$proj_vector <- as.matrix(data$proj_vector)
   if (backend == "tmb") {
     obj <- TMB::MakeADFun(data = data, parameters = parameters, map = map,
       random = random, profile = profile, DLL = "sdmTMB", silent = silent, ...)

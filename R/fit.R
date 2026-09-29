@@ -1234,6 +1234,13 @@ sdmTMB <- function(
   if (identical(family$link[1], "log") && min(y_i, na.rm = TRUE) < 0 && !has_two_components) {
     cli_abort("`link = 'log'` but the reponse data include values < 0.")
   }
+  if (!has_two_components && family$family[1] %in% c("truncated_nbinom1", "truncated_nbinom2") &&
+    any(y_i < 1, na.rm = TRUE)) {
+    cli_abort(c(
+      "`{family$family[1]}()` requires a response > 0.",
+      "i" = "Consider `delta_{family$family[1]}()` for data with zeros."
+    ))
+  }
   if (is.null(offset)) offset <- rep(0, length(y_i))
   assert_that(length(offset) == length(y_i), msg = "Offset doesn't match length of data")
   if (nrow(Xdisp_ij) != length(y_i)) {
@@ -1396,7 +1403,7 @@ sdmTMB <- function(
     b_smooth_start = sm$b_smooth_start,
     proj_lon = 0,
     proj_lat = 0,
-    proj_vector = 0,
+    proj_vector = matrix(0),
     do_predict = 0L,
     do_rsr = do_rsr,
     calc_se = 0L,

@@ -414,12 +414,13 @@ get_cog <- function(obj, newdata = NULL, bias_correct = FALSE, level = 0.95,
   } else {
     cli_abort("Prediction data must include the x/y columns used for the model.")
   }
-  d_x <- get_generic(obj, value_name = "weighted_avg",
+  # x and y share one objective function, sdreport, and bias correction
+  d_xy <- get_generic(obj, value_name = "weighted_avg",
     bias_correct = bias_correct, level = level, trans = I, area = area,
-    vector = x_vec, derived_link = derived_link, area_missing = area_missing, ...)
-  d_y <- get_generic(obj, value_name = "weighted_avg",
-    bias_correct = bias_correct, level = level, trans = I, area = area,
-    vector = y_vec, derived_link = derived_link, area_missing = area_missing, ...)
+    vector = cbind(x_vec, y_vec), derived_link = derived_link,
+    area_missing = area_missing, ...)
+  d_x <- d_xy[[1]]
+  d_y <- d_xy[[2]]
   d_x <- d_x[, names(d_x) != "trans_est", drop = FALSE]
   d_y <- d_y[, names(d_y) != "trans_est", drop = FALSE]
   d_x$coord <- "X"
@@ -587,7 +588,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       if (is.null(vector)) {
         cli_abort("A vector must be provided for weighted average calculation.")
       }
-      if (length(vector) != nrow(obj$pred_tmb_data$proj_X_ij[[1]])) {
+      if (NROW(vector) != nrow(obj$pred_tmb_data$proj_X_ij[[1]])) {
         cli_abort("`vector` should be of the same length as `nrow(newdata)`.")
       }
       tmb_data$proj_vector <- vector
@@ -644,7 +645,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       if (is.null(vector)) {
         cli_abort("A vector must be provided for weighted average calculation.")
       }
-      if (length(vector) != nrow(tmb_data$proj_X_ij[[1]])) {
+      if (NROW(vector) != nrow(tmb_data$proj_X_ij[[1]])) {
         cli_abort("`vector` should be of the same length as the original index prediction data.")
       }
       tmb_data$proj_vector <- vector
@@ -699,7 +700,11 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       random = obj$fit_obj$tmb_random,
       backend = backend_sdmTMB(obj$fit_obj),
       silent = silent,
-      intern = FALSE, # tested as faster for most models
+      # Ratio quantities (weighted_avg, eao) tag their sums in the template;
+      # only the internal inner optimizer uses those tags (lowrank = TRUE)
+      # and they are much faster there. The external optimizer is faster for
+      # the index total.
+      intern = value_name[[1]] != "link_total",
       inner.control = list(sparse = TRUE, lowrank = TRUE, trace = FALSE)
     )
     gradient <- new_obj2$gr(fixed)
@@ -713,7 +718,6 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
   log_total <- ssr[row.names(ssr) %in% value_name, , drop = FALSE]
   row.names(log_total) <- NULL
   d <- as.data.frame(log_total)
-  time_name <- obj$fit_obj$time
   names(d) <- c("trans_est", "se")
   if (bias_correct) {
     if (value_name[[1]] == "weighted_avg") {
@@ -734,6 +738,19 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     d$se_natural <- as.numeric(.total[,2])
   }
 
+  # A matrix `vector` (e.g., x and y for COG) stacks one time series per
+  # column; return one data frame per column
+  if (value_name[[1]] == "weighted_avg" && NCOL(vector) > 1L) {
+    chunk <- rep(seq_len(NCOL(vector)), each = nrow(d) / NCOL(vector))
+    return(lapply(split(d, chunk), finish_generic, obj = obj,
+      tmb_data = tmb_data, value_name = value_name))
+  }
+  finish_generic(d, obj, tmb_data, value_name)
+}
+
+# Match rows of derived quantities to time steps and drop unpredicted ones
+finish_generic <- function(d, obj, tmb_data, value_name) {
+  time_name <- obj$fit_obj$time
   time_include <- NULL
   if (!is.null(tmb_data) && "proj_time_include" %in% names(tmb_data)) {
     time_include <- as.integer(tmb_data$proj_time_include)

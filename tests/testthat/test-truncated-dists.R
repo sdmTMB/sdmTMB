@@ -185,3 +185,11 @@ test_that("Truncated NB1/2 indexes are right", {
   pp <- predict(fit, type = "response")
   expect_equal(x$est, pp$est[1], tolerance = 1e-3)
 })
+
+test_that("Non-delta truncated NB families reject zeros", {
+  d0 <- data.frame(y = c(0, 1, 2, 3))
+  expect_error(sdmTMB(y ~ 1, data = d0, spatial = "off",
+    family = truncated_nbinom1()), regexp = "response > 0")
+  expect_error(sdmTMB(y ~ 1, data = d0, spatial = "off",
+    family = truncated_nbinom2()), regexp = "response > 0")
+})

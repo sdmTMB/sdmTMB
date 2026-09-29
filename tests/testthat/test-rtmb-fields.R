@@ -318,3 +318,35 @@ test_that("RTMB anisotropic and areal fits match TMB", {
     expect_equal(moments(rt), moments(cpp), tolerance = 0.05, info = name)
   }
 })
+
+test_that("TMB and RTMB simulate AR1 and RW barrier fields at the same scale", {
+  skip_on_cran()
+  skip_if_not_installed("sdmTMBextra")
+  skip_if_not_installed("sf")
+  d <- rtmb_spatial_data()
+  mesh <- make_mesh(d, c("x", "y"), cutoff = 0.7)
+  barrier <- sf::st_sf(id = 1L, geometry = sf::st_sfc(sf::st_polygon(list(
+    matrix(c(2.3, -0.2, 2.7, -0.2, 2.7, 5.2, 2.3, 5.2, 2.3, -0.2),
+      ncol = 2, byrow = TRUE)))))
+  mesh <- suppressMessages(suppressWarnings(
+    sdmTMBextra::add_barrier_mesh(mesh, barrier, range_fraction = 0.2,
+      plot = FALSE)))
+  sim_sd <- function(st, backend) {
+    fit <- sdmTMB(gaussian ~ 1, data = d, mesh = mesh, time = "time",
+      spatial = "off", spatiotemporal = st, do_fit = FALSE,
+      control = sdmTMBcontrol(backend = backend))
+    dat <- fit$tmb_data
+    dat$sim_re <- c(rep(1L, 5L), 0L)
+    obj <- make_sdmTMB_adfun(data = dat, map = fit$tmb_map,
+      random = fit$tmb_random, parameters = fit$tmb_params, backend = backend)
+    p <- obj$env$par
+    p[names(p) == "ln_tau_E"] <- -1
+    p[names(p) == "ln_kappa"] <- 0.5
+    set.seed(1)
+    mean(replicate(50, sd(obj$simulate(p)$epsilon_st)))
+  }
+  for (st in c("ar1", "rw")) {
+    expect_equal(sim_sd(st, "tmb"), sim_sd(st, "rtmb"), tolerance = 0.1,
+      info = st)
+  }
+})

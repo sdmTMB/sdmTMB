@@ -19,6 +19,13 @@
   recomputing it (e.g., ~40% faster for a delta model without bias
   correction). The saving grows with the number of fixed effects.
 
+* Bias correction in `get_weighted_average()`, `get_cog()`, and `get_eao()`
+  is much faster (~5-7x in tests). The bias-correction terms now tag the
+  per-time sums rather than their ratio, keeping the inner Hessian sparse
+  plus low rank, and use TMB's internal inner optimizer, which is the one
+  that exploits that structure. `get_cog()` also computes x and y in a single
+  objective function, halving its time. Estimates are unchanged.
+
 * `sdmTMB_cv()` is a bit faster and, with `save_models = TRUE`, returns
   smaller objects. Fold models are fit without the joint precision matrix
   unless `control` is supplied, and TMB's cached inner Cholesky factor is
@@ -147,6 +154,15 @@
   unusable gradients, which could derail optimization from poor parameter
   values. Log probabilities are now computed from the tail that avoids
   cancellation, with exact derivatives of all orders.
+
+* Fix TMB-backend simulation of AR1 and RW spatiotemporal fields with a barrier
+  mesh. The simulated fields were scaled by `1 / exp(ln_tau_E)` instead of the
+  barrier scaling factor, so their variance was wrong. IID fields and the
+  RTMB backend were already correct.
+
+* Non-delta `truncated_nbinom1()` and `truncated_nbinom2()` now error on a
+  response of zero rather than returning an infinite objective with all
+  parameters at zero and reported convergence.
 
 * Fix `ordbeta()` simulation in both the TMB and RTMB backends. A one was
   drawn only after a zero was not, so the probability of a one was
