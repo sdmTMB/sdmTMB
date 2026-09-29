@@ -337,7 +337,8 @@ matrix<Type> MakeH(vector<Type> x) {
 template <class Type>
 Type pc_prior_matern(Type logtau, Type logkappa, Type matern_range,
                      Type matern_SD, Type range_prob, Type SD_prob,
-                     int give_log = 0, int share_range = 0, int stan_flag = 0) {
+                     int give_log = 0, int include_sigma = 1,
+                     int include_range = 1, int stan_flag = 0) {
   Type d = 2.;  // dimension
   Type dhalf = d / 2.;
   Type lam1 = -log(range_prob) * pow(matern_range, dhalf);
@@ -347,15 +348,17 @@ Type pc_prior_matern(Type logtau, Type logkappa, Type matern_range,
   Type range_ll = log(dhalf) + log(lam1) + log(pow(range, -1. - dhalf)) -
                   lam1 * pow(range, -dhalf);
   Type sigma_ll = log(lam2) - lam2 * sigma;
-  Type penalty = sigma_ll;
-  if (!share_range) penalty += range_ll;
-
-  // Note: these signs are + (and different from inst/jacobian-pcprior-tests)
-  // because the jnll is accumulated
-  if (stan_flag) {
-    penalty += log(sqrt(8.)) - log(pow(range, 2.)); // P(sigma)
-    Type C = sqrt(exp(lgamma(1. + dhalf)) * pow(4. * M_PI, dhalf));
-    penalty += log(C) + logkappa;
+  // The sigma part applies to estimated fields and the range part once per
+  // shared range. Each part's Jacobian term, from (logtau, logkappa) to
+  // (sigma, range), is log(sigma) or log(range).
+  Type penalty = 0;
+  if (include_sigma) {
+    penalty += sigma_ll;
+    if (stan_flag) penalty += log(sigma);
+  }
+  if (include_range) {
+    penalty += range_ll;
+    if (stan_flag) penalty += log(range);
   }
   // std::cout << "PC penalty: " << penalty << "\n";
   if (give_log)

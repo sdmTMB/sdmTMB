@@ -20,6 +20,7 @@ make_sdmTMB_adfun <- function(data, parameters, map, random = NULL,
   # Weighted-average vectors are one per column (x and y for COG); fits
   # saved before this carry a plain vector
   if (!is.null(data$proj_vector)) data$proj_vector <- as.matrix(data$proj_vector)
+  data <- legacy_matern_prior_flags(data)
   if (backend == "tmb") {
     obj <- TMB::MakeADFun(data = data, parameters = parameters, map = map,
       random = random, profile = profile, DLL = "sdmTMB", silent = silent, ...)
@@ -32,6 +33,17 @@ make_sdmTMB_adfun <- function(data, parameters, map, random = NULL,
   }
   attr(obj, "sdmTMB_backend") <- backend
   obj
+}
+
+# Fits saved before range groups lack the PC Matern prior flags; rebuild the
+# earlier rule: the sigma part for every field, the spatial range part always,
+# and the spatiotemporal range part unless its range is shared.
+legacy_matern_prior_flags <- function(data) {
+  if (!is.null(data$range_prior)) return(data)
+  n_m <- ncol(data$y_i)
+  data$sigma_prior <- matrix(1L, 2L, n_m)
+  data$range_prior <- rbind(1L, 1L - data$share_range[seq_len(n_m)])
+  data
 }
 
 sdreport_sdmTMB <- function(obj, ...) {

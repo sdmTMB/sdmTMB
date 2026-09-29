@@ -215,3 +215,15 @@ test_that("Threshold priors work", {
   x <- tidy(m)
   expect_equal(x$estimate[x$term == "depth_scaled-breakpt"], -1, tolerance = 0.01)
 })
+
+test_that("the Stan Jacobian gives a proper PC Matern prior on (log_tau, log_kappa)", {
+  # With the correct Jacobian, the implied density integrates to 1
+  prior <- pc_matern(range_gt = 5, sigma_lt = 2)
+  h <- 0.025
+  lt <- seq(-15, 15, by = h)
+  lk <- seq(-15, 10, by = h)
+  density <- outer(lt, lk, function(lt, lk) {
+    exp(rtmb_pc_matern(lt, lk, prior, stan = TRUE))
+  })
+  expect_equal(sum(density) * h^2, 1, tolerance = 1e-4)
+})

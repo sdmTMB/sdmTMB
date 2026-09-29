@@ -546,43 +546,39 @@ replicate_df <- function(dat, time_name, time_values) {
   nd
 }
 
-# work one delta model at a time
-# only diff with 2nd part is that the 'fake' values need to be larger than first
-# so make a function for just 1 component
-# then add an increment for 2nd that's always bigger (e.g. 100s vs. 1000s)
-# then as.factor() them down in sequence
-# check if share_range = TRUE or if one of spatial or spatiotemporal is 'off',
-# if so the values in that column should be identical
-# check if share_range = TRUE or if one of spatial or spatiotemporal is 'off',
-# if so the values in that column should be identical
-map_kappa <- function(spatial, spatiotemporal, share_range, a = 100L) {
-  if (share_range) {
-    if (!spatial && !spatiotemporal) {
-      x <- c(NA_integer_, NA_integer_)
-    } else {
-      x <- c(a, a)
-    }
-  } else {
-    if (spatial && spatiotemporal) x <- c(a, a + 1L)
-    if (!spatial || !spatiotemporal) x <- c(a, a)
-    if (!spatial && !spatiotemporal) x <- c(NA_integer_, NA_integer_)
+# Range-group label for each `ln_kappa` entry (row 1 spatial, row 2
+# spatiotemporal, one column per component); entries with the same label share
+# a range. Unnamed fields get a spatial range per component, shared with the
+# spatiotemporal field if `share_range`. A field that is off takes the other
+# field's label, and both are NA if both are off.
+range_group_labels <- function(n_m, spatial, spatiotemporal, share_range,
+                               range_groups = NULL) {
+  fields <- c("spatial", "spatiotemporal")
+  if (is.null(range_groups)) range_groups <- vector("list", n_m)
+  if (!is.list(range_groups)) range_groups <- list(range_groups)
+  if (length(range_groups) != n_m) {
+    cli_abort("`range_groups` must be a list with one element per model component ({n_m}).")
   }
-  x
+  labels <- matrix(NA_character_, 2L, n_m, dimnames = list(fields, NULL))
+  for (m in seq_len(n_m)) {
+    g <- range_groups[[m]]
+    if (!is.null(g) && (!is.character(g) || anyNA(g) || is.null(names(g)) ||
+        !all(names(g) %in% fields) || anyDuplicated(names(g)))) {
+      cli_abort("Each element of `range_groups` must be a character vector with names `spatial` and/or `spatiotemporal`.")
+    }
+    s <- if ("spatial" %in% names(g)) g[["spatial"]] else paste0(".spatial", m)
+    st <- if ("spatiotemporal" %in% names(g)) g[["spatiotemporal"]] else
+      if (share_range[m]) s else paste0(".spatiotemporal", m)
+    labels[, m] <- c(s, st)
+    on <- c(spatial[m] == "on", spatiotemporal[m] != "off")
+    if (!all(on)) labels[, m] <- if (any(on)) labels[on, m] else NA_character_
+  }
+  labels
 }
 
-get_kappa_map <- function(
-    n_m = 2,
-    spatial = c("on", "off"),
-    spatiotemporal = c("on", "on"),
-    share_range = c(FALSE, FALSE)) {
-  spatial <- spatial == "on"
-  spatiotemporal <- spatiotemporal %in% c("on", "iid", "rw", "ar1")
-  k <- map_kappa(spatial[1], spatiotemporal[1], share_range[1], 100L)
-  if (n_m > 1) {
-    k2 <- map_kappa(spatial[2], spatiotemporal[2], share_range[2], 1000L)
-    k <- cbind(k, k2)
-  }
-  as.factor(as.integer(as.factor(k)))
+# `ln_kappa` map factor from `range_group_labels()`
+get_kappa_map <- function(labels) {
+  factor(match(labels, unique(labels[!is.na(labels)])))
 }
 
 

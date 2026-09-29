@@ -15,6 +15,7 @@ sdmTMB(
   spatiotemporal = c("iid", "ar1", "rw", "off"),
   spatial_model = c("spde", "sar", "car"),
   share_range = TRUE,
+  range_groups = NULL,
   time_varying = NULL,
   time_varying_type = c("rw", "rw0", "ar1"),
   spatial_varying = NULL,
@@ -120,6 +121,18 @@ Capitalization is ignored.}
 \item{share_range}{Logical: estimate a shared spatial and spatiotemporal
 range parameter (\code{TRUE}, default) or independent range parameters
 (\code{FALSE}). If a delta model, can be a list. E.g., \code{list(TRUE, FALSE)}.}
+
+\item{range_groups}{An optional, more flexible alternative to \code{share_range}
+for which Matérn ranges are shared. A character vector with names
+\code{spatial} and/or \code{spatiotemporal} whose values are group labels; fields
+with the same label share a range. For delta models, a list with one such
+vector per model component, where labels are matched across components.
+E.g., \code{list(c(spatial = "a", spatiotemporal = "b"), c(spatial = "a", spatiotemporal = "c"))} shares the spatial range across the two
+components but estimates separate spatiotemporal ranges. Unnamed fields
+default to a spatial range per component that is shared with the
+spatiotemporal field. Labels for fields that are off are ignored.
+Spatially varying coefficients use the spatial range of their component.
+Cannot be combined with \code{share_range}.}
 
 \item{time_varying}{An optional one-sided formula describing covariates
 that should be modelled as a time-varying process. Set the type of

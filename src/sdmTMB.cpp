@@ -333,6 +333,8 @@ Type objective_function<Type>::operator()()
   DATA_INTEGER(normalize_in_r);
   DATA_INTEGER(flag);
   DATA_IVECTOR(share_range);
+  DATA_IMATRIX(sigma_prior); // apply the PC prior sigma part (spatial, spatiotemporal x model)
+  DATA_IMATRIX(range_prior); // apply the PC prior range part (spatial, spatiotemporal x model)
 
   // Prediction?
   DATA_INTEGER(do_predict);
@@ -1489,8 +1491,7 @@ Type objective_function<Type>::operator()()
           ln_tau_O(m), ln_kappa(0,m),
           priors(0), priors(1), priors(2), priors(3),
           true, /* log */
-          false, /* share range */
-          stan_flag);
+          sigma_prior(0,m), range_prior(0,m), stan_flag);
     }
     if (!sdmTMB::isNA(priors(4)) && !sdmTMB::isNA(priors(5)) &&
         !sdmTMB::isNA(priors(6)) && !sdmTMB::isNA(priors(7))) {
@@ -1499,7 +1500,7 @@ Type objective_function<Type>::operator()()
           ln_tau_E(m), ln_kappa(1,m),
           priors(4), priors(5), priors(6), priors(7),
           true, /* log */
-          share_range(m), stan_flag);
+          sigma_prior(1,m), range_prior(1,m), stan_flag);
     }
     if (!sdmTMB::isNA(priors(10))) { // AR1 random field rho
       jnll -= dnorm(rho(m), priors(10), priors(11), true);

@@ -20,20 +20,24 @@ rtmb_prior_inputs <- function(data) {
 
 # PC prior for a Matern field; `prior` is `pc_matern()`'s
 # c(range_gt, sigma_lt, range_prob, sigma_prob).
-rtmb_pc_matern <- function(log_tau, log_kappa, prior, share_range = FALSE,
-                           stan = FALSE) {
+rtmb_pc_matern <- function(log_tau, log_kappa, prior, include_sigma = TRUE,
+                           include_range = TRUE, stan = FALSE) {
   lambda_range <- -log(prior[[3L]]) * prior[[1L]]
   lambda_sigma <- -log(prior[[4L]]) / prior[[2L]]
   range <- sqrt(8) / exp(log_kappa)
   sigma <- exp(-log_tau - log_kappa) / sqrt(4 * pi)
-  log_density <- log(lambda_sigma) - lambda_sigma * sigma
-  if (!share_range) {
+  # The sigma part applies to estimated fields and the range part once per
+  # shared range. Each part's Jacobian term, from (log_tau, log_kappa) to
+  # (sigma, range), is log(sigma) or log(range).
+  log_density <- 0
+  if (include_sigma) {
+    log_density <- log_density + log(lambda_sigma) - lambda_sigma * sigma
+    if (stan) log_density <- log_density + log(sigma)
+  }
+  if (include_range) {
     log_density <- log_density + log(lambda_range) -
       2 * log(range) - lambda_range / range
-  }
-  if (stan) {
-    log_density <- log_density + log(sqrt(8)) - 2 * log(range) +
-      log(sqrt(4 * pi)) + log_kappa
+    if (stan) log_density <- log_density + log(range)
   }
   log_density
 }
@@ -58,11 +62,13 @@ rtmb_prior_nll <- function(par, theta, prepared) {
     }
     if (!is.null(prior$matern_s)) {
       nll <- nll - rtmb_pc_matern(par$ln_tau_O[[m]], par$ln_kappa[1L, m],
-        prior$matern_s, stan = stan)
+        prior$matern_s, include_sigma = prepared$sigma_prior[1L, m],
+        include_range = prepared$range_prior[1L, m], stan = stan)
     }
     if (!is.null(prior$matern_st)) {
       nll <- nll - rtmb_pc_matern(par$ln_tau_E[[m]], par$ln_kappa[2L, m],
-        prior$matern_st, share_range = prepared$share_range[[m]], stan = stan)
+        prior$matern_st, include_sigma = prepared$sigma_prior[2L, m],
+        include_range = prepared$range_prior[2L, m], stan = stan)
     }
     nll <- nll + normal(theta$rho[m], prior$ar1_rho)
     if (stan && !is.null(prior$ar1_rho)) {

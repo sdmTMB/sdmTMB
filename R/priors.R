@@ -53,7 +53,13 @@
 #' @param matern_st Same as `matern_s` but for the spatiotemporal random field.
 #'   Note that you will likely want to set `share_range = FALSE` if you choose
 #'   to set both a spatial and spatiotemporal Matérn PC prior since they both
-#'   include a prior on the spatial range parameter.
+#'   include a prior on the spatial range parameter. A shared range (see
+#'   `share_range` and `range_groups` in [sdmTMB()]) gets the range part of
+#'   the prior once, from the first field sharing it that is on and has a
+#'   prior: spatial before spatiotemporal, and the first delta component
+#'   before the second. Priors are skipped for fields that are off, except
+#'   that with only spatially varying coefficients (`spatial = "off"`),
+#'   `matern_s` sets the prior on their shared range.
 #' @param phi A `halfnormal()` prior for the dispersion parameter in the
 #'   observation distribution.
 #' @param ar1_rho A `normal()` prior for the AR1 random field parameter. Note

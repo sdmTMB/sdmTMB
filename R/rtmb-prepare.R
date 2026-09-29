@@ -5,6 +5,7 @@
 # change here without touching the other modules. Nothing here depends on
 # parameters.
 rtmb_prepare <- function(data) {
+  data <- legacy_matern_prior_flags(data)
   n_m <- ncol(data$y_i)
   components <- seq_len(n_m)
   on <- function(flag) isTRUE(flag == 1L)
@@ -33,6 +34,9 @@ rtmb_prepare <- function(data) {
     epsilon_ar1 = data$ar1_fields[components] == 1L,
     epsilon_rw = data$rw_fields[components] == 1L,
     share_range = data$share_range[components] == 1L,
+    # Which parts of the PC Matern priors apply, by field and component
+    sigma_prior = matrix(data$sigma_prior == 1L, 2L),
+    range_prior = matrix(data$range_prior == 1L, 2L),
     # SVC fields enter the predictor whenever present; like the C++ template,
     # their density is only evaluated for components with a spatial field.
     svc = svc,

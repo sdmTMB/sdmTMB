@@ -89,6 +89,18 @@ NULL
 #' @param share_range Logical: estimate a shared spatial and spatiotemporal
 #'   range parameter (`TRUE`, default) or independent range parameters
 #'   (`FALSE`). If a delta model, can be a list. E.g., `list(TRUE, FALSE)`.
+#' @param range_groups An optional, more flexible alternative to `share_range`
+#'   for which Matérn ranges are shared. A character vector with names
+#'   `spatial` and/or `spatiotemporal` whose values are group labels; fields
+#'   with the same label share a range. For delta models, a list with one such
+#'   vector per model component, where labels are matched across components.
+#'   E.g., `list(c(spatial = "a", spatiotemporal = "b"), c(spatial = "a",
+#'   spatiotemporal = "c"))` shares the spatial range across the two
+#'   components but estimates separate spatiotemporal ranges. Unnamed fields
+#'   default to a spatial range per component that is shared with the
+#'   spatiotemporal field. Labels for fields that are off are ignored.
+#'   Spatially varying coefficients use the spatial range of their component.
+#'   Cannot be combined with `share_range`.
 #' @param time_varying An optional one-sided formula describing covariates
 #'   that should be modelled as a time-varying process. Set the type of
 #'   process with `time_varying_type`. See the help for `time_varying_type`
@@ -644,6 +656,7 @@ sdmTMB <- function(
     spatiotemporal = c("iid", "ar1", "rw", "off"),
     spatial_model = c("spde", "sar", "car"),
     share_range = TRUE,
+    range_groups = NULL,
     time_varying = NULL,
     time_varying_type = c("rw", "rw0", "ar1"),
     spatial_varying = NULL,
@@ -814,11 +827,27 @@ sdmTMB <- function(
     no_spatial <- FALSE
   }
 
+  if (!is.null(range_groups)) {
+    if (!missing(share_range)) cli_abort("Specify only one of `share_range` or `range_groups`.")
+    if (is_areal) cli_abort("`range_groups` is not supported with areal domains.")
+  }
   share_range <- unlist(share_range)
   share_range_user <- share_range
   if (length(share_range) == 1L) share_range <- rep(share_range, n_m)
-  share_range[spatiotemporal == "off"] <- TRUE
-  share_range[spatial == "off"] <- TRUE
+  range_labels <- range_group_labels(n_m, spatial, spatiotemporal, share_range,
+    range_groups)
+  share_range <- is.na(range_labels[1L, ]) | range_labels[1L, ] == range_labels[2L, ]
+  # PC Matern prior parts by field (rows spatial, spatiotemporal): the sigma
+  # part for estimated fields, and the range part once per range group, from
+  # the first field that is on and has a prior. Spatially varying coefficients
+  # use the spatial range, so they count as a spatial field for the range.
+  has_prior <- c(!anyNA(priors$matern_s[1:2]), !anyNA(priors$matern_st[1:2]))
+  sigma_prior <- rbind(spatial == "on" & !omit_spatial_intercept,
+    spatiotemporal != "off") & has_prior
+  eligible <- rbind(spatial == "on", spatiotemporal != "off") & has_prior
+  prior_labels <- ifelse(eligible, range_labels, NA_character_)
+  range_prior <- eligible &
+    !duplicated(as.vector(prior_labels), incomparables = NA)
 
   spde <- mesh
   if (!mesh_missing && spatial_model == "spde" && is_areal_domain(spde)) {
@@ -1426,6 +1455,8 @@ sdmTMB <- function(
     priors_sigma_V = priors_sigma_V,
     priors = as.numeric(unlist(.priors)),
     share_range = as.integer(if (length(share_range) == 1L) rep(share_range, 2L) else share_range),
+    sigma_prior = sigma_prior * 1L,
+    range_prior = range_prior * 1L,
     include_spatial = as.integer(include_spatial), # changed later
     omit_spatial_intercept = as.integer(omit_spatial_intercept),
     proj_mesh = if (is_areal) dummy_sparse_1x1() else Matrix::Matrix(c(0, 0, 2:0), 3, 5), # dummy
@@ -1650,8 +1681,7 @@ sdmTMB <- function(
 
   if (!is.null(previous_fit)) tmb_map <- previous_fit$tmb_map
 
-  # this is complex; pulled it out into own function:
-  tmb_map$ln_kappa <- get_kappa_map(n_m = n_m, spatial = spatial, spatiotemporal = spatiotemporal, share_range = share_range)
+  tmb_map$ln_kappa <- get_kappa_map(range_labels)
   if (is_areal) {
     tmb_map$ln_kappa <- factor(rep(NA_integer_, length(tmb_params$ln_kappa)))
     areal_field_active <- any(spatial == "on" & !omit_spatial_intercept) ||

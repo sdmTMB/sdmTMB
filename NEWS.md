@@ -8,6 +8,26 @@
   from C++ to R and has ~50% fewer lines of code. This transition uncovered
   many bugs that have been fixed as documented in this file.
 
+* Add `range_groups` to `sdmTMB()`, a more flexible alternative to
+  `share_range`. Fields with the same label share a Matérn range, including
+  across delta model components, e.g.
+  `range_groups = list(c(spatial = "a", spatiotemporal = "b"), c(spatial = "a", spatiotemporal = "c"))`.
+  With PC Matérn priors, the prior's range term applies once per shared range,
+  from the first field in the group that is on and has a PC prior (spatial
+  before spatiotemporal, first component before second). Previously, with a
+  shared range and only `matern_st` set, the range got no prior at all. #490
+
+* PC Matérn priors now skip fields that are off. Previously, e.g., `matern_s`
+  was still evaluated for a delta component with `spatial = "off"`, which could
+  put a prior on another field's range. With only spatially varying
+  coefficients (`spatial = "off"`), `matern_s` still sets their range prior.
+
+* Fix the Jacobian adjustment for PC Matérn priors with `bayesian = TRUE`.
+  It is now `log(sigma) + log(range)` for the transformation from
+  `(ln_tau, ln_kappa)`, with the range part added once per shared range.
+  Previously the implied prior on the sampled parameters differed from the
+  specified PC prior, so Bayesian fits using `pc_matern()` priors will change.
+
 * Speed up the RTMB backend. `simulate()` and reports skip GMRF densities
   that aren't needed (~5x faster), each spatiotemporal field's density is one
   sparse GMRF evaluation rather than one per time step, and `predict()`
