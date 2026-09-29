@@ -494,6 +494,28 @@ get_eao <- function(obj,
   d
 }
 
+# `sdreport()` for an index objective. Projection rows don't enter the
+# likelihood, so at the fitted parameters the fixed-effect Hessian is the fit's
+# and needn't be recomputed (about two gradient evaluations per fixed effect).
+index_sdreport <- function(fit, new_obj, par,
+  hessian.fixed = fit_hessian_fixed(fit, new_obj, par), ...) {
+  sdreport_sdmTMB(new_obj, par.fixed = par, hessian.fixed = hessian.fixed, ...)
+}
+
+# The fit's fixed-effect Hessian, or NULL (recompute) unless it verifiably
+# applies to `new_obj` at `par`.
+fit_hessian_fixed <- function(fit, new_obj, par) {
+  sr <- fit$sd_report
+  if (!is.null(fit$control$profile) || is.null(sr) || !isTRUE(sr$pdHess) ||
+      !identical(unname(sr$par.fixed), unname(par)) ||
+      !isTRUE(all.equal(new_obj$fn(par), fit$model$objective,
+        tolerance = 1e-8))) {
+    return(NULL)
+  }
+  H <- tryCatch(solve(sr$cov.fixed), error = function(e) NULL)
+  if (is.null(H) || any(!is.finite(H))) NULL else H
+}
+
 get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
   trans = I, area = 1, vector = NULL, silent = TRUE, derived_link = NULL,
   area_missing = FALSE, ...) {
@@ -589,7 +611,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
 
     old_par <- obj$fit_obj$model$par
     bc <- FALSE ## done below
-    sr <- sdreport_sdmTMB(new_obj, par.fixed = old_par, bias.correct = bc, ...)
+    sr <- index_sdreport(obj$fit_obj, new_obj, old_par, bias.correct = bc, ...)
   } else if (rebuild_from_fit) {
     reinitialize(obj)
     if (bias_correct && obj$control$parallel > 1) {
@@ -645,7 +667,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
 
     old_par <- obj$model$par
     bc <- FALSE
-    sr <- sdreport_sdmTMB(new_obj, par.fixed = old_par, bias.correct = bc, ...)
+    sr <- index_sdreport(obj, new_obj, old_par, bias.correct = bc, ...)
     obj <- list(fit_obj = obj)
   } else {
     sr <- obj$sd_report # already done in sdmTMB(do_index = TRUE)

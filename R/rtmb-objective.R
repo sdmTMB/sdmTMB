@@ -6,10 +6,26 @@ rtmb_make_objective <- function(prepared) {
   function(par) rtmb_objective(par, prepared)
 }
 
-# RTMB objective: resolve parameters to their natural scale, evaluate latent
-# effects, compute predictors from them, evaluate observations and priors,
-# then register reports. `par` keeps the C++ parameter names and shapes.
+# RTMB objective: the joint negative log likelihood, registering reports.
 rtmb_objective <- function(par, prepared) {
+  result <- rtmb_evaluate(par, prepared)
+  rtmb_register_reports(result$reports, RTMB::REPORT)
+  rtmb_register_reports(result$adreports, RTMB::ADREPORT)
+  result$jnll
+}
+
+# Reports of the RTMB model at the full parameter list `par`, evaluated with
+# plain numbers. Equivalent to `obj$report()` without building (taping) an AD
+# object, which for large prediction grids dominates time and memory.
+rtmb_report_values <- function(data, par) {
+  rtmb_evaluate(par, rtmb_prepare(data))$reports
+}
+
+# Resolve parameters to their natural scale, evaluate latent effects, compute
+# predictors from them, and evaluate observations and priors. Returns `jnll`
+# and the `reports` and `adreports` lists. `par` keeps the C++ parameter names
+# and shapes.
+rtmb_evaluate <- function(par, prepared) {
   # During simulate(), random parameters arrive as simulation references.
   # Record which, then work with their current values throughout.
   simulating <- names(par)[vapply(par, inherits, NA, "simref")]
@@ -39,9 +55,8 @@ rtmb_objective <- function(par, prepared) {
       jnll <- jnll + derived$nll
     }
   }
-  rtmb_report(par, theta, prepared, effects, fitted, obs, projected, derived,
-    simulating)
-  jnll
+  c(list(jnll = jnll), rtmb_report(par, theta, prepared, effects, fitted, obs,
+    projected, derived, simulating))
 }
 
 # Natural-scale parameters, resolved once per evaluation so that fields,

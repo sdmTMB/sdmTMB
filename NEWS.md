@@ -8,6 +8,17 @@
   from C++ to R and has ~50% fewer lines of code. This transition uncovered
   many bugs that have been fixed as documented in this file.
 
+* Speed up the RTMB backend. `simulate()` and reports skip GMRF densities
+  that aren't needed (~5x faster), each spatiotemporal field's density is one
+  sparse GMRF evaluation rather than one per time step, and `predict()`
+  without `se_fit` or draws evaluates predictions directly rather than
+  building an AD object (~2x faster and ~half the peak memory on large grids).
+
+* `get_index()`, `get_cog()`, `get_eao()`, and `get_weighted_average()` are
+  faster by reusing the fitted model's fixed-effect Hessian instead of
+  recomputing it (e.g., ~40% faster for a delta model without bias
+  correction). The saving grows with the number of fixed effects.
+
 * `sdmTMB_cv()` is a bit faster and, with `save_models = TRUE`, returns
   smaller objects. Fold models are fit without the joint precision matrix
   unless `control` is supplied, and TMB's cached inner Cholesky factor is

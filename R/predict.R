@@ -369,17 +369,24 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
     }
     if (!"mgcv" %in% names(object)) object[["mgcv"]] <- FALSE
 
-    objective <- predict_objective(object, tmb_data)
-    new_tmb_obj <- objective$obj
-    lp <- objective$lp
+    if (predict_report_only(object, req, return_tmb_object)) {
+      # Reports alone need no AD object, which for large grids dominates
+      # prediction time and memory.
+      r <- rtmb_report_values(tmb_data, object$parlist)
+      new_tmb_obj <- NULL
+    } else {
+      objective <- predict_objective(object, tmb_data)
+      new_tmb_obj <- objective$obj
+      lp <- objective$lp
 
-    if (req$nsim > 0 || !is.null(req$mcmc_samples)) {
-      r <- predict_draw_reports(object, new_tmb_obj, lp, req)
-      if (return_tmb_report) return(r)
-      return(predict_draws(r, req, object, tmb_data, prep$nd))
+      if (req$nsim > 0 || !is.null(req$mcmc_samples)) {
+        r <- predict_draw_reports(object, new_tmb_obj, lp, req)
+        if (return_tmb_report) return(r)
+        return(predict_draws(r, req, object, tmb_data, prep$nd))
+      }
+
+      r <- new_tmb_obj$report(lp)
     }
-
-    r <- new_tmb_obj$report(lp)
     if (return_tmb_report) return(r)
     obj <- new_tmb_obj
 
@@ -424,6 +431,14 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
   }
 
   predict_return(cols, req, object, r, obj, tmb_data, return_tmb_object)
+}
+
+# Whether predictions need only the model's reports at the saved fitted
+# parameters, which the RTMB backend can evaluate without an AD object.
+predict_report_only <- function(object, req, return_tmb_object) {
+  backend_sdmTMB(object) == "rtmb" && !is.null(object$parlist) &&
+    !req$se_fit && req$nsim == 0 && is.null(req$mcmc_samples) &&
+    !return_tmb_object
 }
 
 # Build the prediction objective from `tmb_data` and return it with the fitted

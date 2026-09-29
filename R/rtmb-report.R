@@ -1,5 +1,5 @@
-# Register reports with the C++ template's names and dimensions. Post-fit
-# methods index these names.
+# Reports and ADREPORTs with the C++ template's names and dimensions, as two
+# named lists. Post-fit methods index these names.
 rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
                         projected, derived, simulating) {
   n_m <- prepared$n_m
@@ -103,9 +103,7 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
     if (requested[["total"]]) derived["total"],
     if (requested[["eao"]]) derived["log_eao"]
   )
-  rtmb_register_reports(reports, RTMB::REPORT)
-  rtmb_register_reports(adreports, RTMB::ADREPORT)
-  invisible(NULL)
+  list(reports = reports, adreports = adreports)
 }
 
 # Call `REPORT()` or `ADREPORT()` on each element of a named list, so each

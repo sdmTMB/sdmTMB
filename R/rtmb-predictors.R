@@ -57,7 +57,8 @@ rtmb_linear_predictor <- function(par, theta, effects, prepared, rows, m,
   }
   omega <- zero
   if (prepared$spatial[[m]]) {
-    omega <- rtmb_product(rows$A_rows, effects$omega_s[, m])
+    omega <- rtmb_product(rows$A_station, effects$omega_s[, m])[
+      rows$station_index]
   }
   epsilon <- zero
   if (prepared$temporal[[m]]) {
@@ -68,7 +69,8 @@ rtmb_linear_predictor <- function(par, theta, effects, prepared, rows, m,
   svc <- zero
   if (prepared$svc) {
     zeta <- do.call(cbind, lapply(seq_len(ncol(rows$z)), function(z) {
-      rtmb_product(rows$A_rows, effects$zeta_s[, z, m])
+      rtmb_product(rows$A_station, effects$zeta_s[, z, m])[
+        rows$station_index]
     }))
     for (z in seq_len(ncol(rows$z))) svc <- svc + zeta[, z] * rows$z[, z]
   }
