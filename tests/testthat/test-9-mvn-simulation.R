@@ -267,6 +267,33 @@ test_that("rmvnorm sim prediction works with various sims_vars", {
   expect_error(predict(m3, nsim = 3, sims_var = 'epsilon_st', model = 1), "component 1")
 })
 
+test_that("non-spatial models return est_non_rf predictions and draws", {
+  set.seed(42)
+  d <- data.frame(x = seq(-1, 1, length.out = 40))
+  d$y <- 1 + 2 * d$x + rnorm(nrow(d), sd = 0.3)
+
+  for (backend in c("tmb", "rtmb")) {
+    fit <- sdmTMB(y ~ x, data = d, spatial = "off",
+      control = sdmTMBcontrol(backend = backend))
+    for (nd in list(NULL, d[c(3, 1, 7), ])) {
+      p <- predict(fit, newdata = nd)
+      expect_equal(p$est_non_rf, p$est, info = backend)
+
+      set.seed(1)
+      reports <- predict(fit, newdata = nd, nsim = 3,
+        return_tmb_report = TRUE)
+      expected <- do.call(cbind, lapply(reports, function(r) r$proj_fe[, 1]))
+      set.seed(1)
+      draws <- predict(fit, newdata = nd, nsim = 3, sims_var = "est_non_rf")
+      expect_equal(dim(draws), c(nrow(p), 3L))
+      expect_equal(draws, expected, info = backend)
+      expect_true(all(is.finite(draws)))
+    }
+    expect_error(predict(fit, nsim = 2, sims_var = "est_rf"),
+      'no "est_rf"')
+  }
+})
+
 test_that("nsim with s() and no other random effects works", {
   # https://github.com/sdmTMB/sdmTMB/issues/233
   # non-spatial model with smooth

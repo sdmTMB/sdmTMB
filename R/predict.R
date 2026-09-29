@@ -706,7 +706,8 @@ predict_terms <- function(x, object, family_spec, row_family_id) {
           omega_s = as.logical(d$include_spatial[m]),
           epsilon_st = !as.logical(d$spatial_only[m]),
           zeta_s = TRUE,
-          n_m == 2L || !as.logical(d$no_spatial) # est_non_rf, est_rf
+          est_non_rf = TRUE,
+          n_m == 2L || !as.logical(d$no_spatial) # est_rf
         )
         if (!include) next
         values <- if (svc) x[[col]][, j, m] else x[[col]][, m]
