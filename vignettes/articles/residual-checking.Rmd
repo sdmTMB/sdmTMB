@@ -324,9 +324,8 @@ However, what happens if we were to sample the random effects with each simulati
 
 ```{r}
 set.seed(1)
-s <- replicate(200, simulate(fit, nsim = 1, type = "mle-mvn"), simplify = "matrix")
-attr(s, "type") <- "mle-mvn"
-dharma_residuals(s, fit)
+simulate(fit, nsim = 200, type = "mle-mvn", mle_mvn_samples = "multiple") |>
+  dharma_residuals(fit)
 ```
 
 We get back to something with the wrong reference distribution for comparison.
