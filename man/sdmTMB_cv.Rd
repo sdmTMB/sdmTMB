@@ -19,6 +19,8 @@ sdmTMB_cv(
   use_initial_fit = FALSE,
   save_models = TRUE,
   future_globals = NULL,
+  predictive = c("plugin", "random", "joint"),
+  nsim = 100L,
   ...
 )
 }
@@ -76,6 +78,20 @@ object. This vector is appended to \code{TRUE} and passed to the
 \code{future.globals} in \code{\link[future.apply:future_lapply]{future.apply::future_lapply()}}. Useful if global
 objects are used to specify arguments such as priors or families.}
 
+\item{predictive}{Which predictive density to score held-out data with.
+\code{"plugin"} (default) evaluates the likelihood at the estimated parameters
+and random effects. \code{"random"} integrates over the random effects'
+approximate (Laplace) posterior given the estimated fixed effects.
+\code{"joint"} integrates over the joint approximate posterior of all
+parameters. The plug-in predictive ignores uncertainty in the random
+effects and can be overconfident when random fields are flexible (e.g.,
+fine meshes) or forecast (LFOCV). See Details.}
+
+\item{nsim}{Number of posterior draws per fold if \code{predictive} is
+\code{"random"} or \code{"joint"}. The Monte Carlo log-mean-exp estimate is biased
+low by \eqn{O(1/\code{nsim})}; check that results are stable to
+increasing \code{nsim}.}
+
 \item{...}{All other arguments required to run the \code{\link[=sdmTMB]{sdmTMB()}} model. The
 \code{weights} argument is supported and will be combined with the internal
 fold-assignment mechanism (held-out data are assigned weight 0).}
@@ -84,14 +100,17 @@ fold-assignment mechanism (held-out data are assigned weight 0).}
 A list:
 \itemize{
 \item \code{data}: Original data plus columns for fold ID (\code{cv_fold}), CV predicted
-value (\code{cv_predicted}), CV log likelihood (\code{cv_loglik}), and CV deviance
-residuals (\code{cv_deviance_resid}).
+value (\code{cv_predicted}), CV log likelihood (\code{cv_loglik}), plug-in CV log
+likelihood (\code{cv_loglik_plugin}; identical to \code{cv_loglik} if
+\code{predictive = "plugin"}), and CV deviance residuals (\code{cv_deviance_resid}).
 \item \code{models}: A list of fitted models, one per fold. \code{NULL} if \code{save_models = FALSE}.
-\item \code{fold_loglik}: Sum of log likelihoods of held-out data per fold (log
-predictive density per fold). More positive values indicate better
-out-of-sample prediction.
-\item \code{sum_loglik}: Sum of \code{fold_loglik} across all folds (total log predictive
-density). Use this to compare models; larger values are better.
+\item \code{fold_loglik}: Sum of \code{cv_loglik} per fold (sum of pointwise log
+predictive densities of the held-out data). More positive values indicate
+better out-of-sample prediction.
+\item \code{sum_loglik}: Sum of \code{fold_loglik} across all folds (total pointwise log
+predictive density). Use this to compare models; larger values are better.
+\item \code{sum_loglik_plugin}: Sum of \code{cv_loglik_plugin}.
+\item \code{predictive}: The \code{predictive} argument used for \code{cv_loglik}.
 \item \code{pdHess}: Logical vector: was the Hessian positive definite for each fold?
 \item \code{converged}: Logical: did all folds converge (all \code{pdHess} \code{TRUE})?
 \item \code{max_gradients}: Maximum absolute gradient for each fold.
@@ -107,6 +126,24 @@ via \code{fold_ids}. See Ward and Anderson (2025) in the References and the
 \href{https://sdmTMB.github.io/sdmTMB/articles/cross-validation.html}{cross-validation vignette}.
 }
 \details{
+\strong{Plug-in vs. integrated predictive densities}
+
+With \code{predictive = "plugin"}, held-out observations are scored at the
+conditional mode of the random effects, \eqn{\log p(y \mid \hat{u},
+\hat{\theta})}, which treats the random fields as known. With
+\code{"random"}, the score is \eqn{\log E[p(y \mid u, \hat{\theta})]} over
+\eqn{u \sim N(\hat{u}, H^{-1})}, where \eqn{H} is the inner (Laplace)
+Hessian of the training fit. With \code{"joint"}, fixed effects and variance
+parameters (on their unconstrained scale) are also drawn from the joint
+precision matrix. Each is averaged over \code{nsim} draws per fold separately
+for each held-out observation, so \code{fold_loglik} is
+\eqn{\sum_i \log E[p(y_i \mid u)]}. If
+\code{reml = TRUE}, fixed effects are treated as random effects and are
+therefore also drawn under \code{"random"}. For Gaussian observations,
+\code{"random"} is exact given \eqn{\hat{\theta}}; for other families it
+relies on the Laplace approximation's Gaussian approximation to the
+random effects' posterior.
+
 \strong{Parallel processing}
 
 Parallel processing can be used by setting a \code{future::plan()}.

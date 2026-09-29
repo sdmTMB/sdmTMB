@@ -140,8 +140,13 @@ gather_sims <- function(object, nsim = 200) {
 }
 
 rmvnorm_prec <- function(mu, tmb_sd, n_sims) {
-  z <- matrix(stats::rnorm(length(mu) * n_sims), ncol = n_sims)
   L <- Matrix::Cholesky(tmb_sd[["jointPrecision"]], super = TRUE)
+  rmvnorm_chol(mu, L, n_sims)
+}
+
+# Draws from N(mu, Q^-1) given a sparse Cholesky factor `L` of Q
+rmvnorm_chol <- function(mu, L, n_sims) {
+  z <- matrix(stats::rnorm(length(mu) * n_sims), ncol = n_sims)
   z <- Matrix::solve(L, z, system = "Lt")
   z <- Matrix::solve(L, z, system = "Pt")
   z <- as.matrix(z)

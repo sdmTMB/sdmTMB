@@ -644,8 +644,7 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
         new_par <- .one_sample_posterior(object)
         new_par <- replicate(nsim, new_par)
       } else {
-        new_par <- lapply(seq_len(nsim), \(i) .one_sample_posterior(object))
-        new_par <- do.call(cbind, new_par)
+        new_par <- .posterior_re_sampler(object)(nsim)
       }
     } else if (type == "mle-eb") {
       new_par <- object$tmb_obj$env$last.par.best

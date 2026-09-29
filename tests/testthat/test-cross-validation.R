@@ -930,10 +930,9 @@ test_that("CV fold models skip the joint precision and cached Cholesky factor", 
   expect_false("jointPrecision" %in% names(m$sd_report))
   expect_null(m$tmb_obj$env$L.created.by.newton)
 
-  # MVN draws still work and rebuild the factor on demand
+  # MVN draws still work
   r <- residuals(m, type = "mle-mvn")
   expect_length(r, nrow(d))
-  expect_false(is.null(m$tmb_obj$env$L.created.by.newton))
   p <- suppressMessages(predict(m, nsim = 2))
   expect_equal(dim(p), c(nrow(d), 2L))
 
@@ -942,4 +941,84 @@ test_that("CV fold models skip the joint precision and cached Cholesky factor", 
   x <- sdmTMB_cv(density ~ 1, data = d, mesh = mesh, family = tweedie(),
     k_folds = 2, parallel = FALSE, control = sdmTMBcontrol())
   expect_true("jointPrecision" %in% names(x$models[[1]]$sd_report))
+
+test_that("Integrated predictive: plugin is unchanged and outputs are well formed", {
+  skip_on_cran()
+  skip_on_ci()
+
+  d <- pcod_2011
+  fold <- rep(1:2, length.out = nrow(d))
+  fit_cv <- function(...) {
+    sdmTMB_cv(density ~ 1, data = d, mesh = pcod_mesh_2011,
+      family = delta_gamma(), fold_ids = fold, parallel = FALSE, ...)
+  }
+  plugin <- fit_cv()
+  expect_identical(plugin$predictive, "plugin")
+  expect_identical(plugin$data$cv_loglik, plugin$data$cv_loglik_plugin)
+  expect_identical(plugin$sum_loglik, plugin$sum_loglik_plugin)
+
+  for (p in c("random", "joint")) {
+    set.seed(1)
+    x <- fit_cv(predictive = p, nsim = 50)
+    expect_identical(x$predictive, p)
+    expect_equal(x$data$cv_loglik_plugin, plugin$data$cv_loglik_plugin)
+    expect_equal(x$sum_loglik_plugin, plugin$sum_loglik_plugin)
+    expect_equal(length(x$data$cv_loglik), nrow(d))
+    expect_true(all(is.finite(x$data$cv_loglik)))
+    expect_equal(x$sum_loglik, sum(x$fold_loglik))
+    expect_false(isTRUE(all.equal(x$sum_loglik, x$sum_loglik_plugin)))
+  }
+})
+
+test_that("Integrated predictive handles models without random effects", {
+  skip_on_cran()
+  skip_on_ci()
+
+  d <- pcod_2011
+  fold <- rep(1:2, length.out = nrow(d))
+  expect_error(
+    sdmTMB_cv(present ~ depth_scaled, data = d, mesh = pcod_mesh_2011,
+      spatial = "off", family = binomial(), fold_ids = fold,
+      parallel = FALSE, predictive = "random", nsim = 10),
+    regexp = "random effects"
+  )
+  set.seed(1)
+  x <- sdmTMB_cv(present ~ depth_scaled, data = d, mesh = pcod_mesh_2011,
+    spatial = "off", family = binomial(), fold_ids = fold,
+    parallel = FALSE, predictive = "joint", nsim = 50)
+  expect_true(all(is.finite(x$data$cv_loglik)))
+})
+
+test_that("Integrated predictive matches the analytic Gaussian predictive", {
+  skip_on_cran()
+  skip_on_ci()
+
+  set.seed(1)
+  mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 30)
+  d <- sdmTMB_simulate(~ 1, data = pcod_2011, mesh = mesh, family = gaussian(),
+    range = 30, sigma_O = 1, phi = 0.2, B = 0.5)
+  fold <- rep(1:2, length.out = nrow(d))
+  weights <- seq(1, 2, length.out = nrow(d))
+  set.seed(2)
+  x <- sdmTMB_cv(observed ~ 1, data = d, mesh = mesh, fold_ids = fold,
+    weights = weights, parallel = FALSE, predictive = "random", nsim = 5000)
+
+  expected <- numeric(nrow(d))
+  for (k in 1:2) {
+    object <- x$models[[k]]
+    obj <- object$tmb_obj
+    par <- obj$env$last.par.best
+    H <- obj$env$spHess(par, random = TRUE)
+    A <- object$tmb_data$A_st[object$tmb_data$A_spatial_index + 1L, , drop = FALSE]
+    held <- which(object$data$cv_fold == k)
+    a <- A[held, , drop = FALSE]
+    field_var <- Matrix::colSums(Matrix::t(a) * Matrix::solve(H, Matrix::t(a)))
+    mu <- as.vector(par[["b_j"]] + a %*% par[names(par) == "omega_s"])
+    sd <- sqrt(field_var + exp(par[["ln_phi"]])^2)
+    rows <- object$data[["_sdm_order_"]][held]
+    expected[rows] <- weights[rows] *
+      stats::dnorm(d$observed[rows], mu, sd, log = TRUE)
+  }
+  expect_equal(x$data$cv_loglik, expected, tolerance = 0.01)
+  expect_gt(x$sum_loglik, x$sum_loglik_plugin)
 })

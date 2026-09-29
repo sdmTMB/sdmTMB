@@ -123,6 +123,18 @@ ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
 #'   object. This vector is appended to `TRUE` and passed to the
 #'   `future.globals` in [future.apply::future_lapply()]. Useful if global
 #'   objects are used to specify arguments such as priors or families.
+#' @param predictive Which predictive density to score held-out data with.
+#'   `"plugin"` (default) evaluates the likelihood at the estimated parameters
+#'   and random effects. `"random"` integrates over the random effects'
+#'   approximate (Laplace) posterior given the estimated fixed effects.
+#'   `"joint"` integrates over the joint approximate posterior of all
+#'   parameters. The plug-in predictive ignores uncertainty in the random
+#'   effects and can be overconfident when random fields are flexible (e.g.,
+#'   fine meshes) or forecast (LFOCV). See Details.
+#' @param nsim Number of posterior draws per fold if `predictive` is
+#'   `"random"` or `"joint"`. The Monte Carlo log-mean-exp estimate is biased
+#'   low by \eqn{O(1/\code{nsim})}; check that results are stable to
+#'   increasing `nsim`.
 #' @param ... All other arguments required to run the [sdmTMB()] model. The
 #'   `weights` argument is supported and will be combined with the internal
 #'   fold-assignment mechanism (held-out data are assigned weight 0).
@@ -131,19 +143,40 @@ ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
 #' @return
 #' A list:
 #' * `data`: Original data plus columns for fold ID (`cv_fold`), CV predicted
-#'   value (`cv_predicted`), CV log likelihood (`cv_loglik`), and CV deviance
-#'   residuals (`cv_deviance_resid`).
+#'   value (`cv_predicted`), CV log likelihood (`cv_loglik`), plug-in CV log
+#'   likelihood (`cv_loglik_plugin`; identical to `cv_loglik` if
+#'   `predictive = "plugin"`), and CV deviance residuals (`cv_deviance_resid`).
 #' * `models`: A list of fitted models, one per fold. `NULL` if `save_models = FALSE`.
-#' * `fold_loglik`: Sum of log likelihoods of held-out data per fold (log
-#'   predictive density per fold). More positive values indicate better
-#'   out-of-sample prediction.
-#' * `sum_loglik`: Sum of `fold_loglik` across all folds (total log predictive
-#'   density). Use this to compare models; larger values are better.
+#' * `fold_loglik`: Sum of `cv_loglik` per fold (sum of pointwise log
+#'   predictive densities of the held-out data). More positive values indicate
+#'   better out-of-sample prediction.
+#' * `sum_loglik`: Sum of `fold_loglik` across all folds (total pointwise log
+#'   predictive density). Use this to compare models; larger values are better.
+#' * `sum_loglik_plugin`: Sum of `cv_loglik_plugin`.
+#' * `predictive`: The `predictive` argument used for `cv_loglik`.
 #' * `pdHess`: Logical vector: was the Hessian positive definite for each fold?
 #' * `converged`: Logical: did all folds converge (all `pdHess` `TRUE`)?
 #' * `max_gradients`: Maximum absolute gradient for each fold.
 #'
 #' @details
+#' **Plug-in vs. integrated predictive densities**
+#'
+#' With `predictive = "plugin"`, held-out observations are scored at the
+#' conditional mode of the random effects, \eqn{\log p(y \mid \hat{u},
+#' \hat{\theta})}, which treats the random fields as known. With
+#' `"random"`, the score is \eqn{\log E[p(y \mid u, \hat{\theta})]} over
+#' \eqn{u \sim N(\hat{u}, H^{-1})}, where \eqn{H} is the inner (Laplace)
+#' Hessian of the training fit. With `"joint"`, fixed effects and variance
+#' parameters (on their unconstrained scale) are also drawn from the joint
+#' precision matrix. Each is averaged over `nsim` draws per fold separately
+#' for each held-out observation, so `fold_loglik` is
+#' \eqn{\sum_i \log E[p(y_i \mid u)]}. If
+#' `reml = TRUE`, fixed effects are treated as random effects and are
+#' therefore also drawn under `"random"`. For Gaussian observations,
+#' `"random"` is exact given \eqn{\hat{\theta}}; for other families it
+#' relies on the Laplace approximation's Gaussian approximation to the
+#' random effects' posterior.
+#'
 #' **Parallel processing**
 #'
 #' Parallel processing can be used by setting a `future::plan()`.
@@ -248,8 +281,15 @@ sdmTMB_cv <- function(
     use_initial_fit = FALSE,
     save_models = TRUE,
     future_globals = NULL,
+    predictive = c("plugin", "random", "joint"),
+    nsim = 100L,
     ...) {
   if (k_folds < 1) cli_abort("`k_folds` must be >= 1.")
+  predictive <- match.arg(predictive)
+  if (predictive != "plugin" && (length(nsim) != 1L || nsim < 1)) {
+    cli_abort("`nsim` must be a single positive integer.")
+  }
+  nsim <- as.integer(nsim)
 
   spde <- mesh
   data[["_sdm_order_"]] <- seq_len(nrow(data))
@@ -469,11 +509,14 @@ sdmTMB_cv <- function(
       cv_data$cv_deviance_resid <- NA_real_
     }
 
-    # Report only the selected validation observations at the fitted values.
+    # Report only the selected validation observations. Validation rows get
+    # unit weight here and user likelihood weights are applied afterwards so
+    # integrated scores weight the log of the predictive density.
     tmb_data <- object$tmb_data
     score_weights <- numeric(nrow(object$data))
-    score_weights[validation_index] <- object$likelihood_weights[validation_index]
+    score_weights[validation_index] <- 1
     tmb_data$weights_i <- score_weights
+    lik_weights <- object$likelihood_weights[validation_index]
 
     scoring_obj <- make_sdmTMB_adfun(
       data = tmb_data,
@@ -484,7 +527,13 @@ sdmTMB_cv <- function(
       silent = TRUE
     )
     r <- scoring_obj$report(object$tmb_obj$env$last.par.best)
-    cv_data$cv_loglik <- -r$jnll_obs[validation_index]
+    cv_data$cv_loglik_plugin <- -lik_weights * r$jnll_obs[validation_index]
+    if (predictive == "plugin") {
+      cv_data$cv_loglik <- cv_data$cv_loglik_plugin
+    } else {
+      cv_data$cv_loglik <- lik_weights *
+        cv_integrated_loglik(object, scoring_obj, validation_index, predictive, nsim)
+    }
 
     # regenerated on demand by `.ensure_inner_cholesky()`
     if (save_models) object$tmb_obj$env$L.created.by.newton <- NULL
@@ -542,6 +591,8 @@ sdmTMB_cv <- function(
     models = models,
     fold_loglik = fold_cv_ll,
     sum_loglik = sum(data$cv_loglik),
+    sum_loglik_plugin = sum(data$cv_loglik_plugin),
+    predictive = predictive,
     converged = converged,
     pdHess = pdHess,
     max_gradients = max_grad
@@ -557,7 +608,69 @@ cv_control <- function(control) {
 
 log_sum_exp <- function(x) {
   max_x <- max(x)
+  if (!is.finite(max_x)) return(max_x)
   max_x + log(sum(exp(x - max_x)))
+}
+
+# Returns a function that draws `n` full parameter vectors (as columns) from
+# the training fit's approximate posterior. "random": random effects from
+# N(u_hat, H_uu^-1) via .posterior_re_sampler(), other parameters fixed at
+# their estimates.
+# "joint": all parameters from the joint precision (or `cov.fixed` without
+# random effects).
+cv_param_sampler <- function(object, predictive) {
+  obj <- object$tmb_obj
+  par_best <- obj$env$last.par.best
+  has_re <- length(obj$env$random) > 0L
+  if (predictive == "random") {
+    if (!has_re) {
+      cli_abort(c(
+        "`predictive = \"random\"` requires a model with random effects.",
+        "i" = "Use `predictive = \"plugin\"` or `\"joint\"`."
+      ))
+    }
+    return(.posterior_re_sampler(object))
+  }
+  sdr <- object$sd_report
+  if (has_re) {
+    if (is.null(sdr[["jointPrecision"]])) {
+      sdr <- sdreport_sdmTMB(obj, getJointPrecision = TRUE)
+    }
+    return(function(n) rmvnorm_prec(par_best, sdr, n))
+  }
+  L <- t(chol(sdr$cov.fixed))
+  function(n) {
+    z <- matrix(stats::rnorm(length(par_best) * n), ncol = n)
+    par_best + as.matrix(L %*% z)
+  }
+}
+
+# Per-observation log(mean_s p(y_i | draw_s)) for the validation rows.
+# Draws are generated and scored in chunks to bound memory.
+cv_integrated_loglik <- function(object, scoring_obj, validation_index,
+                                 predictive, nsim, chunk_size = 100L) {
+  sampler <- tryCatch(cv_param_sampler(object, predictive), error = function(e) e)
+  if (inherits(sampler, "error")) {
+    if (grepl("requires a model with random effects", conditionMessage(sampler))) {
+      stop(sampler)
+    }
+    cli_warn(c(
+      "Could not sample from the fold's approximate posterior; returning NA.",
+      "x" = conditionMessage(sampler)
+    ))
+    return(rep(NA_real_, length(validation_index)))
+  }
+  n_val <- length(validation_index)
+  sizes <- rep(chunk_size, nsim %/% chunk_size)
+  if (nsim %% chunk_size > 0L) sizes <- c(sizes, nsim %% chunk_size)
+  ll <- lapply(sizes, function(n) {
+    draws <- sampler(n)
+    vapply(seq_len(n), function(s) {
+      -scoring_obj$report(draws[, s])$jnll_obs[validation_index]
+    }, FUN.VALUE = numeric(n_val))
+  })
+  ll <- matrix(unlist(ll), nrow = n_val)
+  apply(ll, 1L, log_sum_exp) - log(nsim)
 }
 
 #' @export
@@ -587,6 +700,10 @@ print.sdmTMB_cv <- function(x, ...) {
   cat("Access these values in the `fold_loglik` list element.\n")
   cat("\n")
   cat("Sum of out-of-sample log likelihoods:", round(x$sum_loglik, 2), "\n")
+  if (!is.null(x$predictive) && x$predictive != "plugin") {
+    cat("(Integrated over the '", x$predictive, "' predictive; plug-in sum: ",
+      round(x$sum_loglik_plugin, 2), ")\n", sep = "")
+  }
   cat("More positive values imply better out-of-sample prediction.\n")
   cat("Access this value in the `sum_loglik` list element.\n")
 }

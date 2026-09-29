@@ -1,5 +1,19 @@
 # sdmTMB (development version)
 
+* Speed up `simulate.sdmTMB(type = "mle-mvn", mle_mvn_samples = "multiple")`
+  by factoring the random effects' Hessian once and drawing all samples
+  together rather than calling TMB's `MC()` once per simulation. Draws are
+  unchanged for a given seed.
+
+* Add `predictive` and `nsim` arguments to `sdmTMB_cv()`. `predictive =
+  "random"` or `"joint"` scores held-out data with a predictive density
+  integrated over the approximate posterior of the random effects (or all
+  parameters) rather than at their estimated values (`"plugin"`, the
+  default and previous behaviour). The plug-in predictive can be
+  overconfident with flexible random fields such as those on fine meshes.
+  Plug-in values are always returned in `cv_loglik_plugin` and
+  `sum_loglik_plugin`.
+
 * **Add an RTMB backend**. The default for now remains TMB, but eventually the
   TMB backend will be dropped in favour of RTMB. Set it per model fit with
   `control = sdmTMBcontrol(backend = "rtmb")` or per session with
