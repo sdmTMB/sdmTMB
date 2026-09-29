@@ -12,7 +12,7 @@
   that aren't needed (~5x faster), each spatiotemporal field's density is one
   sparse GMRF evaluation rather than one per time step, and `predict()`
   without `se_fit` or draws evaluates predictions directly rather than
-  building an AD object (~2x faster and ~half the peak memory on large grids).
+  building an AD object (about 2x faster and half the peak memory on large grids).
 
 * `get_index()`, `get_cog()`, `get_eao()`, and `get_weighted_average()` are
   faster by reusing the fitted model's fixed-effect Hessian instead of
