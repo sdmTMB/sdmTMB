@@ -49,3 +49,12 @@ test-optional: compile-opt
 
 cran-check:
 	echo "devtools::check(\".\")" | $(R) --slave
+
+# Reference-fit regression suite (see reference-fits/README.md)
+REF_CORES ?= 6
+
+reference-check: compile-opt
+	$(R) --slave -f reference-fits/run.R --args check --backend both --cores $(REF_CORES)
+
+reference-record: compile-opt
+	$(R) --slave -f reference-fits/run.R --args record --cores $(REF_CORES)

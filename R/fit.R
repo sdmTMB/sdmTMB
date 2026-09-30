@@ -1516,7 +1516,7 @@ sdmTMB <- function(
   )
   if (family_spec$n_f == 1L && identical(family$link, "inverse") && family$family[1] %in% c("Gamma", "gaussian", "student") && !has_two_components) {
     fam <- family
-    if (family$family == "student") fam$family <- "gaussian"
+    if (family$family == "student") fam <- stats::gaussian(link = "inverse")
     temp <- mgcv::gam(formula = formula[[1]], data = data, family = fam)
     tmb_params$b_j <- stats::coef(temp)
   }
