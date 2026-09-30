@@ -27,7 +27,7 @@ library(sdmTMB)
 ```
 
 Each Gaussian random field in an sdmTMB model has a Matérn range: the distance at which two points are effectively independent.
-By default, the spatial and spatiotemporal fields of a model component share one range (`share_range = TRUE`), and `share_range = FALSE` estimates one range for each.
+By default, the spatial and spatiotemporal fields of a model component (linear predictor) share one range (`share_range = TRUE`), and `share_range = FALSE` estimates one range for each.
 
 The `range_groups` argument is a more flexible alternative.
 You give each field a label, and fields with the same label share a range.
