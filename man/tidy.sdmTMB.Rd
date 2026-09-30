@@ -60,6 +60,11 @@ Currently, \code{effects = "ran_pars"} also includes dispersion-related terms
 (e.g., \code{phi}) only when dispersion is scalar. With \code{dispformula},
 use \code{effects = "dispersion"} to extract dispersion-model coefficients.
 
+Spatially varying coefficient SDs are \code{sigma_Z} rows, one per coefficient
+in the order of the \code{spatial_varying} model matrix columns. If
+\code{range_groups} in \code{\link[=sdmTMB]{sdmTMB()}} gives any of a component's coefficients a
+range other than the spatial one, \code{range_Z} rows follow in the same order.
+
 Standard errors for spatial variance terms fit in log space (e.g., variance
 terms, range, or parameters associated with the observation error) are
 omitted to avoid confusion. Confidence intervals are still available.

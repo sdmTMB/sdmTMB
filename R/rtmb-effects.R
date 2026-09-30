@@ -166,28 +166,32 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
     result$value
   }
   for (m in seq_len(n_m)) {
-    if (prepared$spatial[[m]] || prepared$temporal[[m]] ||
-        prepared$svc_density[[m]]) {
-      Q <- rtmb_precision(inputs, theta, 1L, m)
+    # Precision for each `ln_kappa` row, built once per row that is used
+    Q <- vector("list", nrow(par$ln_kappa))
+    precision <- function(r) {
+      if (is.null(Q[[r]])) Q[[r]] <<- rtmb_precision(inputs, theta, r, m)
+      Q[[r]]
     }
     if (prepared$spatial[[m]]) {
       scale <- rtmb_gmrf_scale(theta$log_sigma_O[1L, m], par$ln_kappa[1L, m],
         inputs)
-      effects$omega_s[, m] <- gmrf(effects$omega_s[, m], Q, scale, "omega_s")
+      effects$omega_s[, m] <- gmrf(effects$omega_s[, m], precision(1L), scale,
+        "omega_s")
     }
     if (prepared$svc_density[[m]]) {
       for (z in seq_len(dim(effects$zeta_s)[2L])) {
-        scale <- rtmb_gmrf_scale(theta$log_sigma_Z[z, m], par$ln_kappa[1L, m],
+        r <- prepared$svc_kappa_row[z, m]
+        scale <- rtmb_gmrf_scale(theta$log_sigma_Z[z, m], par$ln_kappa[r, m],
           inputs)
-        effects$zeta_s[, z, m] <- gmrf(effects$zeta_s[, z, m], Q, scale,
-          "zeta_s")
+        effects$zeta_s[, z, m] <- gmrf(effects$zeta_s[, z, m], precision(r),
+          scale, "zeta_s")
       }
     }
     log_sigma_E <- rtmb_log_sigma_E(par, prepared, m)
     effects$log_sigma_E[, m] <- log_sigma_E
     if (prepared$temporal[[m]]) {
       shared <- prepared$share_range[[m]] || rtmb_areal(inputs)
-      Q_st <- if (shared) Q else rtmb_precision(inputs, theta, 2L, m)
+      Q_st <- precision(if (shared) 1L else 2L)
       add(rtmb_spatiotemporal_field(effects$epsilon_st, par, theta, prepared,
         Q_st, log_sigma_E, simulate("epsilon_st"), m), "epsilon_st")
     }

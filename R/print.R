@@ -32,13 +32,8 @@ print_model_info <- function(x) {
 
   formula <- paste0("Formula: ", extract_call_name(x$call$formula), "\n")
 
-  time_name <- extract_call_name(x$call$time)
-  if (!is.null(time_name) && time_name != "NULL") {
-    time <- paste0("Time column: ", time_name, "\n")
-    time <- gsub('\\"', "", time)
-    time <- gsub("\\'", "", time)
-  } else {
-    time <- NULL
+  time <- if (!is.null(x$time) && x$time != "_sdmTMB_time") {
+    paste0("Time column: ", x$time, "\n")
   }
 
   mesh <- paste0("Mesh: ", extract_call_name(x$call$mesh), " (", covariance, " covariance)\n")
@@ -359,6 +354,11 @@ print_range <- function(x, m = 1L, digits = 2L) {
   if (is_areal_fit(x)) {
     return(NULL)
   }
+  # E.g., `spatial = "off"` with SVCs that all have their own ranges
+  fields_on <- attr(x$range_groups, "on")
+  if (!is.null(fields_on) && !any(fields_on[1:2, m])) {
+    return(NULL)
+  }
   b <- tidy(x, effects = "ran_pars", model = m, silent = TRUE)
   range <- b$estimate[b$term == "range"]
   if (is.null(range)) {
@@ -367,11 +367,13 @@ print_range <- function(x, m = 1L, digits = 2L) {
 
   range <- mround(range, digits)
   range_text <- if (x$tmb_data$share_range[m]) {
-    paste0("Mat\u00e9rn range: ", range[1], "\n")
+    paste0("Mat\u00e9rn range: ", range[1], range_sharing_note(x, 1:2, m), "\n")
   } else {
     paste0(
-      "Mat\u00e9rn range (spatial): ", range[1], "\n",
-      "Mat\u00e9rn range (spatiotemporal): ", range[2], "\n"
+      "Mat\u00e9rn range (spatial): ", range[1],
+      range_sharing_note(x, 1L, m), "\n",
+      "Mat\u00e9rn range (spatiotemporal): ", range[2],
+      range_sharing_note(x, 2L, m), "\n"
     )
   }
 
@@ -384,6 +386,46 @@ print_range <- function(x, m = 1L, digits = 2L) {
   }
 
   range_text
+}
+
+# " (shared with ...)" naming the other fields that are on and share the range
+# of `ln_kappa` rows `rows` of component `m`, or "" if none. SVCs using their
+# component's spatial range are the default and aren't named.
+range_sharing_note <- function(x, rows, m) {
+  labels <- x$range_groups
+  if (is.null(labels) || is.na(labels[rows[1L], m])) return("")
+  label <- labels[rows[1L], m]
+  same <- attr(labels, "on") & !is.na(labels) & labels == label
+  same[rows, m] <- FALSE
+  if (nrow(labels) > 2L) {
+    svc <- -(1:2)
+    spatial <- labels[rep(1L, nrow(labels) - 2L), , drop = FALSE]
+    default <- !is.na(spatial) & !is.na(labels[svc, , drop = FALSE]) &
+      labels[svc, , drop = FALSE] == spatial
+    same[svc, ] <- same[svc, , drop = FALSE] & !default
+  }
+  if (!any(same)) return("")
+  who <- vapply(seq_len(ncol(labels)), function(k) {
+    fields <- paste(rownames(labels)[same[, k]], collapse = " and ")
+    if (!nzchar(fields) || k == m) fields else paste("model", k, fields)
+  }, character(1L))
+  paste0(" (shared with ", paste(who[nzchar(who)], collapse = "; "), ")")
+}
+
+# Range line for each SVC of component `m` with a range other than its
+# component's spatial range; "" for the others.
+print_svc_ranges <- function(x, m = 1L, report, digits = 2L) {
+  labels <- x$range_groups
+  out <- character(length(x$spatial_varying))
+  if (is.null(labels) || nrow(labels) <= 2L || is_areal_fit(x)) return(out)
+  for (z in seq_along(out)) {
+    r <- 2L + z
+    if (!attr(labels, "on")[r, m] ||
+        isTRUE(labels[r, m] == labels[1L, m])) next
+    out[z] <- paste0("Mat\u00e9rn range (", x$spatial_varying[z], "): ",
+      mround(report$range_Z[z, m], digits), range_sharing_note(x, r, m), "\n")
+  }
+  out
 }
 
 print_anisotropy <- function(x, m = 1L, digits = 1L, return_dat = FALSE) {
@@ -516,11 +558,12 @@ print_other_parameters <- function(x, m = 1L) {
   if ("sigma_Z" %in% b$term) {
     # tidy() takes sigma_Z from the sdreport,
     # which condenses them to unique values if mapped, so:
-    sigma_Z <- x$tmb_obj$report(x$tmb_obj$env$last.par.best)$sigma_Z
-    sigma_Z <- sigma_Z[,m,drop=TRUE]
+    report <- x$tmb_obj$report(x$tmb_obj$env$last.par.best)
+    sigma_Z <- report$sigma_Z[,m,drop=TRUE]
     a <- mround(sigma_Z, 2L)
     sigma_label <- if (is_areal) paste("Spatially varying coefficient", areal_label, "field scale") else "Spatially varying coefficient SD"
-    sigma_Z <- paste0(sigma_label, " (", x$spatial_varying,  "): ", a, "\n")
+    sigma_Z <- paste0(sigma_label, " (", x$spatial_varying,  "): ", a, "\n",
+      print_svc_ranges(x, m, report))
     sigma_Z <- gsub("\\(\\(", "\\(", sigma_Z) # ((Intercept))
     sigma_Z <- gsub("\\)\\)", "\\)", sigma_Z) # ((Intercept))
     if (isTRUE(x$svc_omega_is_intercept)) {

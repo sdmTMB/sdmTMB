@@ -12,6 +12,14 @@
   `share_range`. Fields with the same label share a Matérn range, including
   across delta model components, e.g.
   `range_groups = list(c(spatial = "a", spatiotemporal = "b"), c(spatial = "a", spatiotemporal = "c"))`.
+  A single vector applies to all delta components, e.g.
+  `range_groups = c(spatial = "a", spatiotemporal = "b")` shares one spatial
+  and one spatiotemporal range across both components.
+  With the RTMB backend, spatially varying coefficients can also get their own
+  ranges or share another field's range, e.g.
+  `range_groups = c(depth_scaled = "d")`. These ranges appear as `range_Z`
+  rows in `tidy(effects = "ran_pars")`, and `print()` notes which fields
+  share a range when it's not the default.
   With PC Matérn priors, the prior's range term applies once per shared range,
   from the first field in the group that is on and has a PC prior (spatial
   before spatiotemporal, first component before second). Previously, with a
@@ -21,6 +29,18 @@
   was still evaluated for a delta component with `spatial = "off"`, which could
   put a prior on another field's range. With only spatially varying
   coefficients (`spatial = "off"`), `matern_s` still sets their range prior.
+
+* Fix `print()` showing `Time column: character` (or a variable name) instead
+  of the time column name in some cases, and showing the class (e.g.,
+  `Mesh: sdmTMBmesh`, `Data: tbl_df`) instead of the mesh and data names after
+  `update()`.
+
+* Add a `matern_svc` PC Matérn prior to `sdmTMBpriors()` for spatially varying
+  coefficient fields (RTMB backend only). One prior applies to every
+  coefficient field; since the sigma part is on each coefficient's SD, it's
+  most sensible with covariates on similar scales. A coefficient's range gets
+  the range part only if no spatial or spatiotemporal field sharing that range
+  already has a PC prior. #490
 
 * Fix the Jacobian adjustment for PC Matérn priors with `bayesian = TRUE`.
   It is now `log(sigma) + log(range)` for the transformation from

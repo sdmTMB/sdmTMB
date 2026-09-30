@@ -5,8 +5,10 @@ rtmb_prior_inputs <- function(data) {
   template <- sdmTMBpriors()
   template$b <- template$sigma_V <- NULL
   sizes <- lengths(template)
-  stopifnot(sum(sizes) == length(data$priors))
-  values <- split(data$priors,
+  # fits saved before `matern_svc` lack its (trailing) values
+  values <- c(data$priors, rep(NA, sum(sizes) - length(data$priors)))
+  stopifnot(sum(sizes) == length(values))
+  values <- split(values,
     factor(rep(names(sizes), sizes), levels = names(sizes)))
   priors <- lapply(values, function(x) if (anyNA(x)) NULL else unname(x))
   if (data$priors_b_n > 0L) {
@@ -69,6 +71,14 @@ rtmb_prior_nll <- function(par, theta, prepared) {
       nll <- nll - rtmb_pc_matern(par$ln_tau_E[[m]], par$ln_kappa[2L, m],
         prior$matern_st, include_sigma = prepared$sigma_prior[2L, m],
         include_range = prepared$range_prior[2L, m], stan = stan)
+    }
+    if (!is.null(prior$matern_svc)) {
+      for (z in seq_len(nrow(prepared$svc_kappa_row))) {
+        nll <- nll - rtmb_pc_matern(par$ln_tau_Z[z, m],
+          par$ln_kappa[prepared$svc_kappa_row[z, m], m], prior$matern_svc,
+          include_sigma = prepared$sigma_prior[2L + z, m],
+          include_range = prepared$range_prior[2L + z, m], stan = stan)
+      }
     }
     nll <- nll + normal(theta$rho[m], prior$ar1_rho)
     if (stan && !is.null(prior$ar1_rho)) {

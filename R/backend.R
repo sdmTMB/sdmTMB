@@ -22,6 +22,9 @@ make_sdmTMB_adfun <- function(data, parameters, map, random = NULL,
   if (!is.null(data$proj_vector)) data$proj_vector <- as.matrix(data$proj_vector)
   data <- legacy_matern_prior_flags(data)
   if (backend == "tmb") {
+    if (nrow(parameters$ln_kappa) > 2L) {
+      cli_abort("Separate ranges for spatially varying coefficients require the RTMB backend.")
+    }
     obj <- TMB::MakeADFun(data = data, parameters = parameters, map = map,
       random = random, profile = profile, DLL = "sdmTMB", silent = silent, ...)
   } else {

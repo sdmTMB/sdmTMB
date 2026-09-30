@@ -1,0 +1,117 @@
+---
+title: "Sharing Matérn ranges with range_groups"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Sharing Matérn ranges with range_groups}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+**If the code in this vignette has not been evaluated, a rendered version is available on the [documentation site](https://sdmTMB.github.io/sdmTMB/index.html) under 'Articles'.**
+
+```{r setup, include = FALSE, cache=FALSE}
+EVAL <- identical(Sys.getenv("NOT_CRAN"), "true")
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.asp = 0.618,
+  eval = EVAL,
+  purl = EVAL
+)
+```
+
+```{r packages, message=FALSE, warning=TRUE}
+library(sdmTMB)
+```
+
+Each Gaussian random field in an sdmTMB model has a Matérn range: the distance at which two points are effectively independent.
+By default, the spatial and spatiotemporal fields of a model component share one range (`share_range = TRUE`), and `share_range = FALSE` estimates one range for each.
+
+The `range_groups` argument is a more flexible alternative.
+You give each field a label, and fields with the same label share a range.
+Labels work across the components of a delta model and, with the RTMB backend, for spatially varying coefficients.
+
+We'll use the Pacific Cod survey data and a coarse mesh to keep things fast.
+
+```{r mesh}
+mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 15)
+```
+
+## Spatial and spatiotemporal fields
+
+Labels are given as a character vector named by field.
+It doesn't matter what the labels you give are, as long as they are unique when they should be separate and the same when they should be shared/mirrored.
+These two models are the same:
+
+```{r separate}
+fit_sep <- sdmTMB(
+  density ~ 0 + as.factor(year),
+  data = pcod, mesh = mesh, time = "year", family = tweedie(),
+  range_groups = c(spatial = "s", spatiotemporal = "st")
+)
+fit_sep2 <- update(fit_sep, range_groups = NULL, share_range = FALSE)
+logLik(fit_sep)
+logLik(fit_sep2)
+```
+
+Giving both fields the same label (or leaving `range_groups` out) shares the range:
+
+```{r shared}
+fit_shared <- update(fit_sep, range_groups = c(spatial = "s", spatiotemporal = "s"))
+tidy(fit_shared, "ran_pars")
+```
+
+## Delta models
+
+In a delta model, labels are matched across the two components.
+A single vector applies to both components, so this model estimates one spatial range and one spatiotemporal range, each shared by the encounter and positive components:
+
+```{r delta-shared}
+fit_dg <- sdmTMB(
+  density ~ 0 + as.factor(year),
+  data = pcod, mesh = mesh, time = "year", family = delta_gamma(),
+  range_groups = c(spatial = "s", spatiotemporal = "st")
+)
+fit_dg
+```
+
+The printed output notes which ranges are shared across components.
+A list gives one vector per linear predictor (sometimes called component here).
+Here, the spatial range is shared across components but each component gets its own spatiotemporal range:
+
+```{r delta-list}
+fit_dg2 <- update(
+  fit_dg,
+  range_groups = list(
+    c(spatial = "s", spatiotemporal = "st1"),
+    c(spatial = "s", spatiotemporal = "st2")
+  )
+)
+AIC(fit_dg, fit_dg2)
+```
+
+## Spatially varying coefficients
+
+Spatially varying coefficient fields use their component's spatial range by default.
+With the RTMB backend, you can name a coefficient (by its `spatial_varying` model matrix column name) to give it its own range or to share another field's range:
+
+```{r svc}
+mesh_2011 <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 7)
+fit_svc <- sdmTMB(
+  density ~ depth_scaled,
+  data = pcod_2011, mesh = mesh_2011, family = tweedie(),
+  spatial_varying = ~ 0 + depth_scaled,
+  range_groups = c(spatial = "s", depth_scaled = "d"),
+  control = sdmTMBcontrol(backend = "rtmb")
+)
+tidy(fit_svc, "ran_pars")
+```
+
+The coefficient's range appears as `range_Z`, in the same order as the `sigma_Z` rows.
+
+## Priors
+
+PC Matérn priors (see `?sdmTMBpriors`) put a prior on each range once, however many fields share it.
+Spatially varying coefficient fields can get their own PC prior with `sdmTMBpriors(matern_svc = pc_matern(...))`.

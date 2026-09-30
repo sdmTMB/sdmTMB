@@ -66,8 +66,9 @@ rtmb_aniso_bases <- function(a) {
   )
 }
 
-# Precision for component `m`; `r = 1` for spatial and SVC fields and `r = 2`
-# for spatiotemporal fields. Areal precisions have no range parameter.
+# Precision for component `m` and `ln_kappa` row `r`: `r = 1` for spatial
+# fields, `r = 2` for spatiotemporal fields, and SVC fields use their
+# `svc_kappa_row`. Areal precisions have no range parameter.
 rtmb_precision <- function(inputs, theta, r, m) {
   switch(inputs$type,
     spde = {

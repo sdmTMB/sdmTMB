@@ -327,7 +327,12 @@ test_that("range_groups maps ranges within and across components", {
       spatiotemporal = c("off", "off")),
     factor(c(1, 1, NA, NA))
   )
-  expect_error(map(c(spatial = "a")), "one element per model component")
+  # A single vector applies to all components, so labels share across them
+  expect_identical(map(c(spatial = "a")), factor(c(1, 1, 1, 1)))
+  expect_identical(map(c(spatial = "a", spatiotemporal = "b")),
+    factor(c(1, 2, 1, 2)))
+  expect_identical(map(c(spatiotemporal = "b")), factor(c(1, 2, 3, 2)))
+  expect_error(map(list(c(spatial = "a"))), "one element per model component")
   expect_error(map(list(c(spatial = "a"), c(foo = "a"))), "names")
   expect_error(map(list(c("a", "b"), NULL)), "names")
 })
@@ -355,6 +360,12 @@ test_that("range_groups builds models that match on both backends", {
     c(spatial = "a", spatiotemporal = "c")))
   expect_identical(fit$tmb_map$ln_kappa, factor(c(1, 2, 1, 3)))
   expect_identical(fit$tmb_data$share_range, c(0L, 0L))
+  # A single vector shares its labels across components
+  expect_identical(
+    build(range_groups = c(spatial = "a", spatiotemporal = "b"))$tmb_map$ln_kappa,
+    factor(c(1, 2, 1, 2)))
+  expect_identical(build(range_groups = c(spatial = "a"))$tmb_map$ln_kappa,
+    factor(c(1, 1, 1, 1)))
   d <- fit$tmb_data
   d$normalize_in_r <- 0L
   p <- fit$tmb_params
@@ -392,8 +403,8 @@ test_that("PC Matern range priors apply once per range group", {
   # With only spatially varying coefficients, matern_s sets their range prior
   svc <- list(sdmTMBpriors(matern_s = pc), spatial = "off",
     spatiotemporal = "off", spatial_varying = ~ 0 + depth_scaled)
-  expect_identical(do.call(sigma_prior, svc), matrix(c(0L, 0L), 2L))
-  expect_identical(do.call(range_prior, svc), matrix(c(1L, 0L), 2L))
+  expect_identical(do.call(sigma_prior, svc), matrix(c(0L, 0L, 0L), 3L))
+  expect_identical(do.call(range_prior, svc), matrix(c(1L, 0L, 0L), 3L))
   expect_identical(range_prior(sdmTMBpriors(matern_s = pc, matern_st = pc)),
     matrix(c(1L, 0L), 2L))
   expect_identical(range_prior(sdmTMBpriors(matern_st = pc)),

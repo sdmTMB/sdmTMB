@@ -454,6 +454,7 @@ model.frame.sdmTMB <- function(formula, ...) {
 update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
   call <- object$call
   new_args <- list(...)
+  new_exprs <- as.list(substitute(list(...)))[-1L]
 
   # handle formula update if provided
   if (!missing(formula.)) {
@@ -504,7 +505,17 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
     eval_env$data <- object$data
 
     # evaluate the call in this environment
-    eval(call, envir = eval_env)
+    fit <- eval(call, envir = eval_env)
+    # the call has the mesh and data objects inlined; keep their names instead
+    # (for print())
+    for (arg_name in c("mesh", "data")) {
+      fit$call[[arg_name]] <- if (arg_name %in% names(new_exprs)) {
+        new_exprs[[arg_name]]
+      } else {
+        object$call[[arg_name]]
+      }
+    }
+    fit
   } else {
     call
   }

@@ -547,33 +547,110 @@ replicate_df <- function(dat, time_name, time_values) {
 }
 
 # Range-group label for each `ln_kappa` entry (row 1 spatial, row 2
-# spatiotemporal, one column per component); entries with the same label share
-# a range. Unnamed fields get a spatial range per component, shared with the
-# spatiotemporal field if `share_range`. A field that is off takes the other
-# field's label, and both are NA if both are off.
+# spatiotemporal, then, if any spatially varying coefficient in `svc` has its
+# own label, one row per coefficient; one column per component). Entries with
+# the same label share a range. Unnamed fields get a spatial range per
+# component, shared with the spatiotemporal field if `share_range`; unnamed
+# coefficients use their component's spatial range. A field that is off takes
+# the other field's label, and both are NA if both are off. With
+# `omit_spatial_intercept`, the spatial field is on only if a coefficient uses
+# its range. Attribute `on` flags the fields that are on.
 range_group_labels <- function(n_m, spatial, spatiotemporal, share_range,
-                               range_groups = NULL) {
+                               range_groups = NULL, svc = character(0),
+                               omit_spatial_intercept = FALSE) {
   fields <- c("spatial", "spatiotemporal")
+  if (!is.null(range_groups) && any(svc %in% fields)) {
+    cli_abort("`range_groups` can't be used with a `spatial_varying` coefficient named `spatial` or `spatiotemporal`.")
+  }
+  valid <- c(fields, svc)
+  n_z <- length(svc)
   if (is.null(range_groups)) range_groups <- vector("list", n_m)
-  if (!is.list(range_groups)) range_groups <- list(range_groups)
+  if (!is.list(range_groups)) range_groups <- rep(list(range_groups), n_m)
   if (length(range_groups) != n_m) {
     cli_abort("`range_groups` must be a list with one element per model component ({n_m}).")
   }
-  labels <- matrix(NA_character_, 2L, n_m, dimnames = list(fields, NULL))
+  labels <- matrix(NA_character_, 2L + n_z, n_m, dimnames = list(valid, NULL))
+  on <- matrix(FALSE, 2L + n_z, n_m, dimnames = list(valid, NULL))
   for (m in seq_len(n_m)) {
     g <- range_groups[[m]]
     if (!is.null(g) && (!is.character(g) || anyNA(g) || is.null(names(g)) ||
-        !all(names(g) %in% fields) || anyDuplicated(names(g)))) {
-      cli_abort("Each element of `range_groups` must be a character vector with names `spatial` and/or `spatiotemporal`.")
+        !all(names(g) %in% valid) || anyDuplicated(names(g)))) {
+      cli_abort(c("Each element of `range_groups` must be a character vector named by field.",
+        "i" = "Valid names: {.val {valid}}."))
     }
-    s <- if ("spatial" %in% names(g)) g[["spatial"]] else paste0(".spatial", m)
-    st <- if ("spatiotemporal" %in% names(g)) g[["spatiotemporal"]] else
-      if (share_range[m]) s else paste0(".spatiotemporal", m)
-    labels[, m] <- c(s, st)
-    on <- c(spatial[m] == "on", spatiotemporal[m] != "off")
-    if (!all(on)) labels[, m] <- if (any(on)) labels[on, m] else NA_character_
+    label <- function(name, default) if (name %in% names(g)) g[[name]] else default
+    s <- label("spatial", paste0(".spatial", m))
+    st <- label("spatiotemporal",
+      if (share_range[m]) s else paste0(".spatiotemporal", m))
+    z <- vapply(svc, label, character(1L), default = s, USE.NAMES = FALSE)
+    # Coefficient fields exist wherever the (internal) spatial field is on
+    z_on <- rep(spatial[m] == "on", n_z)
+    on[, m] <- c(
+      spatial[m] == "on" && (!omit_spatial_intercept || any(z == s)),
+      spatiotemporal[m] != "off", z_on)
+    labels[, m] <- c(s, st, z)
+    f <- on[1:2, m]
+    if (!all(f)) labels[1:2, m] <- if (any(f)) labels[1:2, m][f] else NA_character_
+    if (!z_on[1L] || !n_z) labels[-(1:2), m] <- NA_character_
   }
+  # Coefficient rows are needed only if some coefficient's range differs from
+  # its component's spatial row
+  z_labels <- labels[-(1:2), , drop = FALSE]
+  s_labels <- labels[rep(1L, n_z), , drop = FALSE]
+  if (!any(!is.na(z_labels) & (is.na(s_labels) | z_labels != s_labels))) {
+    labels <- labels[1:2, , drop = FALSE]
+    on <- on[1:2, , drop = FALSE]
+  }
+  attr(labels, "on") <- on
   labels
+}
+
+# Zero-based `ln_kappa` row used by each spatially varying coefficient
+# (coefficient by component): the first row sharing its range label, or the
+# spatial row where the coefficient has no field.
+svc_kappa_rows <- function(labels, n_z) {
+  rows <- matrix(0L, n_z, ncol(labels))
+  if (nrow(labels) > 2L) {
+    for (m in seq_len(ncol(labels))) {
+      row <- match(labels[-(1:2), m], labels[, m], incomparables = NA)
+      rows[, m] <- ifelse(is.na(row), 1L, row) - 1L
+    }
+  }
+  rows
+}
+
+# Is a `pc_matern()` prior set? NULL for `sdmTMBpriors()` lists that predate it.
+has_pc_prior <- function(prior) !is.null(prior) && !anyNA(prior[1:2])
+
+# Which parts of the PC Matern priors apply, by field (rows spatial,
+# spatiotemporal, then each spatially varying coefficient) and component: the
+# sigma part for estimated fields, and the range part once per range group,
+# from the first field that is on and has a prior (spatial and spatiotemporal
+# fields before coefficients). With `spatial = "off"`, coefficients using the
+# spatial range make the spatial row count for the range unless `matern_svc`
+# is set.
+matern_prior_flags <- function(priors, labels, spatial, spatiotemporal,
+                               omit_spatial_intercept, n_z) {
+  n_m <- ncol(labels)
+  has_svc_prior <- has_pc_prior(priors$matern_svc)
+  has_prior <- c(has_pc_prior(priors$matern_s), has_pc_prior(priors$matern_st),
+    rep(has_svc_prior, n_z))
+  svc_on <- matrix(rep(spatial == "on", each = n_z), n_z, n_m)
+  field_on <- rbind(spatial == "on" & !omit_spatial_intercept,
+    spatiotemporal != "off", svc_on)
+  on <- rbind(unname(attr(labels, "on")[1:2, , drop = FALSE]), svc_on)
+  if (has_svc_prior) on[1L, ] <- field_on[1L, ]
+  all_labels <- labels
+  if (nrow(labels) == 2L) all_labels <- labels[c(1L, 2L, rep(1L, n_z)), , drop = FALSE]
+  sigma_prior <- field_on & has_prior
+  eligible <- on & has_prior
+  prior_labels <- ifelse(eligible, all_labels, NA_character_)
+  order <- c(as.vector(prior_labels[1:2, ]), as.vector(prior_labels[-(1:2), ]))
+  first <- !duplicated(order, incomparables = NA)
+  range_prior <- eligible
+  range_prior[1:2, ] <- first[seq_len(2L * n_m)]
+  range_prior[-(1:2), ] <- first[-seq_len(2L * n_m)]
+  list(sigma_prior = sigma_prior, range_prior = range_prior & eligible)
 }
 
 # `ln_kappa` map factor from `range_group_labels()`

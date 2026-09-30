@@ -91,15 +91,28 @@ NULL
 #'   (`FALSE`). If a delta model, can be a list. E.g., `list(TRUE, FALSE)`.
 #' @param range_groups An optional, more flexible alternative to `share_range`
 #'   for which Matérn ranges are shared. A character vector with names
-#'   `spatial` and/or `spatiotemporal` whose values are group labels; fields
-#'   with the same label share a range. For delta models, a list with one such
-#'   vector per model component, where labels are matched across components.
+#'   `spatial` and/or `spatiotemporal` (and optionally spatially varying
+#'   coefficient names; see below) whose values are group labels; fields
+#'   with the same label share a range. For delta models, labels are matched
+#'   across components. A list gives one such vector per model component.
 #'   E.g., `list(c(spatial = "a", spatiotemporal = "b"), c(spatial = "a",
 #'   spatiotemporal = "c"))` shares the spatial range across the two
-#'   components but estimates separate spatiotemporal ranges. Unnamed fields
+#'   components but estimates separate spatiotemporal ranges. A single vector
+#'   applies to all components, so its labels share ranges across them: e.g.,
+#'   `c(spatial = "a", spatiotemporal = "b")` estimates one spatial and one
+#'   spatiotemporal range shared by both components. (In contrast, a single
+#'   `share_range` value is recycled without tying components.) Unnamed fields
 #'   default to a spatial range per component that is shared with the
 #'   spatiotemporal field. Labels for fields that are off are ignored.
-#'   Spatially varying coefficients use the spatial range of their component.
+#'   Spatially varying coefficients use the spatial range of their component
+#'   unless named by their `spatial_varying` model matrix column name (e.g.,
+#'   `c(depth_scaled = "d")` to estimate a separate range for `depth_scaled`,
+#'   or `c(spatiotemporal = "b", depth_scaled = "b")` to share it with the
+#'   spatiotemporal range). Separate ranges for spatially varying coefficients
+#'   require `sdmTMBcontrol(backend = "rtmb")` and are reported as `range_Z`
+#'   (`obj$report()`). With `spatial = "off"`, PC Matérn priors on `matern_s`
+#'   apply to the range of spatially varying coefficients only if they use the
+#'   default (spatial) range.
 #'   Cannot be combined with `share_range`.
 #' @param time_varying An optional one-sided formula describing covariates
 #'   that should be modelled as a time-varying process. Set the type of
@@ -834,20 +847,6 @@ sdmTMB <- function(
   share_range <- unlist(share_range)
   share_range_user <- share_range
   if (length(share_range) == 1L) share_range <- rep(share_range, n_m)
-  range_labels <- range_group_labels(n_m, spatial, spatiotemporal, share_range,
-    range_groups)
-  share_range <- is.na(range_labels[1L, ]) | range_labels[1L, ] == range_labels[2L, ]
-  # PC Matern prior parts by field (rows spatial, spatiotemporal): the sigma
-  # part for estimated fields, and the range part once per range group, from
-  # the first field that is on and has a prior. Spatially varying coefficients
-  # use the spatial range, so they count as a spatial field for the range.
-  has_prior <- c(!anyNA(priors$matern_s[1:2]), !anyNA(priors$matern_st[1:2]))
-  sigma_prior <- rbind(spatial == "on" & !omit_spatial_intercept,
-    spatiotemporal != "off") & has_prior
-  eligible <- rbind(spatial == "on", spatiotemporal != "off") & has_prior
-  prior_labels <- ifelse(eligible, range_labels, NA_character_)
-  range_prior <- eligible &
-    !duplicated(as.vector(prior_labels), incomparables = NA)
 
   spde <- mesh
   if (!mesh_missing && spatial_model == "spde" && is_areal_domain(spde)) {
@@ -1116,6 +1115,21 @@ sdmTMB <- function(
     svc_design <- NULL
   }
   n_z <- ncol(z_i)
+
+  range_labels <- range_group_labels(n_m, spatial, spatiotemporal, share_range,
+    range_groups, svc = colnames(z_i),
+    omit_spatial_intercept = omit_spatial_intercept)
+  if (nrow(range_labels) > 2L && backend == "tmb") {
+    cli_abort(c("Separate ranges for spatially varying coefficients require the RTMB backend.",
+      "i" = "Use `control = sdmTMBcontrol(backend = \"rtmb\")`."))
+  }
+  share_range <- is.na(range_labels[1L, ]) | range_labels[1L, ] == range_labels[2L, ]
+  prior_flags <- matern_prior_flags(priors, range_labels, spatial,
+    spatiotemporal, omit_spatial_intercept, n_z)
+  if (n_z > 0L && has_pc_prior(priors$matern_svc) && backend == "tmb") {
+    cli_abort(c("The `matern_svc` prior requires the RTMB backend.",
+      "i" = "Use `control = sdmTMBcontrol(backend = \"rtmb\")`."))
+  }
 
   if (any(grepl("offset\\(", formula))) {
     cli_abort("Detected `offset()` in formula. Offsets in sdmTMB must be specified via the `offset` argument.")
@@ -1455,8 +1469,9 @@ sdmTMB <- function(
     priors_sigma_V = priors_sigma_V,
     priors = as.numeric(unlist(.priors)),
     share_range = as.integer(if (length(share_range) == 1L) rep(share_range, 2L) else share_range),
-    sigma_prior = sigma_prior * 1L,
-    range_prior = range_prior * 1L,
+    sigma_prior = prior_flags$sigma_prior * 1L,
+    range_prior = prior_flags$range_prior * 1L,
+    svc_kappa_row = svc_kappa_rows(range_labels, n_z),
     include_spatial = as.integer(include_spatial), # changed later
     omit_spatial_intercept = as.integer(omit_spatial_intercept),
     proj_mesh = if (is_areal) dummy_sparse_1x1() else Matrix::Matrix(c(0, 0, 2:0), 3, 5), # dummy
@@ -1520,7 +1535,7 @@ sdmTMB <- function(
     ln_tau_O = rep(0, n_m),
     ln_tau_Z = matrix(0, n_z, n_m),
     ln_tau_E = rep(0, n_m),
-    ln_kappa = matrix(0, 2L, n_m),
+    ln_kappa = matrix(0, nrow(range_labels), n_m),
     log_kappaS_nl = .nonlocal_log_kappaS_start(spde$loc_xy, nonlocal_n_covariates),
     log_kappaT_nl = numeric(nonlocal_n_covariates),
     # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
@@ -1727,19 +1742,14 @@ sdmTMB <- function(
     tmb_params[[names(start)[i]]] <- start[[i]]
   }
 
-  if (!is.matrix(tmb_params[["ln_kappa"]]) && "ln_kappa" %in% names(start)) {
-    msg <- c(
-      "Note that `ln_kappa` must be a matrix of nrow 2 and ncol models (regular=1, delta=2).",
+  if ("ln_kappa" %in% names(start) && (!is.matrix(tmb_params[["ln_kappa"]]) ||
+      nrow(tmb_params[["ln_kappa"]]) != nrow(range_labels))) {
+    cli_abort(c(
+      paste0("Note that `ln_kappa` must be a matrix of nrow ", nrow(range_labels),
+        " and ncol models (regular=1, delta=2)."),
+      "Rows are the spatial and spatiotemporal ranges, followed by one row per spatially varying coefficient if any has its own range in `range_groups`.",
       "It should be the same value in each row if `share_range = TRUE`."
-    )
-    cli_abort(msg)
-  }
-  if (nrow(tmb_params[["ln_kappa"]]) != 2L && "ln_kappa" %in% names(start)) {
-    msg <- c(
-      "Note that `ln_kappa` must be a matrix of nrow 2 and ncol models (regular=1, delta=2).",
-      "It should be the same value in each row if `share_range = TRUE`."
-    )
-    cli_abort(msg)
+    ))
   }
 
   data$sdm_x <- data$sdm_y <- data$sdm_orig_id <- data$sdm_spatial_id <- NULL
@@ -1860,6 +1870,8 @@ sdmTMB <- function(
       tmb_random = tmb_random,
       backend = backend,
       spatial_varying = spatial_varying,
+      # Resolved range-group labels by `ln_kappa` row and component
+      range_groups = range_labels,
       nonlocal_formula = nonlocal_formula,
       nonlocal_formula_parsed = nonlocal_formula_parsed,
       nonlocal_parsed = nonlocal_parsed,

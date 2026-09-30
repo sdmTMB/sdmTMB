@@ -30,6 +30,11 @@
 #' (e.g., `phi`) only when dispersion is scalar. With `dispformula`,
 #' use `effects = "dispersion"` to extract dispersion-model coefficients.
 #'
+#' Spatially varying coefficient SDs are `sigma_Z` rows, one per coefficient
+#' in the order of the `spatial_varying` model matrix columns. If
+#' `range_groups` in [sdmTMB()] gives any of a component's coefficients a
+#' range other than the spatial one, `range_Z` rows follow in the same order.
+#'
 #' Standard errors for spatial variance terms fit in log space (e.g., variance
 #' terms, range, or parameters associated with the observation error) are
 #' omitted to avoid confusion. Confidence intervals are still available.
@@ -142,6 +147,8 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     p$logit_rho_sar <- .subset_model(p$logit_rho_sar)
 
     p$range <- .subset_model(p$range)
+    p$range_Z <- .subset_model(p$range_Z)
+    p$log_range_Z <- .subset_model(p$log_range_Z)
     p$sigma_E <- .subset_model(p$sigma_E)
     p$sigma_O <- .subset_model(p$sigma_O)
     p$sigma_Z <- .subset_model(p$sigma_Z)
@@ -264,6 +271,13 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   if (x$tmb_data$spatial_covariate) {
     log_name <- c(log_name, "log_sigma_Z")
     name <- c(name, "sigma_Z")
+  }
+  # SVC ranges, one per SVC, only if some SVC in this component has a range
+  # other than the spatial one
+  svc_kappa_row <- x$tmb_data$svc_kappa_row
+  if (!is_areal && !is.null(svc_kappa_row) && any(svc_kappa_row[, model] != 0L)) {
+    log_name <- c(log_name, "log_range_Z")
+    name <- c(name, "range_Z")
   }
   if (x$tmb_data$random_walk) {
     log_name <- c(log_name, "ln_tau_V")
@@ -461,6 +475,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
 
   if (all(!x$tmb_data$include_spatial) && all(x$tmb_data$spatial_only)) out_re$range <- NULL
+  # E.g., `spatial = "off"` with SVCs that all have their own ranges
+  fields_on <- attr(x$range_groups, "on")
+  if (!is.null(fields_on) && !any(fields_on[1:2, model])) out_re$range <- NULL
   if (is_areal) out_re$range <- NULL
 
   out_re <- do.call("rbind", out_re)
@@ -607,7 +624,8 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   if (all(is.na(out_re$group_name))) out_re$group_name <- NULL
 
   out <- unique(out) # range can be duplicated
-  out_re <- unique(out_re)
+  # SVCs sharing a range keep one row each
+  out_re <- out_re[!(duplicated(out_re) & out_re$term != "range_Z"), , drop = FALSE]
 
   out_disp <- NULL
   if (effects == "dispersion" && isTRUE(x$has_dispformula)) {

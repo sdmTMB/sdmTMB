@@ -124,14 +124,27 @@ range parameter (\code{TRUE}, default) or independent range parameters
 
 \item{range_groups}{An optional, more flexible alternative to \code{share_range}
 for which Matérn ranges are shared. A character vector with names
-\code{spatial} and/or \code{spatiotemporal} whose values are group labels; fields
-with the same label share a range. For delta models, a list with one such
-vector per model component, where labels are matched across components.
+\code{spatial} and/or \code{spatiotemporal} (and optionally spatially varying
+coefficient names; see below) whose values are group labels; fields
+with the same label share a range. For delta models, labels are matched
+across components. A list gives one such vector per model component.
 E.g., \code{list(c(spatial = "a", spatiotemporal = "b"), c(spatial = "a", spatiotemporal = "c"))} shares the spatial range across the two
-components but estimates separate spatiotemporal ranges. Unnamed fields
+components but estimates separate spatiotemporal ranges. A single vector
+applies to all components, so its labels share ranges across them: e.g.,
+\code{c(spatial = "a", spatiotemporal = "b")} estimates one spatial and one
+spatiotemporal range shared by both components. (In contrast, a single
+\code{share_range} value is recycled without tying components.) Unnamed fields
 default to a spatial range per component that is shared with the
 spatiotemporal field. Labels for fields that are off are ignored.
-Spatially varying coefficients use the spatial range of their component.
+Spatially varying coefficients use the spatial range of their component
+unless named by their \code{spatial_varying} model matrix column name (e.g.,
+\code{c(depth_scaled = "d")} to estimate a separate range for \code{depth_scaled},
+or \code{c(spatiotemporal = "b", depth_scaled = "b")} to share it with the
+spatiotemporal range). Separate ranges for spatially varying coefficients
+require \code{sdmTMBcontrol(backend = "rtmb")} and are reported as \code{range_Z}
+(\code{obj$report()}). With \code{spatial = "off"}, PC Matérn priors on \code{matern_s}
+apply to the range of spatially varying coefficients only if they use the
+default (spatial) range.
 Cannot be combined with \code{share_range}.}
 
 \item{time_varying}{An optional one-sided formula describing covariates

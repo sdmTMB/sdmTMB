@@ -354,7 +354,7 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
     if (any(!share_range_user)) {
       cli::cli_abort("`share_range = FALSE` is not supported with areal domains in v1.")
     }
-    if (any(c(!is.na(priors$matern_s[1:2]), !is.na(priors$matern_st[1:2])))) {
+    if (any(vapply(priors[c("matern_s", "matern_st", "matern_svc")], has_pc_prior, logical(1L)))) {
       cli::cli_abort("PC Matern priors are not supported with areal domains.")
     }
     if (spatial_model == "car" && !Matrix::isSymmetric(spde$W_raw)) {
@@ -385,7 +385,7 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
     cli::cli_warn("Using a barrier mesh; therefore, anistropy will be disabled.")
     anisotropy <- FALSE
   }
-  if (any(c(!is.na(priors$matern_s[1:2]), !is.na(priors$matern_st[1:2]))) && anisotropy) {
+  if (any(vapply(priors[c("matern_s", "matern_st", "matern_svc")], has_pc_prior, logical(1L))) && anisotropy) {
     cli::cli_warn("Using PC Matern priors; therefore, anistropy will be disabled.")
     anisotropy <- FALSE
   }

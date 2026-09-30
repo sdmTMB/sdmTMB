@@ -78,8 +78,8 @@ rtmb_transform <- function(par, prepared) {
       sigma_O[1L, m] <- exp(log_sigma_O[1L, m])
     }
     if (prepared$svc) {
-      log_sigma_Z[, m] <- rtmb_log_field_sd(par$ln_tau_Z[, m], ln_kappa,
-        inputs)
+      log_sigma_Z[, m] <- rtmb_log_field_sd(par$ln_tau_Z[, m],
+        par$ln_kappa[prepared$svc_kappa_row[, m], m], inputs)
       sigma_Z[, m] <- exp(log_sigma_Z[, m])
     }
   }
@@ -90,10 +90,15 @@ rtmb_transform <- function(par, prepared) {
   dim(rho_time) <- dim(par$rho_time_unscaled)
   b <- par$b_threshold
   kappa <- exp(par$ln_kappa)
+  range <- sqrt(8) / kappa
+  # Range of each SVC field (coefficient by component)
+  range_Z <- matrix(0, nrow(par$ln_tau_Z), n_m)
+  for (m in seq_len(n_m)) range_Z[, m] <- range[prepared$svc_kappa_row[, m], m]
   list(
     # Random fields
     kappa = kappa,
-    range = sqrt(8) / kappa,
+    range = range,
+    range_Z = range_Z,
     sigma_O = sigma_O,
     log_sigma_O = log_sigma_O,
     sigma_Z = sigma_Z,

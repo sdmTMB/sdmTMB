@@ -27,6 +27,7 @@ articles:
   - articles/cross-validation
   - articles/bayesian
   - articles/nonlocal-covariates
+  - articles/range-groups
 
 - title: Predictions and Applications
   contents:

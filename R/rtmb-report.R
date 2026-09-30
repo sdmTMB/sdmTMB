@@ -32,7 +32,14 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
     list(sigma_O = theta$sigma_O, sigma_E = exp(effects$log_sigma_E),
       sigma_Z = theta$sigma_Z),
     if (any_field) list(rho = theta$rho),
-    if (spde_field) list(range = theta$range, log_range = log(theta$range)),
+    if (spde_field) {
+      range <- theta$range[1:2, , drop = FALSE]
+      list(range = range, log_range = log(range))
+    },
+    # SVC ranges only when some SVC has its own `ln_kappa` row
+    if (spde_field && prepared$svc_ranges) {
+      list(range_Z = theta$range_Z, log_range_Z = log(theta$range_Z))
+    },
     if (areal_type == "sar") list(rho_sar = theta$rho_sar),
     if (areal_type == "car") list(alpha_car = theta$alpha_car),
     if (prepared$anisotropy) list(H = theta$H[[1L]]),
@@ -88,7 +95,8 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
   with_se <- c("sigma_O", "sigma_E", "sigma_Z", "sigma_V", "re_cov_pars",
     "re_b_pars", "b_j_prime", "b_j2_prime", names(theta$threshold),
     "rho_sar", "alpha_car", "range",
-    "log_range", names(diffusion_scales), "phi", "tweedie_p", "student_df",
+    "log_range", "range_Z", "log_range_Z", names(diffusion_scales), "phi",
+    "tweedie_p", "student_df",
     "link_total", "weighted_avg", "eao",
     if (any(prepared$temporal & prepared$epsilon_ar1)) "rho",
     if (prepared$adreport_projection) c(se_name, paste0(se_name, "_combined")))

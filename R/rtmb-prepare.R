@@ -34,13 +34,22 @@ rtmb_prepare <- function(data) {
     epsilon_ar1 = data$ar1_fields[components] == 1L,
     epsilon_rw = data$rw_fields[components] == 1L,
     share_range = data$share_range[components] == 1L,
-    # Which parts of the PC Matern priors apply, by field and component
-    sigma_prior = matrix(data$sigma_prior == 1L, 2L),
-    range_prior = matrix(data$range_prior == 1L, 2L),
+    # Which parts of the PC Matern priors apply, by field (spatial,
+    # spatiotemporal, then each SVC) and component
+    sigma_prior = rtmb_prior_flags(data$sigma_prior, ncol(data$z_i)),
+    range_prior = rtmb_prior_flags(data$range_prior, ncol(data$z_i)),
     # SVC fields enter the predictor whenever present; like the C++ template,
     # their density is only evaluated for components with a spatial field.
     svc = svc,
     svc_density = svc & include_spatial,
+    # One-based `ln_kappa` row of each SVC (coefficient by component); rows
+    # beyond 2 exist only when an SVC has its own range
+    svc_kappa_row = if (is.null(data$svc_kappa_row)) {
+      matrix(1L, ncol(data$z_i), n_m)
+    } else {
+      data$svc_kappa_row + 1L
+    },
+    svc_ranges = any(data$svc_kappa_row != 0L),
 
     # Other effects and predictor terms
     time_varying = time_varying_type != "none",
@@ -246,4 +255,12 @@ rtmb_validate <- function(data, prepared, parameters, random, ...) {
   if (!is.null(prepared$priors$tweedie_p) && any(tweedie)) {
     cli::cli_abort("Priors not enabled for Tweedie p currently.")
   }
+}
+
+# PC Matern prior flags as a logical matrix with a row per SVC; fits saved
+# before `matern_svc` have only the spatial and spatiotemporal rows.
+rtmb_prior_flags <- function(flags, n_z) {
+  flags <- matrix(flags == 1L, ncol = ncol(flags))
+  if (nrow(flags) == 2L) flags <- rbind(flags, matrix(FALSE, n_z, ncol(flags)))
+  flags
 }

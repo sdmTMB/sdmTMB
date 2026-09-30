@@ -21,7 +21,8 @@ sdmTMBpriors(
   threshold_breakpt_cut = normal(NA, NA),
   threshold_logistic_s50 = normal(NA, NA),
   threshold_logistic_s95 = normal(NA, NA),
-  threshold_logistic_smax = normal(NA, NA)
+  threshold_logistic_smax = normal(NA, NA),
+  matern_svc = pc_matern(range_gt = NA, sigma_lt = NA)
 )
 
 normal(location = 0, scale = 1)
@@ -45,9 +46,10 @@ include a prior on the spatial range parameter. A shared range (see
 \code{share_range} and \code{range_groups} in \code{\link[=sdmTMB]{sdmTMB()}}) gets the range part of
 the prior once, from the first field sharing it that is on and has a
 prior: spatial before spatiotemporal, and the first delta component
-before the second. Priors are skipped for fields that are off, except
+before the second, then spatially varying coefficients (\code{matern_svc}). Priors are skipped for fields that are off, except
 that with only spatially varying coefficients (\code{spatial = "off"}),
-\code{matern_s} sets the prior on their shared range.}
+\code{matern_s} sets the prior on their shared range (unless \code{matern_svc} is
+set).}
 
 \item{phi}{A \code{halfnormal()} prior for the dispersion parameter in the
 observation distribution.}
@@ -76,6 +78,18 @@ f(x) = 0.95.}
 
 \item{threshold_logistic_smax}{A \code{normal()} prior for the parameter at which
 f(x) is maximized.}
+
+\item{matern_svc}{Same as \code{matern_s} but for the spatially varying
+coefficient fields (\code{spatial_varying} in \code{\link[=sdmTMB]{sdmTMB()}}). One prior applies
+to every coefficient field in every model component. The sigma part is on
+the SD of each coefficient field, which depends on the units of its
+covariate, so a single \code{sigma_lt} only makes sense if the covariates are
+on similar scales (e.g., standardized). The range part is scale-free. A
+range shared with the spatial or spatiotemporal field (the default, or
+see \code{range_groups} in \code{\link[=sdmTMB]{sdmTMB()}}) gets the range part from those fields
+first. When set, \code{matern_svc} rather than \code{matern_s} sets the range prior
+for spatially varying coefficients with \code{spatial = "off"}. Requires the
+RTMB backend.}
 
 \item{location}{Location parameter(s). Typically the mean.}
 

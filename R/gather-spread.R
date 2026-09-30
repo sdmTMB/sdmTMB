@@ -68,9 +68,22 @@ spread_sims <- function(object, nsim = 200) {
   is_areal <- is_areal_fit(object)
   is_car <- is_car_fit(object)
   has_ln_kappa <- "ln_kappa" %in% names(out)
+  kappa_cols <- which(names(out) == "ln_kappa")
+  # Draws of the entry in row `r` of the `ln_kappa` matrix (entries that share
+  # a range share one parameter)
+  ln_kappa <- function(r) {
+    k <- if (is.null(object$tmb_map$ln_kappa)) r else
+      as.integer(object$tmb_map$ln_kappa)[r]
+    if (is.na(k)) NA_real_ else out[[kappa_cols[k]]]
+  }
+  svc_row <- if (length(object$tmb_data$svc_kappa_row)) {
+    object$tmb_data$svc_kappa_row[1L, 1L] + 1L
+  } else {
+    1L
+  }
 
   if (has_ln_kappa && !is_areal) {
-    out$range <- sqrt(8) / exp(out$ln_kappa)
+    out$range <- sqrt(8) / exp(ln_kappa(1L))
   }
   if ("ln_phi" %in% names(out)) {
     out$phi <- exp(out$ln_phi)
@@ -92,31 +105,32 @@ spread_sims <- function(object, nsim = 200) {
     if (is_areal || !has_ln_kappa) {
       out$sigma_O <- exp(-out$ln_tau_O)
     } else {
-      out$sigma_O <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_O + 2 * out$ln_kappa))
+      out$sigma_O <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_O + 2 * ln_kappa(1L)))
     }
   }
   if ("ln_tau_E" %in% names(out)) {
     if (is_areal || !has_ln_kappa) {
       out$sigma_E <- exp(-out$ln_tau_E)
     } else {
-      out$sigma_E <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_E + 2 * out$ln_kappa))
+      out$sigma_E <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_E + 2 * ln_kappa(2L)))
     }
   }
   if ("ln_tau_Z" %in% names(out)) {
     if (is_areal || !has_ln_kappa) {
       out$sigma_Z <- exp(-out$ln_tau_Z)
     } else {
-      out$sigma_Z <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_Z + 2 * out$ln_kappa))
+      out$sigma_Z <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_Z + 2 * ln_kappa(svc_row)))
     }
   }
   if ("ln_tau_O_trend" %in% names(out)) {
     if (is_areal || !has_ln_kappa) {
       out$sigma_O_trend <- exp(-out$ln_tau_O_trend)
     } else {
-      out$sigma_O_trend <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_O_trend + 2 * out$ln_kappa))
+      out$sigma_O_trend <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_O_trend + 2 * ln_kappa(1L)))
     }
   }
-  out$ln_kappa <- out$ln_tau_O <- out$ln_tau_E <- out$ln_tau_O_trend <-
+  out <- out[names(out) != "ln_kappa"]
+  out$ln_tau_O <- out$ln_tau_E <- out$ln_tau_O_trend <-
     out$ln_tau_Z <- out$ar1_phi <- out$thetaf <- out$ln_phi <- out$logit_rho_sar <- NULL
   data.frame(.iteration = seq_len(n_sims), out)
 }

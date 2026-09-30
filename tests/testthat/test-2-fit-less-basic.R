@@ -366,6 +366,13 @@ test_that("update() works", {
   )
   fit2 <- update(fit)
   expect_equal(fit$model, fit2$model)
+  # print() shows the names of the mesh, data, and time column
+  out <- capture.output(print(update(fit2, time = "year")))
+  expect_true(all(c("Mesh: pcod_mesh_2011 (isotropic covariance)",
+    "Time column: year", "Data: pcod_2011") %in% out))
+  d <- pcod_2011
+  out <- capture.output(print(update(fit, data = d)))
+  expect_true("Data: d" %in% out)
 })
 
 test_that("update() handles cbind binomial responses with random effects", {

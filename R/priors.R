@@ -57,9 +57,21 @@
 #'   `share_range` and `range_groups` in [sdmTMB()]) gets the range part of
 #'   the prior once, from the first field sharing it that is on and has a
 #'   prior: spatial before spatiotemporal, and the first delta component
-#'   before the second. Priors are skipped for fields that are off, except
+#'   before the second, then spatially varying coefficients (`matern_svc`). Priors are skipped for fields that are off, except
 #'   that with only spatially varying coefficients (`spatial = "off"`),
-#'   `matern_s` sets the prior on their shared range.
+#'   `matern_s` sets the prior on their shared range (unless `matern_svc` is
+#'   set).
+#' @param matern_svc Same as `matern_s` but for the spatially varying
+#'   coefficient fields (`spatial_varying` in [sdmTMB()]). One prior applies
+#'   to every coefficient field in every model component. The sigma part is on
+#'   the SD of each coefficient field, which depends on the units of its
+#'   covariate, so a single `sigma_lt` only makes sense if the covariates are
+#'   on similar scales (e.g., standardized). The range part is scale-free. A
+#'   range shared with the spatial or spatiotemporal field (the default, or
+#'   see `range_groups` in [sdmTMB()]) gets the range part from those fields
+#'   first. When set, `matern_svc` rather than `matern_s` sets the range prior
+#'   for spatially varying coefficients with `spatial = "off"`. Requires the
+#'   RTMB backend.
 #' @param phi A `halfnormal()` prior for the dispersion parameter in the
 #'   observation distribution.
 #' @param ar1_rho A `normal()` prior for the AR1 random field parameter. Note
@@ -97,10 +109,12 @@ sdmTMBpriors <- function(
   threshold_breakpt_cut = normal(NA, NA),
   threshold_logistic_s50 = normal(NA, NA),
   threshold_logistic_s95 = normal(NA, NA),
-  threshold_logistic_smax = normal(NA, NA)
+  threshold_logistic_smax = normal(NA, NA),
+  matern_svc = pc_matern(range_gt = NA, sigma_lt = NA)
 ) {
   assert_that(attr(matern_s, "dist") == "pc_matern")
   assert_that(attr(matern_st, "dist") == "pc_matern")
+  assert_that(attr(matern_svc, "dist") == "pc_matern")
   assert_that(attr(phi, "dist") == "normal")
   assert_that(attr(sigma_V, "dist") == "gamma")
   assert_that(attr(tweedie_p, "dist") == "normal")
@@ -122,7 +136,9 @@ sdmTMBpriors <- function(
     threshold_breakpt_cut = threshold_breakpt_cut,
     threshold_logistic_s50 = threshold_logistic_s50,
     threshold_logistic_s95 = threshold_logistic_s95,
-    threshold_logistic_smax = threshold_logistic_smax
+    threshold_logistic_smax = threshold_logistic_smax,
+    # last: C++ reads the other priors by position
+    matern_svc = matern_svc
   )
 }
 
