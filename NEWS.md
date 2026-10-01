@@ -8,6 +8,34 @@
   from C++ to R and has ~50% fewer lines of code. This transition uncovered
   many bugs that have been fixed as documented in this file.
 
+* Fix `sdmTMBcontrol(suppress_nlminb_warnings = TRUE)`, which was never stored
+  and so had no effect. It now suppresses the uninformative "NA/NaN function
+  evaluation" warnings from `stats::nlminb()` in all optimization calls.
+
+* Fix the convergence check so the "Maximum final gradient" warning considers
+  the absolute value of the gradients; large negative gradients were previously
+  ignored. The reported maximum is now also the maximum absolute gradient.
+
+* Fix an error ("missing value where TRUE/FALSE needed") when the gradient or
+  objective is non-finite during the Newton update (`newton_loops`) in
+  `sdmTMB()` and `run_extra_optimization()`; the update is now skipped.
+
+* Make extra optimization more robust. `run_extra_optimization()` now:
+  updates the saved parameters that `predict()` uses (previously predictions
+  used the pre-optimization parameters); leaves the original fit unchanged
+  (previously it modified the original's TMB object); updates
+  `pos_def_hessian`; counts iterations correctly over multiple `nlminb_loops`;
+  and respects `suppress_nlminb_warnings`. In both `sdmTMB()` and
+  `run_extra_optimization()`, Newton updates (`newton_loops`) now halve a step
+  that crosses parameter limits or worsens the objective instead of giving
+  up, and are skipped rather than erroring if the Hessian cannot be computed.
+  Extra `nlminb_loops` stop if a restart fails or worsens the objective. A
+  failed first phase in `multiphase` estimation now falls back to the default
+  starting values. The message about Newton updates and parameter limits is
+  gone; it appeared for any model with default limits (e.g., AR1 fields).
+
+* Fix `reload_model()` for models fit with `normalize = TRUE`.
+
 * Fix `type = "response"` predictions for `truncated_nbinom1()` and
   `truncated_nbinom2()` (including delta versions), which used the starting
   value of the dispersion parameter `phi` rather than its estimate, and the

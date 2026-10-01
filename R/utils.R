@@ -223,6 +223,7 @@ sdmTMBcontrol <- function(
     multiphase,
     parallel,
     get_joint_precision,
+    suppress_nlminb_warnings,
     collapse_spatial_variance,
     collapse_spatial_variance_threshold,
     collapse_spatiotemporal_ar1,
@@ -312,9 +313,9 @@ get_convergence_diagnostics <- function(sd_report) {
           "extreme or very small eigen values detected.", call. = FALSE)
         bad_eig <- TRUE
       }
-      if (any(final_grads > 0.01))
+      if (any(abs(final_grads) > 0.01))
         warning("The model may not have converged. ",
-          "Maximum final gradient: ", max(final_grads), ".", call. = FALSE)
+          "Maximum final gradient: ", max(abs(final_grads)), ".", call. = FALSE)
     }
   }
   pdHess <- isTRUE(sd_report$pdHess)
@@ -805,27 +806,17 @@ get_fitted_time <- function(x) {
 }
 
 reload_model <- function(object) {
-  if ("parlist" %in% names(object)) {
-    # tinyVAST does this to be extra sure... I've found one case where it was needed
-    obj <- make_sdmTMB_adfun(
-      data = object$tmb_data,
-      parameters = object$parlist, #!! important part
-      map = object$tmb_map,
-      random = object$tmb_random,
-      backend = backend_sdmTMB(object),
-      profile = object$control$profile
-    )
-    obj$env$beSilent()
-    nll_new <- obj$fn(object$model$par) #!! important: need to eval once (restores last.par.best etc.)
-    if (abs(nll_new - object$model$objective) > 0.01) {
-      cli_abort(c("Model fit is not identical to recorded value:", "
-        something is not working as expected"))
-    }
-    object$tmb_obj <- obj
-    object
-  } else {
+  if (!"parlist" %in% names(object)) {
     cli_abort("`reload_model()` only works with models fit with sdmTMB 0.5.0.9006 and higher.")
   }
+  # tinyVAST does this to be extra sure... I've found one case where it was needed
+  obj <- remake_tmb_obj(object)
+  if (abs(obj$fn(object$model$par) - object$model$objective) > 0.01) {
+    cli_abort(c("Model fit is not identical to recorded value:", "
+      something is not working as expected"))
+  }
+  object$tmb_obj <- obj
+  object
 }
 
 reinitialize <- function(x) {

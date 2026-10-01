@@ -1546,41 +1546,10 @@ sdmTMB <- function(
   if (!is.null(thresh[[1]]$threshold_parameter)) tmb_map$b_threshold <- NULL
 
   if (multiphase && is.null(previous_fit) && do_fit) {
-    original_tmb_data <- tmb_data
-    # much faster on first phase!?
-    tmb_data$no_spatial <- 1L
-    # tmb_data$include_spatial <- 0L
-    tmb_data$include_spatial <- rep(0L, length(spatial)) # for 1st phase
-    # tmb_data$spatial_only <- rep(1L, length(tmb_data$spatial_only))
-
-    # Poisson on first phase increases stability:
-    censored_code <- unname(.valid_family["censored_poisson"])
-    if (any(tmb_data$component_active == 1L & tmb_data$family_code == censored_code)) {
-      tmb_data$family_code[tmb_data$component_active == 1L & tmb_data$family_code == censored_code] <- unname(.valid_family["poisson"])
-    }
-
-    tmb_obj1 <- make_sdmTMB_adfun(
-      data = tmb_data, parameters = tmb_params,
-      profile = control$profile,
-      map = tmb_map, backend = backend, silent = silent
-    )
-    lim <- set_limits(tmb_obj1, lower = lower, upper = upper,
-      mesh = if (is_areal) NULL else spde$mesh,
-      spatial_model = tmb_data$spatial_model,
-      silent = TRUE)
-
-    tmb_opt1 <- stats::nlminb(
-      start = tmb_obj1$par, objective = tmb_obj1$fn,
-      lower = lim$lower, upper = lim$upper,
-      gradient = tmb_obj1$gr, control = .control
-    )
-
-    tmb_data <- original_tmb_data # restore
-    # Set starting values based on phase 1:
-    tmb_params <- tmb_obj1$env$parList()
-    # tmb_data$no_spatial <- FALSE
-    # often causes optimization problems if set from phase 1!?
-    tmb_params$b_threshold <- if (thresh[[1]]$threshold_func == 2L) matrix(0, 3L, n_m) else matrix(0, 2L, n_m)
+    tmb_params <- fit_first_phase(tmb_data, tmb_params, tmb_map,
+      profile = control$profile, backend = backend, lower = lower, upper = upper,
+      mesh = if (is_areal) NULL else spde$mesh, nlminb_control = .control,
+      silent = silent, suppress_warnings = isTRUE(suppress_nlminb_warnings))
   }
 
   tmb_map$log_kappaS_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_spatial)
@@ -1925,37 +1894,19 @@ sdmTMB <- function(
   }
 
   if (length(tmb_obj$par)) {
-    tmb_opt <- stats::nlminb(
+    tmb_opt <- maybe_suppress_warnings(suppress_nlminb_warnings)(stats::nlminb(
       start = tmb_obj$par, objective = tmb_obj$fn, gradient = tmb_obj$gr,
       lower = lim$lower, upper = lim$upper, control = .control
-    )
+    ))
   } else {
     tmb_opt <- list(par = tmb_obj$par, objective = tmb_obj$fn(tmb_obj$par))
   }
 
-  if (isTRUE(suppress_nlminb_warnings)) {
-    maybe_suppress_warnings <- suppressWarnings
-  } else {
-    maybe_suppress_warnings <- I
-  }
-
-  if (nlminb_loops > 1) {
-    if (!silent) cli_inform("running extra nlminb optimization\n")
-    for (i in seq(2, nlminb_loops, length = max(0, nlminb_loops - 1))) {
-      temp <- tmb_opt[c("iterations", "evaluations")]
-      tmb_opt <- maybe_suppress_warnings(stats::nlminb(
-        start = tmb_opt$par, objective = tmb_obj$fn, gradient = tmb_obj$gr,
-        control = .control, lower = lim$lower, upper = lim$upper
-      ))
-      tmb_opt[["iterations"]] <- tmb_opt[["iterations"]] + temp[["iterations"]]
-      tmb_opt[["evaluations"]] <- tmb_opt[["evaluations"]] + temp[["evaluations"]]
-    }
-  }
-  if (!is.null(control$upper) || !is.null(control$lower)) {
-    if (newton_loops > 0) {
-      cli_inform("Upper or lower limits were set. Newton updates that cross these limits will be skipped.")
-    }
-  }
+  tmb_opt <- run_nlminb_loops(
+    nlminb_loops = nlminb_loops - 1, opt = tmb_opt, obj = tmb_obj,
+    lower = lim$lower, upper = lim$upper, control = .control,
+    silent = silent, suppress_warnings = isTRUE(suppress_nlminb_warnings)
+  )
 
   check_bounds(tmb_opt$par, lim$lower, lim$upper)
 

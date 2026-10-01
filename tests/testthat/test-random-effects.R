@@ -633,7 +633,9 @@ test_that("Delta model works with random effects", {
 test_that("issue breakpt() version of formula doesn't break random effect prediction #423", {
   d <- pcod
   d$year_f <- as.factor(pcod$year)
-  m <- sdmTMB(
+  # flat likelihood near the breakpoint: the max gradient is ~0.03; this test
+  # checks prediction, not convergence quality
+  m <- suppressWarnings(sdmTMB(
     data = d,
     formula = density ~ 0 + breakpt(depth_scaled) + (1 | year_f),
     spatial = "off",
@@ -642,7 +644,7 @@ test_that("issue breakpt() version of formula doesn't break random effect predic
       threshold_breakpt_cut = normal(0, 1)
     ),
     family = tweedie(link = "log")
-  )
+  ))
   nd <- data.frame(
     depth_scaled = seq(min(pcod$depth_scaled) + 0.5,
       max(pcod$depth_scaled) - 0.2,
