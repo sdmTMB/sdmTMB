@@ -591,7 +591,8 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
   named_list(
     family_spec, has_two_components, is_areal, xy_cols, model, type, se_fit,
     pop_pred, pop_pred_iid, allow_new_levels, exclude_RE, newdata,
-    newdata_supplied, project, offset, nsim, sims_var, sample_fe, mcmc_samples
+    newdata_supplied, project, offset, nsim, sims_var, sample_fe, mcmc_samples,
+    ln_phi = .object_ln_phi(object)
   )
 }
 
@@ -621,7 +622,8 @@ predict_components <- function(r, req, tmb_data, scale, model = NA) {
     row_family_id = tmb_data$proj_family_id + 1L,
     type = scale,
     model = model,
-    offset = tmb_data$proj_offset_i
+    offset = tmb_data$proj_offset_i,
+    ln_phi = req$ln_phi
   )
 }
 

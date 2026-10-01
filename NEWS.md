@@ -8,6 +8,16 @@
   from C++ to R and has ~50% fewer lines of code. This transition uncovered
   many bugs that have been fixed as documented in this file.
 
+* Fix `type = "response"` predictions for `truncated_nbinom1()` and
+  `truncated_nbinom2()` (including delta versions), which used the starting
+  value of the dispersion parameter `phi` rather than its estimate, and the
+  wrong `phi` when fits shared a family object (e.g.,
+  `fam <- truncated_nbinom2()` used in two `sdmTMB()` calls) or after
+  `run_extra_optimization()`. Prediction now takes `phi` from each fit's own
+  parameters instead of storing it in the family object. Calling
+  `family$linkinv()` directly for these families now requires the `phi`
+  argument for new fits.
+
 * Speed up the RTMB backend. `simulate()` and reports skip GMRF densities
   that aren't needed (~5x faster), each spatiotemporal field's density is one
   sparse GMRF evaluation rather than one per time step, and `predict()`

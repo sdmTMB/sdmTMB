@@ -293,8 +293,8 @@ delta/truncated_nbinom1,loglik,-523.081262795
 delta/truncated_nbinom1,n_fixed,5
 delta/truncated_nbinom1,nll,523.081262795
 delta/truncated_nbinom1,response_mean,1.80284444809
-delta/truncated_nbinom1,seconds_rtmb,0.14
-delta/truncated_nbinom1,seconds_tmb,0.11
+delta/truncated_nbinom1,seconds_rtmb,0.11
+delta/truncated_nbinom1,seconds_tmb,0.1
 delta/truncated_nbinom2,fitted_est1_mean,0.13523107262
 delta/truncated_nbinom2,fitted_est1_sd,0.230912119004
 delta/truncated_nbinom2,fitted_est2_mean,0.865271511423
@@ -307,8 +307,8 @@ delta/truncated_nbinom2,loglik,-506.390299731
 delta/truncated_nbinom2,n_fixed,5
 delta/truncated_nbinom2,nll,506.390299731
 delta/truncated_nbinom2,response_mean,1.58401351833
-delta/truncated_nbinom2,seconds_rtmb,0.14
-delta/truncated_nbinom2,seconds_tmb,0.11
+delta/truncated_nbinom2,seconds_rtmb,0.12
+delta/truncated_nbinom2,seconds_tmb,0.1
 delta/truncated_nbinom2_offset,fitted_est1_mean,-0.11282484658
 delta/truncated_nbinom2_offset,fitted_est1_sd,0.459993456263
 delta/truncated_nbinom2_offset,fitted_est2_mean,0.922876606792
@@ -321,7 +321,7 @@ delta/truncated_nbinom2_offset,loglik,-479.704419
 delta/truncated_nbinom2_offset,n_fixed,5
 delta/truncated_nbinom2_offset,nll,479.704419
 delta/truncated_nbinom2_offset,response_mean,1.53576384536
-delta/truncated_nbinom2_offset,seconds_rtmb,0.14
+delta/truncated_nbinom2_offset,seconds_rtmb,0.11
 delta/truncated_nbinom2_offset,seconds_tmb,0.1
 family/Beta_logit,fitted_est_mean,-0.187957873388
 family/Beta_logit,fitted_est_sd,0.745928732982
@@ -680,8 +680,8 @@ family/truncated_nbinom1_log,link_est_sd,0.152151970237
 family/truncated_nbinom1_log,loglik,-560.856987601
 family/truncated_nbinom1_log,n_fixed,3
 family/truncated_nbinom1_log,nll,560.856987601
-family/truncated_nbinom1_log,response_mean,2.95181898587
-family/truncated_nbinom1_log,seconds_rtmb,0.11
+family/truncated_nbinom1_log,response_mean,2.94253200518
+family/truncated_nbinom1_log,seconds_rtmb,0.1
 family/truncated_nbinom1_log,seconds_tmb,0.08
 family/truncated_nbinom2_log,fitted_est_mean,0.470329426426
 family/truncated_nbinom2_log,fitted_est_sd,0.327255623087
@@ -690,7 +690,7 @@ family/truncated_nbinom2_log,link_est_sd,0.349326393889
 family/truncated_nbinom2_log,loglik,-515.232623175
 family/truncated_nbinom2_log,n_fixed,3
 family/truncated_nbinom2_log,nll,515.232623175
-family/truncated_nbinom2_log,response_mean,2.66151237549
+family/truncated_nbinom2_log,response_mean,2.61434098568
 family/truncated_nbinom2_log,seconds_rtmb,0.1
 family/truncated_nbinom2_log,seconds_tmb,0.08
 family/tweedie_identity,fitted_est_mean,1.90008500872

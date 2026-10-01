@@ -315,7 +315,15 @@ nbinom1 <- function(link = "log") {
   add_to_family(x)
 }
 
-utils::globalVariables(".phi") ## avoid R CMD check NOTE
+# Fits from older sdmTMB versions stored the dispersion as `.phi` in the
+# `linkinv()` environment; newer code passes `phi` explicitly.
+.saved_phi <- function(linkinv) {
+  phi <- get0(".phi", envir = environment(linkinv), inherits = FALSE)
+  if (is.null(phi)) {
+    cli_abort("`phi` (the dispersion parameter) must be supplied to the truncated negative binomial `linkinv()`.")
+  }
+  phi
+}
 
 #' @export
 #' @examples
@@ -334,7 +342,7 @@ truncated_nbinom2 <- function(link = "log") {
   }
   linkinv <- function(eta, phi = NULL) {
     s1 <- eta
-    if (is.null(phi)) phi <- .phi
+    if (is.null(phi)) phi <- .saved_phi(sys.function())
     s2 <- logspace_add(0, s1 - log(phi)) # log(1 + mu/phi)
     log_nzprob <- logspace_sub(0, -phi * s2)
     exp(eta) / exp(log_nzprob)
@@ -364,7 +372,7 @@ truncated_nbinom1 <- function(link = "log") {
   }
   linkinv <- function(eta, phi = NULL) {
     mu <- exp(eta)
-    if (is.null(phi)) phi <- .phi
+    if (is.null(phi)) phi <- .saved_phi(sys.function())
     s2 <- logspace_add(0, log(phi)) # log(1 + phi)
     log_nzprob <- logspace_sub(0, -mu / phi * s2) # 1 - prob(0)
     mu / exp(log_nzprob)

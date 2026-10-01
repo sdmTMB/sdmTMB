@@ -16,8 +16,32 @@
   rep.int(1L, nrow(data))
 }
 
+# `fam$linkinv` with the dispersion bound for truncated negative binomial
+# families, whose means depend on it.
+.bind_phi_linkinv <- function(fam, ln_phi) {
+  if (!fam$family %in% c("truncated_nbinom1", "truncated_nbinom2")) return(fam$linkinv)
+  phi <- exp(ln_phi)
+  function(eta) fam$linkinv(eta, phi = phi)
+}
+
+# Fitted `ln_phi`, one per family that uses it (see `param_slot$ln_phi`).
+.object_ln_phi <- function(object) {
+  if (!is.null(object$parlist)) {
+    object$parlist$ln_phi
+  } else if (!is.null(object$tmb_obj)) {
+    get_pars(object)$ln_phi
+  } else {
+    # `sdmTMB(do_index = TRUE)` builds the projection data before it creates
+    # the fitted objective. The initial parameter list is sufficient for this
+    # data-only prediction step, and avoids trying to call `parList()` on a
+    # not-yet-created objective (particularly for the RTMB backend).
+    object$tmb_params$ln_phi
+  }
+}
+
 .family_spec_component_prediction_output <- function(x, family_spec, row_family_id,
-  type = c("link", "response"), model = NA_integer_, offset = NULL) {
+  type = c("link", "response"), model = NA_integer_, offset = NULL,
+  ln_phi = NULL) {
   type <- match.arg(type)
   x <- as.matrix(x)
   n <- nrow(x)
@@ -34,12 +58,14 @@
       if (!any(rows)) next
       fam <- family_spec$family_list[[fid]]
       has_two_components <- isTRUE(fam$delta) || length(fam$family) == 2L
-      linkinv1 <- if (has_two_components) fam[[1L]]$linkinv else fam$linkinv
+      fam_ln_phi <- ln_phi[family_spec$param_slot$ln_phi[[fid]]]
+      linkinv1 <- .bind_phi_linkinv(if (has_two_components) fam[[1L]] else fam, fam_ln_phi)
       est1_raw[rows] <- linkinv1(raw1[rows])
       if (has_two_components) {
         active_rows <- rows & active[, 2L]
         if (any(active_rows)) {
-          est2_raw[active_rows] <- fam[[2L]]$linkinv(raw2[active_rows])
+          linkinv2 <- .bind_phi_linkinv(fam[[2L]], fam_ln_phi)
+          est2_raw[active_rows] <- linkinv2(raw2[active_rows])
         }
       }
     }

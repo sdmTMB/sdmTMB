@@ -2011,16 +2011,6 @@ sdmTMB <- function(
     conv <- NULL
   }
 
-  # save params that families need to grab from environments:
-  if (family_spec$n_f == 1L && any(family$family %in% c("truncated_nbinom1", "truncated_nbinom2"))) {
-    phi <- exp(tmb_obj$par[["ln_phi"]])
-    if (has_two_components) {
-      assign(".phi", phi, environment(out_structure[["family"]][[2]][["linkinv"]]))
-    } else {
-      assign(".phi", phi, environment(out_structure[["family"]][["linkinv"]]))
-    }
-  }
-
   out_structure$tmb_obj <- tmb_obj
   out <- c(out_structure, list(
     model = tmb_opt,
