@@ -124,7 +124,11 @@ predictive density). Use this to compare models; larger values are better.
 Performs k-fold or leave-future-out cross validation with sdmTMB models.
 Returns the sum of log likelihoods of held-out data (log predictive density),
 which can be used to compare models—higher values indicate better
-out-of-sample prediction. By default, creates folds randomly and stratified
+out-of-sample prediction. To judge whether differences between models are
+meaningful, pass the output to \code{\link[loo:elpd]{loo::elpd()}} and compare with
+\code{\link[loo:loo_compare]{loo::loo_compare()}}, which reports the difference and its standard error
+(see \code{\link[=elpd.sdmTMB_cv]{elpd.sdmTMB_cv()}}). Models must use the same folds (\code{fold_ids}) and the
+same \code{predictive} argument. By default, creates folds randomly and stratified
 by time (set a seed for reproducibility), but folds can be manually assigned
 via \code{fold_ids}. See Ward and Anderson (2025) in the References and the
 \href{https://sdmTMB.github.io/sdmTMB/articles/cross-validation.html}{cross-validation vignette}.
@@ -252,8 +256,6 @@ if (requireNamespace("loo", quietly = TRUE)) {
 }
 }
 }
-\references{
-Ward, E.J., and S.C. Anderson. 2025. Approximating spatial processes with
-too many knots degrades the quality of probabilistic predictions.
-bioRxiv 2025.11.14.688354. \doi{10.1101/2025.11.14.688354}.
+\seealso{
+\code{\link[=elpd.sdmTMB_cv]{elpd.sdmTMB_cv()}}, \code{\link[loo:loo_compare]{loo::loo_compare()}}, \code{\link[loo:elpd]{loo::elpd()}}
 }

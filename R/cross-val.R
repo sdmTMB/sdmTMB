@@ -79,10 +79,16 @@ ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
 #' Performs k-fold or leave-future-out cross validation with sdmTMB models.
 #' Returns the sum of log likelihoods of held-out data (log predictive density),
 #' which can be used to compare models—higher values indicate better
-#' out-of-sample prediction. By default, creates folds randomly and stratified
+#' out-of-sample prediction. To judge whether differences between models are
+#' meaningful, pass the output to [loo::elpd()] and compare with
+#' [loo::loo_compare()], which reports the difference and its standard error
+#' (see [elpd.sdmTMB_cv()]). Models must use the same folds (`fold_ids`) and the
+#' same `predictive` argument. By default, creates folds randomly and stratified
 #' by time (set a seed for reproducibility), but folds can be manually assigned
 #' via `fold_ids`. See Ward and Anderson (2025) in the References and the
 #' [cross-validation vignette](https://sdmTMB.github.io/sdmTMB/articles/cross-validation.html).
+#'
+#' @seealso [elpd.sdmTMB_cv()], [loo::loo_compare()], [loo::elpd()]
 #'
 #' @param formula Model formula.
 #' @param data A data frame. Rows [sdmTMB()] omits for missing values are
@@ -214,12 +220,6 @@ ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
 #' steps ahead, not necessarily two calendar years.
 #'
 #' See example below.
-#'
-#' @references
-#'
-#' Ward, E.J., and S.C. Anderson. 2025. Approximating spatial processes with
-#' too many knots degrades the quality of probabilistic predictions.
-#' bioRxiv 2025.11.14.688354. \doi{10.1101/2025.11.14.688354}.
 #'
 #' @examples
 #' mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 25)
