@@ -30,7 +30,8 @@ inv_link <- function(eta, link) {
   )
 }
 
-# Draws matching sdmTMB's parameterizations (see rtmb_obs_simulate()).
+# Draws matching sdmTMB's parameterizations (see the `simulate` entries in
+# R/rtmb-obs-families.R).
 r_family <- function(family, mu, p = list()) {
   n <- length(mu)
   lognormal <- function(m, s) exp(stats::rnorm(n, log(m) - s^2 / 2, s))
