@@ -89,6 +89,7 @@ reference:
   - coef.sdmTMB
   - sigma.sdmTMB
   - cAIC
+  - compare_deviance
 
 - title: 'Families'
   desc: |

@@ -8,6 +8,12 @@
   from C++ to R and has ~50% fewer lines of code. This transition uncovered
   many bugs that have been fixed as documented in this file.
 
+* Add `compare_deviance()` to calculate deviance explained (a pseudo-R^2)
+  relative to a simpler model. For families whose deviance depends on parameters other
+  than the mean (NB `phi`, Tweedie `p`, lognormal `phi`, gengamma `phi` and
+  `Q`), it refits the second model with these held at the first model's
+  values.
+
 * `cAIC()` is much faster now. E.g. on a model with about 5,800 random effects
   it takes 0.68 s instead of 41 s.
 

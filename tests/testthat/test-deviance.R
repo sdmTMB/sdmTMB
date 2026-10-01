@@ -247,3 +247,45 @@ test_that("Censored Poisson deviance residuals are correct", {
     expect_equal(deviance(m), sum(r^2), info = backend)
   }
 })
+
+test_that("compare_deviance() holds shape parameters fixed", {
+  set.seed(1)
+  d <- data.frame(x = rnorm(300))
+  d$y <- rnbinom(300, size = 1.5, mu = exp(1 + 0.8 * d$x))
+  fit <- sdmTMB(y ~ x, data = d, spatial = "off", family = nbinom2())
+  fit0 <- sdmTMB(y ~ 1, data = d, spatial = "off", family = nbinom2())
+  expect_message(out <- compare_deviance(fit, fit0), "phi")
+  expect_equal(attr(out, "reduced")$parlist$ln_phi, fit$parlist$ln_phi)
+
+  # Matches a GLM with theta fixed at the full model's estimate:
+  skip_if_not_installed("MASS")
+  m <- MASS::glm.nb(y ~ x, data = d)
+  m0 <- glm(y ~ 1, family = MASS::negative.binomial(m$theta), data = d)
+  expect_equal(out$deviance, deviance(m), tolerance = 1e-4)
+  expect_equal(out$deviance_reduced, deviance(m0), tolerance = 1e-4)
+  expect_equal(out$deviance_explained, 1 - deviance(m) / deviance(m0),
+    tolerance = 1e-4)
+
+  # No refit needed when the deviance depends only on the mean:
+  fit_p <- sdmTMB(y ~ x, data = d, spatial = "off", family = poisson())
+  fit_p0 <- sdmTMB(y ~ 1, data = d, spatial = "off", family = poisson())
+  expect_no_message(out <- compare_deviance(fit_p, fit_p0))
+  expect_equal(out$deviance_reduced, deviance(fit_p0))
+
+  expect_error(compare_deviance(fit_p, fit0), "same family")
+  d$y2 <- d$y + 1L
+  fit_y2 <- sdmTMB(y2 ~ 1, data = d, spatial = "off", family = nbinom2())
+  expect_error(compare_deviance(fit, fit_y2), "same response")
+})
+
+test_that("compare_deviance() holds Tweedie p fixed", {
+  fit <- sdmTMB(density ~ depth_scaled + depth_scaled2,
+    data = pcod_2011, spatial = "off", family = tweedie())
+  fit0 <- sdmTMB(density ~ 1,
+    data = pcod_2011, spatial = "off", family = tweedie())
+  expect_message(out <- compare_deviance(fit, fit0), "Tweedie p")
+  reduced <- attr(out, "reduced")
+  expect_equal(reduced$parlist$thetaf, fit$parlist$thetaf)
+  expect_false(isTRUE(all.equal(reduced$parlist$ln_phi, fit$parlist$ln_phi)))
+  expect_equal(out$deviance_reduced, deviance(reduced))
+})
