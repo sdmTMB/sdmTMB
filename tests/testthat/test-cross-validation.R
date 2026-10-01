@@ -77,7 +77,8 @@ test_that("Leave future out cross validation works", {
     lfo_forecast = 1,
     lfo_validations = 2,
     family = binomial(),
-    time = "year"
+    time = "year",
+    predictive = "mle-eb"
   )
   expect_equal(class(x$sum_loglik), "numeric")
   expect_equal(x$sum_loglik, sum(x$data$cv_loglik))
@@ -941,8 +942,9 @@ test_that("CV fold models skip the joint precision and cached Cholesky factor", 
   x <- sdmTMB_cv(density ~ 1, data = d, mesh = mesh, family = tweedie(),
     k_folds = 2, parallel = FALSE, control = sdmTMBcontrol())
   expect_true("jointPrecision" %in% names(x$models[[1]]$sd_report))
+})
 
-test_that("Integrated predictive: plugin is unchanged and outputs are well formed", {
+test_that("Integrated predictive: mle-eb is unchanged and outputs are well formed", {
   skip_on_cran()
   skip_on_ci()
 
@@ -952,22 +954,23 @@ test_that("Integrated predictive: plugin is unchanged and outputs are well forme
     sdmTMB_cv(density ~ 1, data = d, mesh = pcod_mesh_2011,
       family = delta_gamma(), fold_ids = fold, parallel = FALSE, ...)
   }
-  plugin <- fit_cv()
-  expect_identical(plugin$predictive, "plugin")
-  expect_identical(plugin$data$cv_loglik, plugin$data$cv_loglik_plugin)
-  expect_identical(plugin$sum_loglik, plugin$sum_loglik_plugin)
+  eb <- fit_cv(predictive = "mle-eb")
+  expect_identical(eb$predictive, "mle-eb")
+  expect_identical(eb$data$cv_loglik, eb$data$cv_loglik_mle_eb)
+  expect_identical(eb$sum_loglik, eb$sum_loglik_mle_eb)
 
-  for (p in c("random", "joint")) {
+  for (p in c("mle-mvn", "joint")) {
     set.seed(1)
     x <- fit_cv(predictive = p, nsim = 50)
     expect_identical(x$predictive, p)
-    expect_equal(x$data$cv_loglik_plugin, plugin$data$cv_loglik_plugin)
-    expect_equal(x$sum_loglik_plugin, plugin$sum_loglik_plugin)
+    expect_equal(x$data$cv_loglik_mle_eb, eb$data$cv_loglik_mle_eb)
+    expect_equal(x$sum_loglik_mle_eb, eb$sum_loglik_mle_eb)
     expect_equal(length(x$data$cv_loglik), nrow(d))
     expect_true(all(is.finite(x$data$cv_loglik)))
     expect_equal(x$sum_loglik, sum(x$fold_loglik))
-    expect_false(isTRUE(all.equal(x$sum_loglik, x$sum_loglik_plugin)))
+    expect_false(isTRUE(all.equal(x$sum_loglik, x$sum_loglik_mle_eb)))
   }
+  expect_error(fit_cv(predictive = "mle-mvn", nsim = 2.5), regexp = "nsim")
 })
 
 test_that("Integrated predictive handles models without random effects", {
@@ -976,16 +979,15 @@ test_that("Integrated predictive handles models without random effects", {
 
   d <- pcod_2011
   fold <- rep(1:2, length.out = nrow(d))
-  expect_error(
+  fit_cv <- function(...) {
     sdmTMB_cv(present ~ depth_scaled, data = d, mesh = pcod_mesh_2011,
       spatial = "off", family = binomial(), fold_ids = fold,
-      parallel = FALSE, predictive = "random", nsim = 10),
-    regexp = "random effects"
-  )
+      parallel = FALSE, ...)
+  }
+  x <- fit_cv(predictive = "mle-mvn", nsim = 10)
+  expect_identical(x$data$cv_loglik, x$data$cv_loglik_mle_eb)
   set.seed(1)
-  x <- sdmTMB_cv(present ~ depth_scaled, data = d, mesh = pcod_mesh_2011,
-    spatial = "off", family = binomial(), fold_ids = fold,
-    parallel = FALSE, predictive = "joint", nsim = 50)
+  x <- fit_cv(predictive = "joint", nsim = 50)
   expect_true(all(is.finite(x$data$cv_loglik)))
 })
 
@@ -1001,7 +1003,7 @@ test_that("Integrated predictive matches the analytic Gaussian predictive", {
   weights <- seq(1, 2, length.out = nrow(d))
   set.seed(2)
   x <- sdmTMB_cv(observed ~ 1, data = d, mesh = mesh, fold_ids = fold,
-    weights = weights, parallel = FALSE, predictive = "random", nsim = 5000)
+    weights = weights, parallel = FALSE, predictive = "mle-mvn", nsim = 5000)
 
   expected <- numeric(nrow(d))
   for (k in 1:2) {
@@ -1020,5 +1022,31 @@ test_that("Integrated predictive matches the analytic Gaussian predictive", {
       stats::dnorm(d$observed[rows], mu, sd, log = TRUE)
   }
   expect_equal(x$data$cv_loglik, expected, tolerance = 0.01)
-  expect_gt(x$sum_loglik, x$sum_loglik_plugin)
+  expect_gt(x$sum_loglik, x$sum_loglik_mle_eb)
+})
+
+test_that("elpd() hands sdmTMB_cv() output to loo", {
+  skip_on_cran()
+  skip_if_not_installed("loo")
+
+  d <- pcod_2011
+  fold <- rep(1:2, length.out = nrow(d))
+  fit_cv <- function(formula) {
+    sdmTMB_cv(formula, data = d, mesh = pcod_mesh_2011, spatial = "off",
+      family = tweedie(), fold_ids = fold, parallel = FALSE)
+  }
+  m1 <- fit_cv(density ~ 1)
+  m2 <- fit_cv(density ~ depth_scaled + depth_scaled2)
+  e2 <- loo::elpd(m2)
+  expect_s3_class(e2, "elpd_generic")
+  expect_equal(e2$pointwise[, "elpd"], m2$data$cv_loglik)
+  expect_equal(e2$estimates["elpd", "Estimate"], m2$sum_loglik)
+
+  comp <- loo::loo_compare(list(null = loo::elpd(m1), depth = e2))
+  diff <- m2$data$cv_loglik - m1$data$cv_loglik
+  expect_equal(abs(comp[2, "elpd_diff"]), abs(sum(diff)))
+  expect_equal(comp[2, "se_diff"], sqrt(length(diff)) * stats::sd(diff))
+
+  m2$data$cv_loglik[1] <- NA
+  expect_error(loo::elpd(m2), regexp = "NA")
 })

@@ -493,7 +493,7 @@ test_that("Random intercepts and cross validation play nicely", {
   out <- sdmTMB_cv(
     observed ~ 1 + (1 | g),
     fold_ids = fold_ids, k_folds = 2L, spatial = "off", data = s, mesh = spde,
-    parallel = FALSE
+    parallel = FALSE, predictive = "mle-eb"
   )
   expect_equal(round(out$sum_loglik, 3), -51.36)
   # Because the function fits with all the data but sets the missing fold to

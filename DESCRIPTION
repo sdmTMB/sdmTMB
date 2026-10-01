@@ -96,6 +96,7 @@ Suggests:
     ggplot2,
     knitr,
     lme4,
+    loo,
     numDeriv,
     rmarkdown,
     sf,

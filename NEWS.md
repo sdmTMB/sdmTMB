@@ -5,14 +5,22 @@
   together rather than calling TMB's `MC()` once per simulation. Draws are
   unchanged for a given seed.
 
-* Add `predictive` and `nsim` arguments to `sdmTMB_cv()`. `predictive =
-  "random"` or `"joint"` scores held-out data with a predictive density
-  integrated over the approximate posterior of the random effects (or all
-  parameters) rather than at their estimated values (`"plugin"`, the
-  default and previous behaviour). The plug-in predictive can be
+* **Breaking change:** `sdmTMB_cv()` now scores held-out data by default
+  with a predictive density integrated over the approximate posterior of
+  the random effects (`predictive = "mle-mvn"`) rather than at their
+  estimated values (`"mle-eb"`, the previous behaviour). The `"mle-eb"`
+  predictive ignores random field uncertainty and can be badly
   overconfident with flexible random fields such as those on fine meshes.
-  Plug-in values are always returned in `cv_loglik_plugin` and
-  `sum_loglik_plugin`.
+  `predictive = "joint"` also integrates over the fixed effects and
+  variance parameters. `nsim` sets the number of draws per fold, so
+  `sum_loglik` now depends on the random seed. `"mle-eb"` values are always
+  returned in `cv_loglik_mle_eb` and `sum_loglik_mle_eb`. `"mle-eb"` and
+  `"mle-mvn"` match `type` in `simulate.sdmTMB()` and `residuals.sdmTMB()`.
+
+* Add a `loo::elpd()` method for `sdmTMB_cv()` output so models can be
+  compared with `loo::loo_compare()`, including a standard error of the
+  difference in expected log predictive density. E.g.,
+  `loo::loo_compare(list(m1 = loo::elpd(cv1), m2 = loo::elpd(cv2)))`.
 
 * **Add an RTMB backend**. The default for now remains TMB, but eventually the
   TMB backend will be dropped in favour of RTMB. Set it per model fit with
