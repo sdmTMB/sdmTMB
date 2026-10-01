@@ -97,6 +97,7 @@ Suggests:
     knitr,
     lme4,
     loo,
+    MASS,
     numDeriv,
     rmarkdown,
     sf,
