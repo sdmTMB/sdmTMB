@@ -1302,6 +1302,7 @@ Type objective_function<Type>::operator()()
           }
           case censored_poisson_family: {
             if (notNA) tmp_ll = sdmTMB::dcenspois2(y_i(i,m), mu_i(i,m), upr(i), true);
+            if (notNA) devresid(i,m) = sdmTMB::devresid_censpois(y_i(i,m), mu_i(i,m), upr(i), tmp_ll);
             if (sim_obs) SIMULATE{y_i(i,m) = rpois(mu_i(i,m));}
             break;
           }
@@ -1447,6 +1448,7 @@ Type objective_function<Type>::operator()()
         }
           case gengamma_family: {
             if (notNA) tmp_ll = sdmTMB::dgengamma(y_i(i,m), mu_i(i,m), resolved.phi, resolved.gengamma_Q, true);
+            if (notNA) devresid(i,m) = sdmTMB::devresid_gengamma(y_i(i,m), mu_i(i,m), resolved.phi, resolved.gengamma_Q);
             if (sim_obs) SIMULATE{y_i(i,m) = sdmTMB::rgengamma(mu_i(i,m), resolved.phi, resolved.gengamma_Q);}
             break;
           }

@@ -66,7 +66,10 @@ rtmb_obs_families <- list(
 
   censored_poisson = list(
     logpdf = function(y, mu, s) rtmb_dcenspois(y, mu, s$upr),
-    simulate = function(mu, s) stats::rpois(length(mu), mu)
+    simulate = function(mu, s) stats::rpois(length(mu), mu),
+    deviance = function(y, mu, s, log_density) {
+      rtmb_censpois_devresid(y, mu, s$upr, log_density)
+    }
   ),
 
   # Variance mu * (1 + phi).
@@ -147,6 +150,9 @@ rtmb_obs_families <- list(
     simulate = function(mu, s) {
       w <- log(stats::rgamma(length(mu), s$Q^-2, 1))
       exp(w / (s$Q / s$phi) + rtmb_gengamma_log_theta(mu, s$phi, s$Q))
+    },
+    deviance = function(y, mu, s, log_density) {
+      rtmb_gengamma_devresid(y, mu, s$phi, s$Q)
     }
   ),
 
@@ -297,6 +303,25 @@ rtmb_dcenspois <- function(y, lambda, upr) {
   out
 }
 
+# Censored Poisson deviance residuals. Exact counts give the Poisson
+# deviance. Otherwise P(L <= Y <= U) is maximized as lambda -> Inf (U = Inf)
+# or lambda -> 0 (L = 0), with saturated log likelihood 0, or else where its
+# derivative p(L - 1) - p(U) = 0, at lambda^(U - L + 1) = U! / (L - 1)!. The
+# saturated values depend only on data.
+rtmb_censpois_devresid <- function(y, lambda, upr, log_density) {
+  exact <- !is.na(upr) & upr == y
+  interval <- !is.na(upr) & !exact & y > 0
+  log_lambda_sat <- ifelse(is.na(upr), Inf, -Inf)
+  log_lambda_sat[interval] <- (lgamma(upr[interval] + 1) -
+    lgamma(y[interval])) / (upr[interval] - y[interval] + 1)
+  log_sat <- numeric(length(y))
+  log_sat[interval] <- rtmb_censpois_logprob_value(
+    exp(log_lambda_sat[interval]), y[interval], upr[interval])
+  out <- sign(log_lambda_sat - log(lambda)) * sqrt(2 * (log_sat - log_density))
+  out[exact] <- rtmb_obs_families$poisson$deviance(y[exact], lambda[exact])
+  out
+}
+
 # AD function of `lambda` returning log P(L <= Y <= U), Y ~ Poisson(lambda),
 # with fixed bounds; `U = Inf` is right censoring. Mirrors the C++ atomic
 # `censpois_logprob()`. `RTMB::ppois()` has no log or upper-tail AD method,
@@ -359,12 +384,27 @@ rtmb_gengamma_log_theta <- function(mean, sigma, Q) {
   log(mean) - lgamma((k * beta + 1) / beta) + lgamma(k)
 }
 
+# Q * w, where w = (log(x) - location) / sigma is the standardized log
+# response.
+rtmb_gengamma_qw <- function(x, mean, sigma, Q) {
+  location <- rtmb_gengamma_log_theta(mean, sigma, Q) + log(Q^-2) * sigma / Q
+  Q * (log(x) - location) / sigma
+}
+
 rtmb_dgengamma <- function(x, mean, sigma, Q) {
   k <- Q^-2
-  mu <- rtmb_gengamma_log_theta(mean, sigma, Q) + log(k) / (Q / sigma)
-  qw <- Q * (log(x) - mu) / sigma
+  qw <- rtmb_gengamma_qw(x, mean, sigma, Q)
   -log(sigma * x) + 0.5 * log(Q^2) * (1 - 2 * k) + k * (qw - exp(qw)) -
     lgamma(k)
+}
+
+# The density peaks in the mean where qw = 0, so twice the log-likelihood
+# ratio against the saturated model is 2 * Q^-2 * (exp(qw) - 1 - qw). Scaled
+# by the dispersion sigma^2, as for Gamma() and lognormal(), this equals the
+# Gamma deviance when Q = sigma and the lognormal deviance as Q -> 0.
+rtmb_gengamma_devresid <- function(x, mean, sigma, Q) {
+  qw <- rtmb_gengamma_qw(x, mean, sigma, Q)
+  sign(qw / Q) * sigma / sqrt(Q^2) * sqrt(2 * (exp(qw) - 1 - qw))
 }
 
 # Beta-binomial on shape parameters p * phi and (1 - p) * phi.

@@ -515,7 +515,7 @@ residuals.sdmTMB <- function(object,
   if(fam %in% c("truncated_nbinom1", "truncated_nbinom2")){
     linkinv <- function(eta){exp(eta)}
   } # for residuals, use untruncated mean
-  if (is.null(qres_func)) {
+  if (is.null(qres_func) && type != "deviance") {
     res_func <- switch(fam,
       gaussian = qres_gaussian,
       binomial = qres_binomial,

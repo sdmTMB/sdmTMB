@@ -8,6 +8,13 @@
   from C++ to R and has ~50% fewer lines of code. This transition uncovered
   many bugs that have been fixed as documented in this file.
 
+* Add deviance residuals and `deviance()` for `gengamma()` and
+  `censored_poisson()`. The generalized gamma deviance is scaled by
+  `sigma^2`, so it matches the `Gamma()` deviance when `Q = sigma` and the
+  `lognormal()` deviance as `Q -> 0`. The censored Poisson deviance
+  maximizes the probability of each observed interval for the saturated
+  model and reduces to the Poisson deviance for uncensored observations.
+
 * Fix `sdmTMBcontrol(suppress_nlminb_warnings = TRUE)`, which was never stored
   and so had no effect. It now suppresses the uninformative "NA/NaN function
   evaluation" warnings from `stats::nlminb()` in all optimization calls.

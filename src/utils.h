@@ -504,6 +504,44 @@ Type devresid_nbinom2( Type y,
   return devresid;
 }
 
+// Censored Poisson deviance residual, given the log likelihood `ll`. Exact
+// counts give the Poisson deviance. Otherwise P(L <= Y <= U) is maximized as
+// lambda -> Inf (U = Inf) or lambda -> 0 (L = 0), with saturated log
+// likelihood 0, or else where its derivative p(L - 1) - p(U) = 0, at
+// lambda^(U - L + 1) = U! / (L - 1)!.
+template<class Type>
+Type devresid_censpois(Type x, Type lambda, Type upr, Type ll) {
+  if (!isNA(upr) && upr == x) {
+    return sign(x - lambda) *
+      pow(Type(2) * (x * log((Type(1e-10) + x) / lambda) - (x - lambda)), 0.5);
+  }
+  Type log_sat = Type(0);
+  Type direction = Type(1); // saturated lambda above (1) or below (-1) the fit
+  if (!isNA(upr)) {
+    direction = Type(-1);
+    if (x > 0) {
+      Type log_lambda_sat = (lgamma(upr + Type(1)) - lgamma(x)) / (upr - x + Type(1));
+      log_sat = censpois_logprob(exp(log_lambda_sat), x, upr);
+      direction = log_lambda_sat - log(lambda);
+    }
+  }
+  return sign(direction) * pow(Type(2) * (log_sat - ll), 0.5);
+}
+
+// Generalized gamma deviance residual. The density peaks in the mean where
+// qw = 0, so twice the log-likelihood ratio against the saturated model is
+// 2 * Q^-2 * (exp(qw) - 1 - qw). Scaled by the dispersion sigma^2, as for the
+// Gamma and lognormal, this equals the Gamma deviance when Q = sigma and the
+// lognormal deviance as Q -> 0.
+template<class Type>
+Type devresid_gengamma(Type x, Type mean, Type sigma, Type Q) {
+  Type k = pow(Q, -2);
+  Type log_theta = log(mean) - lgamma(k + sigma / Q) + lgamma(k);
+  Type location = log_theta + log(k) * sigma / Q;
+  Type qw = Q * (log(x) - location) / sigma;
+  return sign(qw / Q) * sigma / sqrt(Q * Q) * sqrt(Type(2) * (exp(qw) - Type(1) - qw));
+}
+
 // Beta-binomial distribution
 // Modified from glmmTMB
 template<class Type>
