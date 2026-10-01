@@ -8,6 +8,9 @@
   from C++ to R and has ~50% fewer lines of code. This transition uncovered
   many bugs that have been fixed as documented in this file.
 
+* `cAIC()` is much faster now. E.g. on a model with about 5,800 random effects
+  it takes 0.68 s instead of 41 s.
+
 * Add deviance residuals and `deviance()` for `gengamma()` and
   `censored_poisson()`. The generalized gamma deviance is scaled by
   `sigma^2`, so it matches the `Gamma()` deviance when `Q = sigma` and the
