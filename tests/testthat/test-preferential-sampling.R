@@ -531,7 +531,8 @@ test_that("a coupled simulation recovers the preference coefficient", {
     p <- predict(fit, newdata = pref_sim()$grid, return_tmb_object = TRUE),
     "return_tmb_object"
   )
-  expect_equal(p$obj$fn(fit$model$par), fit$model$objective, tolerance = 1e-6)
+  expect_equal(p$obj$fn(fit$model$par), fit$model$objective, tolerance = 1e-6,
+    ignore_attr = TRUE)
 
   # Permuting the frame rows doesn't change the likelihood.
   grid <- fit$preferential$spec$data
@@ -539,7 +540,7 @@ test_that("a coupled simulation recovers the preference coefficient", {
     mesh = fit$spde)
   perm <- pref_joint(sim, do_fit = FALSE)
   expect_equal(perm$tmb_obj$fn(fit$model$par), fit$model$objective,
-    tolerance = 1e-6)
+    tolerance = 1e-6, ignore_attr = TRUE)
 })
 
 test_that("a sampling-only field can be estimated", {
@@ -793,7 +794,8 @@ test_that("joint fits work with delta families, smoothers, and IID effects", {
   expect_identical(data$exclude_RE, 1L)
   obj <- make_sdmTMB_adfun(data, get_pars(fit), fit$tmb_map, fit$tmb_random,
     backend = "rtmb")
-  expect_equal(obj$fn(fit$model$par), fit$model$objective, tolerance = 1e-6)
+  expect_equal(obj$fn(fit$model$par), fit$model$objective, tolerance = 1e-6,
+    ignore_attr = TRUE)
   expect_equal(tidy(fit, model = "sampling")$term,
     c(paste0("factor(year)", 2018:2020), "b_pref"))
 
@@ -894,7 +896,7 @@ test_that("catch predictions and indices keep the joint likelihood", {
     obj <- make_sdmTMB_adfun(data, get_pars(fit), fit$tmb_map,
       fit$tmb_random, backend = "rtmb")
     expect_equal(obj$fn(fit$model$par), fit$model$objective,
-      tolerance = 1e-6)
+      tolerance = 1e-6, ignore_attr = TRUE)
     expect_true(all(c("gamma_pref", "b_pref") %in% names(obj$par)))
   }
   index <- suppressMessages(get_index(fit, newdata = grid, bias_correct = FALSE))
@@ -1260,7 +1262,7 @@ test_that("a coupled simulation recovers a time-varying preference coefficient",
     "return_tmb_object"
   )
   expect_equal(retape$obj$fn(fit$model$par), fit$model$objective,
-    tolerance = 1e-6)
+    tolerance = 1e-6, ignore_attr = TRUE)
 })
 
 test_that("random-walk preference and baseline processes fit", {
