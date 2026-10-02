@@ -93,8 +93,6 @@ with \code{1 - sigma_prob} probability.}
 A named list with values for the specified priors.
 }
 \description{
-\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}}
-
 Optional priors/penalties on model parameters. This results in penalized
 likelihood within TMB or can be used as priors if the model is passed to
 \pkg{tmbstan} (see the Bayesian vignette).

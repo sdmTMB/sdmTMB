@@ -150,8 +150,7 @@ For a delta model, the log expected value is the log of the encounter probabilit
 model (\code{type = "poisson-link"}), it is \eqn{\eta_1 + \eta_2}. As in
 prediction, \code{offset} enters \eqn{\eta_2} only.
 
-This feature requires the RTMB backend
-(\code{control = sdmTMBcontrol(backend = "rtmb")}), a main model with a spatial
+This feature requires the RTMB backend (the default), a main model with a spatial
 or spatiotemporal field, and either a single log-link family (Poisson,
 NB2, Gamma, Tweedie, or lognormal) or a \code{\link[=delta_gamma]{delta_gamma()}} or
 \code{\link[=delta_lognormal]{delta_lognormal()}} family with default links (standard or Poisson-link). Smoothers in the main model must be univariate

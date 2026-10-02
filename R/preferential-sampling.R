@@ -32,8 +32,7 @@
 #' model (`type = "poisson-link"`), it is \eqn{\eta_1 + \eta_2}. As in
 #' prediction, `offset` enters \eqn{\eta_2} only.
 #'
-#' This feature requires the RTMB backend
-#' (`control = sdmTMBcontrol(backend = "rtmb")`), a main model with a spatial
+#' This feature requires the RTMB backend (the default), a main model with a spatial
 #' or spatiotemporal field, and either a single log-link family (Poisson,
 #' NB2, Gamma, Tweedie, or lognormal) or a [delta_gamma()] or
 #' [delta_lognormal()] family with default links (standard or Poisson-link). Smoothers in the main model must be univariate

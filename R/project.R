@@ -1,7 +1,5 @@
 #' Project from an \pkg{sdmTMB} model using simulation
 #'
-#' @description `r lifecycle::badge("experimental")`
-#'
 #' @description Project forward in time from an \pkg{sdmTMB} model using a
 #' simulation approach for computational efficiency.
 #' This can be helpful for calculating predictive intervals for long

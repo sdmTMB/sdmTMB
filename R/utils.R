@@ -35,9 +35,9 @@
 #'   likelihood using the Laplace approximation? Can result in a substantial
 #'   speed boost in some cases. This used to default to `FALSE` prior to
 #'   May 2021. Currently not working for models fit with REML or random intercepts.
-#' @param backend Model backend. `"tmb"` is the default; set
-#'   `options(sdmTMB.backend = "rtmb")` to use RTMB by default. The experimental
-#'   `"rtmb"` backend currently supports all families, including delta and
+#' @param backend Model backend. `"rtmb"` is the default; set
+#'   `options(sdmTMB.backend = "tmb")` to use the C++ TMB template by default.
+#'   The `"rtmb"` backend currently supports all families, including delta and
 #'   multi-family models, with SPDE (isotropic, anisotropic, or barrier) and
 #'   areal SAR/CAR spatial and spatiotemporal fields, spatially and
 #'   time-varying coefficients, IID random effects, smoothers, threshold
@@ -157,7 +157,7 @@ sdmTMBcontrol <- function(
   collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
   get_rsr = FALSE,
-  backend = getOption("sdmTMB.backend", "tmb"),
+  backend = getOption("sdmTMB.backend", "rtmb"),
   ...) {
 
   assert_that(is.numeric(nlminb_loops), is.numeric(newton_loops))

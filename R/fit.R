@@ -150,7 +150,7 @@ NULL
 #'   Defaults to `NULL`, in which case `data` is used.
 #' @param preferential `r lifecycle::badge("experimental")` An optional
 #'   preferential-sampling specification from [preferential_sampling()].
-#'   Requires `control = sdmTMBcontrol(backend = "rtmb")`. The sampling
+#'   Requires the RTMB backend (the default). The sampling
 #'   indicators are then modeled jointly with the catch data.
 #' @param weights A numeric vector representing optional likelihood weights for
 #'   the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
