@@ -509,7 +509,7 @@ fit_hessian_fixed <- function(fit, new_obj, par) {
   sr <- fit$sd_report
   if (!is.null(fit$control$profile) || is.null(sr) || !isTRUE(sr$pdHess) ||
       !identical(unname(sr$par.fixed), unname(par)) ||
-      !isTRUE(all.equal(new_obj$fn(par), fit$model$objective,
+      !isTRUE(all.equal(as.numeric(new_obj$fn(par)), fit$model$objective,
         tolerance = 1e-8))) {
     return(NULL)
   }
