@@ -1275,10 +1275,13 @@ sdmTMB <- function(
     if (!is.na(priors_b[[1]])) {
       message("Expanding `b` priors to match model matrix.")
     }
-    # creates matrix that is 2 columns of NAs, rows = number of unique bs
-    # Instead of passing in a 2-column matrix of NAs, pass in a matrix that
-    # has means in first col and the remainder is Var-cov matrix
-    priors_b <- mvnormal(rep(NA, ncol(X_ij[[1]]))) # TODO change hard coded index on X_ij
+    # replicate the single prior (or NA for no prior) for each coefficient
+    n_b <- ncol(X_ij[[1]]) # TODO change hard coded index on X_ij
+    dist <- attr(priors_b, "dist")
+    priors_b <- normal(rep(priors_b[1, 1], n_b), rep(priors_b[1, 2], n_b))
+    if (dist == "mvnormal") { # scale is a variance
+      priors_b <- mvnormal(priors_b[, 1], diag(priors_b[, 2], nrow = n_b))
+    }
   }
   # ncol(X_ij) may occur if time varying model, no intercept
   if (ncol(X_ij[[1]]) > 0 & !identical(nrow(priors_b), ncol(X_ij[[1]]))) { # TODO change hard coded index on X_ij
@@ -1290,7 +1293,7 @@ sdmTMB <- function(
     if (length(priors_b[, 2]) == 1L) {
       if (is.na(priors_b[, 2])) priors_b[, 2] <- 1
     }
-    priors_b <- mvnormal(location = priors_b[, 1], scale = diag(as.numeric(priors_b[, 2]), ncol = nrow(priors_b)))
+    priors_b <- mvnormal(location = priors_b[, 1], scale = diag(as.numeric(priors_b[, 2])^2, ncol = nrow(priors_b)))
   }
   # in some cases, priors_b will be a mix of NAs (no prior) and numeric values
   # easiest way to deal with this is to subset the Sigma matrix
