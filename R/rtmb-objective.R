@@ -45,17 +45,21 @@
 
 # The objective as a closure over `prepared` alone, built in its own frame so
 # the AD tape doesn't also capture `data` and `parameters` from
-# make_sdmTMB_adfun()'s frame.
-rtmb_make_objective <- function(prepared) {
+# make_sdmTMB_adfun()'s frame. A non-NULL `adreport` names the only ADREPORTs
+# to register.
+rtmb_make_objective <- function(prepared, adreport = NULL) {
   force(prepared)
-  function(par) rtmb_objective(par, prepared)
+  force(adreport)
+  function(par) rtmb_objective(par, prepared, adreport)
 }
 
 # RTMB objective: the joint negative log likelihood, registering reports.
-rtmb_objective <- function(par, prepared) {
+rtmb_objective <- function(par, prepared, adreport = NULL) {
   result <- rtmb_evaluate(par, prepared)
+  adreports <- result$adreports
+  if (!is.null(adreport)) adreports <- adreports[intersect(names(adreports), adreport)]
   rtmb_register_reports(result$reports, RTMB::REPORT)
-  rtmb_register_reports(result$adreports, RTMB::ADREPORT)
+  rtmb_register_reports(adreports, RTMB::ADREPORT)
   result$jnll
 }
 

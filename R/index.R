@@ -541,6 +541,9 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
   rebuild_from_fit <- is_fit_obj &&
     value_name[[1]] %in% c("link_total", "weighted_avg", "log_eao") &&
     !use_precomputed
+  # Only these reports need standard errors from a rebuilt objective
+  adreport <- c(value_name,
+    switch(value_name[[1]], link_total = "total", log_eao = "eao"))
 
   if (!use_precomputed && !rebuild_from_fit) {
     if (is.null(obj$pred_tmb_data$proj_X_ij) ||
@@ -607,7 +610,8 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       map = obj$fit_obj$tmb_map,
       random = obj$fit_obj$tmb_random,
       backend = backend_sdmTMB(obj$fit_obj),
-      silent = silent
+      silent = silent,
+      adreport = adreport
     )
 
     old_par <- obj$fit_obj$model$par
@@ -663,7 +667,8 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       map = obj$tmb_map,
       random = obj$tmb_random,
       backend = backend_sdmTMB(obj),
-      silent = silent
+      silent = silent,
+      adreport = adreport
     )
 
     old_par <- obj$model$par

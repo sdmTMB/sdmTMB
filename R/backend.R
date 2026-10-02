@@ -1,8 +1,10 @@
 # Keep the prepared data, parameters, map, and random list as the single model
 # specification. Every caller that changes data builds a new objective.
+# `adreport` optionally names the only ADREPORTs to register (RTMB backend
+# only), so that `sdreport()` skips standard errors the caller won't use.
 make_sdmTMB_adfun <- function(data, parameters, map, random = NULL,
                               backend = "tmb", profile = NULL,
-                              silent = TRUE, ...) {
+                              silent = TRUE, adreport = NULL, ...) {
   backend <- match.arg(backend, c("tmb", "rtmb"))
   # The C++ template has no preferential-sampling likelihood; refuse rather
   # than fit the catch model alone.
@@ -31,7 +33,7 @@ make_sdmTMB_adfun <- function(data, parameters, map, random = NULL,
   } else {
     prepared <- rtmb_prepare(data)
     rtmb_validate(data, prepared, parameters, random, ...)
-    objective <- rtmb_make_objective(prepared)
+    objective <- rtmb_make_objective(prepared, adreport)
     obj <- RTMB::MakeADFun(objective, parameters = parameters, map = map,
       random = random, profile = profile, silent = silent, ...)
   }
