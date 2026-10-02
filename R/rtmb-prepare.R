@@ -113,6 +113,8 @@ rtmb_preferential_inputs <- function(data, families) {
     observed = which(!is.na(pref$R_i)),
     Z = pref$Z_ij,
     xi = pref$spatial_xi == 1L,
+    # "expected" (the full target) or "fields" (its random-field part).
+    target = if (isTRUE(pref$target_type == 1L)) "fields" else "expected",
     # Temporal processes for the preference coefficient and the baseline:
     # "none", "iid", or "rw".
     coefficient = c("none", "iid", "rw")[pref$coefficient_type + 1L],

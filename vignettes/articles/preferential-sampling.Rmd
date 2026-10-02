@@ -57,14 +57,17 @@ $$
 
 * $\mathbf{Z}_{g,t} \boldsymbol{\gamma}$ is a separate sampling regression,
   for example free annual intercepts (changing effort) and distance to port.
-* $h_{g,t}$ is the log of **standardized expected catch**: the catch model
-  evaluated on the cell, including its spatial and spatiotemporal fields.
-  You choose the standardization (e.g., a reference gear) through the
-  covariate values you supply for each cell.
-* $b$ is the preference coefficient. Multiplying the standardized expected
-  catch by $c$ multiplies the odds of sampling by $c^b$, holding the other
-  sampling terms fixed. $b > 0$ means fishers favor high catches. There is
-  no sign restriction.
+* $h_{g,t}$ is, by default, the part of the log **standardized expected
+  catch** due to the catch model's spatial and spatiotemporal fields: the
+  catch model evaluated on the cell, minus the same with the fields set to
+  0. You choose the standardization (e.g., a reference gear) through the
+  covariate values you supply for each cell. With
+  `preferential_sampling(target = "expected")`, $h_{g,t}$ is the full log
+  standardized expected catch, including covariate effects.
+* $b$ is the preference coefficient. Multiplying the field part of the
+  standardized expected catch by $c$ multiplies the odds of sampling by
+  $c^b$, holding the other sampling terms fixed. $b > 0$ means fishers
+  favor high catches. There is no sign restriction.
 * $\xi_g$ is an optional sampling-only spatial field. It absorbs spatial
   structure in sampling that isn't explained by the covariates or by $h$.
 
@@ -213,12 +216,22 @@ fit_catch <- sdmTMB(
 
 The joint model adds `preferential`. We use free annual sampling intercepts,
 which let the proportion of cells sampled change from year to year without
-forcing $b$ or abundance to explain it.
+forcing $b$ or abundance to explain it. (Without them, `sdmTMB()` warns.)
+
+The preference term uses only the field part of expected catch, so any
+covariate that also affects where fishing happens goes in the sampling
+formula. Here that includes depth: the fleet favors high expected catch,
+which depends on depth. A quadratic in depth is enough because the true
+depth effect is quadratic. With depth in both formulas, the default target
+and `target = "expected"` are the same model, and only the meaning of the
+sampling depth coefficients changes. Covariate effects in the sampling
+formula don't need to match the catch model's, which also helps when the
+catch model uses a smoother.
 
 ```{r fit-joint}
 fit <- update(fit_catch,
   preferential = preferential_sampling(
-    sampled ~ 0 + factor(year) + dist_port,
+    sampled ~ 0 + factor(year) + dist_port + poly(depth, 2),
     data = frame
   )
 )
@@ -301,11 +314,9 @@ ggplot(ind, aes(year, est, ymin = lwr, ymax = upr, colour = model)) +
 
 In this realization, the catch-only model overestimates abundance, because
 it fills unsampled, lower-density cells with values that are too high. The
-joint model is closer to the truth. This is one simulated data set. The
-replicated simulations in the package's
-[development files](https://github.com/sdmTMB/sdmTMB/tree/main/tests/optional/preferential-recovery)
-include cases where the joint model helps little (e.g., $b = 0$) and cases
-where a misspecified sampling model biases it.
+joint model is closer to the truth. This is one simulated data set. In other
+cases the joint model helps little (e.g., $b = 0$), and a misspecified
+sampling model can bias it.
 
 ## Is there evidence of preferential sampling?
 
@@ -319,7 +330,7 @@ independent, and the catch estimates match `fit_catch`.
 ```{r fit-zero}
 fit_zero <- update(fit,
   preferential = preferential_sampling(
-    sampled ~ 0 + factor(year) + dist_port,
+    sampled ~ 0 + factor(year) + dist_port + poly(depth, 2),
     data = frame, coefficient = "zero"
   )
 )
@@ -345,7 +356,7 @@ comparable with each other (but not with the catch-only model).
 ```{r fit-xi, warning=FALSE}
 fit_xi <- update(fit,
   preferential = preferential_sampling(
-    sampled ~ 0 + factor(year) + dist_port,
+    sampled ~ 0 + factor(year) + dist_port + poly(depth, 2),
     data = frame, spatial = "on"
   )
 )
@@ -364,18 +375,23 @@ with and without it.
 
 ## Delta models
 
-For a delta model the shared target combines both components at the same
-parameter values:
-$h = \log(\mathrm{logit}^{-1}(\eta_1)) + \eta_2$, i.e., the log of encounter
+For a delta model the log expected catch combines both components at the
+same parameter values:
+$\log(\mathrm{logit}^{-1}(\eta_1)) + \eta_2$, i.e., the log of encounter
 probability times positive mean, not the sum of the two linear predictors.
+The default target $h$ is this minus the same with both components' fields
+set to 0. Because the encounter part is nonlinear, repeating the catch
+covariates in the sampling formula only approximately matches
+`target = "expected"` for these models.
 Conventional logit/log `delta_gamma()` and `delta_lognormal()` are
 supported. As in prediction, the surface's `offset` enters the positive
 component only.
 
 Poisson-link delta models (`delta_gamma(type = "poisson-link")` or
 `delta_lognormal(type = "poisson-link")`) are also supported. Their
-expected catch is $\exp(\eta_1 + \eta_2)$, so here the target is the sum
-of the linear predictors. As in prediction, the surface's `offset` enters
+expected catch is $\exp(\eta_1 + \eta_2)$, so here the full target is the
+sum of the linear predictors, and the default target is the sum of their
+fields. As in prediction, the surface's `offset` enters
 $\eta_2$ only.
 
 ## Interpretation and limitations
@@ -412,7 +428,12 @@ $\eta_2$ only.
 * **"Observed sampling indicators are all 0/1 wherever column ... is 1".**
   A free intercept for a time step with no sampled (or no unsampled)
   eligible cells has no finite estimate. Drop that time step from the frame,
-  set its indicators to `NA`, or use a pooled baseline (`sampled ~ 1`).
+  set its indicators to `NA`, or use `baseline = "iid"` with `sampled ~ 1`.
+* **A warning about no free intercept for each time step.** With a single
+  sampling intercept (e.g., `sampled ~ 1`) and no `baseline`, differences
+  in effort among time steps are attributed to preference. In simulations
+  with changing effort, this biased `b_pref` and the index trend. Use
+  `0 + factor(year)` or `baseline = "iid"`.
 * **"The sampling design is not full rank".** Often a time step whose
   indicators are all `NA` under `factor(year)`. Drop those rows from the
   frame. The biological time step is kept either way.
@@ -427,11 +448,10 @@ $\eta_2$ only.
   use `coefficient = "constant"`.
 * **`b_pref` is uncertain or strongly correlated with other parameters.**
   The preference coefficient is identified by variation in the shared fields
-  that the sampling covariates don't explain. A sampling formula that
-  duplicates the catch covariates, a flexible sampling field with a range
-  like the catch fields, or weak spatial signal can all compete with $b$.
-  Prefer measured sampling covariates, and check how sensitive the
-  estimate is to the sampling specification.
+  that the sampling covariates don't explain. A flexible sampling field
+  with a range like the catch fields, or weak spatial signal, can compete
+  with $b$. Prefer measured sampling covariates, and check how sensitive
+  the estimate is to the sampling specification.
 * **An error about a covariate or new factor level in the sampling
   `data`.** The frame needs every main-model covariate, with no missing
   values, and factors with levels from the fitted data. For a covariate you

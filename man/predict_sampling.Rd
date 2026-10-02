@@ -22,8 +22,9 @@ With \code{nsim = 0}, the sampling \code{data} in its original row order with th
 columns added:
 \itemize{
 \item \code{est}: the sampling probability (or its logit, for \code{type = "link"}).
-\item \code{est_target}: the shared target \eqn{h}, the main model's log
-standardized expected catch.
+\item \code{est_target}: the shared target \eqn{h}: the random-field part of the
+main model's log standardized expected catch (or all of it, for
+\code{target = "expected"}).
 \item \code{est_fixed}: the sampling formula's contribution \eqn{Z\gamma}.
 \item \code{est_baseline}: the baseline deviation \eqn{\alpha_t}, if \code{baseline}
 was used.

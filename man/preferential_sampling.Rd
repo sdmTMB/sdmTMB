@@ -9,6 +9,7 @@ preferential_sampling(
   data,
   re_form_iid = NA,
   offset = 0,
+  target = c("fields", "expected"),
   coefficient = c("constant", "iid", "rw", "zero"),
   baseline = c("off", "iid", "rw"),
   spatial = c("off", "on")
@@ -40,6 +41,26 @@ aren't supported.}
 link scale (not an offset for the sampling model). A single value or one
 value per row of \code{data}. The default \code{0} means unit exposure.
 Observation offsets are not copied.}
+
+\item{target}{What the preference coefficient multiplies, \eqn{h}:
+\itemize{
+\item \code{"fields"} (default): the part of the log expected value due to the
+main model's spatial and spatiotemporal fields, i.e., the log
+expected value minus its value with the fields set to 0 (for a delta
+model, the difference on the combined log scale). This is the form in
+Diggle et al. (2010) and Conn et al. (2017). Covariates that affect
+where sampling happens belong in the sampling \code{formula}, including
+those also in the main model.
+\item \code{"expected"}: the full log expected value, including fixed effects,
+smoothers, and \code{offset}, so that sampling also prefers high expected
+catch due to covariates.
+}
+
+For a single log-link family (or a Poisson-link delta) and a constant
+coefficient, the two are the same model when the sampling \code{formula}
+contains the main model's fixed effects; only the sampling
+coefficients' meaning differs. With \code{"fields"}, \eqn{\bar{h}_t} (see
+\code{coefficient}) is 0.}
 
 \item{coefficient}{How the preference coefficient \eqn{b} varies over
 the main model's time steps:
@@ -110,25 +131,26 @@ A list of class \code{sdmTMB_preferential}.
 \ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}}
 
 Specify a model for which cells of an eligible sampling frame were sampled
-in each time step, linked to the main model's standardized expected catch.
+in each time step, linked to the main model's standardized expected value.
 Pass the result to the \code{preferential} argument of \code{\link[=sdmTMB]{sdmTMB()}}.
 
-The sampling indicators are modeled jointly with the catch data:
+The sampling indicators are modeled jointly with the response data:
 \deqn{\mathrm{logit}(p) = Z\gamma + \alpha_t + b h + (b_t - b)(h -
 \bar{h}_t) + \xi,}
-where \eqn{Z\gamma} is the sampling \code{formula}, \eqn{h} is the main model's
-log expected catch evaluated on the sampling \code{data} (including its spatial
-and spatiotemporal fields), \eqn{b} is the preference coefficient
+where \eqn{Z\gamma} is the sampling \code{formula}, \eqn{h} is the part of the
+main model's log expected value due to its spatial and spatiotemporal
+fields, evaluated on the sampling \code{data} (or all of it; see \code{target}),
+\eqn{b} is the preference coefficient
 \code{b_pref} and \eqn{b_t} its value in time step \eqn{t} (\eqn{b_t = b} by
 default; see \code{coefficient}, which also defines \eqn{\bar{h}_t}),
 \eqn{\alpha_t} is an optional temporal baseline process (see
 \code{baseline}), and \eqn{\xi} is an optional sampling-only spatial field.
-For a delta model, \eqn{h} is the log of the encounter probability times the positive mean,
+For a delta model, the log expected value is the log of the encounter probability times the positive mean,
 \eqn{\log(\mathrm{logit}^{-1}(\eta_1)) + \eta_2}. For a Poisson-link delta
 model (\code{type = "poisson-link"}), it is \eqn{\eta_1 + \eta_2}. As in
 prediction, \code{offset} enters \eqn{\eta_2} only.
 
-This feature is under development: it requires the RTMB backend
+This feature requires the RTMB backend
 (\code{control = sdmTMBcontrol(backend = "rtmb")}), a main model with a spatial
 or spatiotemporal field, and either a single log-link family (Poisson,
 NB2, Gamma, Tweedie, or lognormal) or a \code{\link[=delta_gamma]{delta_gamma()}} or

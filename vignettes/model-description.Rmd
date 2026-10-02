@@ -463,8 +463,8 @@ CAR requires a symmetric adjacency matrix.
 The joint model couples the main observation model to a Bernoulli model for whether each eligible cell $g$ of a sampling frame was sampled in time step $t$.
 This is useful when sample locations depend on the process being measured (e.g., a fishery that preferentially returns to productive grounds).
 
-The shared surface is the log of standardized expected catch, $h_{g,t}$.
-It is the main model evaluated on the sampling frame, as with prediction `newdata`:
+The shared surface is built from the log of standardized expected catch, $h_{g,t}$.
+This is the main model evaluated on the sampling frame, as with prediction `newdata`:
 
 $$
 \eta^{*}_{g,t} = \bX^{*}_{g,t} \bbeta + f^{*}_{g,t} + \alpha^{*}_{g,t} + O^{*}_{g,t} + \bA^{*}_{g} \bomega + \bA^{*}_{g} \beps_t,
@@ -483,11 +483,16 @@ $$
 not the sum of the two link predictors. As in prediction, the offset enters only the positive component.
 For a Poisson-link delta model [@thorson2018poisson], the log expected catch is the sum of the two link predictors, $h_{g,t} = \eta^{*}_{1,g,t} + \eta^{*}_{2,g,t}$, again with the offset in the second component only.
 
+Let $h^{0}_{g,t}$ be $h_{g,t}$ with the spatial and spatiotemporal fields set to 0.
+The preference target $\tilde{h}_{g,t}$ is, by default (`target = "fields"`), the part of $h$ due to the fields, $\tilde{h}_{g,t} = h_{g,t} - h^{0}_{g,t}$ [@conn2017].
+With `target = "expected"`, it is all of it, $\tilde{h}_{g,t} = h_{g,t}$.
+For a single log-link family (or a Poisson-link delta model) and a constant $b$, the two are the same model when $\bZ$ contains the main model's fixed-effect columns: $b\,\bX^{*}\bbeta$ is then absorbed by $\bZ\boldsymbol{\gamma}$.
+
 Whether each cell was sampled is then modeled as
 
 $$
 \begin{aligned}
-\Pr(R_{g,t} = 1) &= \mathrm{logit}^{-1}\left(\bZ_{g,t} \boldsymbol{\gamma} + \delta_t + b\, h_{g,t} + (b_t - b) (h_{g,t} - \bar{h}_t) + \xi_{g}\right),\\
+\Pr(R_{g,t} = 1) &= \mathrm{logit}^{-1}\left(\bZ_{g,t} \boldsymbol{\gamma} + \delta_t + b\, \tilde{h}_{g,t} + (b_t - b) (\tilde{h}_{g,t} - \bar{h}_t) + \xi_{g}\right),\\
 \bxi &\sim \RM{MVNormal} \left( \bs{0}, \bSigma_\xi \right),
 \end{aligned}
 $$
@@ -499,12 +504,14 @@ With `coefficient = "zero"`, $b_t = b = 0$, so the sampling and catch likelihood
 With `coefficient = "iid"`, $b_t = b + u_t$ with $u_t \sim \RM{Normal}(0, \sigma_b^2)$; with `coefficient = "rw"`, $b_1 = b$ and $b_t = b_{t-1} + d_t$ with $d_t \sim \RM{Normal}(0, \sigma_b^2)$ on an equally spaced time grid.
 The baseline $\delta_t$ is defined in the same way with `baseline = "iid"` or `"rw"` (with $\delta_1 = 0$ for a random walk), with SD $\sigma_\delta$; it replaces free time-step intercepts in $\bZ_{g,t} \boldsymbol{\gamma}$, whose intercept is then the mean or first-time-step baseline.
 Every time step of the main model, including `extra_time`, has a $b_t$ and $\delta_t$.
-The deviations $b_t - b$ multiply the target centered on $\bar{h}_t$, the mean over the frame rows of time step $t$ of $\eta^{*}_{g,t}$ without its spatial and spatiotemporal fields (for a delta model, the combined target of the two components without their fields).
+The deviations $b_t - b$ multiply the target centered on $\bar{h}_t$.
+With `target = "expected"`, $\bar{h}_t$ is the mean of $h^{0}_{g,t}$ over the frame rows of time step $t$; with `target = "fields"`, it is 0.
 They therefore change how strongly sampling concentrates on high expected catch within a time step rather than the time step's overall sampling rate, which the intercepts already determine precisely.
 Conditional on the deviations, centering only changes what free time-step intercepts in $\bZ_{g,t} \boldsymbol{\gamma}$ mean.
 Marginally, it is a different model: the centered model is equivalent to an uncentered one whose time-step intercepts shift by $-(b_t - b)\bar{h}_t$ with the deviations.
 Without centering, the deviations mostly move the sampling rate that the fixed intercepts already fit, and maximum likelihood tends to estimate $\sigma_b = 0$ even when the slopes vary.
-Without free time-step intercepts (e.g., a single sampling intercept or a baseline process), centering also assumes that a change in preference does not change a time step's sampling rate at its mean expected catch.
+With neither free time-step intercepts nor a baseline process (e.g., a single sampling intercept), `sdmTMB()` warns: differences in effort among time steps are then attributed to the preference term.
+Without free time-step intercepts (including with a baseline process), centering also assumes that a change in preference does not change a time step's sampling rate at its mean expected catch.
 The fields are left out of $\bar{h}_t$ because their frame average would couple every sampling row to every mesh vertex of its time step.
 The deviations are reported as `sigma_b_pref`, `sigma_alpha_pref`, `b_pref_t`, and `alpha_pref_t`.
 The shared surface is recomputed inside the joint likelihood, which integrates over the shared and sampling-only latent effects.

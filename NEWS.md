@@ -33,8 +33,9 @@
 * Add experimental joint preferential-sampling models (RTMB backend only):
   `sdmTMB(..., preferential = preferential_sampling(...))`. A Bernoulli
   model for which cells of an eligible sampling frame were sampled is linked
-  to the main model's standardized expected catch through a shared
-  preference coefficient, with its own fixed effects, an optional
+  to the main model's spatial and spatiotemporal fields (by default; or to
+  its full standardized expected catch with `target = "expected"`) through a
+  shared preference coefficient, with its own fixed effects, an optional
   sampling-only spatial field, and optional IID or random-walk time-step
   processes for the preference coefficient (`coefficient`) and the sampling
   baseline (`baseline`). See `predict_sampling()`,

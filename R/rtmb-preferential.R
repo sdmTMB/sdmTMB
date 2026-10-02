@@ -1,7 +1,8 @@
 # Preferential-sampling likelihood for the RTMB objective: a Bernoulli model
 # for which cells of the sampling frame were visited,
 #   logit(p) = Z gamma + alpha_t + b h + u_t (h - hbar_t) + xi,
-# where `h` is the main model's log expected catch at the frame rows, computed
+# where `h` is the random-field part of the main model's log expected catch
+# at the frame rows (or all of it for `target = "expected"`), computed
 # from the same latent effects as the catch likelihood, `b` is `b_pref`,
 # `u_t` is an optional temporal deviation of the preference coefficient,
 # `hbar_t` is the mean of `h` without its random fields over the frame rows of
@@ -26,19 +27,26 @@ rtmb_sampling <- function(par, theta, effects, prepared) {
   # both kinds of delta.
   target <- rtmb_combined_link(shared$eta[, 1L], shared$eta[, prepared$n_m],
     prepared$families[[1L]])
+  # The target without the random fields: subtracted for a fields-only
+  # target, and its time-step mean centers the temporal deviations.
+  no_fields <- rtmb_combined_link(shared$fe[, 1L], shared$fe[, prepared$n_m],
+    prepared$families[[1L]])
+  if (inputs$target == "fields") target <- target - no_fields
   fixed <- rtmb_product(inputs$Z, par$gamma_pref)
   time <- inputs$rows$time
   preference <- par$b_pref * target
   b_t <- NULL
   if (inputs$coefficient != "none") {
     b_t <- par$b_pref + effects$b_pref_t
-    # Center on the time step's mean target without the random fields.
-    # Averaging the fields over the frame would make every row depend on
-    # every mesh vertex of the time step, and the Laplace Hessian dense.
-    no_fields <- rtmb_combined_link(shared$fe[, 1L], shared$fe[, prepared$n_m],
-      prepared$families[[1L]])
-    centered <- target -
-      rtmb_product(inputs$time_mean, no_fields)[inputs$time_mean_index]
+    # Center on the time step's mean target without the random fields
+    # (0 for a fields-only target). Averaging the fields over the frame
+    # would make every row depend on every mesh vertex of the time step, and
+    # the Laplace Hessian dense.
+    centered <- target
+    if (inputs$target == "expected") {
+      centered <- centered -
+        rtmb_product(inputs$time_mean, no_fields)[inputs$time_mean_index]
+    }
     preference <- preference + effects$b_pref_t[time] * centered
   }
   baseline <- if (inputs$baseline != "none") {

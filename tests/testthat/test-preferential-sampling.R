@@ -69,11 +69,13 @@ pref_sim <- function(b = 0.8, xi_sd = 0, seed = 1) {
 
 pref_joint <- function(sim, spatial = "off", control = list(),
                        formula = sampled ~ 0 + factor(year),
-                       coefficient = "constant", baseline = "off", ...) {
+                       coefficient = "constant", baseline = "off",
+                       target = "fields", ...) {
   sdmTMB(catch ~ 1, data = sim$dat, mesh = sim$mesh, time = "year",
     family = poisson(),
     preferential = preferential_sampling(formula, data = sim$grid,
-      spatial = spatial, coefficient = coefficient, baseline = baseline),
+      spatial = spatial, coefficient = coefficient, baseline = baseline,
+      target = target),
     control = do.call(sdmTMBcontrol, c(list(backend = "rtmb"), control)), ...
   )
 }
@@ -198,7 +200,8 @@ test_that("preferential sampling requires RTMB and rejects unsupported features"
 test_that("the TMB backend refuses preferential model data", {
   skip_on_cran()
   fit <- pref_fit()
-  prep <- prepare_for(fit, preferential_sampling(sampled ~ 1, pref_grid()))
+  prep <- prepare_for(fit, preferential_sampling(sampled ~ 0 + factor(year),
+    pref_grid()))
   data <- fit$tmb_data
   data$preferential <- prep$data
   expect_error(
@@ -269,15 +272,15 @@ test_that("the shared surface matches ordinary RTMB prediction on the frame", {
 
   # A covariate in both formulas changes both; separate columns keep a
   # sampling version apart from the standardized main-model one.
-  both <- function(data, formula = sampled ~ depth) {
+  both <- function(data, formula = sampled ~ 0 + factor(year) + depth) {
     prepare_for(fit, preferential_sampling(formula, data = data))$data
   }
   grid3 <- transform(grid, depth = depth + 10, depth_actual = depth)
   expect_false(isTRUE(all.equal(both(grid3)$Z_ij, both(grid)$Z_ij)))
   expect_false(isTRUE(all.equal(both(grid3)$X_ij, both(grid)$X_ij)))
   grid$depth_actual <- grid$depth
-  expect_equal(both(grid3, sampled ~ depth_actual)$Z_ij,
-    both(grid, sampled ~ depth_actual)$Z_ij)
+  expect_equal(both(grid3, sampled ~ 0 + factor(year) + depth_actual)$Z_ij,
+    both(grid, sampled ~ 0 + factor(year) + depth_actual)$Z_ij)
 })
 
 test_that("preferential preparation records the frame and missing history", {
@@ -321,8 +324,9 @@ test_that("preferential preparation records the frame and missing history", {
     control = sdmTMBcontrol(backend = "rtmb"))
   grid_extra <- rbind(grid, transform(grid[grid$year == 2020, ], year = 2021L,
     sampled = NA))
-  prep_extra <- prepare_for(fit_extra,
-    preferential_sampling(sampled ~ 1, data = grid_extra))
+  expect_warning(prep_extra <- prepare_for(fit_extra,
+    preferential_sampling(sampled ~ 1, data = grid_extra)),
+    "no free intercept")
   expect_identical(max(prep_extra$data$year_i), 3L)
   expect_identical(sum(is.na(prep_extra$data$R_i)), 74L)
 })
@@ -339,7 +343,7 @@ test_that("preferential preparation rejects invalid frames", {
   bad$sampled[bad$year == 2019] <- NA
   expect_error(prep(bad), "not full rank")
   expect_error(prep(bad), "factor(year)2019", fixed = TRUE)
-  expect_silent(prep(bad, sampled ~ 1))
+  expect_warning(prep(bad, sampled ~ 1), "no free intercept")
 
   bad <- grid
   bad$sampled[bad$year == 2019] <- 0
@@ -441,6 +445,8 @@ test_that("the joint objective adds the Bernoulli and sampling-field terms", {
   eps <- as.matrix(A %*% par$epsilon_st[, , 1])
   h <- par$b_j + as.vector(A %*% par$omega_s[, 1]) +
     eps[cbind(seq_len(nrow(grid)), grid$year)]
+  # The default target is the fields part: h without the intercept.
+  h_fields <- h - par$b_j
   xi <- as.vector(A %*% par$xi_s)
   Q <- with(fit$tmb_data$spde, exp(par$ln_kappa_xi)^4 * M0 +
     2 * exp(par$ln_kappa_xi)^2 * M1 + M2)
@@ -449,14 +455,14 @@ test_that("the joint objective adds the Bernoulli and sampling-field terms", {
   # Include extreme logits: a naive log(1 - plogis(eta)) underflows there.
   for (b in c(0.7, 40)) {
     par$b_pref <- b
-    eta <- par$gamma_pref[grid$year] + b * h + xi
+    eta <- par$gamma_pref[grid$year] + b * h_fields + xi
     bern_nll <- -sum(ifelse(grid$sampled == 1,
       stats::plogis(eta, log.p = TRUE), stats::plogis(-eta, log.p = TRUE)))
     obj <- fixed_latent_objectives(fit, par)
     expect_equal(obj$joint$fn(obj$joint$par) - obj$catch$fn(obj$catch$par),
       bern_nll + xi_nll, tolerance = 1e-8)
     r <- obj$joint$report(obj$joint$par)
-    expect_equal(r$sampling_target_i, h, tolerance = 1e-10)
+    expect_equal(r$sampling_target_i, h_fields, tolerance = 1e-10)
     expect_equal(r$sampling_eta_i, eta, tolerance = 1e-10)
     expect_equal(r$sampling_field_i, xi, tolerance = 1e-10)
     expect_equal(r$sampling_fixed_i + r$sampling_preference_i +
@@ -464,9 +470,21 @@ test_that("the joint objective adds the Bernoulli and sampling-field terms", {
   }
   expect_true(any(abs(eta) > 50))
 
-  # Unknown indicators contribute nothing.
+  # The full target includes the intercept.
   par$b_pref <- 0.7
   eta <- par$gamma_pref[grid$year] + 0.7 * h + xi
+  fit_expected <- pref_joint(sim, spatial = "on", target = "expected",
+    do_fit = FALSE)
+  obj <- fixed_latent_objectives(fit_expected, par)
+  bern_nll <- -sum(stats::dbinom(grid$sampled, 1, stats::plogis(eta),
+    log = TRUE))
+  expect_equal(obj$joint$fn(obj$joint$par) - obj$catch$fn(obj$catch$par),
+    bern_nll + xi_nll, tolerance = 1e-8)
+  expect_equal(obj$joint$report(obj$joint$par)$sampling_target_i, h,
+    tolerance = 1e-10)
+
+  # Unknown indicators contribute nothing.
+  eta <- par$gamma_pref[grid$year] + 0.7 * h_fields + xi
   known <- grid$year != 2L | seq_len(nrow(grid)) %% 3 != 0
   grid_na <- grid
   grid_na$sampled[!known] <- NA
@@ -602,6 +620,47 @@ test_that("with the preference coefficient fixed at 0 the models decouple", {
     unname(stats::coef(sampling)), tolerance = 1e-4)
 })
 
+test_that("a fields-only target multiplies only the random fields", {
+  skip_on_cran()
+  sim <- pref_sim()
+  set.seed(3)
+  sim$grid$depth <- sim$grid$x / 10 + stats::rnorm(nrow(sim$grid), 0, 0.1)
+  sim$dat$depth <- sim$grid$depth[sim$grid$sampled == 1]
+  fit_target <- function(formula, target) {
+    sdmTMB(catch ~ depth, data = sim$dat, mesh = sim$mesh, time = "year",
+      family = poisson(),
+      preferential = preferential_sampling(formula, data = sim$grid,
+        target = target),
+      control = sdmTMBcontrol(backend = "rtmb"))
+  }
+  fields <- fit_target(sampled ~ 0 + factor(year), "fields")
+  expected <- fit_target(sampled ~ 0 + factor(year), "expected")
+  expect_true(fields$pos_def_hessian)
+  expect_output(print(fields), "random-field part")
+  # The target is the fields part of the prediction on the frame.
+  p <- predict(fields, newdata = sim$grid)
+  expect_equal(predict_sampling(fields)$est_target, p$est_rf,
+    tolerance = 1e-8)
+  expect_gt(abs(fields$model$objective - expected$model$objective), 1e-3)
+  # With the fixed effects repeated in the sampling formula, the two targets
+  # are reparameterizations of one model.
+  expect_equal(
+    fit_target(sampled ~ 0 + factor(year) + depth, "fields")$model$objective,
+    fit_target(sampled ~ 0 + factor(year) + depth, "expected")$model$objective,
+    tolerance = 1e-6)
+  # Temporal deviations need no centering for a fields-only target.
+  iid <- sdmTMB(catch ~ depth, data = sim$dat, mesh = sim$mesh,
+    time = "year", family = poisson(),
+    preferential = preferential_sampling(sampled ~ 0 + factor(year),
+      data = sim$grid, target = "fields", coefficient = "iid"),
+    control = sdmTMBcontrol(backend = "rtmb"))
+  ps <- predict_sampling(iid)
+  b_t <- tidy(iid, "ran_vals", model = "sampling")$estimate
+  expect_equal(ps$est_preference,
+    b_t[match(ps$year, sort(unique(ps$year)))] * ps$est_target,
+    tolerance = 1e-8)
+})
+
 test_that("a spatial-only model without time fits", {
   skip_on_cran()
   sim <- pref_sim()
@@ -662,8 +721,8 @@ test_that("smoothers and included IID intercepts match ordinary prediction", {
 
   # The fitted smoother basis is reused, and the IID design indexes the
   # fitted levels.
-  prep <- prepare_for(fit, preferential_sampling(sampled ~ 1, data = grid,
-    re_form_iid = NULL))
+  prep <- prepare_for(fit, preferential_sampling(sampled ~ 0 + factor(year),
+    data = grid, re_form_iid = NULL))
   tmb <- predict(fit, newdata = grid, offset = rep(0, nrow(grid)),
     return_tmb_data = TRUE)
   expect_equal(prep$data$Zs, tmb$proj_Zs)
@@ -674,8 +733,8 @@ test_that("smoothers and included IID intercepts match ordinary prediction", {
   # Group columns are needed only when IID effects are included, and their
   # levels must be fitted levels.
   no_vessel <- grid[names(grid) != "vessel"]
-  expect_silent(prepare_for(fit, preferential_sampling(sampled ~ 1,
-    data = no_vessel)))
+  expect_silent(prepare_for(fit, preferential_sampling(
+    sampled ~ 0 + factor(year), data = no_vessel)))
   expect_error(prepare_for(fit, preferential_sampling(sampled ~ 1,
     data = no_vessel, re_form_iid = NULL)), "Missing: vessel")
   bad <- grid
@@ -728,10 +787,11 @@ test_that("the delta target is the log of the combined expected catch", {
     "can't contain `NA`")
 
   # The offset enters only the positive component, as in prediction.
-  prep0 <- prepare_for(fits[[1]], preferential_sampling(sampled ~ 1, grid))
+  prep0 <- prepare_for(fits[[1]],
+    preferential_sampling(sampled ~ 0 + factor(year), grid))
   lp0 <- shared_predictor(fits[[1]], prep0)
   lp3 <- shared_predictor(fits[[1]], prepare_for(fits[[1]],
-    preferential_sampling(sampled ~ 1, grid, offset = 0.3)))
+    preferential_sampling(sampled ~ 0 + factor(year), grid, offset = 0.3)))
   expect_equal(lp3$eta[, 1], lp0$eta[, 1], tolerance = 1e-12)
   expect_equal(lp3$eta[, 2] - lp0$eta[, 2], rep(0.3, nrow(grid)),
     tolerance = 1e-12)
@@ -757,7 +817,8 @@ test_that("the Poisson-link delta target is the sum of the predictors", {
   # of the expected catch at that offset.
   for (offset in c(0, 0.3)) {
     lp <- shared_predictor(fit, prepare_for(fit,
-      preferential_sampling(sampled ~ 1, data = grid, offset = offset)))
+      preferential_sampling(sampled ~ 0 + factor(year), data = grid,
+        offset = offset)))
     p <- predict(fit, newdata = grid, offset = rep(offset, nrow(grid)))
     expect_equal(lp$eta[, 1], p$est1, tolerance = 1e-10)
     expect_equal(lp$eta[, 2], p$est2, tolerance = 1e-10)
@@ -768,7 +829,7 @@ test_that("the Poisson-link delta target is the sum of the predictors", {
   }
 
   joint <- update(fit, preferential = preferential_sampling(
-    sampled ~ 0 + factor(year), data = grid))
+    sampled ~ 0 + factor(year), data = grid, target = "expected"))
   expect_true(joint$pos_def_hessian)
   r <- joint$tmb_obj$report(joint$tmb_obj$env$last.par.best)
   p <- predict(joint, newdata = grid, offset = rep(0, nrow(grid)),
@@ -785,7 +846,7 @@ test_that("joint fits work with delta families, smoothers, and IID effects", {
     mesh = pref_mesh(dat), time = "year", family = delta_gamma(),
     spatiotemporal = "off", offset = log(dat$effort),
     preferential = preferential_sampling(sampled ~ 0 + factor(year),
-      data = grid, re_form_iid = NULL),
+      data = grid, re_form_iid = NULL, target = "expected"),
     control = sdmTMBcontrol(backend = "rtmb"))
   expect_true(fit$pos_def_hessian)
   expect_lt(max(abs(fit$gradients)), 1e-3)
@@ -876,8 +937,8 @@ test_that("predict_sampling() returns fitted probabilities and joint draws", {
   expect_equal(stats::qlogis(p$est), p$est_fixed + p$est_preference)
   b <- fit$model$par[["b_pref"]]
   expect_equal(p$est_preference, b * p$est_target)
-  # The target is the ordinary catch prediction on the frame.
-  expect_equal(p$est_target, predict(fit, newdata = grid)$est,
+  # The target is the fields part of the ordinary prediction on the frame.
+  expect_equal(p$est_target, predict(fit, newdata = grid)$est_rf,
     tolerance = 1e-8)
   expect_equal(predict_sampling(fit, type = "link")$est, stats::qlogis(p$est))
 
@@ -940,13 +1001,13 @@ test_that("interactions and no-intercept designs match ordinary prediction", {
     offset = log(dat$effort), control = sdmTMBcontrol(backend = "rtmb"))
   grid <- pref_grid()
   lp <- shared_predictor(fit, prepare_for(fit,
-    preferential_sampling(sampled ~ 1, data = grid)))
+    preferential_sampling(sampled ~ 0 + factor(year), data = grid)))
   p <- predict(fit, newdata = grid, offset = rep(0, nrow(grid)))
   expect_equal(lp$eta[, 1], p$est, tolerance = 1e-10)
   # Standardizing gear changes the depth slope through the interaction.
   grid_c <- transform(grid, gear = factor("c", levels = levels(dat$gear)))
   lp_c <- shared_predictor(fit, prepare_for(fit,
-    preferential_sampling(sampled ~ 1, data = grid_c)))
+    preferential_sampling(sampled ~ 0 + factor(year), data = grid_c)))
   slope <- function(lp) stats::coef(stats::lm(lp$fixed[, 1] ~ grid$depth))[[2]]
   expect_false(isTRUE(all.equal(slope(lp), slope(lp_c))))
 })
@@ -976,7 +1037,7 @@ test_that("a joint fit with only a spatiotemporal shared field works", {
   expect_false("sigma_O" %in% tidy(st_only, "ran_pars")$term)
   r <- st_only$tmb_obj$report(st_only$tmb_obj$env$last.par.best)
   expect_equal(r$sampling_target_i,
-    predict(st_only, newdata = fit$preferential$spec$data)$est,
+    predict(st_only, newdata = fit$preferential$spec$data)$est_rf,
     tolerance = 1e-8)
 })
 
@@ -1088,6 +1149,13 @@ test_that("temporal processes check the time grid and sampling design", {
   expect_length(fit$tmb_params$b_pref_dev, 3L)
   expect_true(is.finite(fit$tmb_obj$fn()))
 
+  # Without free time-step intercepts or a baseline process, effort
+  # differences among time steps would load on the preference term.
+  expect_warning(build(sampled ~ 1), "no free intercept")
+  expect_warning(build(sampled ~ x), "no free intercept")
+  expect_silent(build(sampled ~ 1, baseline = "iid"))
+  expect_silent(build(sampled ~ 0 + factor(year) + x))
+
   # A baseline process needs an intercept and no free time-step effects.
   expect_error(build(baseline = "iid"), "already has a free baseline")
   expect_error(build(sampled ~ 1 + factor(year), baseline = "rw"),
@@ -1106,16 +1174,21 @@ test_that("the joint objective adds centered temporal deviations and their densi
   grid$sampled[seq(2, nrow(grid), by = 7)] <- NA
   configs <- list(
     list(formula = sampled ~ 0 + factor(year), coefficient = "iid",
-      baseline = "off"),
-    list(formula = sampled ~ 1, coefficient = "rw", baseline = "iid"),
-    list(formula = sampled ~ 1, coefficient = "constant", baseline = "rw")
+      baseline = "off", target = "expected"),
+    list(formula = sampled ~ 1, coefficient = "rw", baseline = "iid",
+      target = "expected"),
+    list(formula = sampled ~ 1, coefficient = "constant", baseline = "rw",
+      target = "expected"),
+    list(formula = sampled ~ 0 + factor(year), coefficient = "iid",
+      baseline = "off", target = "fields")
   )
   for (cfg in configs) {
     # Year 4 is an extra time step without frame rows.
     fit <- sdmTMB(catch ~ z, data = sim$dat, mesh = sim$mesh, time = "year",
       family = poisson(), extra_time = 4L, do_fit = FALSE,
       preferential = preferential_sampling(cfg$formula, data = grid,
-        coefficient = cfg$coefficient, baseline = cfg$baseline),
+        coefficient = cfg$coefficient, baseline = cfg$baseline,
+        target = cfg$target),
       control = sdmTMBcontrol(backend = "rtmb"))
     par <- fit$tmb_params
     set.seed(4)
@@ -1151,8 +1224,13 @@ test_that("the joint objective adds centered temporal deviations and their densi
     h_fixed <- par$b_j[1] + par$b_j[2] * grid$z
     h <- h_fixed + as.vector(A %*% par$omega_s[, 1]) +
       eps[cbind(seq_len(nrow(grid)), grid$year)]
-    # Centered on the time step's mean target without the fields.
+    # The full target is centered on the time step's mean target without
+    # the fields; the fields-only target needs no centering.
     h_bar <- stats::ave(h_fixed, grid$year)
+    if (cfg$target == "fields") {
+      h <- h - h_fixed
+      h_bar <- 0
+    }
     Z <- stats::model.matrix(stats::delete.response(stats::terms(cfg$formula)),
       grid)
     eta <- as.vector(Z %*% par$gamma_pref) + alpha[grid$year] +
@@ -1181,7 +1259,8 @@ test_that("the joint objective adds centered temporal deviations and their densi
       family = poisson(), extra_time = 4L, do_fit = FALSE,
       preferential = preferential_sampling(cfg$formula,
         data = grid[rev(seq_len(nrow(grid))), ],
-        coefficient = cfg$coefficient, baseline = cfg$baseline),
+        coefficient = cfg$coefficient, baseline = cfg$baseline,
+        target = cfg$target),
       control = sdmTMBcontrol(backend = "rtmb"))
     expect_equal(fixed_latent_objectives(perm, par)$joint$fn(obj$joint$par),
       obj$joint$fn(obj$joint$par), tolerance = 1e-8)
@@ -1253,14 +1332,11 @@ test_that("a coupled simulation recovers a time-varying preference coefficient",
   expect_true(any(grepl("Preference coefficient: IID by time step", out)))
   expect_true(any(grepl("Preference coefficient SD over time", out)))
 
-  # Predictor pieces: b h plus the deviation times h centered on its
-  # field-free part, here the intercept.
+  # Predictor pieces: the fields-only target needs no centering, so the
+  # preference term is b_t h.
   p <- predict_sampling(fit, type = "link")
-  b <- tidy(fit, model = "sampling")
-  b <- b$estimate[b$term == "b_pref"]
-  h_bar <- tidy(fit)$estimate
-  expect_equal(p$est_preference, b * p$est_target +
-    (rv$estimate[p$year] - b) * (p$est_target - h_bar), tolerance = 1e-8)
+  expect_equal(p$est_preference, rv$estimate[p$year] * p$est_target,
+    tolerance = 1e-8)
   expect_equal(p$est, p$est_fixed + p$est_preference, tolerance = 1e-10)
   expect_null(p$est_baseline)
 
