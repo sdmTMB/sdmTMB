@@ -495,6 +495,51 @@ get_eao <- function(obj,
   d
 }
 
+# Estimates and SEs of an index objective's reports, as from
+# `summary(<sdreport>, "report")`. `args` are make_sdmTMB_adfun() arguments.
+index_report <- function(fit, args, par, ...) {
+  if (...length() == 0L) {
+    out <- joint_precision_report(fit, args, par)
+    if (!is.null(out)) return(out)
+  }
+  new_obj <- do.call(make_sdmTMB_adfun, args)
+  summary(index_sdreport(fit, new_obj, par, ...), "report")
+}
+
+# sdreport()'s delta-method covariance of the reports is J Q^-1 J', with J
+# their Jacobian in all (fixed and random) parameters at the fitted mode and Q
+# the fit's joint precision. Projection rows don't enter the likelihood, so Q
+# applies; this skips re-optimizing the random effects and computing their
+# marginal variances. NULL unless it verifiably applies.
+joint_precision_report <- function(fit, args, par) {
+  sr <- fit$sd_report
+  Q <- sr$jointPrecision
+  random <- fit$tmb_obj$env$random
+  if (!is.null(args$profile) || is.null(Q) ||
+      !length(random) || !isTRUE(sr$pdHess) ||
+      !identical(unname(sr$par.fixed), unname(par))) {
+    return(NULL)
+  }
+  args$random <- NULL
+  obj <- do.call(make_sdmTMB_adfun, c(args, ADreport = TRUE))
+  x <- obj$par
+  if (!identical(names(x), colnames(Q)) ||
+      length(x) != length(par) + length(sr$par.random)) {
+    return(NULL)
+  }
+  x[random] <- sr$par.random
+  x[-random] <- par
+  J <- obj$gr(x)
+  QiJt <- tryCatch(as.matrix(Matrix::solve(Q, t(J))), error = function(e) NULL)
+  if (is.null(QiJt)) return(NULL)
+  se <- sqrt(rowSums(J * t(QiJt)))
+  if (any(!is.finite(se))) return(NULL)
+  est <- obj$fn(x)
+  out <- cbind(Estimate = as.numeric(est), `Std. Error` = se)
+  rownames(out) <- names(est)
+  out
+}
+
 # `sdreport()` for an index objective. Projection rows don't enter the
 # likelihood, so at the fitted parameters the fixed-effect Hessian is the fit's
 # and needn't be recomputed (about two gradient evaluations per fixed effect).
@@ -603,7 +648,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     eps_name <- "eps_index" # FIXME break out into function; add for COG?
     pars[[eps_name]] <- numeric(0)
 
-    new_obj <- make_sdmTMB_adfun(
+    args <- list(
       data = tmb_data,
       parameters = pars,
       profile = obj$fit_obj$control$profile,
@@ -613,10 +658,8 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       silent = silent,
       adreport = adreport
     )
-
-    old_par <- obj$fit_obj$model$par
-    bc <- FALSE ## done below
-    sr <- index_sdreport(obj$fit_obj, new_obj, old_par, bias.correct = bc, ...)
+    # bias correction is done below
+    ssr <- index_report(obj$fit_obj, args, obj$fit_obj$model$par, ...)
   } else if (rebuild_from_fit) {
     reinitialize(obj)
     if (bias_correct && obj$control$parallel > 1) {
@@ -660,7 +703,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     eps_name <- "eps_index"
     pars[[eps_name]] <- numeric(0)
 
-    new_obj <- make_sdmTMB_adfun(
+    args <- list(
       data = tmb_data,
       parameters = pars,
       profile = obj$control$profile,
@@ -670,13 +713,11 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       silent = silent,
       adreport = adreport
     )
-
-    old_par <- obj$model$par
-    bc <- FALSE
-    sr <- index_sdreport(obj, new_obj, old_par, bias.correct = bc, ...)
+    ssr <- index_report(obj, args, obj$model$par, ...)
     obj <- list(fit_obj = obj)
   } else {
-    sr <- obj$sd_report # already done in sdmTMB(do_index = TRUE)
+    # already done in sdmTMB(do_index = TRUE)
+    ssr <- summary(obj$sd_report, "report")
     pars <- get_pars(obj)
     tmb_data <- obj$tmb_data
     if (is.null(tmb_data$proj_time_include)) {
@@ -686,13 +727,10 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     obj <- list(fit_obj = obj) # to match regular format
     eps_name <- "eps_index"
   }
-  sr_est <- as.list(sr, "Estimate", report = TRUE)
-
   if (bias_correct && value_name[[1]] %in% c("link_total", "weighted_avg", "log_eao")) {
     # extract and modify parameters
-    if (value_name[[1]] == "link_total") .n <- length(sr_est$total)
-    if (value_name[[1]] == "weighted_avg") .n <- length(sr_est$weighted_avg)
-    if (value_name[[1]] == "log_eao") .n <- length(sr_est$eao)
+    .n <- sum(row.names(ssr) == switch(value_name[[1]],
+      link_total = "total", weighted_avg = "weighted_avg", log_eao = "eao"))
     pars[[eps_name]] <- rep(0, .n)
     new_values <- rep(0, .n)
     names(new_values) <- rep(eps_name, length(new_values))
@@ -719,7 +757,6 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       cli_inform(c("Bias correction is turned off.", "
         It is recommended to turn this on for final inference."))
   }
-  ssr <- summary(sr, "report")
   log_total <- ssr[row.names(ssr) %in% value_name, , drop = FALSE]
   row.names(log_total) <- NULL
   d <- as.data.frame(log_total)

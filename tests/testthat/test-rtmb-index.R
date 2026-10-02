@@ -72,3 +72,27 @@ test_that("index standard errors reuse the fit's fixed-effect Hessian", {
     expect_equal(H, solve(fit$sd_report$cov.fixed), info = backend)
   }
 })
+
+test_that("index SEs from the fit's joint precision match sdreport()", {
+  skip_on_cran()
+  nd <- rtmb_index_grid()
+  mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 30)
+  reml <- sdmTMB(density ~ 1, data = pcod_2011, mesh = mesh, time = "year",
+    spatiotemporal = "off", family = tweedie(), reml = TRUE,
+    control = sdmTMBcontrol(backend = "rtmb"))
+  fits <- c(rtmb_fits(), list(reml = reml, tmb = tmb_index_fits()$tweedie))
+  calls <- list(index = get_index, cog = get_cog)
+  for (name in names(fits)) for (f in names(calls)) {
+    if (name == "delta" && f == "cog") next
+    run <- function() suppressMessages(calls[[f]](fits[[name]], newdata = nd))
+    fast <- local({
+      local_mocked_bindings(index_sdreport = function(...) stop("fell back"))
+      run()
+    })
+    slow <- local({
+      local_mocked_bindings(joint_precision_report = function(...) NULL)
+      run()
+    })
+    expect_equal(fast, slow, tolerance = 1e-6, info = paste(name, f))
+  }
+})
