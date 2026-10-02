@@ -48,12 +48,12 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
     stage = "prediction"
   )
 
-  Zt_list <- predict_iid_re_matrices(object, req, newdata, length(formula))
-  proj_X_ij <- predict_fixed_matrices(object, req, newdata)
+  design <- .newdata_design(object, newdata,
+    include_iid = sum(object$tmb_data$n_re_groups) > 0 && isFALSE(req$pop_pred_iid),
+    warn_new_levels = isFALSE(req$allow_new_levels))
+  Zt_list <- design$Zt_list
+  proj_X_ij <- predict_append_nonlocal(object, req, design$X_ij)
   proj_Xdisp_ij <- predict_disp_matrix(object, newdata)
-  # TODO DELTA hardcoded to 1:
-  sm <- parse_smoothers(object$smoothers$formula_no_bars, data = object$data,
-    newdata = newdata, basis_prev = object$smoothers$basis_out)
   proj_X_rw_ik <- predict_tv_matrix(object, newdata)
 
   n <- nrow(proj_X_ij[[1]])
@@ -86,8 +86,8 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
   } else {
     array(0, dim = c(1L, 1L, 1L))
   }
-  tmb_data$proj_Zs <- sm$Zs
-  tmb_data$proj_Xs <- sm$Xs
+  tmb_data$proj_Zs <- design$Zs
+  tmb_data$proj_Xs <- design$Xs
   tmb_data$proj_z_i <- predict_svc_matrix(object, newdata)
 
   list(tmb_data = tmb_data, nd = newdata)
@@ -184,22 +184,9 @@ predict_spatial_index <- function(object, req, newdata) {
       )
     }
   } else if (!no_spatial || has_nonlocal) {
-    if (requireNamespace("dplyr", quietly = TRUE)) { # faster
-      unique_newdata <- dplyr::distinct(newdata[, req$xy_cols, drop = FALSE])
-    } else {
-      unique_newdata <- unique(newdata[, req$xy_cols, drop = FALSE])
-    }
-    unique_newdata[["sdm_spatial_id"]] <- seq(1, nrow(unique_newdata)) - 1L
-
-    if (requireNamespace("dplyr", quietly = TRUE)) { # much faster
-      newdata <- dplyr::left_join(newdata, unique_newdata, by = req$xy_cols)
-    } else {
-      newdata <- base::merge(newdata, unique_newdata, by = req$xy_cols,
-        all.x = TRUE, all.y = FALSE)
-      newdata <- newdata[order(newdata$sdm_orig_id),, drop = FALSE]
-    }
-    proj_mesh <- fmesher::fm_basis(object$spde$mesh,
-      loc = as.matrix(unique_newdata[, req$xy_cols, drop = FALSE]))
+    locations <- .project_unique_locations(object$spde$mesh, newdata, req$xy_cols)
+    newdata[["sdm_spatial_id"]] <- locations$index
+    proj_mesh <- locations$A
   } else {
     proj_mesh <- object$spde$A_st # fake
     if (!all(object$spde$xy_cols %in% names(newdata))) {
@@ -211,81 +198,9 @@ predict_spatial_index <- function(object, req, newdata) {
   list(newdata = newdata, proj_mesh = proj_mesh)
 }
 
-# IID random intercept/slope sparse model matrices, one per linear predictor.
-# All linear predictors share the same random effect structure.
-predict_iid_re_matrices <- function(object, req, newdata, n_formula) {
-  if (sum(object$tmb_data$n_re_groups) == 0 || !isFALSE(req$pop_pred_iid)) {
-    return(list())
-  }
-  re_formula_no_response <- stats::formula(
-    stats::delete.response(
-      stats::terms(remove_s_and_t2(object$smoothers$formula_no_sm))
-    )
-  )
-  # factor level checks:
-  RE_names <- barnames(reformulas::findbars(re_formula_no_response))
-  missing_RE_names <- setdiff(RE_names, names(newdata))
-  if (length(missing_RE_names) > 0) {
-    cli_abort(c(
-      "Random effect group column(s) missing from `newdata`: {.val {missing_RE_names}}.",
-      "i" = "Use `re_form_iid = NA` or `re_form_iid = ~0` to exclude random effects in prediction."
-    ))
-  }
-  new_level_rows <- integer(0)
-  for (i in seq_along(RE_names)) {
-    assert_that(is.factor(newdata[[RE_names[i]]]),
-      msg = sprintf("Random effect group column `%s` in newdata is not a factor.", RE_names[i]))
-    levels_fit <- levels(object$data[[RE_names[i]]])
-    values_nd <- as.character(newdata[[RE_names[i]]])
-    is_new_level <- !is.na(values_nd) & !values_nd %in% levels_fit
-    if (any(is_new_level)) {
-      new_level_rows <- union(new_level_rows, which(is_new_level))
-      if (isFALSE(req$allow_new_levels)) {
-        cli_warn(c(
-          "Found new levels in random effect grouping variable {.field {RE_names[i]}}.",
-          "i" = "These rows will use population-level IID random effect predictions (`re_form_iid = NA`).",
-          "i" = "Set `allow_new_levels = TRUE` to suppress this warning."
-        ))
-      }
-    }
-  }
-
-  # now do with a joint data frame to ensure factor levels match
-  common_cols <- intersect(colnames(object$data), colnames(newdata))
-  nd_aligned <- newdata[, common_cols, drop = FALSE]
-  for (col_name in common_cols) {
-    if (is.factor(object$data[[col_name]]) && is.factor(nd_aligned[[col_name]])) {
-      nd_aligned[[col_name]] <- factor(
-        as.character(nd_aligned[[col_name]]),
-        levels = levels(object$data[[col_name]])
-      )
-      if (anyNA(nd_aligned[[col_name]])) {
-        nd_aligned[[col_name]][is.na(nd_aligned[[col_name]])] <-
-          levels(object$data[[col_name]])[1]
-      }
-    }
-  }
-  joint_df <- rbind(object$data[, common_cols, drop = FALSE], nd_aligned)
-  xx <- parse_formula(re_formula_no_response, joint_df)
-  # drop the original data:
-  Zt <- xx$re_cov_terms$Zt[, seq(nrow(object$data) + 1, nrow(object$data) + nrow(newdata)), drop = FALSE]
-  if (length(new_level_rows) > 0) {
-    Zt[, new_level_rows] <- 0
-  }
-  rep(list(Zt), n_formula)
-}
-
-# Fixed-effect model matrices, one per linear predictor.
-predict_fixed_matrices <- function(object, req, newdata) {
-  proj_X_ij <- list()
-  for (i in seq_along(object$formula)) {
-    f2 <- remove_s_and_t2(object$split_formula[[i]]$form_no_bars)
-    tt <- stats::terms(f2)
-    attr(tt, "predvars") <- attr(object$terms[[i]], "predvars")
-    Terms <- stats::delete.response(tt)
-    mf <- model.frame(Terms, newdata, xlev = object$xlevels[[i]])
-    proj_X_ij[[i]] <- model.matrix(Terms, mf, contrasts.arg = object$contrasts[[i]])
-  }
+# Append the nonlocal coefficient columns to each linear predictor's fixed-effect
+# model matrix.
+predict_append_nonlocal <- function(object, req, proj_X_ij) {
   if (!is.null(object$nonlocal_parsed)) {
     proj_X_ij[[1]] <- .append_nonlocal_coef_columns(
       X = proj_X_ij[[1]],

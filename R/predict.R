@@ -962,22 +962,3 @@ call_fn_name <- function(x) {
     index = index - 1L
   )
 }
-
-# Draws of all parameters (columns) from the joint precision matrix, centred
-# on `lp`, or from the fixed-effect covariance without random effects.
-.joint_par_draws <- function(object, lp, nsim) {
-  if (has_no_random_effects(object)) {
-    sd_report <- object$sd_report
-    draws <- t(mvtnorm::rmvnorm(n = nsim, mean = sd_report$par.fixed,
-      sigma = sd_report$cov.fixed))
-    row.names(draws) <- NULL
-    return(draws)
-  }
-  if (!"jointPrecision" %in% names(object$sd_report)) {
-    message("Rerunning TMB::sdreport() with `getJointPrecision = TRUE`.")
-    sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
-  } else {
-    sd_report <- object$sd_report
-  }
-  rmvnorm_prec(mu = lp, tmb_sd = sd_report, n_sims = nsim)
-}

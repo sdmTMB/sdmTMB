@@ -730,11 +730,9 @@ predict_sampling <- function(object, type = c("response", "link"), nsim = 0) {
   inv <- if (type == "response") stats::plogis else identity
   lp <- object$tmb_obj$env$last.par.best
   if (nsim > 0) {
-    draws <- .joint_par_draws(object, lp, nsim)
-    out <- apply(draws, 2L, function(par) {
-      object$tmb_obj$report(par)$sampling_eta_i
-    })
-    return(inv(matrix(out, ncol = nsim)))
+    reports <- predict_draw_reports(object, object$tmb_obj, lp,
+      list(nsim = nsim, sample_fe = TRUE))
+    return(inv(do.call(cbind, lapply(reports, `[[`, "sampling_eta_i"))))
   }
   r <- object$tmb_obj$report(lp)
   nd <- object$preferential$spec$data
