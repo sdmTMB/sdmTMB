@@ -306,6 +306,23 @@ test_that("Deviance includes weights, NB1 holds phi fixed, and signs are kept", 
     expect_equal(deviance(fit), sum(2 * (saturated - ll(mu, d$y))),
       tolerance = 1e-6, label = backend)
 
+    # y = mu still has a deviance, since the saturated mean differs from y
+    obj <- sdmTMB(y ~ 1, data = data.frame(y = c(1, 1)), family = nbinom1(),
+      spatial = "off", do_fit = FALSE, control = ctl)$tmb_obj
+    p <- obj$par
+    p[names(p) == "b_j"] <- 0
+    p[names(p) == "ln_phi"] <- 0
+    expect_equal(obj$report(p)$devresid[, 1]^2, rep(0.1193202, 2),
+      tolerance = 1e-6, label = backend)
+
+    # Near the Poisson limit (phi ~ 1e-8), the deviance is the Poisson one
+    fit <- sdmTMB(y ~ 1, data = data.frame(y = c(1, 1, 1, 3)),
+      family = nbinom1(), spatial = "off", control = ctl)
+    fit_pois <- sdmTMB(y ~ 1, data = data.frame(y = c(1, 1, 1, 3)),
+      family = poisson(), spatial = "off", control = ctl)
+    expect_equal(deviance(fit), deviance(fit_pois), tolerance = 1e-4,
+      label = backend)
+
     # Poisson-link delta encounter residuals: negative for a zero
     obj <- sdmTMB(y ~ 1, data = data.frame(y = c(0, 2)),
       family = delta_gamma(type = "poisson-link"), spatial = "off",

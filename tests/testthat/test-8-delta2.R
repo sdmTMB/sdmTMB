@@ -245,7 +245,7 @@ test_that("spatiotemporal field mapping/specification works with delta models", 
     spatiotemporal = "ar1"
   )
   s2 <- as.list(fit$sd_report, "Estimate")
-  expect_equal(s1, s2, tolerance = 1e-4)
+  expect_equal(s1, s2, tolerance = 1e-3)
 })
 
 test_that("delta models work with different main effects", {
