@@ -1,5 +1,13 @@
 # sdmTMB (development version)
 
+* Fix three bugs in priors. (1) `normal()` priors on fixed effects (`b`)
+  used the supplied standard deviations as variances. (2) A single `b`
+  prior such as `normal(0, 2)` with multiple coefficients was announced as
+  expanded but silently dropped; it is now applied to every coefficient.
+  (3) With `bayesian = TRUE`, the Jacobian adjustment for `pc_matern()`
+  priors was incorrect; it is now `log(range) + log(sigma)`, with a shared
+  range counted once.
+
 * Speed up `simulate.sdmTMB(type = "mle-mvn", mle_mvn_samples = "multiple")`
   by factoring the random effects' Hessian once and drawing all samples
   together rather than calling TMB's `MC()` once per simulation. Draws are

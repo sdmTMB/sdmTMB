@@ -350,12 +350,11 @@ Type pc_prior_matern(Type logtau, Type logkappa, Type matern_range,
   Type penalty = sigma_ll;
   if (!share_range) penalty += range_ll;
 
-  // Note: these signs are + (and different from inst/jacobian-pcprior-tests)
-  // because the jnll is accumulated
+  // Jacobian from (logtau, logkappa) to (range, sigma): |det| = range * sigma.
+  // With a shared range, the range part is counted in the spatial prior only.
   if (stan_flag) {
-    penalty += log(sqrt(8.)) - log(pow(range, 2.)); // P(sigma)
-    Type C = sqrt(exp(lgamma(1. + dhalf)) * pow(4. * M_PI, dhalf));
-    penalty += log(C) + logkappa;
+    penalty += log(sigma);
+    if (!share_range) penalty += log(range);
   }
   // std::cout << "PC penalty: " << penalty << "\n";
   if (give_log)

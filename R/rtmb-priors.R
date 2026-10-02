@@ -31,9 +31,11 @@ rtmb_pc_matern <- function(log_tau, log_kappa, prior, share_range = FALSE,
     log_density <- log_density + log(lambda_range) -
       2 * log(range) - lambda_range / range
   }
+  # Jacobian from (log_tau, log_kappa) to (range, sigma) is range * sigma;
+  # a shared range is counted in the spatial prior only.
   if (stan) {
-    log_density <- log_density + log(sqrt(8)) - 2 * log(range) +
-      log(sqrt(4 * pi)) + log_kappa
+    log_density <- log_density + log(sigma)
+    if (!share_range) log_density <- log_density + log(range)
   }
   log_density
 }

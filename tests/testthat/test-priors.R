@@ -18,6 +18,36 @@ test_that("Basic prior parsing works", {
   expect_error(pc_matern(1, 1, 0.05, NA))
 })
 
+test_that("Fixed-effect normal priors use SDs and expand scalars", {
+  get_b_prior <- function(b) {
+    fit <- sdmTMB(y ~ x, data = data.frame(y = c(1, 2, 3), x = c(-1, 0, 1)),
+      spatial = "off", do_fit = FALSE, priors = sdmTMBpriors(b = b))
+    fit$tmb_data[c("priors_b_n", "priors_b_mean", "priors_b_Sigma")]
+  }
+  p <- get_b_prior(normal(c(0, 1), c(2, 3)))
+  expect_equal(p$priors_b_Sigma, diag(c(4, 9)))
+  expect_message(p <- get_b_prior(normal(1, 2)), "Expanding")
+  expect_equal(p$priors_b_n, 2L)
+  expect_equal(p$priors_b_mean, c(1, 1))
+  expect_equal(p$priors_b_Sigma, diag(c(4, 4)))
+  expect_message(p <- get_b_prior(mvnormal(1, matrix(4))), "Expanding")
+  expect_equal(p$priors_b_Sigma, diag(c(4, 4)))
+  expect_equal(get_b_prior(normal(NA, NA))$priors_b_n, 0L)
+})
+
+test_that("PC prior Jacobian is log(range * sigma)", {
+  prior <- pc_matern(5, 1)
+  log_tau <- 0.7
+  log_kappa <- 0.3
+  range <- sqrt(8) / exp(log_kappa)
+  sigma <- exp(-log_tau - log_kappa) / sqrt(4 * pi)
+  for (share_range in c(FALSE, TRUE)) {
+    jacobian <- rtmb_pc_matern(log_tau, log_kappa, prior, share_range, stan = TRUE) -
+      rtmb_pc_matern(log_tau, log_kappa, prior, share_range, stan = FALSE)
+    expect_equal(jacobian, log(sigma) + if (share_range) 0 else log(range))
+  }
+})
+
 test_that("Prior fitting works", {
   skip_on_cran()
   d <- pcod_2011
