@@ -55,3 +55,20 @@ test_that("RTMB get_index(), get_cog(), and get_eao() match TMB", {
     get_index(fit, newdata = nd, area = 4, bias_correct = TRUE))
   expect_equal(bc_index(rt$tweedie), bc_index(cpp$tweedie), tolerance = 1e-5)
 })
+
+test_that("index standard errors reuse the fit's fixed-effect Hessian", {
+  skip_on_cran()
+  nd <- rtmb_index_grid()
+  for (backend in c("tmb", "rtmb")) {
+    fit <- if (backend == "tmb") tmb_index_fits()$tweedie else rtmb_fits()$tweedie
+    p <- predict(fit, newdata = nd, return_tmb_data = TRUE)
+    p$calc_index_totals <- 1L
+    pars <- get_pars(fit)
+    pars$eps_index <- numeric(0)
+    new_obj <- make_sdmTMB_adfun(p, pars, map = fit$tmb_map,
+      random = fit$tmb_random, backend = backend)
+    H <- fit_hessian_fixed(fit, new_obj, fit$model$par)
+    expect_false(is.null(H), info = backend)
+    expect_equal(H, solve(fit$sd_report$cov.fixed), info = backend)
+  }
+})
