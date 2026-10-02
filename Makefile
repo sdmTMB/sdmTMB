@@ -26,7 +26,7 @@ install:
 compile-opt:
 	echo "pkgbuild::clean_dll(); pkgbuild::compile_dll(debug = FALSE)" | $(R) --no-echo
 
-# Quick tests: skip compile-opt (reuses the existing DLL) and use a terse
+# Quick tests (default rtmb backend): skip compile-opt (reuses the existing DLL) and use a terse
 # reporter. Override with e.g. "make TEST_REPORTER=progress test-quick"
 TEST_REPORTER=check
 TEST_NCPUS=ncpus <- parallel::detectCores(); options(Ncpus = if (is.na(ncpus)) 1L else max(1L, as.integer(round(ncpus / 2 - 1))))
@@ -34,8 +34,9 @@ TEST_NCPUS=ncpus <- parallel::detectCores(); options(Ncpus = if (is.na(ncpus)) 1
 test:
 	echo "$(TEST_NCPUS); devtools::test(reporter = '$(TEST_REPORTER)')" | $(R) --no-echo
 
-test-rtmb:
-	echo "$(TEST_NCPUS); devtools::test(reporter = '$(TEST_REPORTER)')" | SDMTMB_TEST_BACKEND=rtmb $(R) --no-echo
+# The TMB backend is no longer the default; run the suite against it explicitly
+test-tmb:
+	echo "$(TEST_NCPUS); devtools::test(reporter = '$(TEST_REPORTER)')" | SDMTMB_TEST_BACKEND=tmb $(R) --no-echo
 
 test-optional:
 	echo "devtools::load_all(); testthat::test_dir('tests/optional')" | $(R) --no-echo
