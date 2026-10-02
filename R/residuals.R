@@ -632,7 +632,21 @@ residuals.sdmTMB <- function(object,
         cli_abort("Deviance residuals not implemented for binomial family with size > 1.")
       }
     }
-    report <- object$tmb_obj$report(object$tmb_obj$env$last.par.best)
+    if (backend_sdmTMB(object) == "tmb" && !is_delta(object) &&
+        object$family$family == "nbinom1") {
+      cli_abort(c(
+        "NB1 deviance residuals are not implemented for the TMB backend.",
+        "i" = "Refit with `sdmTMBcontrol(backend = \"rtmb\")`."
+      ))
+    }
+    env <- object$tmb_obj$env
+    report <- if (backend_sdmTMB(object) == "rtmb") {
+      # Deviance residuals are left off the RTMB tape; evaluate them directly.
+      rtmb_report_values(object$tmb_data,
+        env$parList(par = env$last.par.best), deviance = TRUE)
+    } else {
+      object$tmb_obj$report(env$last.par.best)
+    }
     resids <- report$devresid[, model, drop = TRUE]
     if (all(resids == 0)) {
       cli_abort("Deviance residuals not implemented for this family.")

@@ -419,10 +419,13 @@ Simulation-based normal(0, 1):
 
 ```{r, warning=FALSE}
 set.seed(1)
-s <- simulate(fit2, nsim = 1500, type = "mle-mvn") |>
+nsim <- 1500
+s <- simulate(fit2, nsim = nsim, type = "mle-mvn") |>
   dharma_residuals(fit2, return_DHARMa = TRUE)
 u <- s$scaledResiduals
-r <- qnorm(u)
+# residuals of exactly 0 or 1 (outside all simulations) would give -Inf/Inf:
+eps <- 1 / (2 * (nsim + 1))
+r <- qnorm(pmin(pmax(u, eps), 1 - eps))
 qqnorm(r)
 abline(0, 1)
 ks.test(u, punif)

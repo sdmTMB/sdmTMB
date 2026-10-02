@@ -132,7 +132,7 @@ rtmb_observations <- function(par, theta, prepared, eta) {
       y <- fit$y[i, m]
       log_density <- spec$logpdf(y, s$mu, s)
       jnll_obs[i] <- jnll_obs[i] - fit$weights[i] * log_density
-      if (!is.null(spec$deviance)) {
+      if (prepared$deviance && !is.null(spec$deviance)) {
         # As in C++, some residuals can be NaN; keep them without R's
         # warnings. Weights scale each squared residual, as in glm().
         devresid[i, m] <- sqrt(fit$weights[i]) * suppressWarnings(

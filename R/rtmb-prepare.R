@@ -56,7 +56,9 @@ rtmb_prepare <- function(data) {
       "epsilon_st", "zeta_s", "re_b_pars", "b_rw_t", "b_smooth")),
     simulate_obs = on(data$sim_obs),
 
-    # Reports
+    # Reports. Deviance residuals are only computed on request (see
+    # rtmb_report_values()), keeping them off fitting and simulation tapes.
+    deviance = FALSE,
     rsr = on(data$do_rsr),
     pop_pred = on(data$pop_pred),
     adreport_projection = on(data$calc_se),

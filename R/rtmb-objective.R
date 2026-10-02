@@ -66,8 +66,12 @@ rtmb_objective <- function(par, prepared, adreport = NULL) {
 # Reports of the RTMB model at the full parameter list `par`, evaluated with
 # plain numbers. Equivalent to `obj$report()` without building (taping) an AD
 # object, which for large prediction grids dominates time and memory.
-rtmb_report_values <- function(data, par) {
-  rtmb_evaluate(par, rtmb_prepare(data))$reports
+# `deviance = TRUE` also computes deviance residuals (`devresid`), which are
+# otherwise reported as zeros.
+rtmb_report_values <- function(data, par, deviance = FALSE) {
+  prepared <- rtmb_prepare(data)
+  prepared$deviance <- deviance
+  rtmb_evaluate(par, prepared)$reports
 }
 
 # Resolve parameters to their natural scale, evaluate latent effects, compute

@@ -56,7 +56,13 @@ test_that("RTMB basic likelihoods match TMB at fixed parameters", {
       info = case$family$family)
     expected <- tmb$tmb_obj$report(p)
     actual <- rtmb$tmb_obj$report(p)
-    for (name in c("eta_fixed_i", "eta_i", "jnll_obs", "devresid")) {
+    # RTMB computes deviance residuals only on request, off the tape.
+    actual$devresid <- rtmb_report_values(rtmb$tmb_data,
+      rtmb$tmb_obj$env$parList(p), deviance = TRUE)$devresid
+    # The TMB template has no NB1 deviance residuals
+    compared <- c("eta_fixed_i", "eta_i", "jnll_obs", "devresid")
+    if (case$family$family == "nbinom1") compared <- setdiff(compared, "devresid")
+    for (name in compared) {
       expect_equal(actual[[name]], expected[[name]], tolerance = 1e-6,
         info = paste(case$family$family, name))
     }

@@ -1388,7 +1388,6 @@ Type objective_function<Type>::operator()()
               s2 = mu_i(i,m) * (Type(1)+resolved.phi);
               y_i(i,m) = rnbinom2(s1, s2);
               }
-            if (notNA) devresid(i,m) = sdmTMB::devresid_nbinom1(y_i(i,m), s1, resolved.ln_phi);
             break;
           }
           case truncated_nbinom1_family: {

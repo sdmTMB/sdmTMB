@@ -58,8 +58,14 @@ expect_rtmb_matches_tmb <- function(data, parameters, map, random,
   expect_same_objective(obj, start, info)
   expected <- cpp$report()
   actual <- rt$report()
+  # RTMB computes deviance residuals only on request, off the tape.
+  actual$devresid <- rtmb_report_values(data, rt$env$parList(),
+    deviance = TRUE)$devresid
   expect_setequal(names(actual), names(expected))
-  for (name in intersect(names(expected), names(actual))) {
+  compared <- intersect(names(expected), names(actual))
+  # The TMB template has no NB1 deviance residuals (family code 10)
+  if (any(data$family_code == 10L)) compared <- setdiff(compared, "devresid")
+  for (name in compared) {
     expect_equal(as.vector(actual[[name]]), as.vector(expected[[name]]),
       tolerance = 1e-6, info = paste(info, name))
     expect_equal(dim(actual[[name]]), dim(expected[[name]]),
