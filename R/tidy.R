@@ -350,7 +350,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
 
   if (!multi_family && "ordbeta" %in% x$family$family) {
-    cuts <- plogis(est$psi)
+    cuts <- plogis(ordbeta_cutpoints(est$psi))
     out_re$ordbeta_cutpoint_lower <- data.frame(
       term = "ordbeta_cutpoint_lower", estimate = cuts[1],
       std.error = NA_real_, conf.low = NA_real_, conf.high = NA_real_,

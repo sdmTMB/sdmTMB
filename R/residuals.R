@@ -254,7 +254,7 @@ qres_beta <- function(object, y, mu, ...) {
 qres_ordbeta <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
-  psi <- theta[["psi"]]
+  psi <- ordbeta_cutpoints(theta[["psi"]])
   eta <- stats::qlogis(mu)
   p0 <- stats::plogis(psi[1] - eta)              # Pr(y == 0)
   p1 <- stats::plogis(eta - psi[2])              # Pr(y == 1)

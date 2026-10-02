@@ -245,3 +245,39 @@ test_that("Threshold priors work", {
   x <- tidy(m)
   expect_equal(x$estimate[x$term == "depth_scaled-breakpt"], -1, tolerance = 0.01)
 })
+
+test_that("Priors apply the right terms and Jacobians in both backends", {
+  make_obj <- function(backend, priors, bayesian = FALSE, ...) {
+    sdmTMB(..., priors = priors, bayesian = bayesian, do_fit = FALSE,
+      control = sdmTMBcontrol(backend = backend, multiphase = FALSE))$tmb_obj
+  }
+  for (backend in c("tmb", "rtmb")) {
+    # A spatiotemporal PC prior keeps its range term when no spatial PC prior
+    # supplies the shared range
+    objs <- lapply(list(sdmTMBpriors(), sdmTMBpriors(matern_st = pc_matern(5, 1))),
+      make_obj, backend = backend, formula = density ~ 1, data = pcod_2011,
+      mesh = pcod_mesh_2011, time = "year", family = tweedie())
+    p <- objs[[1]]$par
+    p[names(p) == "ln_tau_E"] <- 1
+    p[names(p) == "ln_kappa"] <- -1
+    range <- sqrt(8) / exp(-1)
+    sigma <- 1 / sqrt(4 * pi)
+    l_range <- -log(0.05) * 5
+    l_sigma <- -log(0.05)
+    expect_equal(as.numeric(objs[[2]]$fn(p) - objs[[1]]$fn(p)),
+      -(log(l_range) - 2 * log(range) - l_range / range +
+        log(l_sigma) - l_sigma * sigma), label = backend)
+
+    # Logistic-threshold s95 Jacobian
+    objs <- lapply(c(FALSE, TRUE), make_obj, backend = backend,
+      priors = sdmTMBpriors(threshold_logistic_s50 = normal(0, 1),
+        threshold_logistic_s95 = normal(1, 1)),
+      formula = y ~ 1 + logistic(x), spatial = "off",
+      data = data.frame(x = seq(-2, 2, length.out = 10),
+        y = seq(-1, 1, length.out = 10)))
+    p <- objs[[1]]$par
+    p[names(p) == "b_threshold"] <- c(0, log(2), 1)
+    expect_equal(as.numeric(objs[[2]]$fn(p) - objs[[1]]$fn(p)), -log(2),
+      label = backend)
+  }
+})

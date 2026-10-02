@@ -461,3 +461,22 @@ test_that("index functions work directly on do_index = TRUE fits", {
   expect_s3_class(cog_wide, "data.frame")
   expect_true(all(c("est_x", "est_y", "year") %in% names(cog_wide)))
 })
+
+test_that("get_eao() weights by area", {
+  skip_on_cran()
+  for (backend in c("tmb", "rtmb")) {
+    m <- sdmTMB(density ~ depth_scaled, data = pcod_2011, spatial = "off",
+      family = tweedie(), time = "year", mesh = pcod_mesh_2011,
+      control = sdmTMBcontrol(backend = backend))
+    nd <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
+    nd$depth_scaled <- (log(nd$depth) - mean(log(pcod_2011$depth))) /
+      sd(log(pcod_2011$depth))
+    set.seed(1)
+    nd$area <- runif(nrow(nd), 1, 5)
+    eao <- get_eao(m, newdata = nd, area = nd$area, bias_correct = FALSE)
+    p <- predict(m, newdata = nd, type = "response")
+    expected <- vapply(split(p, p$year),
+      function(x) sum(x$area * x$est)^2 / sum(x$area * x$est^2), numeric(1))
+    expect_equal(eao$est, unname(expected), label = backend)
+  }
+})

@@ -141,15 +141,23 @@ rtmb_combined_projection <- function(projected, theta, prepared) {
 }
 
 # Mixture families project the mean of both components: the positive
-# component's link-scale prediction becomes log((1 - p) mu + p mu ratio).
-rtmb_mixture_eta <- function(eta, theta, prepared) {
+# component's mean mu becomes (1 - p) mu + p mu ratio, in both the full
+# (`eta`) and population-level (`fe`) predictions.
+rtmb_mixture_projection <- function(projected, theta, prepared) {
   "[<-" <- RTMB::ADoverload("[<-")
   m <- prepared$n_m
-  i <- which(prepared$proj$active[, m])
+  rows <- prepared$proj
   p <- theta$p_extreme
-  eta[i, m] <- log((1 - p) * exp(eta[i, m]) +
-    p * exp(eta[i, m]) * theta$mix_ratio)
-  eta
+  scale <- 1 - p + p * theta$mix_ratio
+  for (f in unique(rows$family_id)) {
+    i <- which(rows$active[, m] & rows$family_id == f)
+    link <- prepared$families[[f]]$link[[m]]
+    for (x in c("fe", "eta")) {
+      projected[[x]][i, m] <- rtmb_link(
+        rtmb_inverse_link(projected[[x]][i, m], link) * scale, link)
+    }
+  }
+  projected
 }
 
 # Area-weighted totals, weighted averages, and effective area occupied (EAO)
@@ -212,12 +220,11 @@ rtmb_derived_indices <- function(par, theta, prepared, projected) {
     out$weighted_avg <- weighted_avg
   }
   if (requested[["eao"]]) {
-    sum_dens <- time_sum(mu)
-    sum_dens2 <- time_sum(mu * mu)
-    has_rows <- lengths(by_time) > 0L
-    keep <- include & has_rows
+    # eao = total / mean_dens = sum(area * mu)^2 / sum(area * mu^2)
+    sum_dens2 <- time_sum(rows$area * mu * mu)
+    keep <- include & has_area
     mean_dens <- eao <- log_eao <- rep(0, n_t)
-    mean_dens[has_rows] <- sum_dens2[has_rows] / sum_dens[has_rows]
+    mean_dens[has_area] <- sum_dens2[has_area] / out$total[has_area]
     eao[keep] <- out$total[keep] / mean_dens[keep]
     log_eao[keep] <- log(eao[keep])
     out$mean_dens <- mean_dens
@@ -225,7 +232,7 @@ rtmb_derived_indices <- function(par, theta, prepared, projected) {
     out$log_eao <- log_eao
     for (t in intersect(eps_t, which(keep))) {
       out$nll <- out$nll + par$eps_index[t] *
-        tag(out$total[t]) * tag(sum_dens[t]) / tag(sum_dens2[t])
+        tag(out$total[t]) * tag(out$total[t]) / tag(sum_dens2[t])
     }
   }
   out

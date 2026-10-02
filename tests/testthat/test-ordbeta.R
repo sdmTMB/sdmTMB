@@ -61,7 +61,7 @@ test_that("ordbeta() simulation matches the distribution in both backends", {
     for (case in cases) {
       par <- obj$par
       par[names(par) == "b_j"] <- case$b_j
-      par[names(par) == "psi"] <- case$psi
+      par[names(par) == "psi"] <- c(case$psi[1], log(diff(case$psi)))
       par[names(par) == "ln_phi"] <- log(case$phi)
       set.seed(1)
       y <- obj$simulate(par)$y_i
@@ -172,4 +172,17 @@ test_that("ordbeta() is rejected in multi-family mode", {
       distribution_column = "g", spatial = "off"),
     regexp = "ordbeta"
   )
+})
+
+test_that("ordbeta() cutpoints stay ordered for any parameter values", {
+  for (backend in c("tmb", "rtmb")) {
+    obj <- sdmTMB(y ~ 1, data = data.frame(y = c(0, 1)), family = ordbeta(),
+      spatial = "off", do_fit = FALSE,
+      control = sdmTMBcontrol(backend = backend))$tmb_obj
+    par <- obj$par
+    par[names(par) == "b_j"] <- 0
+    par[names(par) == "psi"] <- c(1, -5) # cutpoints 1 and 1 + exp(-5)
+    expect_equal(obj$fn(par),
+      -log(plogis(1)) - log(plogis(-(1 + exp(-5)))), label = backend)
+  }
 })

@@ -57,17 +57,8 @@ test_that("Deviance calculations are correct", {
   # expect_equal(r1, r2, tolerance = 0.01)
   # expect_equal(deviance(mglm), deviance(m), tolerance = 0.01)
 
-  # NB1
-  set.seed(1)
-  x <- rnorm(20)
-  y <- rnbinom1(20, phi = 2, mu = exp(x))
-  d <- data.frame(x = x, y = y)
-  m <- sdmTMB(y ~ x, family = nbinom1(), spatial = "off", data = d)
-  mglm <- glmmTMB::glmmTMB(y ~ x, family = glmmTMB::nbinom1(), data = d)
-  r1 <- unname(residuals(mglm, type = "deviance"))
-  r2 <- residuals(m, type = "deviance")
-  expect_equal(r1, r2, tolerance = 0.01)
-  expect_equal(deviance(mglm), deviance(m), tolerance = 0.01)
+  # NB1: glmmTMB holds the size mu / phi fixed in the saturated model rather
+  # than phi, so see the fixed-phi likelihood-ratio test below
 
   # Tweedie
   set.seed(1)
@@ -288,4 +279,40 @@ test_that("compare_deviance() holds Tweedie p fixed", {
   expect_equal(reduced$parlist$thetaf, fit$parlist$thetaf)
   expect_false(isTRUE(all.equal(reduced$parlist$ln_phi, fit$parlist$ln_phi)))
   expect_equal(out$deviance_reduced, deviance(reduced))
+})
+
+test_that("Deviance includes weights, NB1 holds phi fixed, and signs are kept", {
+  for (backend in c("tmb", "rtmb")) {
+    ctl <- sdmTMBcontrol(backend = backend)
+    # Weighted Poisson
+    d <- data.frame(y = c(1, 5), w = c(1, 9))
+    fit <- sdmTMB(y ~ 1, data = d, weights = d$w, family = poisson(),
+      spatial = "off", control = ctl)
+    mu <- exp(fit$model$par[["b_j"]])
+    expect_equal(deviance(fit),
+      sum(2 * d$w * (d$y * log(d$y / mu) - (d$y - mu))), label = backend)
+
+    # NB1: the saturated mean maximizes the likelihood with phi fixed
+    d <- data.frame(y = c(0, 1, 5, 12, 40, 0, 3))
+    fit <- sdmTMB(y ~ 1, data = d, family = nbinom1(), spatial = "off",
+      control = ctl)
+    mu <- exp(fit$model$par[["b_j"]])
+    phi <- exp(fit$model$par[["ln_phi"]])
+    ll <- function(m, y) dnbinom(y, size = m / phi, mu = m, log = TRUE)
+    saturated <- vapply(d$y, function(y) {
+      if (y == 0) return(0)
+      optimize(ll, c(1e-8, 1e4), y = y, maximum = TRUE, tol = 1e-12)$objective
+    }, numeric(1))
+    expect_equal(deviance(fit), sum(2 * (saturated - ll(mu, d$y))),
+      tolerance = 1e-6, label = backend)
+
+    # Poisson-link delta encounter residuals: negative for a zero
+    obj <- sdmTMB(y ~ 1, data = data.frame(y = c(0, 2)),
+      family = delta_gamma(type = "poisson-link"), spatial = "off",
+      do_fit = FALSE, control = ctl)$tmb_obj
+    p <- obj$par
+    p[names(p) == "b_j"] <- 0 # log(1 - p) = -1
+    expect_equal(obj$report(p)$devresid[, 1],
+      c(-sqrt(2), sqrt(-2 * log(1 - exp(-1)))), label = backend)
+  }
 })
