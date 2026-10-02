@@ -1,467 +1,274 @@
 # sdmTMB (development version)
 
-* **Add an RTMB backend and make it the default**. The model code transitions
-  from C++ to R (via RTMB) and has ~50% fewer lines of code. Unit tests and
-  extensive local testing of cached models show the two backends produce
-  identical results. This transition uncovered many bugs that have been fixed
-  as documented in this file. The TMB backend is retained for now but will
-  eventually be dropped. To use it, set `control = sdmTMBcontrol(backend =
-  "tmb")` per model fit or `options(sdmTMB.backend = "tmb")` per session.
-  Note that `sdmTMBcontrol(normalize = TRUE)` is only available with the TMB
-  backend, and the RTMB backend does not support extra `MakeADFun()` options.
-  Updated models (`update()`) keep the backend they were originally fit with.
+## Breaking changes
 
-* Speed up `get_index()` and associated derived quantity calculators
-  through several internal optimizations.
+* `sdmTMB_cv()` now scores held-out data with a predictive density integrated
+  over the approximate posterior of the random effects
+  (`predictive = "mle-mvn"`) instead of at their estimated values
+  (`"mle-eb"`). `predictive = "joint"` also integrates over the fixed effects
+  and variance parameters. `nsim` sets the number of draws per fold, so
+  `sum_loglik` now depends on the random seed. The `"mle-eb"` values are always
+  returned in `cv_loglik_mle_eb` and `sum_loglik_mle_eb`. Random field
+  uncertainty on out-of-sample predictions generally increases with more
+  spatial knots, so it becomes increasingly important to account for random
+  field uncertainty at finer mesh resolutions and it's particularly important
+  for comparing across mesh resolutions.
 
-* Fix three bugs in priors. (1) `normal()` priors on fixed effects (`b`)
-  used the supplied standard deviations as variances. (2) A single `b`
-  prior such as `normal(0, 2)` with multiple coefficients was announced as
-  expanded but silently dropped; it is now applied to every coefficient.
-  (3) With `bayesian = TRUE`, the Jacobian adjustment for `pc_matern()`
-  priors was incorrect; it is now `log(range) + log(sigma)`, with a shared
-  range counted once.
+## New features
 
-* Fix several statistical bugs in both the TMB and RTMB backends:
-  * `ordbeta()` cutpoints are now constrained to be ordered. The `psi`
-    parameter is now the lower cutpoint and the log difference between the
-    cutpoints.
-  * `gengamma()` returns a `NaN` likelihood where its mean does not exist
-    (`1 + phi * Q <= 0`) rather than misrepresenting `mu` as the mean.
-  * A `matern_st` `pc_matern()` prior with a shared range no longer drops
-    its range term when there is no `matern_s` prior.
-  * With `bayesian = TRUE`, the `threshold_logistic_s95` prior now includes
-    its Jacobian adjustment.
+* *RTMB is now the default backend*. The model code is written in R (via RTMB)
+  with about 50% fewer lines, and gives the same results as the TMB backend in
+  our tests. The TMB backend is retained for now but will eventually be
+  dropped. To use it, set `control = sdmTMBcontrol(backend = "tmb")` per fit or
+  `options(sdmTMB.backend = "tmb")` per session. The move uncovered many bugs,
+  fixed as listed below, and speed has been improved due to several optimizations
+  during the port to RTMB.
+
+* Add experimental multi-family models, where each row of the data can use a
+  different observation family (e.g., binomial, count, and delta-lognormal data
+  in one model with shared fields). Supply a named list to `family` and name
+  the column mapping rows to families with `distribution_column`. See the new
+  multi-family vignette.
+
+* Add `ordbeta()` for ordered beta regression (Kubinec 2023), an alternative to
+  zero-one-inflated beta for continuous data on `[0, 1]` with point masses at 0
+  and 1 (#515).
+
+* Add the `dispformula` argument to `sdmTMB()` for modelling the observation
+  dispersion parameter with fixed-effect predictors. It is not supported for
+  multi-family models or truncated negative binomial families.
+
+* Add `compare_deviance()` for deviance explained (a pseudo-R^2) relative to a
+  simpler model.
+
+* Add a `loo::elpd()` method for `sdmTMB_cv()` output so models can be compared
+  with `loo::loo_compare()`, including a standard error of the difference. See
+  `?sdmTMB_cv()` for an example.
+
+* Add deviance residuals and `deviance()` for `gengamma()` and
+  `censored_poisson()`.
+
+* Add `make_zero_one_map()` for categories (e.g., year factors) where the
+  response is all zeros or ones (#386).
+
+* Add `sample_fe` argument to `predict.sdmTMB()`. With `nsim > 0` and
+  `sample_fe = FALSE`, fixed effects are held at their estimates and only
+  random effects are drawn.
+
+* `get_index()`, `get_cog()`, `get_eao()`, and `get_weighted_average()` can now
+  take a fitted model and prediction grid directly, e.g.,
+  `get_index(fit, newdata = grid)`. These functions and `get_index_split()`
+  also gain an `offset` argument.
+
+* `project()` gains `sample_fe`, `sample_historical_re`, and
+  `sample_future_re` arguments to separate parameter uncertainty, historical
+  latent state uncertainty, and future process variation, and a `future_re`
+  argument for including (the default), zeroing, or fixing future
+  spatiotemporal and time-varying effects. Projections are faster when
+  `newdata` repeats spatial locations across time.
+
+* `sdmTMB_cv(lfo = TRUE)` now supports delta/hurdle families.
+
+* Add opt-in `collapse_spatiotemporal_ar1` and `collapse_ar1_threshold` controls
+  to simplify spatiotemporal AR1 fields to IID or random-walk fields when the
+  estimated correlation is near zero or one.
+
+* Covariate diffusion handles non-local covariates better: time-indexed
+  formulas are distinguished, external grids are supported for prediction and
+  cross-validation, and insufficient grid coverage gives clear errors.
+
+* Covariate diffusion's `kappaS_nl` now starts at a value scaled to the data's
+  spatial extent and `log_kappaS_nl` is bounded by default, which avoids
+  degenerate over-smoothed fits. Override the bounds with `lower` or `upper` in
+  `sdmTMBcontrol()`.
+
+* `diffusion(x) + time_lag(x)` in `nonlocal_formula` now fits one stationary
+  joint space--time distributed-lag operator with one coefficient. Temporal
+  persistence is constrained to be non-negative. The temporal parameter is
+  estimated as `log_kappaT_nl` (equal to `logit(rhoT)`) rather than
+  `kappaT_nl_raw`, `sdmTMB_simulate()` requires `0 < lags_rhoT < 1`, and the
+  derived summaries are named `MSDK` and `RMSDK` rather than `MSD` and `RMSD`.
+
+* `time_lag()` now starts from a stationary state by default (the covariate is
+  assumed to have held at its first time slice); use `start = "zero"` for the
+  previous behaviour, which matches Thorson et al. (2026).
+
+* `get_cog()` now errors informatively for areal (SAR/CAR) models instead of
+  returning a centre of gravity of zero.
+
+* The `svc-factor-models` article clarifies how `spatial`, `spatial_varying`,
+  and the intercept of the `spatial_varying` design matrix interact.
+  `spatial_varying` now respects its own model matrix, and the `(Intercept)`
+  column is dropped only when `spatial = "on"`. For
+  `spatial = "off", spatial_varying = ~ 1 + factor`, the model now fits a
+  genuine intercept field plus `K - 1` deviation fields instead of omitting the
+  reference field, with a one-time warning.
+
+## Bug fixes: statistical and likelihood
+
+* Rows with missing values in the response or any variable the model uses
+  (including `weights` and `offset`) are now omitted before fitting, as with
+  `na.omit` in `glm()`, with a message unless `silent = TRUE`. Previously, such
+  rows were not removed from the spatial, temporal, random-effect, and
+  spatially varying inputs, so later rows were matched to the wrong locations
+  and times and fits were silently incorrect. `predict()`, `residuals()`, and
+  `sdmTMB_cv()` now work for these fits, and the fitted object's `data` holds
+  the rows used.
+
+* `sdmTMB_simulate()` now errors if `sigma_E` has more than one value, which
+  previously silently simulated a constant SD. The TMB and RTMB backends give
+  different simulated values for the same seed.
+
+* `truncated_nbinom1()` and `truncated_nbinom2()` now error on a response of
+  zero in non-delta models instead of reporting convergence with an infinite
+  objective.
+
+* Fix three bugs in priors. `normal()` priors on `b` used the standard
+  deviations as variances; a single `b` prior with multiple coefficients was
+  silently dropped and is now applied to every coefficient; and with
+  `bayesian = TRUE` the Jacobian for `pc_matern()` priors was incorrect.
+
+* Fix several other statistical bugs in both backends:
+  * `ordbeta()` cutpoints are now constrained to be ordered.
+  * `gengamma()` returns a `NaN` likelihood where its mean does not exist.
+  * A `matern_st` `pc_matern()` prior with a shared range no longer drops its
+    range term when there is no `matern_s` prior.
+  * With `bayesian = TRUE`, the `threshold_logistic_s95` prior includes its
+    Jacobian adjustment.
   * Response means without observation error (e.g.,
     `simulate(observation_error = FALSE)`) are now expectations for the
     beta-binomial, truncated negative binomial, mixture, and ordered beta
     families.
-  * Mixture-family predictions now respect non-log links and also apply to
-    population-level predictions (`re_form = NA`).
-  * `get_eao()` now weights density by area:
-    `sum(area * density)^2 / sum(area * density^2)`.
-  * Deviance and deviance residuals now include observation weights.
-  * `nbinom1()` deviance now uses the saturated model with `phi` fixed.
-  * Poisson-link delta encounter deviance residuals are now negative for
-    zeros, and zero for missing responses.
+  * `get_eao()` weights density by area.
+  * `sigma_V` priors are no longer applied twice in delta models.
 
-* Speed up `simulate.sdmTMB(type = "mle-mvn", mle_mvn_samples = "multiple")`
-  by factoring the random effects' Hessian once and drawing all samples
-  together rather than calling TMB's `MC()` once per simulation. Draws are
-  unchanged for a given seed.
+* Fix `censored_poisson()` likelihoods and gradients, which since sdmTMB 0.4.0
+  evaluated the censored CDF terms at the starting values. Log likelihoods are
+  also now computed on the log scale, avoiding `-Inf` for observations far in
+  the tails.
 
-* **Breaking change:** `sdmTMB_cv()` now scores held-out data by default
-  with a predictive density integrated over the approximate posterior of
-  the random effects (`predictive = "mle-mvn"`) rather than at their
-  estimated values (`"mle-eb"`, the previous behaviour). The `"mle-eb"`
-  predictive ignores random field uncertainty and can be badly
-  overconfident with flexible random fields such as those on fine meshes.
-  `predictive = "joint"` also integrates over the fixed effects and
-  variance parameters. `nsim` sets the number of draws per fold, so
-  `sum_loglik` now depends on the random seed. `"mle-eb"` values are always
-  returned in `cv_loglik_mle_eb` and `sum_loglik_mle_eb`. `"mle-eb"` and
-  `"mle-mvn"` match `type` in `simulate.sdmTMB()` and `residuals.sdmTMB()`.
+* Fix `time_varying` models with more than one column (e.g., `~ 1 + x`), where
+  estimated `b_rw_t` and `sigma_V` for all but the last term were shrunk.
+  Likelihoods, fitted values, and predictions are unchanged.
 
-* Add a `loo::elpd()` method for `sdmTMB_cv()` output so models can be
-  compared with `loo::loo_compare()`, including a standard error of the
-  difference in expected log predictive density. E.g.,
-  `loo::loo_compare(list(m1 = loo::elpd(cv1), m2 = loo::elpd(cv2)))`.
+* Fix `breakpt()` likelihoods and gradients after the cutpoint moves from its
+  starting value in the TMB backend.
 
-* Add `compare_deviance()` to calculate deviance explained (a pseudo-R^2)
-  relative to a simpler model. For families whose deviance depends on parameters other
-  than the mean (NB `phi`, Tweedie `p`, lognormal `phi`, gengamma `phi` and
-  `Q`), it refits the second model with these held at the first model's
-  values.
+* Fix `ordbeta()` simulation, which understated ones and the mean. The
+  likelihood was unaffected.
 
-* `cAIC()` is much faster now. E.g. on a model with about 5,800 random effects
-  it takes 0.68 s instead of 41 s.
+* Fix TMB-backend simulation of AR1 and RW spatiotemporal fields with a barrier
+  mesh, which had the wrong variance.
 
-* Add deviance residuals and `deviance()` for `gengamma()` and
-  `censored_poisson()`. The generalized gamma deviance is scaled by
-  `sigma^2`, so it matches the `Gamma()` deviance when `Q = sigma` and the
-  `lognormal()` deviance as `Q -> 0`. The censored Poisson deviance
-  maximizes the probability of each observed interval for the saturated
-  model and reduces to the Poisson deviance for uncensored observations.
+* Fix deviance and deviance residuals: they now include observation weights,
+  binomial residuals work for responses with more than one trial, `nbinom1()`
+  uses the saturated model with `phi` fixed, and Poisson-link delta encounter
+  residuals are negative for zeros.
 
-* Fix `sdmTMBcontrol(suppress_nlminb_warnings = TRUE)`, which was never stored
-  and so had no effect. It now suppresses the uninformative "NA/NaN function
-  evaluation" warnings from `stats::nlminb()` in all optimization calls.
+* Fix `sdmTMB_cv(lfo = TRUE)` log likelihoods for lognormal models, which
+  omitted a logarithm.
 
-* Fix the convergence check so the "Maximum final gradient" warning considers
-  the absolute value of the gradients; large negative gradients were previously
-  ignored. The reported maximum is now also the maximum absolute gradient.
+* Mixture-family predictions now respect non-log links and population-level
+  predictions (`re_form = NA`).
 
-* Fix an error ("missing value where TRUE/FALSE needed") when the gradient or
-  objective is non-finite during the Newton update (`newton_loops`) in
-  `sdmTMB()` and `run_extra_optimization()`; the update is now skipped.
-
-* Make extra optimization more robust. `run_extra_optimization()` now:
-  updates the saved parameters that `predict()` uses (previously predictions
-  used the pre-optimization parameters); leaves the original fit unchanged
-  (previously it modified the original's TMB object); updates
-  `pos_def_hessian`; counts iterations correctly over multiple `nlminb_loops`;
-  and respects `suppress_nlminb_warnings`. In both `sdmTMB()` and
-  `run_extra_optimization()`, Newton updates (`newton_loops`) now halve a step
-  that crosses parameter limits or worsens the objective instead of giving
-  up, and are skipped rather than erroring if the Hessian cannot be computed.
-  Extra `nlminb_loops` stop if a restart fails or worsens the objective. A
-  failed first phase in `multiphase` estimation now falls back to the default
-  starting values. The message about Newton updates and parameter limits is
-  gone; it appeared for any model with default limits (e.g., AR1 fields).
-
-* Fix `reload_model()` for models fit with `normalize = TRUE`.
-
-* Fix `type = "response"` predictions for `truncated_nbinom1()` and
-  `truncated_nbinom2()` (including delta versions), which used the starting
-  value of the dispersion parameter `phi` rather than its estimate, and the
-  wrong `phi` when fits shared a family object (e.g.,
-  `fam <- truncated_nbinom2()` used in two `sdmTMB()` calls) or after
-  `run_extra_optimization()`. Prediction now takes `phi` from each fit's own
-  parameters instead of storing it in the family object. Calling
-  `family$linkinv()` directly for these families now requires the `phi`
-  argument for new fits.
-
-* Speed up the RTMB backend. `simulate()` and reports skip GMRF densities
-  that aren't needed (~5x faster), each spatiotemporal field's density is one
-  sparse GMRF evaluation rather than one per time step, and `predict()`
-  without `se_fit` or draws evaluates predictions directly rather than
-  building an AD object (about 2x faster and half the peak memory on large grids).
-  In a benchmark (`pcod` spatiotemporal model, 285 knots, full `qcs_grid`), the
-  RTMB backend was about 10% faster to fit, 3x faster to `predict()`, 35% faster
-  to `simulate()`, and 30% faster for `get_index(bias_correct = TRUE)` than the
-  TMB backend before these changes. Peak memory was similar for fitting and
-  simulating but ~30% higher for `get_index(bias_correct = TRUE)`.
-
-* `get_index()`, `get_cog()`, `get_eao()`, and `get_weighted_average()` are
-  faster by reusing the fitted model's fixed-effect Hessian instead of
-  recomputing it (e.g., ~40% faster for a delta model without bias
-  correction). The saving grows with the number of fixed effects.
-
-* Bias correction in `get_weighted_average()`, `get_cog()`, and `get_eao()`
-  is much faster (~5-7x in tests). The bias-correction terms now tag the
-  per-time sums rather than their ratio, keeping the inner Hessian sparse
-  plus low rank, and use TMB's internal inner optimizer, which is the one
-  that exploits that structure. `get_cog()` also computes x and y in a single
-  objective function, halving its time. Estimates are unchanged.
-
-* `sdmTMB_cv()` is a bit faster and, with `save_models = TRUE`, returns
-  smaller objects. Fold models are fit without the joint precision matrix
-  unless `control` is supplied, and TMB's cached inner Cholesky factor is
-  dropped from saved models (it is rebuilt when needed).
-
-* Add `sample_fe` argument to `predict.sdmTMB()`. With `nsim > 0` and
-  `sample_fe = FALSE`, fixed effects are held at their estimates and only
-  random effects are drawn, conditional on the estimated parameters (similar
-  to `obj$MC()` in TMB). This matches the argument in `project()`.
-
-* Fix `predict.sdmTMB()` with `newdata` for `spatial_varying`,
-  `time_varying`, and `dispformula` terms with data-dependent transformations
-  such as `poly()`. These bases were previously recomputed from `newdata`,
-  giving incorrect predictions. The fitted encoding (transformation bases,
-  factor levels, and contrasts) is now saved with the model and reused, so
-  changing `options(contrasts = ...)` after fitting no longer affects these
-  predictions. New factor levels or missing values in these terms now give an
-  informative error. Models fit with earlier versions rebuild these terms from
-  the stored data and should be refit for exact reproduction.
-
-* `predict.sdmTMB()` with `newdata = NULL` now honours `return_tmb_report`,
-  `return_tmb_data`, and `nonlocal_newdata`. Previously these were ignored
-  (or `return_tmb_data` failed) unless another argument happened to trigger
-  projection onto the fitted data.
-
-* Population-level predictions from `predict.sdmTMB()` (`re_form = NA`) now
-  order columns as full predictions do: `est`, `est1`, `est2`, then `est_se`.
-
-* `predict.sdmTMB()` no longer drops the `newdata` coordinate columns for
-  non-spatial models.
-
-* `predict.sdmTMB(sims_var = ...)` now accepts only `"est"`, `"omega_s"`,
-  `"zeta_s"`, `"epsilon_st"`, `"est_rf"`, and `"est_non_rf"`, and errors if
-  the model (or the requested delta component) doesn't include that term.
-  Previously, other names were passed verbatim to the TMB report and missing
-  terms returned zeros. Use `return_tmb_report = TRUE` with `nsim` for other
-  reported variables.
-
-* `predict.sdmTMB(type = "response", se_fit = TRUE)` now errors. Standard
-  errors are only available on the link scale. Previously, it warned and
-  returned link-scale predictions. Use `type = "link"` with `se_fit = TRUE`,
-  or use `nsim` for response-scale uncertainty.
-
-* `predict.sdmTMB()` now errors for `type = "response"` with a `sims_var`
-  other than `"est"`. Applying the inverse link to a random field or other
-  single term does not give a meaningful response-scale value, and the
-  combination already errored for delta models.
+## Bug fixes: prediction, indices, and other
 
 * `predict.sdmTMB()` without `newdata` now returns the same values as
   `predict(fit, newdata = fit$data, offset = fit$offset)`. Previously,
-  `est_non_rf` left out smoothers and the offset, `est_rf` left out
-  spatially varying coefficient terms, and `est` for mixture families
-  (e.g., `lognormal_mix()`) lacked the mixture-mean adjustment.
+  `est_non_rf` left out smoothers and the offset, `est_rf` left out spatially
+  varying coefficient terms, and `est` for mixture families lacked the
+  mixture-mean adjustment. The fitted offset is now used for all prediction
+  types when `offset = NULL` (previously it was 0 for delta models and
+  internally rebuilt predictions) (#274). Set `offset = 0` for predictions at
+  an offset of 0.
+
+* Fix `predict.sdmTMB()` with `newdata` for `spatial_varying`, `time_varying`,
+  and `dispformula` terms with data-dependent transformations such as `poly()`.
+  The fitted encoding is now saved with the model and reused, and new factor
+  levels or missing values give an informative error. Refit models from earlier
+  versions for exact reproduction.
+
+* Fix `predict.sdmTMB()` with `newdata = NULL` ignoring `return_tmb_report`,
+  `return_tmb_data`, and `nonlocal_newdata`.
 
 * Draws from `predict.sdmTMB()` (`nsim` or `mcmc_samples`) now honour
-  `re_form = NA`, matching the point predictions. Previously, only
-  response-scale draws of the combined delta-model prediction left out the
-  random fields; all other draws silently included them.
+  `re_form = NA`. Population-level predictions also order columns as full
+  predictions do, and `newdata` coordinate columns are no longer dropped for
+  non-spatial models.
 
-* `predict.sdmTMB()` with `newdata = NULL` and `offset = NULL` now uses the
-  offset from the fitted model for all prediction types. Previously, the
-  offset was used for link-scale predictions of single-component models but
-  was set to 0 for delta models and whenever predictions were rebuilt
-  internally (e.g., `type = "response"` or `se_fit = TRUE`) (#274). Set
-  `offset = 0` explicitly to get predictions at an offset of 0. Index
-  calculations with `newdata` are unaffected.
+* Fix response-scale `est1` and `est2` from `predict.sdmTMB()` for Poisson-link
+  delta models with a nonzero offset.
 
-* Fix response-scale `est1` and `est2` from `predict.sdmTMB()` for
-  Poisson-link delta models with a nonzero offset. `est1` is now the
-  encounter probability at the given offset, `1 - exp(-a * n)`, rather than
-  at an offset of 0, and `est2` is the corresponding positive expectation.
-  The combined `est`, indices, residuals, and simulations were already
-  correct.
+* Fix `type = "response"` predictions for `truncated_nbinom1()` and
+  `truncated_nbinom2()`, which used the starting value of `phi`. `phi` now
+  comes from each fit's own parameters rather than the family object, so
+  calling `family$linkinv()` directly for these families requires `phi`.
 
 * Fix calling the index functions directly on a `do_index = TRUE` fit:
-  `get_index()` now honours an explicit `area` argument instead of silently
-  ignoring it, `get_eao()` and `get_weighted_average()` no longer fail with a
-  misleading error about TMB running out of memory, and `get_cog()` no longer
-  errors with a subscript error. The precomputed results are still used for
-  plain `get_index()` calls. #549
+  `get_index()` now honours `area`, and `get_eao()`, `get_weighted_average()`,
+  and `get_cog()` no longer error (#549).
 
-* `get_cog()` now errors informatively for areal (SAR/CAR) models, which have
-  no x/y coordinates, instead of returning a centre of gravity of zero.
+* Fix `sdmTMBcontrol(suppress_nlminb_warnings = TRUE)`, which previously had 
+  no effect.
 
-* Rows with missing values in the response or any variable the model uses
-  (including `weights` and `offset`) are now omitted before fitting, as with
-  `na.action = na.omit` in `glm()`, with a message unless `silent = TRUE`.
-  Previously such rows were dropped from the response and main-effect design
-  matrix but not from the spatial, temporal, random-effect, or spatially
-  varying inputs, so later rows were matched to the wrong locations and
-  times, giving silently incorrect fits.
-  Post-fit methods such as `predict()`, `residuals()`, and `sdmTMB_cv()`
-  errored for these fits and now work. The fitted object's `data` holds the
-  rows used.
+* The "Maximum final gradient" convergence warning now considers the absolute
+  value of the gradients; large negative gradients were previously ignored.
 
-* Add experimental multi-family models, where each row of the data can use a
-  different observation family (e.g., binomial, count, and delta-lognormal
-  data in one model with shared fields). Supply a named list of families to
-  `family` and name the column mapping rows to families with the new
-  `distribution_column` argument. See the new multi-family vignette for the
-  supported family combinations and post-fit methods.
+* Make extra optimization more robust. `run_extra_optimization()` now updates
+  the parameters used by `predict()`, leaves the original fit unchanged,
+  updates `pos_def_hessian`, and counts iterations correctly. Newton updates
+  (`newton_loops`) in `sdmTMB()` and `run_extra_optimization()` halve steps
+  that cross limits or worsen the objective, and are skipped rather than
+  erroring when the gradient, objective, or Hessian is unusable. A failed first
+  `multiphase` phase falls back to the default starting values. The needless
+  Newton/parameter-limit message is removed.
 
-* Add a `dispformula` argument to `sdmTMB()` for modelling the observation
-  dispersion parameter with fixed-effect predictors. Not currently supported
-  for multi-family models or truncated negative binomial families.
+* Fix `reload_model()` for models fit with `normalize = TRUE`.
 
-* Remove the experimental `epsilon_model` and `epsilon_predictor` options
-  (models of the spatiotemporal SD over time). The `"re"` and `"trend-re"`
-  options did not recover simulated year-to-year variation in the field SD.
-  The `"trend"` option was rarely used and built its covariate in data row
-  order, so data not sorted by time gave a misaligned trend, and combining it
-  with `extra_time` could crash R. Prediction also rebuilt the covariate from
-  `newdata`, misaligning it with the fitted time steps. Supplying either
-  option is now an error.
-
-* `sdmTMB_simulate()` now errors if `sigma_E` has more than one value. Only
-  the first value was used, so a time-varying `sigma_E` silently simulated a
-  constant SD. Simulation uses the backend set by `sdmTMBcontrol(backend)` or
-  the `sdmTMB.backend` option (TMB by default). The TMB and RTMB backends
-  give different simulated values for the same seed.
-
-* Compute `censored_poisson()` log likelihoods on the log scale in both the
-  TMB and RTMB backends. Censored probabilities were formed on the ordinary
-  scale before taking logs, so observations far in either tail (e.g., right
-  censored at 100 with a mean of 1) gave `-Inf` log likelihoods and
-  unusable gradients, which could derail optimization from poor parameter
-  values. Log probabilities are now computed from the tail that avoids
-  cancellation, with exact derivatives of all orders.
-
-* Fix TMB-backend simulation of AR1 and RW spatiotemporal fields with a barrier
-  mesh. The simulated fields were scaled by `1 / exp(ln_tau_E)` instead of the
-  barrier scaling factor, so their variance was wrong. IID fields and the
-  RTMB backend were already correct.
-
-* Non-delta `truncated_nbinom1()` and `truncated_nbinom2()` now error on a
-  response of zero rather than returning an infinite objective with all
-  parameters at zero and reported convergence.
-
-* Fix `ordbeta()` simulation in both the TMB and RTMB backends. A one was
-  drawn only after a zero was not, so the probability of a one was
-  `(1 - p0) * p1` rather than `p1`; the missing mass went to the continuous
-  component. Simulated responses from `simulate()`, `sdmTMB_simulate()`, and
-  simulation-based residuals (e.g., DHARMa) therefore understated ones and
-  the mean. The likelihood was unaffected.
-
-* Start covariate diffusion's `kappaS_nl` at a value scaled to the data's
-  spatial extent (RMSDK equal to a quarter of the bounding-box diagonal)
-  rather than at 1. The old start meant very different amounts of smoothing
-  depending on coordinate units and could let the optimizer drift into a
-  degenerate over-smoothed mode (`kappaS_nl` near 0) with a
-  non-positive-definite Hessian.
-
-* Bound covariate diffusion's `log_kappaS_nl` by default so RMSDK stays
-  between half the shortest mesh edge and 10 times the mesh bounding-box
-  diagonal. Beyond these the likelihood is flat and the optimizer could drift
-  indefinitely, giving NaN standard errors; a fit at a bound now warns.
-  Override with `lower` or `upper` in `sdmTMBcontrol()`.
-
-* Estimate covariate diffusion's temporal parameter as `log_kappaT_nl`
-  (equal to `logit(rhoT)`) in place of `kappaT_nl_raw`, which had a lower
-  bound at zero. This needs no bounds, so it is also safe with `tmbstan`, where
-  `kappaT_nl_raw` could go negative. Update any `start`, `map`, `lower`, or
-  `upper` entries for `kappaT_nl_raw` accordingly. `sdmTMB_simulate()` now
-  requires `0 < lags_rhoT < 1`.
-
-* Start covariate diffusion's `time_lag()` recursion from a stationary state
-  by default: the covariate is assumed to have held at its first time slice
-  beforehand. Previously the state before the first slice was zero, which
-  shrank early slices towards zero and made fits depend on where the
-  covariate's zero was. For example, adding a constant to the covariate could
-  change estimates of `rhoT` and the coefficient under a single intercept.
-  `time_lag(x, start = "zero")` reproduces the previous behaviour, which
-  matches Thorson et al. (2026). Fits of `time_lag()` terms will differ from
-  earlier versions unless `start = "zero"` is used.
-
-* Check that `mesh` matches `nrow(data)` when `nonlocal_formula` is used, even
-  with spatial and spatiotemporal fields off. Covariate diffusion maps each
-  observation to the mesh by row, so a mesh built from a different data frame
-  silently used the wrong locations.
-
-* Fix `breakpt()` likelihoods and gradients after the estimated cutpoint
-  moves from its starting value. The C++ backend now evaluates the threshold
-  branch on the current parameter, matching the RTMB backend.
-
-* Fix `time_varying` models with more than one column (e.g., `~ 1 + x` or a
-  factor with several levels). Each term's contribution was previously
-  re-added to the linear predictor once per later column, so term `k` of `K`
-  entered `K - k + 1` times. Maximized likelihoods, fitted values, and
-  predictions are unchanged, but estimated `b_rw_t` and `sigma_V` for every
-  term except the last were shrunk by `1 / (K - k + 1)`. These estimates, and
-  fits using a `sigma_V` prior, now change. Single-column `time_varying`
-  models are unaffected.
-
-* Fix `sigma_V` priors being applied twice in delta models.
-
-* Fix `censored_poisson()` likelihoods and gradients. Since sdmTMB 0.4.0
-  (2023), the censored Poisson CDF terms were evaluated as constants at the
-  starting values, so objective values and gradients were wrong elsewhere.
-  With the default `multiphase = TRUE`, the terms were fixed at the
-  phase-one Poisson estimates. Censored Poisson fits may change.
-
-* Fix binomial deviance residuals for responses with more than one trial
-  (e.g., proportions with `weights`). These were previously `NaN` or
-  incorrect because the calculation assumed 0/1 responses.
-
-* Use one default likelihood weight and index area per observation in delta
-  models. Previously these vectors included unused entries for the second
-  response component. Default binomial sizes follow the same row count.
-
-* Report each AR1 spatiotemporal `rho` once in delta models. The standard
-  error report previously repeated the full `rho` vector for each AR1 field.
-
-* Simulate correlated IID random effects with the RTMB backend when
-  `re_form = NA`. The TMB backend continues to retain their fitted modes
-  during simulation.
-
-* Add `make_zero_one_map()` to address #386. This is useful for categories
-  (e.g., year factors) where the response is all zeros or ones.
-
-* Add the `ordbeta()` family for ordered beta regression (Kubinec 2023),
-  a parsimonious alternative to ZOIB for continuous data on the closed unit
-  interval `[0, 1]` with point masses at 0 and 1. Two internal cutpoints are
-  estimated and reported (on the response scale) by `tidy()` and `print()`.
-  Multi-family fits including ordered beta are not supported. Closes #515.
-
-* The interaction between `spatial`, `spatial_varying`, and the intercept of
-  the `spatial_varying` design matrix has been clarified. See the vignette/article
-  "svc-factor-models."
-
-  `spatial_varying` now respects its own model matrix. The `(Intercept)`
-  column is only dropped when `spatial = "on"`, in which case the ordinary
-  spatial field `omega_s` is used as the SVC intercept/reference-level field
-  (a single informational message is issued at fit time, suppressible via
-  `silent = TRUE`).
-
-  The only material change in fitted-model structure versus published
-  releases is for `spatial = "off", spatial_varying = ~ 1 + factor`: this
-  previously stripped the intercept *and* zeroed `omega_s`, leaving only
-  `K - 1` deviation fields with no reference field. It now fits a genuine
-  SVC intercept field plus `K - 1` deviation fields. A one-cycle warning is
-  emitted for this specification.
-
-  The previous message suggesting `spatial = "off"` when using
-  `spatial = "on", spatial_varying = ~ 0 + factor_var` has been removed; this
-  is a valid model specification (global spatial field plus per-level SVC
-  deviations) although it can be more challenging to estimate.
-
-* `diffusion(x) + time_lag(x)` in `nonlocal_formula` now fits one stationary
-  joint space--time distributed-lag operator with one coefficient and one
-  transformed prediction column (`nl_diffusion_time_lag_x`). Wrappers for
-  different covariates remain separate. The derived diffusion-kernel summaries
-  have been renamed from `MSD`/`RMSD` to `MSDK`/`RMSDK`, and combined diagnostic
-  plots now use the fitted joint operator. Temporal persistence is now
-  constrained to be non-negative.
-
-* `sdmTMB_cv(lfo = TRUE)` now supports delta/hurdle families.
-  LFOCV log likelihoods for lognormal models are now calculated consistently
-  with the TMB model; previous versions omitted a logarithm in this calculation.
-
-* `sdmTMB()` does more robust checking against different formula random
-  effects in delta model list formulas.
-
-* `get_index()`, `get_cog()`, `get_eao()`, and `get_weighted_average()` no
-  longer make a redundant TMB objective-function evaluation when calculating
-  standard errors.
-
-* `update.sdmTMB()` now works with binomial `cbind()` responses and random
-  effects. #544
-
-* `predict.sdmTMB()` has been sped up by avoiding an expensive `obj$fn()` call
-  and instead directly reporting predictions using saved fitted fixed
-  and random effect values.
-
-* `get_index()`, `get_cog()`, `get_eao()`, and `get_weighted_average()` can now
-  take a fitted model and prediction grid directly, for example
-  `get_index(fit, newdata = grid)`. These functions, along with
-  `get_index_split()`, also gain a top-level `offset` argument.
-  `predict(..., return_tmb_object = TRUE)` remains available for backwards
-  compatibility but is now soft-deprecated.
-
-* Add opt-in `collapse_spatiotemporal_ar1` and `collapse_ar1_threshold`
-  controls to simplify spatiotemporal AR1 fields to IID or random-walk fields
-  when the estimated correlation is near zero or one. This operates
-  independently across delta-model components and does not affect
-  `time_varying` effects.
-
-* `collapse_threshold` in `sdmTMBcontrol()` is deprecated in favor of
-  `collapse_spatial_variance_threshold`.
-
-* `project()` now separates estimated parameter uncertainty, historical latent
-  state uncertainty, and future process variation with the
-  `sample_fe`, `sample_historical_re`, and `sample_future_re`
-  arguments. It simulates future spatiotemporal and time-varying effects while
-  retaining static random effects, and uses the native TMB prediction path,
-  making projections faster when `newdata` repeats spatial locations across
-  time.
-
-* `project()` gains a `future_re` argument for including (the default), zeroing,
-  or fixing future spatiotemporal and time-varying effects at their final
-  historical values. Zeroing or fixing these effects can help isolate and
-  illustrate how specified fixed-effect covariates influence projected values.
-
-* Make sdmTMB compatible with the new visreg 3.0.0, which now defaults to
-  ggplot output.
-
-* `sdmTMB()` when used with `collapse_spatial_variance` in `sdmTMBcontrol()`
-  now evaluates the internal `update()` call in the parent environment.
-  This means that arguments to `sdmTMB()` can be objects within another
-  function.
+* Fix `update.sdmTMB()` for binomial `cbind()` responses with random effects
+  (#544).
 
 * Fix `collapse_spatial_variance` with delta models so fields already disabled
-  in one linear predictor are not treated as newly collapsed, which could
-  cause repeated refits. Individual spatial or spatiotemporal fields can now
-  collapse independently.
+  in one linear predictor are not treated as newly collapsed, and evaluate its
+  internal `update()` call in the parent environment so `sdmTMB()` arguments
+  can be objects within another function.
 
-* Improved non-local covariate handling by distinguishing time-indexed
-  formulas, supporting external grids during prediction and cross-validation,
-  and reporting clear errors when grid coverage is insufficient.
+* Simulate correlated IID random effects with the RTMB backend when
+  `re_form = NA`.
+
+* `sdmTMB()` checks more robustly for differing formula random effects in
+  delta model list formulas.
+
+* A `mesh` that does not match `nrow(data)` now errors when `nonlocal_formula`
+  is used, even with spatial and spatiotemporal fields off.
+
+* `predict.sdmTMB()` now errors for `type = "response"` with `se_fit = TRUE`
+  (previously a warning, with link-scale output) and with a `sims_var` other
+  than `"est"`. Use `type = "link"` for standard errors or `nsim` for
+  response-scale uncertainty. `sims_var` accepts only `"est"`, `"omega_s"`,
+  `"zeta_s"`, `"epsilon_st"`, `"est_rf"`, and `"est_non_rf"`; use
+  `return_tmb_report = TRUE` with `nsim` for other reported variables.
+
+## Other improvements and changes
+
+* Speed up the RTMB backend, `get_index()` and related functions (including
+  bias correction), `simulate.sdmTMB()` with `type = "mle-mvn"`, `cAIC()`, and
+  `sdmTMB_cv()`. For example, `cAIC()` takes 0.68 s instead of 41 s on a model
+  with about 5,800 random effects, and `predict()` is about 3x faster than the
+  previous TMB backend on a large grid. `sdmTMB_cv()` with `save_models = TRUE`
+  also returns smaller objects. Fitting speed is also improved by ~10%.
+
+* `collapse_threshold` in `sdmTMBcontrol()` is deprecated in favour of
+  `collapse_spatial_variance_threshold`.
+
+* `predict(..., return_tmb_object = TRUE)` is soft-deprecated for index
+  calculations; pass `newdata` to the index functions instead.
+
+* The experimental `epsilon_model` and `epsilon_predictor` options are removed
+  and now error. File an issue if you're interested in using this functionality
+  and we can consider adding it back.
+
+* Make sdmTMB compatible with visreg 3.0.0.
 
 # sdmTMB 1.1.0
 
