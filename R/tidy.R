@@ -848,12 +848,10 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
   re_b_df <- do.call(rbind, expanded_rows) # list to df
   rownames(re_b_df) <- NULL # reset row names
 
-  # this is all as before
-  re_indx <- grep("re_b_pars", names(x$sd_report$value), fixed = TRUE)
-  non_nas <- !is.na(x$tmb_map$re_b_pars) # parameters that don't get mapped off
-
-  re_b_df$estimate <- x$sd_report$value[re_indx][non_nas]
-  re_b_df$std.error <- x$sd_report$sd[re_indx][non_nas]
+  # estimated (unmapped) random effects, in order
+  re_indx <- names(x$sd_report$par.random) == "re_b_pars"
+  re_b_df$estimate <- unname(x$sd_report$par.random[re_indx])
+  re_b_df$std.error <- sqrt(unname(x$sd_report$diag.cov.random[re_indx]))
   re_b_df$conf.low <- re_b_df$estimate - crit * re_b_df$std.error
   re_b_df$conf.high <- re_b_df$estimate + crit * re_b_df$std.error
   re_b_df$index <- NULL

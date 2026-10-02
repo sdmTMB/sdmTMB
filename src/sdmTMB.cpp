@@ -934,8 +934,7 @@ Type objective_function<Type>::operator()()
   } // end for m
   REPORT(re_cov_pars);
   ADREPORT(re_cov_pars);
-  REPORT(re_b_pars);
-  ADREPORT(re_b_pars);
+  REPORT(re_b_pars); // SEs come from sdreport()'s random effects
 
   tmbutils::array<Type> sigma_V(X_rw_ik.cols(),n_m);
   // Time-varying effects (dynamic regression):
