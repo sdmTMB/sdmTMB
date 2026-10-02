@@ -505,35 +505,91 @@ Type devresid_nbinom2( Type y,
   return devresid;
 }
 
-// n-th derivative of lgamma: n = 1 is digamma and n = 2 trigamma
+// Differences in gamma functions over y > 0: lgamma(x + y) - lgamma(x),
+// digamma(x + y) - digamma(x), and trigamma(x + y) - trigamma(x). Each is
+// differenced term by term, so nothing cancels when x is large. As in R's
+// `rtmb_lgamma_diff()` etc.
+//
+// The recurrence Gamma(x + 1) = x Gamma(x) (the loops over k) shifts the
+// argument to z = x + 10, where the asymptotic series below have relative
+// error < 1e-12. Their coefficients come from the Bernoulli numbers
+// B2 = 1/6, B4 = -1/30, B6 = 1/42, B8 = -1/30 (Abramowitz & Stegun 6.1.40,
+// 6.3.18, 6.4.12):
+//   lgamma(z)   ~ (z - 1/2) log(z) - z + log(2 pi) / 2
+//                 + 1/(12 z) - 1/(360 z^3) + 1/(1260 z^5) - 1/(1680 z^7)
+//   digamma(z)  ~ log(z) - 1/(2 z)
+//                 - 1/(12 z^2) + 1/(120 z^4) - 1/(252 z^6) + 1/(240 z^8)
+//   trigamma(z) ~ 1/z + 1/(2 z^2)
+//                 + 1/(6 z^3) - 1/(30 z^5) + 1/(42 z^7) - 1/(30 z^9)
+// Signs flip in the code because inv_pow_diff() is z^-k - (z + y)^-k.
+
+// 1 / z^k - 1 / (z + y)^k
 template <class Type>
-Type D_lgamma(Type x, int n) {
-  CppAD::vector<Type> tx(2);
-  tx[0] = x;
-  tx[1] = Type(n);
-  return atomic::D_lgamma(tx)[0];
+Type inv_pow_diff(Type z, Type y, int k) {
+  Type w = z + y;
+  Type out = Type(0);
+  for (int j = 0; j < k; j++) out += pow(z, Type(j + 1 - k)) * pow(w, Type(-j));
+  return out * y / (z * w);
 }
 
-// NB1 deviance residual with phi fixed. The saturated mean r * phi solves
-// digamma(y + r) - digamma(r) = log(1 + phi). Newton steps on
-// 1 / (digamma(y + r) - digamma(r)), which is increasing and concave in r,
-// start from the exact y = 1 solution and approach the root from below.
+// log(1 + y / z) for y > 0
+template <class Type>
+Type log1p_ratio(Type y, Type z) {
+  return logspace_add(Type(0), log(y) - log(z));
+}
+
+template <class Type>
+Type lgamma_diff(Type x, Type y) {
+  Type z = x + Type(10);
+  Type out = (z + y - Type(0.5)) * log1p_ratio(y, z) + y * log(z) - y -
+    inv_pow_diff(z, y, 1) / Type(12) + inv_pow_diff(z, y, 3) / Type(360) -
+    inv_pow_diff(z, y, 5) / Type(1260) + inv_pow_diff(z, y, 7) / Type(1680);
+  for (int k = 0; k < 10; k++) out -= log1p_ratio(y, x + Type(k));
+  return out;
+}
+
+template <class Type>
+Type digamma_diff(Type x, Type y) {
+  Type z = x + Type(10);
+  Type out = log1p_ratio(y, z) + inv_pow_diff(z, y, 1) / Type(2) +
+    inv_pow_diff(z, y, 2) / Type(12) - inv_pow_diff(z, y, 4) / Type(120) +
+    inv_pow_diff(z, y, 6) / Type(252) - inv_pow_diff(z, y, 8) / Type(240);
+  for (int k = 0; k < 10; k++) out += inv_pow_diff(x + Type(k), y, 1);
+  return out;
+}
+
+template <class Type>
+Type trigamma_diff(Type x, Type y) {
+  Type z = x + Type(10);
+  Type out = -inv_pow_diff(z, y, 1) - inv_pow_diff(z, y, 2) / Type(2) -
+    inv_pow_diff(z, y, 3) / Type(6) + inv_pow_diff(z, y, 5) / Type(30) -
+    inv_pow_diff(z, y, 7) / Type(42) + inv_pow_diff(z, y, 9) / Type(30);
+  for (int k = 0; k < 10; k++) out -= inv_pow_diff(x + Type(k), y, 2);
+  return out;
+}
+
+// NB1 deviance residual with phi fixed. With size r = mu / phi, the
+// saturated r solves digamma(y + r) - digamma(r) = log(1 + phi). Newton
+// steps on 1 / (digamma(y + r) - digamma(r)), which is increasing and
+// concave in r, start from the exact y = 1 solution and approach the root
+// from below. 10 steps reach machine precision for phi in [1e-4, 1e6] and y
+// up to 1e6; 15 leaves a margin. The gamma-function differences stay accurate as phi -> 0 (the
+// Poisson limit, where r is huge). The sign is the direction of the
+// saturated mean, which differs from y.
 template <class Type>
 Type devresid_nbinom1(Type y, Type logmu, Type ln_phi) {
-  Type logp_sat = Type(0); // the limit as the mean -> 0 when y = 0
-  if (y > Type(0)) {
-    Type c = log(Type(1) + exp(ln_phi));
-    Type r = Type(1) / c;
-    for (int k = 0; k < 15; k++) {
-      Type D = D_lgamma(y + r, 1) - D_lgamma(r, 1);
-      Type D1 = D_lgamma(y + r, 2) - D_lgamma(r, 2);
-      r += (Type(1) / D - Type(1) / c) * D * D / D1;
-    }
-    Type logmu_sat = log(r) + ln_phi;
-    logp_sat = dnbinom_robust(y, logmu_sat, logmu_sat + ln_phi, true);
+  Type c = logspace_add(Type(0), ln_phi); // log(1 + phi)
+  Type r_fit = exp(logmu - ln_phi);
+  if (y == Type(0)) return -sqrt(Type(2) * c * r_fit); // saturated mean -> 0
+  Type r = Type(1) / c;
+  for (int k = 0; k < 15; k++) {
+    Type D = digamma_diff(r, y);
+    r += (Type(1) / D - Type(1) / c) * D * D / trigamma_diff(r, y);
   }
-  Type logp = dnbinom_robust(y, logmu, logmu + ln_phi, true);
-  return sign(y - exp(logmu)) * pow(Type(2) * (logp_sat - logp), Type(0.5));
+  Type deviance = Type(2) * (lgamma_diff(r, y) - lgamma_diff(r_fit, y) -
+    c * (r - r_fit));
+  deviance = CppAD::CondExpGt(deviance, Type(0), deviance, Type(0)); // rounding
+  return sign(r - r_fit) * sqrt(deviance);
 }
 
 // Censored Poisson deviance residual, given the log likelihood `ll`. Exact

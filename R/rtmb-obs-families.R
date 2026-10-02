@@ -298,40 +298,81 @@ rtmb_nb_deviance <- function(y, mu, log_density, log_theta) {
 }
 
 # NB1 deviance residuals with phi fixed, following the C++
-# `devresid_nbinom1()`: the saturated mean r * phi solves
-# digamma(y + r) - digamma(r) = log(1 + phi).
+# `devresid_nbinom1()`. With size r = mu / phi, the saturated r solves
+# digamma(y + r) - digamma(r) = log(1 + phi). The deviance is computed from
+# gamma-function differences in y, which stay accurate as phi -> 0 (the
+# Poisson limit, where r is huge), and takes its sign from the direction of
+# the saturated mean, which differs from y.
 rtmb_nbinom1_deviance <- function(y, mu, s, log_density) {
   positive <- y > 0
   y1 <- ifelse(positive, y, 1) # keeps the Newton steps finite for y = 0
   c <- log1p(s$phi)
+  r_fit <- mu / s$phi
+  # Newton steps on 1 / (digamma(y + r) - digamma(r)), which is increasing
+  # and concave in r, from the exact y = 1 solution approach the root from
+  # below. 10 steps reach machine precision for phi in [1e-4, 1e6] and y up
+  # to 1e6; 15 leaves a margin.
   r <- 1 / c
   for (k in 1:15) {
-    D <- rtmb_digamma(y1 + r) - rtmb_digamma(r)
-    D1 <- rtmb_trigamma(y1 + r) - rtmb_trigamma(r)
-    r <- r + (1 / D - 1 / c) * D * D / D1
+    D <- rtmb_digamma_diff(r, y1)
+    r <- r + (1 / D - 1 / c) * D * D / rtmb_trigamma_diff(r, y1)
   }
-  log_mu_sat <- log(r) + s$ln_phi
-  saturated <- RTMB::dnbinom_robust(y1, log_mu_sat, log_mu_sat + s$ln_phi,
-    log = TRUE)
-  saturated[!positive] <- 0 # the limit as the mean -> 0
-  sign(y - mu) * sqrt(2 * (saturated - log_density))
+  deviance <- 2 * (rtmb_lgamma_diff(r, y1) - rtmb_lgamma_diff(r_fit, y1) -
+    c * (r - r_fit))
+  direction <- sign(r - r_fit)
+  # For y = 0 the saturated mean -> 0
+  deviance[!positive] <- 2 * (c * r_fit)[!positive]
+  direction[!positive] <- -1
+  deviance <- (deviance + abs(deviance)) / 2 # remove rounding below zero
+  direction * sqrt(deviance)
 }
 
-# Digamma and trigamma for AD types: shift x > 0 up by 10 with the
-# recurrence, then use the asymptotic series (relative error < 1e-12).
-rtmb_digamma <- function(x) {
+# Differences in gamma functions over y >= 0 for AD types: lgamma(x + y) -
+# lgamma(x), digamma(x + y) - digamma(x), and trigamma(x + y) - trigamma(x).
+# Each is differenced term by term, so nothing cancels when x is large. As
+# in the C++ `lgamma_diff()` etc.
+#
+# The recurrence Gamma(x + 1) = x Gamma(x) (the loops over k) shifts the
+# argument to z = x + 10, where the asymptotic series below have relative
+# error < 1e-12. Their coefficients come from the Bernoulli numbers
+# B2 = 1/6, B4 = -1/30, B6 = 1/42, B8 = -1/30 (Abramowitz & Stegun 6.1.40,
+# 6.3.18, 6.4.12):
+#   lgamma(z)   ~ (z - 1/2) log(z) - z + log(2 pi) / 2
+#                 + 1/(12 z) - 1/(360 z^3) + 1/(1260 z^5) - 1/(1680 z^7)
+#   digamma(z)  ~ log(z) - 1/(2 z)
+#                 - 1/(12 z^2) + 1/(120 z^4) - 1/(252 z^6) + 1/(240 z^8)
+#   trigamma(z) ~ 1/z + 1/(2 z^2)
+#                 + 1/(6 z^3) - 1/(30 z^5) + 1/(42 z^7) - 1/(30 z^9)
+# Signs flip in the code because `rtmb_inv_pow_diff(z, y, k)` is
+# 1 / z^k - 1 / (z + y)^k.
+rtmb_inv_pow_diff <- function(z, y, k) {
+  w <- z + y
+  out <- 0
+  for (j in 0:(k - 1)) out <- out + z^-(k - 1 - j) * w^-j
+  out * y / (z * w)
+}
+
+rtmb_lgamma_diff <- function(x, y) {
+  d <- function(k) rtmb_inv_pow_diff(x + 10, y, k)
   z <- x + 10
-  out <- log(z) - 1 / (2 * z) - 1 / (12 * z^2) + 1 / (120 * z^4) -
-    1 / (252 * z^6) + 1 / (240 * z^8)
-  for (k in 0:9) out <- out - 1 / (x + k)
+  out <- (z + y - 0.5) * log1p(y / z) + y * log(z) - y - d(1) / 12 +
+    d(3) / 360 - d(5) / 1260 + d(7) / 1680
+  for (k in 0:9) out <- out - log1p(y / (x + k))
   out
 }
 
-rtmb_trigamma <- function(x) {
-  z <- x + 10
-  out <- 1 / z + 1 / (2 * z^2) + 1 / (6 * z^3) - 1 / (30 * z^5) +
-    1 / (42 * z^7) - 1 / (30 * z^9)
-  for (k in 0:9) out <- out + 1 / (x + k)^2
+rtmb_digamma_diff <- function(x, y) {
+  d <- function(k) rtmb_inv_pow_diff(x + 10, y, k)
+  out <- log1p(y / (x + 10)) + d(1) / 2 + d(2) / 12 - d(4) / 120 +
+    d(6) / 252 - d(8) / 240
+  for (k in 0:9) out <- out + rtmb_inv_pow_diff(x + k, y, 1)
+  out
+}
+
+rtmb_trigamma_diff <- function(x, y) {
+  d <- function(k) rtmb_inv_pow_diff(x + 10, y, k)
+  out <- -d(1) - d(2) / 2 - d(3) / 6 + d(5) / 30 - d(7) / 42 + d(9) / 30
+  for (k in 0:9) out <- out - rtmb_inv_pow_diff(x + k, y, 2)
   out
 }
 
