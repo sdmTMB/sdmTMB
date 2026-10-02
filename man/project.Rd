@@ -76,8 +76,6 @@ reports such as \code{eta_i} describe the historical fitting data; projected
 \code{newdata} values are in the corresponding \verb{proj_*} reports.
 }
 \description{
-\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}}
-
 Project forward in time from an \pkg{sdmTMB} model using a
 simulation approach for computational efficiency.
 This can be helpful for calculating predictive intervals for long

@@ -1,8 +1,5 @@
 #' Run extra optimization on an already fitted object
 #'
-#' @description
-#' `r lifecycle::badge("experimental")`
-#'
 #' @param object An object from [sdmTMB()].
 #' @param nlminb_loops How many extra times to run [stats::nlminb()]
 #'   optimization. Sometimes restarting the optimizer at the previous best

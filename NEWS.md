@@ -1,5 +1,27 @@
 # sdmTMB (development version)
 
+* **Add an RTMB backend and make it the default**. The model code transitions
+  from C++ to R (via RTMB) and has ~50% fewer lines of code. Unit tests and
+  extensive local testing of cached models show the two backends produce
+  identical results. This transition uncovered many bugs that have been fixed
+  as documented in this file. The TMB backend is retained for now but will
+  eventually be dropped. To use it, set `control = sdmTMBcontrol(backend =
+  "tmb")` per model fit or `options(sdmTMB.backend = "tmb")` per session.
+  Note that `sdmTMBcontrol(normalize = TRUE)` is only available with the TMB
+  backend, and the RTMB backend does not support extra `MakeADFun()` options.
+  Updated models (`update()`) keep the backend they were originally fit with.
+
+* Speed up `get_index()` and associated derived quantity calculators
+  through several internal optimizations.
+
+* Fix three bugs in priors. (1) `normal()` priors on fixed effects (`b`)
+  used the supplied standard deviations as variances. (2) A single `b`
+  prior such as `normal(0, 2)` with multiple coefficients was announced as
+  expanded but silently dropped; it is now applied to every coefficient.
+  (3) With `bayesian = TRUE`, the Jacobian adjustment for `pc_matern()`
+  priors was incorrect; it is now `log(range) + log(sigma)`, with a shared
+  range counted once.
+
 * Fix several statistical bugs in both the TMB and RTMB backends:
   * `ordbeta()` cutpoints are now constrained to be ordered. The `psi`
     parameter is now the lower cutpoint and the log difference between the
@@ -23,14 +45,6 @@
   * Poisson-link delta encounter deviance residuals are now negative for
     zeros, and zero for missing responses.
 
-* Fix three bugs in priors. (1) `normal()` priors on fixed effects (`b`)
-  used the supplied standard deviations as variances. (2) A single `b`
-  prior such as `normal(0, 2)` with multiple coefficients was announced as
-  expanded but silently dropped; it is now applied to every coefficient.
-  (3) With `bayesian = TRUE`, the Jacobian adjustment for `pc_matern()`
-  priors was incorrect; it is now `log(range) + log(sigma)`, with a shared
-  range counted once.
-
 * Speed up `simulate.sdmTMB(type = "mle-mvn", mle_mvn_samples = "multiple")`
   by factoring the random effects' Hessian once and drawing all samples
   together rather than calling TMB's `MC()` once per simulation. Draws are
@@ -52,14 +66,6 @@
   compared with `loo::loo_compare()`, including a standard error of the
   difference in expected log predictive density. E.g.,
   `loo::loo_compare(list(m1 = loo::elpd(cv1), m2 = loo::elpd(cv2)))`.
-
-* **Add an RTMB backend**. The default for now remains TMB, but eventually the
-  TMB backend will be dropped in favour of RTMB. Set it per model fit with
-  `control = sdmTMBcontrol(backend = "rtmb")` or per session with
-  `options(sdmTMB.backend = "rtmb")`. Unit tests and extensive local testing of
-  cached models shows them to produce identical results. Model code transitions
-  from C++ to R and has ~50% fewer lines of code. This transition uncovered
-  many bugs that have been fixed as documented in this file.
 
 * Add `compare_deviance()` to calculate deviance explained (a pseudo-R^2)
   relative to a simpler model. For families whose deviance depends on parameters other

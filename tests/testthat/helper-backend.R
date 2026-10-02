@@ -1,3 +1,4 @@
-if (identical(Sys.getenv("SDMTMB_TEST_BACKEND"), "rtmb")) {
-  options(sdmTMB.backend = "rtmb")
+backend <- Sys.getenv("SDMTMB_TEST_BACKEND")
+if (backend %in% c("tmb", "rtmb")) {
+  options(sdmTMB.backend = backend)
 }
