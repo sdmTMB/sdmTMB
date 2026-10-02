@@ -74,10 +74,40 @@ test_that("Standard errors on overall predictions from delta models work", {
   visreg_delta(fit, xvar = "depth_scaled", nn = 10, model = 1)
   visreg_delta(fit, xvar = "depth_scaled", nn = 10, model = 2)
 
-  # *response* with se_fit = TRUE, re_form = NA
-  # should go link anyways with warning
-  expect_warning({
-    p <- predict(fit, model = NA, re_form = NA, newdata = nd, type = "response", se_fit = TRUE)
-  }, regexp = "link")
+  # standard errors are only available on the link scale:
+  expect_error(
+    predict(fit, model = NA, re_form = NA, newdata = nd, type = "response", se_fit = TRUE),
+    regexp = "link scale"
+  )
 
+})
+
+test_that("Draws honour re_form = NA", {
+  skip_on_cran()
+
+  mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
+  nd <- pcod_2011[1:20, ]
+  check_draws <- function(fit, ...) {
+    lp <- fit$tmb_obj$env$last.par.best
+    samples <- cbind(lp, lp)
+    for (re_form in list(NULL, NA)) {
+      for (type in c("link", "response")) {
+        p <- predict(fit, newdata = nd, re_form = re_form, type = type, ...)
+        d <- predict(fit, newdata = nd, re_form = re_form, type = type,
+          mcmc_samples = samples, ...)
+        expect_equal(unname(d[, 1]), p$est, tolerance = 1e-8)
+        expect_equal(d[, 1], d[, 2])
+      }
+    }
+  }
+
+  fit <- sdmTMB(density ~ depth_scaled, data = pcod_2011, mesh = mesh,
+    family = tweedie(), time = "year")
+  check_draws(fit)
+
+  fit <- sdmTMB(density ~ depth_scaled, data = pcod_2011, mesh = mesh,
+    family = delta_gamma(), time = "year")
+  check_draws(fit)
+  check_draws(fit, model = 1)
+  check_draws(fit, model = 2)
 })

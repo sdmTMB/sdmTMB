@@ -366,7 +366,7 @@ Type objective_function<Type>::operator()()
   DATA_INTEGER(exclude_RE); // DELTA TODO currently shared...
   DATA_INTEGER(no_spatial); // omit all spatial calculations
 
-  DATA_VECTOR(proj_vector);  // User-provided vector for weighted average
+  DATA_MATRIX(proj_vector);  // User-provided vector(s) for weighted average, one per column
 
   // Distribution
   DATA_IVECTOR(obs_family_id);
@@ -407,10 +407,6 @@ Type objective_function<Type>::operator()()
   DATA_VECTOR(X_threshold);
   DATA_VECTOR(proj_X_threshold);
   DATA_INTEGER(threshold_func);
-  // optional model for nonstationary st variance
-  DATA_INTEGER(est_epsilon_model);
-  DATA_INTEGER(est_epsilon_slope);
-  DATA_VECTOR(epsilon_predictor);
 
   // optional stuff for penalized regression splines
   DATA_INTEGER(has_smooths);  // whether or not smooths are included
@@ -461,7 +457,6 @@ Type objective_function<Type>::operator()()
   PARAMETER_ARRAY(zeta_s);    // spatial effects on covariate; n_s length, n_z cols, n_m
   PARAMETER_ARRAY(epsilon_st);  // spatio-temporal effects; n_s by n_t by n_m array
   PARAMETER_ARRAY(b_threshold);  // coefficients for threshold relationship (3) // DELTA TODO
-  PARAMETER_VECTOR(b_epsilon); // slope coefficient for log-linear model on epsilon
   PARAMETER_ARRAY(b_smooth);  // P-spline smooth parameters
   PARAMETER_ARRAY(ln_smooth_sigma);  // variances of spline REs if included
 
@@ -642,44 +637,20 @@ Type objective_function<Type>::operator()()
   //  sigma_E(m) = sdmTMB::calc_rf_sigma(ln_tau_E(m), ln_kappa(1,m));
   //}
 
-  // optional non-stationary model on epsilon
+  // spatiotemporal SD, constant over time
   tmbutils::array<Type> sigma_E(n_t, n_m);
   tmbutils::array<Type> ln_tau_E_vec(n_t, n_m);
-  if (!est_epsilon_model) { // constant model
-    for (int m = 0; m < n_m; m++) {
-      // do calculation once,
-      if (spatial_model == 0) {
-        sigma_E(0,m) = sdmTMB::calc_rf_sigma(ln_tau_E(m), ln_kappa(1,m));
-      } else {
-        sigma_E(0,m) = Type(1.) / exp(ln_tau_E(m));
-      }
-      ln_tau_E_vec(0,m) = ln_tau_E(m);
-      for (int i = 1; i < n_t; i++) {
-        sigma_E(i,m) = sigma_E(0,m);
-        ln_tau_E_vec(i,m) = ln_tau_E_vec(0,m);
-      }
+  for (int m = 0; m < n_m; m++) {
+    // do calculation once,
+    if (spatial_model == 0) {
+      sigma_E(0,m) = sdmTMB::calc_rf_sigma(ln_tau_E(m), ln_kappa(1,m));
+    } else {
+      sigma_E(0,m) = Type(1.) / exp(ln_tau_E(m));
     }
-  }
-  if (est_epsilon_model) { // loglinear model
-    // epsilon_intcpt is the intercept parameter, derived from ln_tau_E.
-    // For models with time as covariate, this is interpreted as sigma when covariate = 0.
-    for (int m = 0; m < n_m; m++) {
-      Type epsilon_intcpt = spatial_model == 0 ?
-        sdmTMB::calc_rf_sigma(ln_tau_E(m), ln_kappa(1,m)) :
-        Type(1.) / exp(ln_tau_E(m));
-      Type log_epsilon_intcpt = log(epsilon_intcpt);
-      Type log_epsilon_temp = 0.0;
-      Type epsilon_cnst = - log(Type(4.0) * M_PI) / Type(2.0) - ln_kappa(1,m);
-      for(int i = 0; i < n_t; i++) {
-        log_epsilon_temp = log_epsilon_intcpt;
-        if (est_epsilon_slope) log_epsilon_temp += b_epsilon(m) * epsilon_predictor(i);
-        sigma_E(i,m) = exp(log_epsilon_temp); // log-linear model
-        if (spatial_model == 0) {
-          ln_tau_E_vec(i,m) = -log_epsilon_temp + epsilon_cnst;
-        } else {
-          ln_tau_E_vec(i,m) = -log_epsilon_temp;
-        }
-      }
+    ln_tau_E_vec(0,m) = ln_tau_E(m);
+    for (int i = 1; i < n_t; i++) {
+      sigma_E(i,m) = sigma_E(0,m);
+      ln_tau_E_vec(i,m) = ln_tau_E_vec(0,m);
     }
   }
   tmbutils::array<Type> log_sigma_E(sigma_E.rows(),sigma_E.cols()); // for SE
@@ -850,7 +821,9 @@ Type objective_function<Type>::operator()()
                 vector<Type> epsilon_st_tmp(epsilon_st.col(m).rows());
                 SIMULATE {
                   GMRF(Q_temp, s).simulate(epsilon_st_tmp);
-                  epsilon_st_tmp *= 1./exp(ln_tau_E_vec(t,m));
+                  epsilon_st_tmp *= barrier ?
+                    sdmTMB::barrier_scaling_factor(ln_tau_E_vec(t,m), ln_kappa(1,m)) :
+                    1. / exp(ln_tau_E_vec(t,m));
                   // https://kaskr.github.io/adcomp/classdensity_1_1AR1__t.html
                   Type ar1_scaler = sqrt(1. - rho(m) * rho(m));
                   if (t == 0) {
@@ -881,7 +854,9 @@ Type objective_function<Type>::operator()()
                 vector<Type> epsilon_st_tmp(epsilon_st.col(m).rows());
                 SIMULATE {
                   GMRF(Q_temp, s).simulate(epsilon_st_tmp);
-                  epsilon_st_tmp *= 1./exp(ln_tau_E_vec(t,m));
+                  epsilon_st_tmp *= barrier ?
+                    sdmTMB::barrier_scaling_factor(ln_tau_E_vec(t,m), ln_kappa(1,m)) :
+                    1. / exp(ln_tau_E_vec(t,m));
                   if (t == 0) {
                     epsilon_st.col(m).col(0) = epsilon_st_tmp;
                   } else {
@@ -1327,6 +1302,7 @@ Type objective_function<Type>::operator()()
           }
           case censored_poisson_family: {
             if (notNA) tmp_ll = sdmTMB::dcenspois2(y_i(i,m), mu_i(i,m), upr(i), true);
+            if (notNA) devresid(i,m) = sdmTMB::devresid_censpois(y_i(i,m), mu_i(i,m), upr(i), tmp_ll);
             if (sim_obs) SIMULATE{y_i(i,m) = rpois(mu_i(i,m));}
             break;
           }
@@ -1472,6 +1448,7 @@ Type objective_function<Type>::operator()()
         }
           case gengamma_family: {
             if (notNA) tmp_ll = sdmTMB::dgengamma(y_i(i,m), mu_i(i,m), resolved.phi, resolved.gengamma_Q, true);
+            if (notNA) devresid(i,m) = sdmTMB::devresid_gengamma(y_i(i,m), mu_i(i,m), resolved.phi, resolved.gengamma_Q);
             if (sim_obs) SIMULATE{y_i(i,m) = sdmTMB::rgengamma(mu_i(i,m), resolved.phi, resolved.gengamma_Q);}
             break;
           }
@@ -1931,38 +1908,48 @@ Type objective_function<Type>::operator()()
       }
 
       if (calc_weighted_avg) {
-        // Weighted average of user-provided vector:
-        vector<Type> weighted_avg(n_t);
+        // Weighted average of each user-provided column (x and y for COG),
+        // stacked by time within column; eps_index follows the same order
+        int n_w = proj_vector.cols();
+        vector<Type> weighted_avg(n_t * n_w);
         weighted_avg.setZero();
-        for (int i = 0; i < n_p; i++) {
-          weighted_avg(proj_year(i)) += proj_vector(i) * mu_combined(i) * area_i(i);
-        }
-        for (int t = 0; t < n_t; t++) {
-          if (proj_time_include(t) == 0 || total(t) == 0) {
-            weighted_avg(t) = Type(0);
-          } else {
-            weighted_avg(t) /= total(t);
+        for (int j = 0; j < n_w; j++) {
+          vector<Type> weighted_sum(n_t);
+          weighted_sum.setZero();
+          for (int i = 0; i < n_p; i++) {
+            weighted_sum(proj_year(i)) += proj_vector(i, j) * mu_combined(i) * area_i(i);
+          }
+          for (int t = 0; t < n_t; t++) {
+            if (proj_time_include(t) == 0 || total(t) == 0) continue;
+            weighted_avg(j * n_t + t) = weighted_sum(t) / total(t);
+            // Tag the sums (sparse Hessians) and take the ratio after the tags
+            if (eps_index.size() > 0) {
+              jnll += eps_index(j * n_t + t) *
+                newton::Tag(weighted_sum(t)) / newton::Tag(total(t));
+            }
           }
         }
         REPORT(weighted_avg);
         ADREPORT(weighted_avg);
-        jnll = sdmTMB::add_lowrank_bias_correction(weighted_avg, eps_index, proj_time_include, 0, jnll);
       }
 
       if (calc_eao) { // effective area occupied: Thorson et al. 2016 doi:10.1098/rspb.2016.1853
         vector<Type> sum_dens(n_t);
+        vector<Type> sum_dens2(n_t);
         vector<Type> mean_dens(n_t);
         vector<Type> eao(n_t);
         vector<Type> log_eao(n_t);
         sum_dens.setZero();
+        sum_dens2.setZero();
         mean_dens.setZero();
         eao.setZero();
         for (int i = 0; i < n_p; i++) {
           sum_dens(proj_year(i)) += mu_combined(i);
+          sum_dens2(proj_year(i)) += mu_combined(i) * mu_combined(i);
         }
-        for (int i = 0; i < n_p; i++) {
+        for (int t = 0; t < n_t; t++) {
           // weighted.mean(density, w = density)
-          mean_dens(proj_year(i)) += mu_combined(i) * mu_combined(i) / sum_dens(proj_year(i));
+          if (sum_dens(t) != 0) mean_dens(t) = sum_dens2(t) / sum_dens(t);
         }
         for (int t = 0; t < n_t; t++) {
           if (proj_time_include(t) == 0 || mean_dens(t) == 0) {
@@ -1977,7 +1964,15 @@ Type objective_function<Type>::operator()()
         REPORT(mean_dens);
         ADREPORT(log_eao);
         ADREPORT(eao);
-        jnll = sdmTMB::add_lowrank_bias_correction(eao, eps_index, proj_time_include, 0, jnll);
+        // Tag the sums (sparse Hessians) and take the ratio after the tags
+        if (eps_index.size() > 0) {
+          for (int t = 0; t < n_t; t++) {
+            if (proj_time_include(t) != 0 && mean_dens(t) != 0) {
+              jnll += eps_index(t) * newton::Tag(total(t)) *
+                newton::Tag(sum_dens(t)) / newton::Tag(sum_dens2(t));
+            }
+          }
+        }
       }
     }
   }
@@ -1995,10 +1990,6 @@ Type objective_function<Type>::operator()()
      ADREPORT(s95);
      REPORT(s_max);
      ADREPORT(s_max);
-   }
-   if (est_epsilon_slope) {
-     REPORT(b_epsilon);
-     ADREPORT(b_epsilon);
    }
 
   //  // ------------------ Reporting ----------------------------------------------

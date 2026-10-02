@@ -37,3 +37,4 @@ revdep/
 ^\.codex-plugins
 ^Rplots.pdf$
 ^tests/optional$
+^reference-fits$

@@ -33,8 +33,6 @@ rtmb_prepare <- function(data) {
     epsilon_ar1 = data$ar1_fields[components] == 1L,
     epsilon_rw = data$rw_fields[components] == 1L,
     share_range = data$share_range[components] == 1L,
-    epsilon_trend = on(data$est_epsilon_slope),
-    epsilon_predictor = data$epsilon_predictor,
     # SVC fields enter the predictor whenever present; like the C++ template,
     # their density is only evaluated for components with a spatial field.
     svc = svc,
@@ -164,9 +162,9 @@ rtmb_family_inputs <- function(data) {
   })
 }
 
-# Covariates and projection matrices for fitted or projected rows. The fitted
-# spatial fields use `A_st` directly, as in the C++ template; projection rows
-# select from the unique projection locations. Fitted rows also carry the
+# Covariates and projection matrices for fitted or projected rows. As in the C++
+# template, spatial fields are projected to unique locations (`A_station`) and
+# then indexed by row (`station_index`). Fitted rows also carry the
 # response and observation inputs; projected rows the index area weights.
 rtmb_row_inputs <- function(data, families, projection) {
   if (projection) {
@@ -177,7 +175,6 @@ rtmb_row_inputs <- function(data, families, projection) {
       X_threshold = data$proj_X_threshold, Zs = data$proj_Zs,
       Xs = data$proj_Xs, z = data$proj_z_i, X_rw = data$proj_X_rw_ik,
       Zt = data$Zt_list_proj, include_iid = data$exclude_RE == 0L,
-      A_rows = data$proj_mesh[station_index, , drop = FALSE],
       A_station = data$proj_mesh, station_index = station_index,
       time = data$proj_year + 1L,
       family_id = rep_len(data$proj_family_id + 1L, nrow(data$proj_X_ij[[1L]])),
@@ -190,7 +187,7 @@ rtmb_row_inputs <- function(data, families, projection) {
       X_threshold = data$X_threshold, Zs = data$Zs, Xs = data$Xs,
       z = data$z_i, X_rw = data$X_rw_ik,
       Zt = data$Zt_list, include_iid = TRUE,
-      A_rows = data$A_st, A_station = data$A_st,
+      A_station = data$A_st,
       # `A_spatial_index` can be longer than the data when the mesh is unused
       # (e.g., the placeholder mesh with no spatial fields); as in C++, read
       # only one entry per row

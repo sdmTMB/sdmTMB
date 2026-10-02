@@ -92,6 +92,7 @@ reference:
   - coef.sdmTMB
   - sigma.sdmTMB
   - cAIC
+  - compare_deviance
 
 - title: 'Families'
   desc: |
@@ -153,6 +154,7 @@ reference:
   contents:
   - sdmTMB_cv
   - sdmTMB_stacking
+  - elpd.sdmTMB_cv
   - cv_to_waywiser
 
 - title: 'Derived quantities'

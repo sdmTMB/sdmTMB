@@ -153,3 +153,139 @@ test_that("Deviance calculations are correct", {
   #
   # expect_equal(devexplained, m2$deviance_explained, tolerance = 0.0001)
 })
+
+test_that("Generalized gamma deviance residuals are correct", {
+  set.seed(1)
+  y <- rgamma(30, shape = 2, scale = 1)
+  mean <- exp(rnorm(30, 0.5, 0.3))
+
+  # Definition: sign * sqrt(sigma^2 * 2 * (saturated - fitted log density)),
+  # with the saturated mean found numerically.
+  numerical <- function(y, mean, sigma, Q) {
+    mapply(function(y, mean) {
+      sat <- optimize(function(m) rtmb_dgengamma(y, exp(m), sigma, Q),
+        c(log(y) - 10, log(y) + 10), maximum = TRUE, tol = 1e-12)
+      dev <- 2 * (sat$objective - rtmb_dgengamma(y, mean, sigma, Q))
+      sign(sat$maximum - log(mean)) * sigma * sqrt(dev)
+    }, y, mean)
+  }
+  for (Q in c(-0.8, 0.3, 1.5)) {
+    expect_equal(rtmb_gengamma_devresid(y, mean, 0.6, Q),
+      numerical(y, mean, 0.6, Q), tolerance = 1e-5, info = Q)
+  }
+
+  # Q = sigma is a gamma with shape sigma^-2: matches Gamma() and glm().
+  sigma <- 0.7
+  expect_equal(rtmb_gengamma_devresid(y, mean, sigma, sigma),
+    sign(y - mean) * sqrt(2 * ((y - mean) / mean - log(y / mean))))
+  # Q -> 0 is the lognormal: matches lognormal().
+  expect_equal(rtmb_gengamma_devresid(y, mean, sigma, 1e-4),
+    log(y) - (log(mean) - sigma^2 / 2), tolerance = 1e-3)
+
+  # Fitted models: TMB and RTMB agree with the formula and with deviance().
+  x <- rnorm(30)
+  d <- data.frame(x = x, y = rgamma(30, shape = 2, scale = exp(0.5 * x) / 2))
+  for (backend in c("tmb", "rtmb")) {
+    m <- sdmTMB(y ~ x, family = gengamma(), spatial = "off", data = d,
+      control = sdmTMBcontrol(backend = backend))
+    p <- as.list(m$sd_report, "Estimate", report = TRUE)
+    Q <- as.list(m$sd_report, "Estimate")$gengamma_Q
+    r <- residuals(m, type = "deviance")
+    expect_equal(r, rtmb_gengamma_devresid(d$y,
+      exp(predict(m)$est), c(p$phi), Q), tolerance = 1e-6, info = backend)
+    expect_equal(deviance(m), sum(r^2), info = backend)
+  }
+})
+
+test_that("Censored Poisson deviance residuals are correct", {
+  # Interval rows: the closed-form saturated lambda maximizes P(L <= Y <= U).
+  L <- c(1, 3, 2, 10)
+  U <- c(4, 3 + 70, 2, 30)
+  for (j in seq_along(L)[L < U]) {
+    sat <- optimize(function(l) rtmb_censpois_logprob_value(exp(l), L[j], U[j]),
+      c(-5, 10), maximum = TRUE, tol = 1e-10)
+    closed <- (lgamma(U[j] + 1) - lgamma(L[j])) / (U[j] - L[j] + 1)
+    expect_equal(sat$maximum, closed, tolerance = 1e-4, info = j)
+  }
+
+  set.seed(1)
+  x <- rnorm(60)
+  d <- data.frame(x = x, y = rpois(60, exp(1 + 0.5 * x)))
+  upr <- d$y
+  upr[1:15] <- NA # right censored
+  upr[16:30] <- d$y[16:30] + 3 # interval censored
+  d$y[31:35] <- 0 # interval starting at zero
+  upr[31:35] <- 2
+  mpois <- glm(y ~ x, family = poisson(), data = d)
+
+  for (backend in c("tmb", "rtmb")) {
+    control <- sdmTMBcontrol(backend = backend)
+    # Without censoring, it is the Poisson deviance.
+    control$censored_upper <- d$y
+    m <- sdmTMB(y ~ x, family = censored_poisson(), spatial = "off",
+      data = d, control = control)
+    expect_equal(residuals(m, type = "deviance"), unname(residuals(mpois)),
+      tolerance = 1e-4, info = backend)
+    expect_equal(deviance(m), deviance(mpois), tolerance = 1e-4,
+      info = backend)
+
+    # With censoring, matches 2 * (saturated - fitted) log likelihood, with
+    # the saturated likelihood maximized numerically.
+    control$censored_upper <- upr
+    m <- sdmTMB(y ~ x, family = censored_poisson(), spatial = "off",
+      data = d, control = control)
+    lambda <- exp(predict(m)$est)
+    ll <- function(lambda) rtmb_dcenspois(d$y, lambda, upr)
+    sat <- vapply(seq_len(nrow(d)), function(i) {
+      optimize(function(l) rtmb_dcenspois(d$y[i], exp(l), upr[i]),
+        c(-20, 20), maximum = TRUE, tol = 1e-10)$objective
+    }, numeric(1))
+    r <- residuals(m, type = "deviance")
+    expect_equal(r^2, 2 * (sat - ll(lambda)), tolerance = 1e-5, info = backend)
+    expect_true(all(r[1:15] >= 0), info = backend)
+    expect_true(all(r[31:35] <= 0), info = backend)
+    expect_equal(deviance(m), sum(r^2), info = backend)
+  }
+})
+
+test_that("compare_deviance() holds shape parameters fixed", {
+  set.seed(1)
+  d <- data.frame(x = rnorm(300))
+  d$y <- rnbinom(300, size = 1.5, mu = exp(1 + 0.8 * d$x))
+  fit <- sdmTMB(y ~ x, data = d, spatial = "off", family = nbinom2())
+  fit0 <- sdmTMB(y ~ 1, data = d, spatial = "off", family = nbinom2())
+  expect_message(out <- compare_deviance(fit, fit0), "phi")
+  expect_equal(attr(out, "reduced")$parlist$ln_phi, fit$parlist$ln_phi)
+
+  # Matches a GLM with theta fixed at the full model's estimate:
+  skip_if_not_installed("MASS")
+  m <- MASS::glm.nb(y ~ x, data = d)
+  m0 <- glm(y ~ 1, family = MASS::negative.binomial(m$theta), data = d)
+  expect_equal(out$deviance, deviance(m), tolerance = 1e-4)
+  expect_equal(out$deviance_reduced, deviance(m0), tolerance = 1e-4)
+  expect_equal(out$deviance_explained, 1 - deviance(m) / deviance(m0),
+    tolerance = 1e-4)
+
+  # No refit needed when the deviance depends only on the mean:
+  fit_p <- sdmTMB(y ~ x, data = d, spatial = "off", family = poisson())
+  fit_p0 <- sdmTMB(y ~ 1, data = d, spatial = "off", family = poisson())
+  expect_no_message(out <- compare_deviance(fit_p, fit_p0))
+  expect_equal(out$deviance_reduced, deviance(fit_p0))
+
+  expect_error(compare_deviance(fit_p, fit0), "same family")
+  d$y2 <- d$y + 1L
+  fit_y2 <- sdmTMB(y2 ~ 1, data = d, spatial = "off", family = nbinom2())
+  expect_error(compare_deviance(fit, fit_y2), "same response")
+})
+
+test_that("compare_deviance() holds Tweedie p fixed", {
+  fit <- sdmTMB(density ~ depth_scaled + depth_scaled2,
+    data = pcod_2011, spatial = "off", family = tweedie())
+  fit0 <- sdmTMB(density ~ 1,
+    data = pcod_2011, spatial = "off", family = tweedie())
+  expect_message(out <- compare_deviance(fit, fit0), "Tweedie p")
+  reduced <- attr(out, "reduced")
+  expect_equal(reduced$parlist$thetaf, fit$parlist$thetaf)
+  expect_false(isTRUE(all.equal(reduced$parlist$ln_phi, fit$parlist$ln_phi)))
+  expect_equal(out$deviance_reduced, deviance(reduced))
+})

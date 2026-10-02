@@ -1,5 +1,5 @@
-# Register reports with the C++ template's names and dimensions. Post-fit
-# methods index these names.
+# Reports and ADREPORTs with the C++ template's names and dimensions, as two
+# named lists. Post-fit methods index these names.
 rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
                         projected, derived, sampling, simulating) {
   n_m <- prepared$n_m
@@ -37,7 +37,6 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
     if (areal_type == "car") list(alpha_car = theta$alpha_car),
     if (prepared$anisotropy) list(H = theta$H[[1L]]),
     if (prepared$anisotropy && n_m > 1L) list(H2 = theta$H[[2L]]),
-    if (prepared$epsilon_trend) list(b_epsilon = par$b_epsilon),
     if (prepared$mixture) {
       list(p_extreme = theta$p_extreme, mix_ratio = theta$mix_ratio)
     },
@@ -108,7 +107,7 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
   # Reported values that also get standard errors; sdreport() is read by name.
   with_se <- c("sigma_O", "sigma_E", "sigma_Z", "sigma_V", "re_cov_pars",
     "re_b_pars", "b_j_prime", "b_j2_prime", names(theta$threshold),
-    "b_epsilon", "rho_sar", "alpha_car", "range", "sigma_xi", "range_xi",
+    "rho_sar", "alpha_car", "range", "sigma_xi", "range_xi",
     "b_pref_t", "sigma_b_pref", "alpha_pref_t", "sigma_alpha_pref",
     "log_range", names(diffusion_scales), "phi", "tweedie_p", "student_df",
     "link_total", "weighted_avg", "eao",
@@ -135,9 +134,7 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
     if (requested[["total"]]) derived["total"],
     if (requested[["eao"]]) derived["log_eao"]
   )
-  rtmb_register_reports(reports, RTMB::REPORT)
-  rtmb_register_reports(adreports, RTMB::ADREPORT)
-  invisible(NULL)
+  list(reports = reports, adreports = adreports)
 }
 
 # Call `REPORT()` or `ADREPORT()` on each element of a named list, so each

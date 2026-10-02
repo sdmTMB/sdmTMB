@@ -224,29 +224,6 @@ test_that("RTMB Matérn and transformed-parameter priors match TMB", {
   }
 })
 
-test_that("RTMB nonstationary epsilon variance matches TMB", {
-  set.seed(57)
-  n <- 30L
-  d <- data.frame(x = runif(n), y = runif(n), z = rnorm(n),
-    time = rep(1:3, each = 10L),
-    cov = rep(c(-1, 0, 1), each = 10L), response = rnorm(n))
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 10L, type = "kmeans")
-  fit <- sdmTMB(response ~ z, data = d, mesh = mesh, time = "time",
-    spatial = "on", spatiotemporal = "ar1",
-    experimental = list(epsilon_model = "trend", epsilon_predictor = "cov"),
-    do_fit = FALSE)
-  p <- fit$tmb_params
-  p$b_epsilon[] <- 0.3
-  p$ln_tau_E[] <- 0.2
-  p$ar1_phi[] <- 0.4
-  cpp <- make_sdmTMB_adfun(fit$tmb_data, p, fit$tmb_map, fit$tmb_random)
-  rt <- make_sdmTMB_adfun(fit$tmb_data, p, fit$tmb_map, fit$tmb_random,
-    backend = "rtmb")
-  expect_equal(rt$fn(), cpp$fn(), tolerance = 1e-7)
-  expect_equal(rt$gr(), cpp$gr(), ignore_attr = TRUE, tolerance = 1e-6)
-  expect_equal(rt$report()$sigma_E, cpp$report()$sigma_E, tolerance = 1e-6)
-})
-
 test_that("RTMB REML and profiled fixed effects match TMB", {
   set.seed(58)
   n <- 60L

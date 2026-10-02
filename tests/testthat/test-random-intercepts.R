@@ -149,6 +149,16 @@ test_that("Model with random intercepts fits appropriately.", {
   expect_equal(p_silent$est, as.numeric(coef(m)))
 })
 
+test_that("Delta models warn about new random effect levels once", {
+  d <- pcod_2011
+  d$fyear <- factor(d$year)
+  m <- sdmTMB(density ~ 1 + (1 | fyear), data = d, spatial = "off",
+    family = delta_gamma())
+  nd <- data.frame(fyear = factor("1900"))
+  w <- testthat::capture_warnings(predict(m, newdata = nd))
+  expect_length(grep("Found new levels", w), 1L)
+})
+
 test_that("Random intercepts and cross validation play nicely", {
   skip_on_cran()
   set.seed(1)
@@ -175,7 +185,7 @@ test_that("Random intercepts and cross validation play nicely", {
   out <- sdmTMB_cv(
     observed ~ 1 + (1 | g),
     fold_ids = fold_ids, k_folds = 2L, spatial = "off", data = s, mesh = spde,
-    parallel = FALSE
+    parallel = FALSE, predictive = "mle-eb"
   )
   expect_equal(round(out$sum_loglik, 3), -51.36)
   # Because the function fits with all the data but sets the missing fold to

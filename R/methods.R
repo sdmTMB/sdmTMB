@@ -229,7 +229,7 @@ ranef.sdmTMB <- function(object, ...) {
 deviance.sdmTMB <- function(object, ...) {
   .check_family_capability(object, "deviance")
   implemented <- c("poisson", "Gamma", "binomial",
-    "gaussian", "lognormal", "tweedie", "nbinom1", "nbinom2")
+    "gaussian", "lognormal", "tweedie", "nbinom1", "nbinom2", "gengamma", "censored_poisson")
   if (!.object_has_two_components(object, caller = "`deviance()`")) {
     if (!object$family$family %in% implemented) {
       cli_abort("Deviance not implemented for the fitted family")

@@ -106,7 +106,7 @@ sum(s1 == 0)/length(s1)
 sum(dat$observed == 0) / length(dat$observed)
 
 # simulate with random effects sampled from their approximate posterior
-s2 <- simulate(fit, nsim = 1, params = "mle-mvn")
+s2 <- simulate(fit, nsim = 1, type = "mle-mvn")
 # these may be useful in conjunction with DHARMa simulation-based residuals
 
 # simulate with new random fields:

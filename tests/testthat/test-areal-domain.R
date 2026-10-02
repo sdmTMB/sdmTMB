@@ -399,19 +399,6 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
     ),
     "Barrier models are not supported"
   )
-
-  expect_error(
-    prepare_spatial_domain(
-      mesh = d,
-      data = dat,
-      mesh_missing = FALSE,
-      anisotropy = FALSE,
-      nonlocal_formula = NULL,
-      experimental = list(epsilon_model = ~x),
-      spatial_model = "sar"
-    ),
-    "epsilon_model.*not supported"
-  )
 })
 
 test_that("set_limits applies default bounds for SAR rho", {

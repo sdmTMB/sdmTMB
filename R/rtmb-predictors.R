@@ -57,7 +57,8 @@ rtmb_linear_predictor <- function(par, theta, effects, prepared, rows, m,
   }
   omega <- zero
   if (prepared$spatial[[m]]) {
-    omega <- rtmb_product(rows$A_rows, effects$omega_s[, m])
+    omega <- rtmb_product(rows$A_station, effects$omega_s[, m])[
+      rows$station_index]
   }
   epsilon <- zero
   if (prepared$temporal[[m]]) {
@@ -68,7 +69,8 @@ rtmb_linear_predictor <- function(par, theta, effects, prepared, rows, m,
   svc <- zero
   if (prepared$svc) {
     zeta <- do.call(cbind, lapply(seq_len(ncol(rows$z)), function(z) {
-      rtmb_product(rows$A_rows, effects$zeta_s[, z, m])
+      rtmb_product(rows$A_station, effects$zeta_s[, z, m])[
+        rows$station_index]
     }))
     for (z in seq_len(ncol(rows$z))) svc <- svc + zeta[, z] * rows$z[, z]
   }
@@ -195,33 +197,46 @@ rtmb_derived_indices <- function(par, theta, prepared, projected) {
   out <- list(nll = 0)
   out$total <- time_sum(mu * rows$area)
   out$link_total <- log(out$total)
-  eps_values <- list()
-  if (requested[["total"]]) eps_values$total <- out$total
+  # Bias-correction terms tag the per-time sums, whose Hessians are sparse,
+  # and form any ratio after the tags so the sparse-plus-low-rank inner
+  # Hessian stays sparse (see `Tag()` in TMB's newton.hpp).
+  tag <- utils::getFromNamespace("Tag", "RTMB")
+  eps_t <- if (length(par$eps_index)) which(include) else integer(0)
+  if (requested[["total"]]) {
+    for (t in eps_t) out$nll <- out$nll + par$eps_index[t] * tag(out$total[t])
+  }
   if (requested[["weighted_avg"]]) {
-    weighted_avg <- time_sum(rows$weight * mu * rows$area)
-    keep <- include & has_area
-    weighted_avg[keep] <- weighted_avg[keep] / out$total[keep]
-    weighted_avg[!keep] <- 0
-    out$weighted_avg <- eps_values$weighted_avg <- weighted_avg
+    # One column per weighted vector (x and y for COG), stacked by time within
+    # column; `eps_index` follows the same order.
+    weight <- as.matrix(rows$weight)
+    keep <- which(include & has_area)
+    weighted_avg <- rep(0, n_t * ncol(weight))
+    for (j in seq_len(ncol(weight))) {
+      weighted_sum <- time_sum(weight[, j] * mu * rows$area)
+      k <- (j - 1L) * n_t
+      weighted_avg[k + keep] <- weighted_sum[keep] / out$total[keep]
+      for (t in intersect(eps_t, keep)) {
+        out$nll <- out$nll +
+          par$eps_index[k + t] * tag(weighted_sum[t]) / tag(out$total[t])
+      }
+    }
+    out$weighted_avg <- weighted_avg
   }
   if (requested[["eao"]]) {
     sum_dens <- time_sum(mu)
-    mean_dens <- rep(0, n_t)
-    for (t in seq_len(n_t)) {
-      i <- by_time[[t]]
-      if (length(i)) mean_dens[t] <- sum(mu[i] * mu[i] / sum_dens[t])
-    }
-    eao <- log_eao <- rep(0, n_t)
-    keep <- include & lengths(by_time) > 0L
+    sum_dens2 <- time_sum(mu * mu)
+    has_rows <- lengths(by_time) > 0L
+    keep <- include & has_rows
+    mean_dens <- eao <- log_eao <- rep(0, n_t)
+    mean_dens[has_rows] <- sum_dens2[has_rows] / sum_dens[has_rows]
     eao[keep] <- out$total[keep] / mean_dens[keep]
     log_eao[keep] <- log(eao[keep])
     out$mean_dens <- mean_dens
-    out$eao <- eps_values$eao <- eao
+    out$eao <- eao
     out$log_eao <- log_eao
-  }
-  if (length(par$eps_index)) {
-    for (values in eps_values) {
-      out$nll <- out$nll + sum(par$eps_index[include] * values[include])
+    for (t in intersect(eps_t, which(keep))) {
+      out$nll <- out$nll + par$eps_index[t] *
+        tag(out$total[t]) * tag(sum_dens[t]) / tag(sum_dens2[t])
     }
   }
   out

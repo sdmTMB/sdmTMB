@@ -79,10 +79,16 @@ ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
 #' Performs k-fold or leave-future-out cross validation with sdmTMB models.
 #' Returns the sum of log likelihoods of held-out data (log predictive density),
 #' which can be used to compare models—higher values indicate better
-#' out-of-sample prediction. By default, creates folds randomly and stratified
+#' out-of-sample prediction. To judge whether differences between models are
+#' meaningful, pass the output to [loo::elpd()] and compare with
+#' [loo::loo_compare()], which reports the difference and its standard error
+#' (see [elpd.sdmTMB_cv()]). Models must use the same folds (`fold_ids`) and the
+#' same `predictive` argument. By default, creates folds randomly and stratified
 #' by time (set a seed for reproducibility), but folds can be manually assigned
 #' via `fold_ids`. See Ward and Anderson (2025) in the References and the
 #' [cross-validation vignette](https://sdmTMB.github.io/sdmTMB/articles/cross-validation.html).
+#'
+#' @seealso [elpd.sdmTMB_cv()], [loo::loo_compare()], [loo::elpd()]
 #'
 #' @param formula Model formula.
 #' @param data A data frame. Rows [sdmTMB()] omits for missing values are
@@ -114,12 +120,31 @@ ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
 #'   each fold is stored in the output. If `FALSE`, models are not saved, which
 #'   can substantially reduce memory usage for large datasets or many folds.
 #'   When `FALSE`, functions that require access to the fitted models (e.g.,
-#'   [tidy()], [cv_to_waywiser()]) will not work.
+#'   [tidy()], [cv_to_waywiser()]) will not work. To save space, the fold
+#'   models are fit without the joint precision matrix unless `control` is
+#'   supplied (see `get_joint_precision` in [sdmTMBcontrol()]);
+#'   `predict(..., nsim = ...)` recomputes it when needed.
 #' @param future_globals A character vector of global variables used within
 #'   arguments if an error is returned that \pkg{future.apply} can't find an
 #'   object. This vector is appended to `TRUE` and passed to the
 #'   `future.globals` in [future.apply::future_lapply()]. Useful if global
 #'   objects are used to specify arguments such as priors or families.
+#' @param predictive Which predictive density to score held-out data with.
+#'   `"mle-mvn"` (default) integrates over the random effects' approximate
+#'   (Laplace) posterior with fixed effects at their maximum likelihood
+#'   estimates (MLEs). `"mle-eb"` (the previous default)
+#'   evaluates the likelihood with fixed effects at their MLEs and random
+#'   effects at their empirical Bayes (EB) estimates. These
+#'   match `type` in [simulate.sdmTMB()] and [residuals.sdmTMB()]. `"joint"`
+#'   integrates over the joint approximate posterior of all parameters, as with
+#'   `nsim` in [predict.sdmTMB()]. `"mle-eb"` ignores uncertainty in the random
+#'   effects and can be overconfident when random fields are flexible (e.g.,
+#'   fine meshes) or forecast (LFOCV). For models without random effects,
+#'   `"mle-mvn"` is identical to `"mle-eb"`. See Details.
+#' @param nsim Number of posterior draws per fold if `predictive` is
+#'   `"mle-mvn"` or `"joint"`. The Monte Carlo log-mean-exp estimate is biased
+#'   low by \eqn{O(1/\code{nsim})}; check that results are stable to
+#'   increasing `nsim`.
 #' @param ... All other arguments required to run the [sdmTMB()] model. The
 #'   `weights` argument is supported and will be combined with the internal
 #'   fold-assignment mechanism (held-out data are assigned weight 0).
@@ -128,19 +153,40 @@ ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
 #' @return
 #' A list:
 #' * `data`: Original data plus columns for fold ID (`cv_fold`), CV predicted
-#'   value (`cv_predicted`), CV log likelihood (`cv_loglik`), and CV deviance
-#'   residuals (`cv_deviance_resid`).
+#'   value (`cv_predicted`), CV log likelihood (`cv_loglik`), `"mle-eb"` CV log
+#'   likelihood (`cv_loglik_mle_eb`; identical to `cv_loglik` if
+#'   `predictive = "mle-eb"`), and CV deviance residuals (`cv_deviance_resid`).
 #' * `models`: A list of fitted models, one per fold. `NULL` if `save_models = FALSE`.
-#' * `fold_loglik`: Sum of log likelihoods of held-out data per fold (log
-#'   predictive density per fold). More positive values indicate better
-#'   out-of-sample prediction.
-#' * `sum_loglik`: Sum of `fold_loglik` across all folds (total log predictive
-#'   density). Use this to compare models; larger values are better.
+#' * `fold_loglik`: Sum of `cv_loglik` per fold (sum of pointwise log
+#'   predictive densities of the held-out data). More positive values indicate
+#'   better out-of-sample prediction.
+#' * `sum_loglik`: Sum of `fold_loglik` across all folds (total pointwise log
+#'   predictive density). Use this to compare models; larger values are better.
+#' * `sum_loglik_mle_eb`: Sum of `cv_loglik_mle_eb`.
+#' * `predictive`: The `predictive` argument used for `cv_loglik`.
 #' * `pdHess`: Logical vector: was the Hessian positive definite for each fold?
 #' * `converged`: Logical: did all folds converge (all `pdHess` `TRUE`)?
 #' * `max_gradients`: Maximum absolute gradient for each fold.
 #'
 #' @details
+#' **Plug-in vs. integrated predictive densities**
+#'
+#' With `predictive = "mle-eb"`, held-out observations are scored at the
+#' conditional mode of the random effects, \eqn{\log p(y \mid \hat{u},
+#' \hat{\theta})}, which treats the random fields as known (a plug-in
+#' predictive density). With `"mle-mvn"`, the score is \eqn{\log E[p(y \mid u, \hat{\theta})]} over
+#' \eqn{u \sim N(\hat{u}, H^{-1})}, where \eqn{H} is the inner (Laplace)
+#' Hessian of the training fit. With `"joint"`, fixed effects and variance
+#' parameters (on their unconstrained scale) are also drawn from the joint
+#' precision matrix. Each is averaged over `nsim` draws per fold separately
+#' for each held-out observation, so `fold_loglik` is
+#' \eqn{\sum_i \log E[p(y_i \mid u)]}. If
+#' `reml = TRUE`, fixed effects are treated as random effects and are
+#' therefore also drawn under `"mle-mvn"`. For Gaussian observations,
+#' `"mle-mvn"` is exact given \eqn{\hat{\theta}}; for other families it
+#' relies on the Laplace approximation's Gaussian approximation to the
+#' random effects' posterior.
+#'
 #' **Parallel processing**
 #'
 #' Parallel processing can be used by setting a `future::plan()`.
@@ -174,12 +220,6 @@ ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
 #' steps ahead, not necessarily two calendar years.
 #'
 #' See example below.
-#'
-#' @references
-#'
-#' Ward, E.J., and S.C. Anderson. 2025. Approximating spatial processes with
-#' too many knots degrades the quality of probabilistic predictions.
-#' bioRxiv 2025.11.14.688354. \doi{10.1101/2025.11.14.688354}.
 #'
 #' @examples
 #' mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 25)
@@ -234,6 +274,20 @@ ll_sdmTMB <- function(object, withheld_y, withheld_mu) {
 #' # See how the LFOCV folds were assigned:
 #' fold_table <- table(m_lfocv$data$cv_fold, m_lfocv$data$year)
 #' fold_table
+#'
+#' # Compare models fit to the same folds with the loo package:
+#' m_cv3_null <- sdmTMB_cv(
+#'   density ~ 1,
+#'   data = pcod, mesh = mesh,
+#'   family = tweedie(link = "log"),
+#'   fold_ids = m_cv3$data$cv_fold
+#' )
+#' if (requireNamespace("loo", quietly = TRUE)) {
+#'   loo::loo_compare(list(
+#'     depth = loo::elpd(m_cv3),
+#'     null = loo::elpd(m_cv3_null)
+#'   ))
+#' }
 #' }
 sdmTMB_cv <- function(
     formula, data, mesh_args, mesh = NULL, time = NULL,
@@ -245,6 +299,8 @@ sdmTMB_cv <- function(
     use_initial_fit = FALSE,
     save_models = TRUE,
     future_globals = NULL,
+    predictive = c("mle-mvn", "mle-eb", "joint"),
+    nsim = 100L,
     ...) {
   if (k_folds < 1) cli_abort("`k_folds` must be >= 1.")
   if ("preferential" %in% ...names()) {
@@ -252,6 +308,21 @@ sdmTMB_cv <- function(
       "Cross-validation is not supported for preferential-sampling models.",
       "i" = "Holding out catches but not their sampling indicators isn't a joint predictive test."
     ))
+  }
+  if (missing(predictive)) {
+    cli_inform(c(
+      "i" = "`sdmTMB_cv()` now scores held-out data with `predictive = \"mle-mvn\"` by default (previously `\"mle-eb\"`).",
+      "i" = "Previous values are returned in `sum_loglik_mle_eb` and `cv_loglik_mle_eb`.",
+      "i" = "Set `predictive` explicitly to silence this message."
+    ), .frequency = "once", .frequency_id = "sdmTMB_cv_predictive")
+  }
+  predictive <- match.arg(predictive)
+  if (predictive != "mle-eb") {
+    if (!is.numeric(nsim) || length(nsim) != 1L || !is.finite(nsim) ||
+        nsim < 1 || nsim != floor(nsim)) {
+      cli_abort("`nsim` must be one finite, positive whole number.")
+    }
+    nsim <- as.integer(nsim)
   }
 
   spde <- mesh
@@ -371,6 +442,7 @@ sdmTMB_cv <- function(
     dot_args <- list(...)
     dot_args$offset <- NULL
     dot_args$weights <- NULL
+    dot_args$control <- cv_control(dot_args$control)
     experimental <- dot_args$experimental
     if (is.null(experimental)) experimental <- list()
     experimental[[".cv_fold_weights"]] <- fold_weights
@@ -411,6 +483,7 @@ sdmTMB_cv <- function(
       dot_args <- list(...)
       dot_args$offset <- NULL
       dot_args$weights <- NULL
+      dot_args$control <- cv_control(dot_args$control)
       experimental <- dot_args$experimental
       if (is.null(experimental)) experimental <- list()
       experimental[[".cv_fold_weights"]] <- fold_weights
@@ -470,11 +543,14 @@ sdmTMB_cv <- function(
       cv_data$cv_deviance_resid <- NA_real_
     }
 
-    # Report only the selected validation observations at the fitted values.
+    # Report only the selected validation observations. Validation rows get
+    # unit weight here and user likelihood weights are applied afterwards so
+    # integrated scores weight the log of the predictive density.
     tmb_data <- object$tmb_data
     score_weights <- numeric(nrow(object$data))
-    score_weights[validation_index] <- object$likelihood_weights[validation_index]
+    score_weights[validation_index] <- 1
     tmb_data$weights_i <- score_weights
+    lik_weights <- object$likelihood_weights[validation_index]
 
     scoring_obj <- make_sdmTMB_adfun(
       data = tmb_data,
@@ -485,7 +561,17 @@ sdmTMB_cv <- function(
       silent = TRUE
     )
     r <- scoring_obj$report(object$tmb_obj$env$last.par.best)
-    cv_data$cv_loglik <- -r$jnll_obs[validation_index]
+    cv_data$cv_loglik_mle_eb <- -lik_weights * r$jnll_obs[validation_index]
+    no_re <- !length(object$tmb_obj$env$random)
+    if (predictive == "mle-eb" || (predictive == "mle-mvn" && no_re)) {
+      cv_data$cv_loglik <- cv_data$cv_loglik_mle_eb
+    } else {
+      cv_data$cv_loglik <- lik_weights *
+        cv_integrated_loglik(object, scoring_obj, validation_index, predictive, nsim)
+    }
+
+    # not needed for MVN draws, which refactor the inner Hessian
+    if (save_models) object$tmb_obj$env$L.created.by.newton <- NULL
 
     list(
       data = cv_data,
@@ -540,6 +626,8 @@ sdmTMB_cv <- function(
     models = models,
     fold_loglik = fold_cv_ll,
     sum_loglik = sum(data$cv_loglik),
+    sum_loglik_mle_eb = sum(data$cv_loglik_mle_eb),
+    predictive = predictive,
     converged = converged,
     pdHess = pdHess,
     max_gradients = max_grad
@@ -547,9 +635,113 @@ sdmTMB_cv <- function(
   `class<-`(out, "sdmTMB_cv")
 }
 
+# CV scoring doesn't need the joint precision; skip it unless the user
+# supplied their own `control`
+cv_control <- function(control) {
+  if (is.null(control)) sdmTMBcontrol(get_joint_precision = FALSE) else control
+}
+
 log_sum_exp <- function(x) {
   max_x <- max(x)
+  if (!is.finite(max_x)) return(max_x)
   max_x + log(sum(exp(x - max_x)))
+}
+
+# Returns a function that draws `n` full parameter vectors (as columns) from
+# the training fit's approximate posterior. "mle-mvn": random effects from
+# N(u_hat, H_uu^-1) via .posterior_re_sampler(), other parameters fixed at
+# their estimates.
+# "joint": all parameters from the joint precision (or `cov.fixed` without
+# random effects).
+cv_param_sampler <- function(object, predictive) {
+  if (predictive == "mle-mvn") return(.posterior_re_sampler(object))
+  obj <- object$tmb_obj
+  par_best <- obj$env$last.par.best
+  has_re <- length(obj$env$random) > 0L
+  sdr <- object$sd_report
+  if (has_re) {
+    if (is.null(sdr[["jointPrecision"]])) {
+      sdr <- sdreport_sdmTMB(obj, getJointPrecision = TRUE)
+    }
+    return(function(n) rmvnorm_prec(par_best, sdr, n))
+  }
+  L <- t(chol(sdr$cov.fixed))
+  function(n) {
+    z <- matrix(stats::rnorm(length(par_best) * n), ncol = n)
+    par_best + as.matrix(L %*% z)
+  }
+}
+
+# Per-observation log(mean_s p(y_i | draw_s)) for the validation rows.
+# Draws are generated and scored in chunks to bound memory.
+cv_integrated_loglik <- function(object, scoring_obj, validation_index,
+                                 predictive, nsim, chunk_size = 100L) {
+  sampler <- tryCatch(cv_param_sampler(object, predictive), error = function(e) e)
+  if (inherits(sampler, "error")) {
+    cli_warn(c(
+      "Could not sample from the fold's approximate posterior; returning NA.",
+      "x" = conditionMessage(sampler)
+    ))
+    return(rep(NA_real_, length(validation_index)))
+  }
+  n_val <- length(validation_index)
+  sizes <- rep(chunk_size, nsim %/% chunk_size)
+  if (nsim %% chunk_size > 0L) sizes <- c(sizes, nsim %% chunk_size)
+  ll <- lapply(sizes, function(n) {
+    draws <- sampler(n)
+    vapply(seq_len(n), function(s) {
+      -scoring_obj$report(draws[, s])$jnll_obs[validation_index]
+    }, FUN.VALUE = numeric(n_val))
+  })
+  ll <- matrix(unlist(ll), nrow = n_val)
+  apply(ll, 1L, log_sum_exp) - log(nsim)
+}
+
+#' Expected log predictive density from cross validation for \pkg{loo}
+#'
+#' Converts the pointwise out-of-sample log predictive densities
+#' (`cv_loglik`) from [sdmTMB_cv()] into a \pkg{loo} `elpd_generic` object.
+#' This lets [loo::loo_compare()] compare models, including a standard error
+#' of the difference in expected log predictive density.
+#'
+#' Models compared with [loo::loo_compare()] must be fit to the same data
+#' with the same folds (e.g., via `fold_ids`) and should use the same
+#' `predictive` argument. \pkg{loo} only checks that the number of
+#' observations matches. The standard errors reflect variation across
+#' observations, not the Monte Carlo error from `nsim`.
+#'
+#' The printed object refers to a "1 by N log-likelihood matrix" because the
+#' pointwise values are already integrated over draws within
+#' [sdmTMB_cv()].
+#'
+#' @param x Output from [sdmTMB_cv()].
+#' @param ... Not used.
+#'
+#' @return An object of class `elpd_generic` and `loo`. See [loo::elpd()].
+#' @seealso [sdmTMB_cv()], [compare_deviance()] for in-sample deviance
+#'   explained.
+#' @examples
+#' \donttest{
+#' if (requireNamespace("loo", quietly = TRUE)) {
+#'   mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
+#'   folds <- rep(1:4, length.out = nrow(pcod_2011))
+#'   m1 <- sdmTMB_cv(density ~ 1, data = pcod_2011, mesh = mesh,
+#'     family = tweedie(), fold_ids = folds)
+#'   m2 <- sdmTMB_cv(density ~ depth_scaled + depth_scaled2,
+#'     data = pcod_2011, mesh = mesh, family = tweedie(), fold_ids = folds)
+#'   loo::loo_compare(list(null = loo::elpd(m1), depth = loo::elpd(m2)))
+#' }
+#' }
+#' @exportS3Method loo::elpd
+elpd.sdmTMB_cv <- function(x, ...) {
+  ll <- x$data$cv_loglik
+  if (anyNA(ll)) {
+    cli_abort(c(
+      "`cv_loglik` contains NA values.",
+      "i" = "Check for folds where sampling from the approximate posterior failed."
+    ))
+  }
+  loo::elpd(matrix(ll, nrow = 1L))
 }
 
 #' @export
@@ -579,6 +771,10 @@ print.sdmTMB_cv <- function(x, ...) {
   cat("Access these values in the `fold_loglik` list element.\n")
   cat("\n")
   cat("Sum of out-of-sample log likelihoods:", round(x$sum_loglik, 2), "\n")
+  if (!is.null(x$predictive) && x$predictive != "mle-eb") {
+    cat("(Integrated over the '", x$predictive, "' predictive; 'mle-eb' sum: ",
+      round(x$sum_loglik_mle_eb, 2), ")\n", sep = "")
+  }
   cat("More positive values imply better out-of-sample prediction.\n")
   cat("Access this value in the `sum_loglik` list element.\n")
 }

@@ -14,6 +14,7 @@
   allow_new_levels = NULL,
   nsim = 0,
   sims_var = "est",
+  sample_fe = TRUE,
   model = c(NA, 1, 2),
   offset = NULL,
   mcmc_samples = NULL,
@@ -32,13 +33,15 @@ same predictor columns as the fitted data and, for spatiotemporal models,
 a time column with the same name as in the fitted data.}
 
 \item{type}{Should predictions be returned in link space (default) or
-response space?}
+response space? Standard errors (\code{se_fit = TRUE}) are only available in
+link space.}
 
 \item{se_fit}{Should standard errors on predictions be calculated? Warning:
 can be slow for large datasets or high-resolution projections when random
 fields are included. For faster uncertainty estimation, either use
 \code{re_form = NA} to exclude random fields or use the \code{nsim} argument to
-simulate from the joint precision matrix.}
+simulate from the joint precision matrix. Requires \code{type = "link"}; for
+response-scale uncertainty, use \code{nsim}.}
 
 \item{re_form}{\code{NULL} to include all spatial/spatiotemporal random fields in
 predictions. \code{~0} or \code{NA} for population-level predictions (predictions
@@ -72,9 +75,19 @@ the fastest way to characterize spatial uncertainty with sdmTMB.}
 
 \item{sims_var}{Experimental: Which TMB reported variable from the model
 should be extracted from the joint precision matrix simulation draws?
-Defaults to link-space predictions. Options include: \code{"omega_s"},
-\code{"zeta_s"}, \code{"epsilon_st"}, and \code{"est_rf"} (as described below).
-Other options will be passed verbatim.}
+Defaults to link-space predictions. Other options are \code{"omega_s"},
+\code{"zeta_s"}, \code{"epsilon_st"}, \code{"est_rf"}, and \code{"est_non_rf"} (as described
+below); the model must include the term. Options other than \code{"est"} are
+returned in link space and cannot be combined with \code{type = "response"}.
+For other reported variables, use \code{return_tmb_report = TRUE}.}
+
+\item{sample_fe}{Logical. When \code{nsim > 0}, sample uncertainty in the fixed
+effects and other estimated parameters? If \code{FALSE}, these are held at
+their estimated values and only the random effects (random fields, IID
+random effects, time-varying coefficients, and smoother coefficients) are
+drawn from their distribution conditional on the estimated parameters
+(similar to \code{obj$MC()} in \pkg{TMB}). Fixed effects are held at their
+estimates even with REML. See also the same argument in \code{\link[=project]{project()}}.}
 
 \item{model}{Which component to predict from delta/hurdle models when \code{nsim > 0} or \code{mcmc_samples} is supplied. \code{NA} (default) returns the combined
 prediction from both components; \code{1} returns the binomial component only; \code{2}
@@ -82,11 +95,9 @@ returns the positive component only. Predictions are on the link or response
 scale depending on \code{type}. For regular predictions (without simulation),
 both components are returned. See the \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-model vignette}.}
 
-\item{offset}{A numeric vector of optional offset values. When predictions
-are made with \code{newdata} or with options that internally rebuild prediction
-data (e.g., \code{type = "response"}, \code{se_fit = TRUE}, or \code{nsim > 0}), the
-default \code{NULL} uses an offset of 0. The simplest \code{predict(object)} call on
-the original data uses the offset from the fitted model.}
+\item{offset}{A numeric vector of optional offset values, one per row of
+\code{newdata}. If \code{NULL} (default), predictions on the fitted data (\code{newdata = NULL}) use the offset from the fitted model and predictions with \code{newdata}
+use an offset of 0.}
 
 \item{mcmc_samples}{See \code{extract_mcmc()} in the
 \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra} package for
@@ -105,7 +116,8 @@ controls where the underlying diffused covariate values come from.
 Defaults to \code{NULL}: if a grid was supplied at fit time, the fitted field
 is reused as-is (so \code{newdata} need not contain the diffusion covariate
 columns); otherwise the field is rebuilt from \code{newdata}'s own covariate
-columns, as before.}
+columns, as before. Also applies when \code{newdata = NULL}, in which case
+predictions are projected onto the fitted data.}
 
 \item{return_tmb_object}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} Logical. If
 \code{TRUE}, include the TMB object in a list-format output. Instead, pass the
@@ -115,10 +127,13 @@ fitted model and \code{newdata} directly to \code{\link[=get_index]{get_index()}
 report? For regular prediction, this is all the reported variables
 at the MLE parameter values. For \code{nsim > 0} or when \code{mcmc_samples}
 is supplied, this is a list with one element per sample; each element
-contains the report output for that sample.}
+contains the report output for that sample. With \code{newdata = NULL}, this
+is the fitted model's report unless another argument requires projecting
+onto the fitted data, in which case it is the projection report.}
 
 \item{return_tmb_data}{Logical: return formatted data for TMB? Used
-internally.}
+internally. With \code{newdata = NULL}, the fitted data are prepared as
+prediction data (with the fitted offset unless \code{offset} is supplied).}
 
 \item{...}{Unused.}
 }

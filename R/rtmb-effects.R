@@ -6,65 +6,69 @@
 rtmb_value <- function(x) if (inherits(x, "simref")) x$orig else x
 
 # One GMRF slice `x`: drawn first when simulating, then its negative log
-# density.
+# density. With plain numbers (report and simulate, which discard the joint
+# nll), the density is skipped: outside a tape, RTMB::dgmrf() builds and
+# evaluates a throwaway tape, including a sparse log-determinant.
 rtmb_gmrf <- function(x, Q, scale, simulate) {
   if (simulate) {
     draw <- RTMB::simref(length(x))
     RTMB::dgmrf(draw, Q = Q, scale = scale, log = TRUE)
     x <- draw$value
   }
-  if (inherits(Q, "dgeMatrix")) {
-    # Infinite parameter draws can turn a sparse precision into a dense
-    # matrix of NaNs through 0 * Inf. Its density is undefined, but reports
-    # from the same parameter draw can still be evaluated.
-    if (any(!is.finite(Q@x))) return(list(nll = Inf, value = x))
-    Q <- methods::as(Q, "CsparseMatrix")
-  }
+  if (!inherits(x, "advector")) return(list(nll = 0, value = x))
   list(nll = -sum(RTMB::dgmrf(x, Q = Q, scale = scale, log = TRUE)),
     value = x)
 }
 
-# Log spatiotemporal SD by time step: constant, or log-linear with a slope.
+# Log spatiotemporal SD by time step (constant over time).
 rtmb_log_sigma_E <- function(par, prepared, m) {
-  value <- rep(rtmb_log_field_sd(par$ln_tau_E[[m]], par$ln_kappa[2L, m],
+  rep(rtmb_log_field_sd(par$ln_tau_E[[m]], par$ln_kappa[2L, m],
     prepared$precision), prepared$n_t)
-  if (prepared$epsilon_trend) {
-    value <- value + par$b_epsilon[[m]] * prepared$epsilon_predictor
-  }
-  value
 }
 
 # Spatiotemporal field `epsilon_st` with IID, AR1, or RW time structure.
 # Simulation replaces only `simulate_t` steps and conditions each draw on the
-# preceding retained or simulated field.
+# preceding retained or simulated field. When taping, the density of all time
+# steps' innovations is one dgmrf() call, since each call adds its own
+# log-determinant to the tape; this relies on `log_sigma_E` being constant
+# over time.
 rtmb_spatiotemporal_field <- function(epsilon_st, par, theta, prepared, Q,
                                       log_sigma_E, simulate, m) {
-  inputs <- prepared$precision
+  "[<-" <- RTMB::ADoverload("[<-")
   ar1 <- prepared$epsilon_ar1[[m]]
   rw <- prepared$epsilon_rw[[m]]
   rho <- theta$rho[[m]]
-  nll <- 0
-  ln_kappa <- par$ln_kappa[2L, m]
-  scale <- rtmb_gmrf_scale(log_sigma_E, ln_kappa, inputs)
-  previous_mean <- function(t) {
-    if (t == 1L) return(0)
-    if (ar1) rho * epsilon_st[, t - 1L, m]
-    else if (rw) epsilon_st[, t - 1L, m]
-    else 0
-  }
+  n_t <- prepared$n_t
+  scale <- rtmb_gmrf_scale(log_sigma_E[[1L]], par$ln_kappa[2L, m],
+    prepared$precision)
   innovation_scale <- if (ar1) sqrt(1 - rho^2) else 1
-  for (t in seq_len(prepared$n_t)) {
-    step <- if (t > 1L) innovation_scale else 1
-    draw <- simulate && t %in% prepared$simulate_t
-    innovation <- rtmb_gmrf((epsilon_st[, t, m] - previous_mean(t)) / step,
-      Q, scale[[t]], draw)
-    if (draw) epsilon_st[, t, m] <- previous_mean(t) + step * innovation$value
-    nll <- nll + innovation$nll
+  if (!inherits(epsilon_st, "advector")) {
+    # Plain numbers: draw any requested steps; the density isn't needed.
+    previous_mean <- function(t) {
+      if (t == 1L) return(0)
+      if (ar1) rho * epsilon_st[, t - 1L, m]
+      else if (rw) epsilon_st[, t - 1L, m]
+      else 0
+    }
+    if (simulate) {
+      for (t in intersect(seq_len(n_t), prepared$simulate_t)) {
+        step <- if (t > 1L) innovation_scale else 1
+        draw <- rtmb_gmrf(numeric(dim(epsilon_st)[1L]), Q, scale, TRUE)
+        epsilon_st[, t, m] <- previous_mean(t) + step * draw$value
+      }
+    }
+    return(list(nll = 0, value = epsilon_st))
   }
-  if (ar1) {
-    nll <- nll + (prepared$n_t - 1L) * dim(epsilon_st)[1L] *
-      log(innovation_scale)
+  eps <- epsilon_st[, , m]
+  dim(eps) <- dim(epsilon_st)[1:2]
+  innovation <- eps
+  if (n_t > 1L && (ar1 || rw)) {
+    previous <- eps[, -n_t]
+    if (ar1) previous <- rho * previous
+    innovation[, -1L] <- (eps[, -1L] - previous) / innovation_scale
   }
+  nll <- -sum(RTMB::dgmrf(t(innovation), Q = Q, scale = scale, log = TRUE))
+  if (ar1) nll <- nll + (n_t - 1L) * nrow(eps) * log(innovation_scale)
   list(nll = nll, value = epsilon_st)
 }
 

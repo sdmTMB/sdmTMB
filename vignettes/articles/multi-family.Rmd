@@ -205,8 +205,8 @@ ggplot(pred_mixed, aes(log_depth, est)) +
 
 ## Important notes on standard errors
 
-- **Link space**: Standard errors are always in link space. For non-multi-family models,
-  `type = "response"` with `se_fit = TRUE` will return an error with a message.
+- **Link space**: Standard errors are always in link space. `type = "response"`
+  with `se_fit = TRUE` returns an error, as for any sdmTMB model.
 
 - **Different link spaces per row**: When your prediction grid contains multiple families,
   the `est_se` column contains SEs in potentially different link spaces (e.g., logit for
@@ -231,7 +231,6 @@ models and is the recommended workaround for the unsupported
 | Function or feature | Multi-family status | Workaround or note |
 |---|---|---|
 | `residuals()` | Not supported | Use `simulate(fit, nsim = ..., type = "mle-mvn") |> dharma_residuals(fit)` for simulation-based residual diagnostics. |
-| `predict(..., type = "response", se_fit = TRUE)` | Not supported | Use `type = "link", se_fit = TRUE`, or use `predict(..., nsim = ..., type = "response")` and summarize draws on the response scale. |
 | `sigma()` | Not supported | Inspect family-specific parameters with `tidy()` or model summaries instead. |
 | `deviance()` | Not supported | Use likelihood-based comparisons, simulation-based checks, or out-of-sample predictive checks instead. |
 | `project()` | Not supported | Predict on the target grid directly with `predict()` and include `distribution_column` in `newdata`. |

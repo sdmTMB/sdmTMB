@@ -374,8 +374,8 @@ qres_gengamma <- function(object, y, mu, ...) {
 #' refers to the sample being taken from the random effects' assumed MVN
 #' distribution. In practice, the sample is obtained based on the mode and
 #' Hessian of the random effects taking advantage of sparsity in the Hessian for
-#' computational efficiency. This sample is taken with `obj$MC()`, where `obj`
-#' is the \pkg{TMB} object created with `TMB::MakeADFun()`. See Waagepetersen
+#' computational efficiency. This is the same sample as `obj$env$MC()`, where
+#' `obj` is the \pkg{TMB} object created with `TMB::MakeADFun()`. See Waagepetersen
 #' (2006) and the description in the source code for the internal \pkg{TMB}
 #' function `TMB:::oneSamplePosterior()`. Residuals are converted to randomized
 #' quantile residuals as described above.
@@ -489,9 +489,6 @@ residuals.sdmTMB <- function(object,
     ))
   }
 
-  # retrieve function that called this:
-  sys_calls <- unlist(lapply(sys.calls(), deparse))
-  visreg_call <- any(grepl("setupV", substr(sys_calls, 1, 7)))
   if (type == "mle-laplace") type <- "mle-eb"
   model_missing <- FALSE
   if (identical(model, c(1, 2))) model_missing <- TRUE
@@ -518,7 +515,7 @@ residuals.sdmTMB <- function(object,
   if(fam %in% c("truncated_nbinom1", "truncated_nbinom2")){
     linkinv <- function(eta){exp(eta)}
   } # for residuals, use untruncated mean
-  if (is.null(qres_func)) {
+  if (is.null(qres_func) && type != "deviance") {
     res_func <- switch(fam,
       gaussian = qres_gaussian,
       binomial = qres_binomial,
@@ -700,20 +697,26 @@ check_overdisp <- function(object) {
   data.frame(chisq = pearson_chisq, ratio = prat, rdf = rdf, p = pval)
 }
 
-# return full set of parameter vector with the
-# random effects sampled from the implied MVN posterior and the
-# fixed effects at their MLEs
-.one_sample_posterior <- function(object) {
-  if (!any(object$tmb_obj$env$lrandom())) {
-    return(object$tmb_obj$env$last.par.best)
+# Returns a function that draws `n` full parameter vectors (as columns) with
+# the random effects sampled from their approximate MVN posterior,
+# N(u_hat, H_uu^-1), and the fixed effects at their MLEs. Equivalent to TMB's
+# `obj$env$MC()` samples but factors the inner Hessian only once and skips
+# MC()'s per-draw likelihood evaluations.
+.posterior_re_sampler <- function(object) {
+  env <- object$tmb_obj$env
+  par_best <- env$last.par.best
+  random <- env$random
+  if (!length(random)) {
+    return(function(n) matrix(par_best, nrow = length(par_best), ncol = n))
   }
-  tmp <- object$tmb_obj$env$MC(n = 1L, keep = TRUE, antithetic = FALSE)
-  re_samp <- as.vector(attr(tmp, "samples"))
-  lp <- object$tmb_obj$env$last.par.best
-  p <- numeric(length(lp))
-  fe <- object$tmb_obj$env$lfixed()
-  re <- object$tmb_obj$env$lrandom()
-  p[re] <- re_samp
-  p[fe] <- lp[fe]
-  p
+  L <- Matrix::Cholesky(env$spHess(par_best, random = TRUE), super = TRUE)
+  function(n) {
+    draws <- matrix(par_best, nrow = length(par_best), ncol = n)
+    draws[random, ] <- rmvnorm_chol(par_best[random], L, n)
+    draws
+  }
+}
+
+.one_sample_posterior <- function(object) {
+  .posterior_re_sampler(object)(1L)[, 1L]
 }

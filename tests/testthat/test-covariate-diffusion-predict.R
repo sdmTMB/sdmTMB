@@ -166,6 +166,15 @@ test_that("covariate diffusion newdata covariate changes prediction direction wh
   expect_true("nl_time_lag_x1" %in% names(p_low))
   expect_gt(mean(p_high$nl_time_lag_x1 - p_low$nl_time_lag_x1), 0)
   expect_gt(mean(p_high$est - p_low$est), 0)
+
+  # Omitted `newdata` applies the override on the fitted data:
+  p_high_fitted <- predict(fit, nonlocal_newdata = grid_high)
+  expect_equal(p_high_fitted$est, p_high$est)
+  expect_equal(p_high_fitted$nl_time_lag_x1, p_high$nl_time_lag_x1)
+  expect_error(
+    predict(fit, nonlocal_newdata = grid_high[, setdiff(names(grid_high), "x1")]),
+    "x1"
+  )
 })
 
 test_that("delta covariate diffusion in component 2 changes combined response predictions", {
