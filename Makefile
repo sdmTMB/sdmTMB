@@ -45,8 +45,9 @@ cran-check:
 	echo "devtools::check(\".\")" | $(R) --no-echo
 
 # Reference-fit regression suite (see reference-fits/README.md)
+REF_CORES=5
 reference-check:
-	$(R) --no-echo -f reference-fits/run.R --args check --backend both --cores $(TEST_NCPUS)
+	$(R) --no-echo -f reference-fits/run.R --args check --backend both --cores $(REF_CORES)
 
 reference-record:
-	$(R) --no-echo -f reference-fits/run.R --args record --cores $(TEST_NCPUS)
+	$(R) --no-echo -f reference-fits/run.R --args record --cores $(REF_CORES)
