@@ -105,8 +105,10 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
   # Standard errors for population-level or full projected predictions.
   se_name <- if (prepared$pop_pred) "proj_fe" else "proj_eta"
   # Reported values that also get standard errors; sdreport() is read by name.
+  # IID random effects (`re_b_pars`) are excluded: as random parameters, they
+  # already get standard errors from sdreport().
   with_se <- c("sigma_O", "sigma_E", "sigma_Z", "sigma_V", "re_cov_pars",
-    "re_b_pars", "b_j_prime", "b_j2_prime", names(theta$threshold),
+    "b_j_prime", "b_j2_prime", names(theta$threshold),
     "rho_sar", "alpha_car", "range", "sigma_xi", "range_xi",
     "b_pref_t", "sigma_b_pref", "alpha_pref_t", "sigma_alpha_pref",
     "log_range", names(diffusion_scales), "phi", "tweedie_p", "student_df",
