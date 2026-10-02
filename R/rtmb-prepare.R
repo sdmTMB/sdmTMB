@@ -33,8 +33,6 @@ rtmb_prepare <- function(data) {
     epsilon_ar1 = data$ar1_fields[components] == 1L,
     epsilon_rw = data$rw_fields[components] == 1L,
     share_range = data$share_range[components] == 1L,
-    epsilon_trend = on(data$est_epsilon_slope),
-    epsilon_predictor = data$epsilon_predictor,
     # SVC fields enter the predictor whenever present; like the C++ template,
     # their density is only evaluated for components with a spatial field.
     svc = svc,
@@ -81,7 +79,58 @@ rtmb_prepare <- function(data) {
     prepared$proj <- rtmb_row_inputs(data, prepared$families,
       projection = TRUE)
   }
+  if (has_preferential(data)) {
+    prepared$preferential <- rtmb_preferential_inputs(data, prepared$families)
+  }
   prepared
+}
+
+has_preferential <- function(data) isTRUE(data$preferential$n_pref > 0L)
+
+# Sampling-frame inputs: the observed indicators and sampling design, and
+# `rows`, the frame's shared catch-predictor rows for
+# rtmb_linear_predictors(). Like projection rows, these select from the
+# unique frame locations. Terms that preferential sampling doesn't support
+# yet (SVCs, thresholds, time-varying, and diffusion) are rejected before
+# this point and have no inputs here. The optional sampling field
+# `xi` always uses an isotropic SPDE precision on the model mesh, even in the
+# first multiphase fit, when the catch fields are off.
+rtmb_preferential_inputs <- function(data, families) {
+  pref <- data$preferential
+  station_index <- pref$station_i + 1L
+  rows <- list(
+    X = pref$X_ij, offset = pref$offset_i, Zs = pref$Zs, Xs = pref$Xs,
+    Zt = pref$Zt_list, include_iid = pref$include_iid == 1L,
+    A_rows = pref$A_station[station_index, , drop = FALSE],
+    A_station = pref$A_station, station_index = station_index,
+    time = pref$year_i + 1L,
+    family_id = rep(1L, pref$n_pref)
+  )
+  list(
+    # Offsets are placed as in prediction.
+    rows = rtmb_row_family_flags(rows, families, projection = TRUE),
+    R = pref$R_i,
+    observed = which(!is.na(pref$R_i)),
+    Z = pref$Z_ij,
+    xi = pref$spatial_xi == 1L,
+    # "expected" (the full target) or "fields" (its random-field part).
+    target = if (isTRUE(pref$target_type == 1L)) "fields" else "expected",
+    # Temporal processes for the preference coefficient and the baseline:
+    # "none", "iid", or "rw".
+    coefficient = c("none", "iid", "rw")[pref$coefficient_type + 1L],
+    baseline = c("none", "iid", "rw")[pref$baseline_type + 1L],
+    # Averages the frame rows of each time step present in the frame (time
+    # by row); `time_mean_index` gives each row's time step among those.
+    time_mean = if (pref$coefficient_type > 0L) {
+      x <- Matrix::fac2sparse(factor(pref$year_i))
+      Matrix::Diagonal(x = 1 / Matrix::rowSums(x)) %*% x
+    },
+    time_mean_index = as.integer(factor(pref$year_i)),
+    precision = if (pref$spatial_xi == 1L) {
+      rtmb_precision_inputs(list(spatial_model = 0L, no_spatial = 0L,
+        barrier = 0L, anisotropy = 0L, spde = data$spde))
+    }
+  )
 }
 
 # Names for integer codes from `R/enum.R`; unmatched codes give NA.
@@ -101,9 +150,12 @@ rtmb_family_inputs <- function(data) {
       link = rtmb_code_name(data$link_code[f, ], .valid_link),
       # Offsets enter a single family's only component and a standard delta
       # family's positive component. Poisson-link deltas apply them in the
-      # response mean instead.
+      # response mean instead, except in projections, where they enter
+      # component 2 so exp(eta1 + eta2) is the expected catch at that offset.
       offset_applies = c(combine == "single",
         combine == "delta")[seq_len(ncol(data$y_i))],
+      proj_offset_applies = c(combine == "single",
+        combine != "single")[seq_len(ncol(data$y_i))],
       phi = slot(data$ln_phi_slot, f),
       thetaf = slot(data$thetaf_slot, f),
       student_df = slot(data$ln_student_df_slot, f),
@@ -112,9 +164,9 @@ rtmb_family_inputs <- function(data) {
   })
 }
 
-# Covariates and projection matrices for fitted or projected rows. The fitted
-# spatial fields use `A_st` directly, as in the C++ template; projection rows
-# select from the unique projection locations. Fitted rows also carry the
+# Covariates and projection matrices for fitted or projected rows. As in the C++
+# template, spatial fields are projected to unique locations (`A_station`) and
+# then indexed by row (`station_index`). Fitted rows also carry the
 # response and observation inputs; projected rows the index area weights.
 rtmb_row_inputs <- function(data, families, projection) {
   if (projection) {
@@ -125,7 +177,6 @@ rtmb_row_inputs <- function(data, families, projection) {
       X_threshold = data$proj_X_threshold, Zs = data$proj_Zs,
       Xs = data$proj_Xs, z = data$proj_z_i, X_rw = data$proj_X_rw_ik,
       Zt = data$Zt_list_proj, include_iid = data$exclude_RE == 0L,
-      A_rows = data$proj_mesh[station_index, , drop = FALSE],
       A_station = data$proj_mesh, station_index = station_index,
       time = data$proj_year + 1L,
       family_id = rep_len(data$proj_family_id + 1L, nrow(data$proj_X_ij[[1L]])),
@@ -138,7 +189,7 @@ rtmb_row_inputs <- function(data, families, projection) {
       X_threshold = data$X_threshold, Zs = data$Zs, Xs = data$Xs,
       z = data$z_i, X_rw = data$X_rw_ik,
       Zt = data$Zt_list, include_iid = TRUE,
-      A_rows = data$A_st, A_station = data$A_st,
+      A_station = data$A_st,
       # `A_spatial_index` can be longer than the data when the mesh is unused
       # (e.g., the placeholder mesh with no spatial fields); as in C++, read
       # only one entry per row
@@ -149,11 +200,17 @@ rtmb_row_inputs <- function(data, families, projection) {
       upr = rep_len(data$upr, nrow(data$y_i)), Xdisp = data$Xdisp_ij
     )
   }
-  out$active <- do.call(rbind, lapply(families, `[[`, "active"))[
-    out$family_id, , drop = FALSE]
-  out$offset_applies <- do.call(rbind,
-    lapply(families, `[[`, "offset_applies"))[out$family_id, , drop = FALSE]
-  out
+  rtmb_row_family_flags(out, families, projection)
+}
+
+# Per-row component activity and offset placement from each row's family.
+rtmb_row_family_flags <- function(rows, families, projection) {
+  rows$active <- do.call(rbind, lapply(families, `[[`, "active"))[
+    rows$family_id, , drop = FALSE]
+  offset_applies <- if (projection) "proj_offset_applies" else "offset_applies"
+  rows$offset_applies <- do.call(rbind,
+    lapply(families, `[[`, offset_applies))[rows$family_id, , drop = FALSE]
+  rows
 }
 
 # Fitted rows grouped by component and family. `observed` excludes missing
@@ -210,7 +267,7 @@ rtmb_smooth_index <- function(data) {
 
 # Reject untranslated features before RTMB tapes an incomplete model.
 rtmb_validate <- function(data, prepared, parameters, random, ...) {
-  if (!all(names(list(...)) %in% c("intern", "inner.control"))) {
+  if (!all(names(list(...)) %in% c("intern", "inner.control", "ADreport"))) {
     cli::cli_abort("Additional MakeADFun options are not supported by the RTMB backend yet.")
   }
   # Random parameters must be translated effects. The first multiphase fit
@@ -224,7 +281,10 @@ rtmb_validate <- function(data, prepared, parameters, random, ...) {
     if ("b_j" %in% random) "b_j",
     if ("b_j2" %in% random) "b_j2",
     if (prepared$smooths && "bs" %in% random) "bs",
-    if (prepared$smooths) "b_smooth"
+    if (prepared$smooths) "b_smooth",
+    if (isTRUE(prepared$preferential$xi)) "xi_s",
+    if (isTRUE(prepared$preferential$coefficient != "none")) "b_pref_dev",
+    if (isTRUE(prepared$preferential$baseline != "none")) "alpha_pref_dev"
   )
   unexpected <- setdiff(random, expected_random)
   if (length(unexpected)) {

@@ -6,65 +6,69 @@
 rtmb_value <- function(x) if (inherits(x, "simref")) x$orig else x
 
 # One GMRF slice `x`: drawn first when simulating, then its negative log
-# density.
+# density. With plain numbers (report and simulate, which discard the joint
+# nll), the density is skipped: outside a tape, RTMB::dgmrf() builds and
+# evaluates a throwaway tape, including a sparse log-determinant.
 rtmb_gmrf <- function(x, Q, scale, simulate) {
   if (simulate) {
     draw <- RTMB::simref(length(x))
     RTMB::dgmrf(draw, Q = Q, scale = scale, log = TRUE)
     x <- draw$value
   }
-  if (inherits(Q, "dgeMatrix")) {
-    # Infinite parameter draws can turn a sparse precision into a dense
-    # matrix of NaNs through 0 * Inf. Its density is undefined, but reports
-    # from the same parameter draw can still be evaluated.
-    if (any(!is.finite(Q@x))) return(list(nll = Inf, value = x))
-    Q <- methods::as(Q, "CsparseMatrix")
-  }
+  if (!inherits(x, "advector")) return(list(nll = 0, value = x))
   list(nll = -sum(RTMB::dgmrf(x, Q = Q, scale = scale, log = TRUE)),
     value = x)
 }
 
-# Log spatiotemporal SD by time step: constant, or log-linear with a slope.
+# Log spatiotemporal SD by time step (constant over time).
 rtmb_log_sigma_E <- function(par, prepared, m) {
-  value <- rep(rtmb_log_field_sd(par$ln_tau_E[[m]], par$ln_kappa[2L, m],
+  rep(rtmb_log_field_sd(par$ln_tau_E[[m]], par$ln_kappa[2L, m],
     prepared$precision), prepared$n_t)
-  if (prepared$epsilon_trend) {
-    value <- value + par$b_epsilon[[m]] * prepared$epsilon_predictor
-  }
-  value
 }
 
 # Spatiotemporal field `epsilon_st` with IID, AR1, or RW time structure.
 # Simulation replaces only `simulate_t` steps and conditions each draw on the
-# preceding retained or simulated field.
+# preceding retained or simulated field. When taping, the density of all time
+# steps' innovations is one dgmrf() call, since each call adds its own
+# log-determinant to the tape; this relies on `log_sigma_E` being constant
+# over time.
 rtmb_spatiotemporal_field <- function(epsilon_st, par, theta, prepared, Q,
                                       log_sigma_E, simulate, m) {
-  inputs <- prepared$precision
+  "[<-" <- RTMB::ADoverload("[<-")
   ar1 <- prepared$epsilon_ar1[[m]]
   rw <- prepared$epsilon_rw[[m]]
   rho <- theta$rho[[m]]
-  nll <- 0
-  ln_kappa <- par$ln_kappa[2L, m]
-  scale <- rtmb_gmrf_scale(log_sigma_E, ln_kappa, inputs)
-  previous_mean <- function(t) {
-    if (t == 1L) return(0)
-    if (ar1) rho * epsilon_st[, t - 1L, m]
-    else if (rw) epsilon_st[, t - 1L, m]
-    else 0
-  }
+  n_t <- prepared$n_t
+  scale <- rtmb_gmrf_scale(log_sigma_E[[1L]], par$ln_kappa[2L, m],
+    prepared$precision)
   innovation_scale <- if (ar1) sqrt(1 - rho^2) else 1
-  for (t in seq_len(prepared$n_t)) {
-    step <- if (t > 1L) innovation_scale else 1
-    draw <- simulate && t %in% prepared$simulate_t
-    innovation <- rtmb_gmrf((epsilon_st[, t, m] - previous_mean(t)) / step,
-      Q, scale[[t]], draw)
-    if (draw) epsilon_st[, t, m] <- previous_mean(t) + step * innovation$value
-    nll <- nll + innovation$nll
+  if (!inherits(epsilon_st, "advector")) {
+    # Plain numbers: draw any requested steps; the density isn't needed.
+    previous_mean <- function(t) {
+      if (t == 1L) return(0)
+      if (ar1) rho * epsilon_st[, t - 1L, m]
+      else if (rw) epsilon_st[, t - 1L, m]
+      else 0
+    }
+    if (simulate) {
+      for (t in intersect(seq_len(n_t), prepared$simulate_t)) {
+        step <- if (t > 1L) innovation_scale else 1
+        draw <- rtmb_gmrf(numeric(dim(epsilon_st)[1L]), Q, scale, TRUE)
+        epsilon_st[, t, m] <- previous_mean(t) + step * draw$value
+      }
+    }
+    return(list(nll = 0, value = epsilon_st))
   }
-  if (ar1) {
-    nll <- nll + (prepared$n_t - 1L) * dim(epsilon_st)[1L] *
-      log(innovation_scale)
+  eps <- epsilon_st[, , m]
+  dim(eps) <- dim(epsilon_st)[1:2]
+  innovation <- eps
+  if (n_t > 1L && (ar1 || rw)) {
+    previous <- eps[, -n_t]
+    if (ar1) previous <- rho * previous
+    innovation[, -1L] <- (eps[, -1L] - previous) / innovation_scale
   }
+  nll <- -sum(RTMB::dgmrf(t(innovation), Q = Q, scale = scale, log = TRUE))
+  if (ar1) nll <- nll + (n_t - 1L) * nrow(eps) * log(innovation_scale)
   list(nll = nll, value = epsilon_st)
 }
 
@@ -145,8 +149,10 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
   "[<-" <- RTMB::ADoverload("[<-")
   inputs <- prepared$precision
   n_m <- prepared$n_m
+  # The preferential-sampling field `xi_s` has no simulation option yet, so
+  # it is never drawn.
   simulate <- function(name) {
-    name %in% simulating && prepared$simulate_re[[name]]
+    name %in% simulating && isTRUE(prepared$simulate_re[name])
   }
   effects <- c(list(nll = 0), par[c("omega_s", "epsilon_st", "zeta_s",
     "b_rw_t", "re_b_pars", "b_smooth")],
@@ -200,5 +206,39 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
         simulate("b_smooth"), m), "b_smooth")
     }
   }
+  # Sampling-only field of a preferential-sampling model: time invariant,
+  # isotropic, and independent of the catch fields.
+  if (!is.null(prepared$preferential) && prepared$preferential$xi) {
+    inputs <- prepared$preferential$precision
+    kappa <- theta$xi$kappa
+    dim(kappa) <- c(1L, 1L)
+    Q <- rtmb_precision(inputs, list(kappa = kappa), 1L, 1L)
+    scale <- rtmb_gmrf_scale(theta$xi$log_sigma, par$ln_kappa_xi, inputs)
+    effects$xi_s <- gmrf(par$xi_s, Q, scale, "xi_s")
+  }
+  # Temporal processes of a preferential-sampling model, as deviations by
+  # time step. Like `xi_s`, they are never simulated.
+  pref <- prepared$preferential
+  if (!is.null(pref) && pref$coefficient != "none") {
+    add(rtmb_sampling_process(par$b_pref_dev, theta$sigma_b_pref,
+      pref$coefficient), "b_pref_t")
+  }
+  if (!is.null(pref) && pref$baseline != "none") {
+    add(rtmb_sampling_process(par$alpha_pref_dev, theta$sigma_alpha_pref,
+      pref$baseline), "alpha_pref_t")
+  }
   effects
+}
+
+# Proper temporal deviations, one per time step: `x` are IID deviations, or
+# the increments of a random walk anchored at 0 in the first time step (its
+# level there is a fixed parameter).
+rtmb_sampling_process <- function(x, sigma, type) {
+  "[<-" <- RTMB::ADoverload("[<-")
+  value <- x
+  if (type == "rw") {
+    value <- numeric(length(x) + 1L)
+    value[-1L] <- cumsum(x)
+  }
+  list(nll = -sum(RTMB::dnorm(x, 0, sigma, log = TRUE)), value = value)
 }

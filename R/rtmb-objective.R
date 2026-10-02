@@ -1,15 +1,80 @@
+# RTMB implementation of the sdmTMB model ---------------------------------
+#
+# Read this first. `rtmb_evaluate()` below is the whole model, top to bottom;
+# each step lives in its own file:
+#
+#   rtmb-prepare.R       C++ data list -> `prepared` (the only reader of `data`)
+#   rtmb-objective.R     parameter transforms; wires the steps together
+#   rtmb-effects.R       random fields, random effects, smoothers: their nll
+#   rtmb-precision.R     SPDE / SAR / CAR precision matrices
+#   rtmb-predictors.R    linear predictors for fitted and projected rows
+#   rtmb-observations.R  observation loop: evaluate, simulate, or report means
+#   rtmb-obs-families.R  per-family log density, simulation, deviance residuals
+#   rtmb-priors.R        penalties and priors
+#   rtmb-report.R        REPORT / ADREPORT values, named as in the C++ template
+#
+# Conventions:
+#
+# - Only static branches. Branch on `prepared` (data and model flags), never
+#   on parameter values. The objective is taped once, and a branch on a
+#   parameter would be fixed at whatever its value was at taping time.
+#   Data-dependent cases (e.g. y == 0) use logical indexing on data, not
+#   if/else on AD values.
+# - `par` keeps the C++ parameter names and shapes, so `map`, `random`,
+#   starting values, and post-fit methods work the same with either backend.
+#   `theta` (from rtmb_transform()) holds natural-scale versions, computed
+#   once per evaluation.
+# - Matrices of rows: rows are observations (`_i`) or vertices (`_s`),
+#   columns are components (`m`: 1 for single models, 1:2 for delta models).
+#   Families are looked up per row group within a component.
+# - Densities use RTMB's `d*(..., log = TRUE)` and are negated when summed
+#   into the nll.
+# - Assigning into a vector that may hold AD values needs
+#   `"[<-" <- RTMB::ADoverload("[<-")` at the top of that function. Without
+#   it, base `[<-` can drop the AD class, which tends to surface later as a
+#   confusing error or a missing derivative.
+# - The objective also runs without a tape (plain numbers): for reports
+#   (rtmb_report_values()) and for simulate(), where `OBS()` and random
+#   parameters arrive as `simref` objects (see rtmb_value()). Code should
+#   work for both AD and plain numbers. Base R random generators are fine
+#   in simulation paths.
+#
+# Checking changes: the RTMB tests compare against the C++ template with
+# expect_rtmb_matches_tmb(); `make reference-check` compares saved reference
+# fits.
+
 # The objective as a closure over `prepared` alone, built in its own frame so
 # the AD tape doesn't also capture `data` and `parameters` from
-# make_sdmTMB_adfun()'s frame.
-rtmb_make_objective <- function(prepared) {
+# make_sdmTMB_adfun()'s frame. A non-NULL `adreport` names the only ADREPORTs
+# to register.
+rtmb_make_objective <- function(prepared, adreport = NULL) {
   force(prepared)
-  function(par) rtmb_objective(par, prepared)
+  force(adreport)
+  function(par) rtmb_objective(par, prepared, adreport)
 }
 
-# RTMB objective: resolve parameters to their natural scale, evaluate latent
-# effects, compute predictors from them, evaluate observations and priors,
-# then register reports. `par` keeps the C++ parameter names and shapes.
-rtmb_objective <- function(par, prepared) {
+# RTMB objective: the joint negative log likelihood, registering reports.
+rtmb_objective <- function(par, prepared, adreport = NULL) {
+  result <- rtmb_evaluate(par, prepared)
+  adreports <- result$adreports
+  if (!is.null(adreport)) adreports <- adreports[intersect(names(adreports), adreport)]
+  rtmb_register_reports(result$reports, RTMB::REPORT)
+  rtmb_register_reports(adreports, RTMB::ADREPORT)
+  result$jnll
+}
+
+# Reports of the RTMB model at the full parameter list `par`, evaluated with
+# plain numbers. Equivalent to `obj$report()` without building (taping) an AD
+# object, which for large prediction grids dominates time and memory.
+rtmb_report_values <- function(data, par) {
+  rtmb_evaluate(par, rtmb_prepare(data))$reports
+}
+
+# Resolve parameters to their natural scale, evaluate latent effects, compute
+# predictors from them, and evaluate observations and priors. Returns `jnll`
+# and the `reports` and `adreports` lists. `par` keeps the C++ parameter names
+# and shapes.
+rtmb_evaluate <- function(par, prepared) {
   # During simulate(), random parameters arrive as simulation references.
   # Record which, then work with their current values throughout.
   simulating <- names(par)[vapply(par, inherits, NA, "simref")]
@@ -24,12 +89,17 @@ rtmb_objective <- function(par, prepared) {
   fitted$epsilon <- fitted$epsilon * active
   obs <- rtmb_observations(par, theta, prepared, fitted$eta)
   jnll <- effects$nll + sum(obs$jnll_obs) + rtmb_prior_nll(par, theta, prepared)
+  sampling <- NULL
+  if (!is.null(prepared$preferential)) {
+    sampling <- rtmb_sampling(par, theta, effects, prepared)
+    jnll <- jnll + sampling$nll
+  }
   projected <- derived <- NULL
   if (!is.null(prepared$proj)) {
     projected <- rtmb_linear_predictors(par, theta, effects, prepared,
       prepared$proj)
     if (prepared$mixture) {
-      projected$eta <- rtmb_mixture_eta(projected$eta, theta, prepared)
+      projected <- rtmb_mixture_projection(projected, theta, prepared)
     }
     if (prepared$n_m > 1L) {
       projected$combined <- rtmb_combined_projection(projected, theta, prepared)
@@ -39,9 +109,8 @@ rtmb_objective <- function(par, prepared) {
       jnll <- jnll + derived$nll
     }
   }
-  rtmb_report(par, theta, prepared, effects, fitted, obs, projected, derived,
-    simulating)
-  jnll
+  c(list(jnll = jnll), rtmb_report(par, theta, prepared, effects, fitted, obs,
+    projected, derived, sampling, simulating))
 }
 
 # Natural-scale parameters, resolved once per evaluation so that fields,
@@ -75,6 +144,7 @@ rtmb_transform <- function(par, prepared) {
   dim(rho_time) <- dim(par$rho_time_unscaled)
   b <- par$b_threshold
   kappa <- exp(par$ln_kappa)
+  xi <- !is.null(prepared$preferential) && prepared$preferential$xi
   list(
     # Random fields
     kappa = kappa,
@@ -88,6 +158,18 @@ rtmb_transform <- function(par, prepared) {
     alpha_car = RTMB::plogis(par$logit_rho_sar),
     H = if (prepared$anisotropy) {
       lapply(seq_len(n_m), function(m) rtmb_aniso_H(par$ln_H_input[, m]))
+    },
+    # Preferential-sampling field
+    xi = if (xi) {
+      log_sigma <- rtmb_log_field_sd(par$ln_tau_xi, par$ln_kappa_xi,
+        prepared$preferential$precision)
+      list(kappa = exp(par$ln_kappa_xi), log_sigma = log_sigma,
+        sigma = exp(log_sigma), range = sqrt(8) / exp(par$ln_kappa_xi))
+    },
+    # Preferential-sampling temporal process SDs
+    sigma_b_pref = if (!is.null(par$ln_sigma_b_pref)) exp(par$ln_sigma_b_pref),
+    sigma_alpha_pref = if (!is.null(par$ln_sigma_alpha_pref)) {
+      exp(par$ln_sigma_alpha_pref)
     },
     # Time-varying coefficients
     sigma_V = sigma_V,

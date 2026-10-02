@@ -34,7 +34,16 @@ model must be fitted with
 \code{"dispersion"} returns dispersion-model coefficients when \code{dispformula} is used.}
 
 \item{model}{Which model to tidy if a delta model (1 or 2). The \code{model} will be
-ignored when effects is \code{"ran_vals"} (all returned in a single dataframe)}
+ignored when effects is \code{"ran_vals"} (all returned in a single dataframe).
+For a model fit with \code{preferential} (see \code{\link[=preferential_sampling]{preferential_sampling()}}),
+\code{"sampling"} tidies the sampling model instead: \code{effects = "fixed"} gives
+its coefficients and the preference coefficient \code{b_pref}, and
+\code{effects = "ran_pars"} gives the SD and range of the sampling field
+(\code{sigma_xi}, \code{range_xi}) and the SDs of the temporal preference
+coefficient and baseline processes (\code{sigma_b_pref}, \code{sigma_alpha_pref})
+if they were estimated, and \code{effects = "ran_vals"} gives the preference
+coefficient (\code{b_pref_t}) and baseline deviation (\code{alpha_pref_t}) by time
+step. These rows are never part of the output for \code{model = 1} or \code{2}.}
 
 \item{conf.int}{Include a confidence interval?}
 

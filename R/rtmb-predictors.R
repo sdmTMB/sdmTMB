@@ -57,7 +57,8 @@ rtmb_linear_predictor <- function(par, theta, effects, prepared, rows, m,
   }
   omega <- zero
   if (prepared$spatial[[m]]) {
-    omega <- rtmb_product(rows$A_rows, effects$omega_s[, m])
+    omega <- rtmb_product(rows$A_station, effects$omega_s[, m])[
+      rows$station_index]
   }
   epsilon <- zero
   if (prepared$temporal[[m]]) {
@@ -68,7 +69,8 @@ rtmb_linear_predictor <- function(par, theta, effects, prepared, rows, m,
   svc <- zero
   if (prepared$svc) {
     zeta <- do.call(cbind, lapply(seq_len(ncol(rows$z)), function(z) {
-      rtmb_product(rows$A_rows, effects$zeta_s[, z, m])
+      rtmb_product(rows$A_station, effects$zeta_s[, z, m])[
+        rows$station_index]
     }))
     for (z in seq_len(ncol(rows$z))) svc <- svc + zeta[, z] * rows$z[, z]
   }
@@ -118,17 +120,10 @@ rtmb_combined_projection <- function(projected, theta, prepared) {
   for (f in unique(rows$family_id)) {
     family <- prepared$families[[f]]
     i <- which(rows$family_id == f)
-    link <- function(x1, x2) {
-      switch(family$combine,
-        single = x1,
-        delta = rtmb_link(
-          rtmb_inverse_link(x1, family$link[[1L]]) *
-            rtmb_inverse_link(x2, family$link[[2L]]),
-          family$link[[2L]]),
-        poisson_link = x1 + x2)
-    }
-    fe[i] <- link(projected$fe[i, 1L], projected$fe[i, 2L])
-    eta[i] <- link(projected$eta[i, 1L], projected$eta[i, 2L])
+    fe[i] <- rtmb_combined_link(projected$fe[i, 1L], projected$fe[i, 2L],
+      family)
+    eta[i] <- rtmb_combined_link(projected$eta[i, 1L], projected$eta[i, 2L],
+      family)
     response[i] <- switch(family$combine,
       single = rtmb_component_mean(response_eta[i, 1L], family, 1L, theta),
       delta = rtmb_component_mean(response_eta[i, 1L], family, 1L, theta) *
@@ -138,16 +133,42 @@ rtmb_combined_projection <- function(projected, theta, prepared) {
   list(fe = fe, eta = eta, response = response)
 }
 
+# Link-scale value of both components' combined mean, following the C++
+# `combined_link_value()`. With a log positive link, log(p mu) is computed as
+# log(p) + eta2, which stays finite when p underflows. `x2` is unused for a
+# single-component family.
+rtmb_combined_link <- function(x1, x2, family) {
+  switch(family$combine,
+    single = x1,
+    delta = if (identical(family$link[[2L]], "log")) {
+      rtmb_log_inverse_link(x1, family$link[[1L]]) + x2
+    } else {
+      rtmb_link(
+        rtmb_inverse_link(x1, family$link[[1L]]) *
+          rtmb_inverse_link(x2, family$link[[2L]]),
+        family$link[[2L]])
+    },
+    poisson_link = x1 + x2)
+}
+
 # Mixture families project the mean of both components: the positive
-# component's link-scale prediction becomes log((1 - p) mu + p mu ratio).
-rtmb_mixture_eta <- function(eta, theta, prepared) {
+# component's mean mu becomes (1 - p) mu + p mu ratio, in both the full
+# (`eta`) and population-level (`fe`) predictions.
+rtmb_mixture_projection <- function(projected, theta, prepared) {
   "[<-" <- RTMB::ADoverload("[<-")
   m <- prepared$n_m
-  i <- which(prepared$proj$active[, m])
+  rows <- prepared$proj
   p <- theta$p_extreme
-  eta[i, m] <- log((1 - p) * exp(eta[i, m]) +
-    p * exp(eta[i, m]) * theta$mix_ratio)
-  eta
+  scale <- 1 - p + p * theta$mix_ratio
+  for (f in unique(rows$family_id)) {
+    i <- which(rows$active[, m] & rows$family_id == f)
+    link <- prepared$families[[f]]$link[[m]]
+    for (x in c("fe", "eta")) {
+      projected[[x]][i, m] <- rtmb_link(
+        rtmb_inverse_link(projected[[x]][i, m], link) * scale, link)
+    }
+  }
+  projected
 }
 
 # Area-weighted totals, weighted averages, and effective area occupied (EAO)
@@ -184,33 +205,45 @@ rtmb_derived_indices <- function(par, theta, prepared, projected) {
   out <- list(nll = 0)
   out$total <- time_sum(mu * rows$area)
   out$link_total <- log(out$total)
-  eps_values <- list()
-  if (requested[["total"]]) eps_values$total <- out$total
+  # Bias-correction terms tag the per-time sums, whose Hessians are sparse,
+  # and form any ratio after the tags so the sparse-plus-low-rank inner
+  # Hessian stays sparse (see `Tag()` in TMB's newton.hpp).
+  tag <- utils::getFromNamespace("Tag", "RTMB")
+  eps_t <- if (length(par$eps_index)) which(include) else integer(0)
+  if (requested[["total"]]) {
+    for (t in eps_t) out$nll <- out$nll + par$eps_index[t] * tag(out$total[t])
+  }
   if (requested[["weighted_avg"]]) {
-    weighted_avg <- time_sum(rows$weight * mu * rows$area)
-    keep <- include & has_area
-    weighted_avg[keep] <- weighted_avg[keep] / out$total[keep]
-    weighted_avg[!keep] <- 0
-    out$weighted_avg <- eps_values$weighted_avg <- weighted_avg
+    # One column per weighted vector (x and y for COG), stacked by time within
+    # column; `eps_index` follows the same order.
+    weight <- as.matrix(rows$weight)
+    keep <- which(include & has_area)
+    weighted_avg <- rep(0, n_t * ncol(weight))
+    for (j in seq_len(ncol(weight))) {
+      weighted_sum <- time_sum(weight[, j] * mu * rows$area)
+      k <- (j - 1L) * n_t
+      weighted_avg[k + keep] <- weighted_sum[keep] / out$total[keep]
+      for (t in intersect(eps_t, keep)) {
+        out$nll <- out$nll +
+          par$eps_index[k + t] * tag(weighted_sum[t]) / tag(out$total[t])
+      }
+    }
+    out$weighted_avg <- weighted_avg
   }
   if (requested[["eao"]]) {
-    sum_dens <- time_sum(mu)
-    mean_dens <- rep(0, n_t)
-    for (t in seq_len(n_t)) {
-      i <- by_time[[t]]
-      if (length(i)) mean_dens[t] <- sum(mu[i] * mu[i] / sum_dens[t])
-    }
-    eao <- log_eao <- rep(0, n_t)
-    keep <- include & lengths(by_time) > 0L
+    # eao = total / mean_dens = sum(area * mu)^2 / sum(area * mu^2)
+    sum_dens2 <- time_sum(rows$area * mu * mu)
+    keep <- include & has_area
+    mean_dens <- eao <- log_eao <- rep(0, n_t)
+    mean_dens[has_area] <- sum_dens2[has_area] / out$total[has_area]
     eao[keep] <- out$total[keep] / mean_dens[keep]
     log_eao[keep] <- log(eao[keep])
     out$mean_dens <- mean_dens
-    out$eao <- eps_values$eao <- eao
+    out$eao <- eao
     out$log_eao <- log_eao
-  }
-  if (length(par$eps_index)) {
-    for (values in eps_values) {
-      out$nll <- out$nll + sum(par$eps_index[include] * values[include])
+    for (t in intersect(eps_t, which(keep))) {
+      out$nll <- out$nll + par$eps_index[t] *
+        tag(out$total[t]) * tag(out$total[t]) / tag(sum_dens2[t])
     }
   }
   out

@@ -329,7 +329,7 @@ test_that("RTMB truncated NB draws are finite and match conditional moments", {
     for (mu in c(1e-20, 1e-10, 0.1, 1, 10, 1e4)) {
       for (phi in list(1, rep(c(0.5, 2), n / 2))) {
         set.seed(1)
-        y <- rtmb_obs_simulate(family, list(mu = rep(mu, n), phi = phi))
+        y <- rtmb_obs_family(family)$simulate(rep(mu, n), list(phi = phi))
         info <- paste(family, mu, length(phi))
         expect_true(all(is.finite(y) & y >= 1 & y == round(y)), info = info)
         # Conditional moments given Y > 0, averaged over phi values.
@@ -346,11 +346,11 @@ test_that("RTMB truncated NB draws are finite and match conditional moments", {
     }
   }
   # Tiny-mean NB2 concentrates at one; NB1 at phi = 1 tends to 1 / log(2).
-  y <- rtmb_obs_simulate("truncated_nbinom2",
-    list(mu = rep(1e-20, 1000), phi = 1))
+  y <- rtmb_obs_family("truncated_nbinom2")$simulate(rep(1e-20, 1000),
+    list(phi = 1))
   expect_true(all(y == 1))
   set.seed(2)
-  y <- rtmb_obs_simulate("truncated_nbinom1",
-    list(mu = rep(1e-20, n), phi = 1))
+  y <- rtmb_obs_family("truncated_nbinom1")$simulate(rep(1e-20, n),
+    list(phi = 1))
   expect_equal(mean(y), 1 / log(2), tolerance = 0.03)
 })

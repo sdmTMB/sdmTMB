@@ -707,5 +707,6 @@ print.sdmTMB <- function(x, ...) {
   } else if (delta) {
     cat("\n")
   }
+  if (!is.null(x$preferential)) print_sampling(x)
   print_footer(x)
 }

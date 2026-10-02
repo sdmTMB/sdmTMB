@@ -53,9 +53,10 @@
 #'
 #' For `get_eao()`:
 #' A data frame with columns for time, estimate (effective area occupied: the
-#' area required if the population was spread evenly at the arithmetic mean
-#' density), lower and upper confidence intervals, log EAO, and standard error
-#' of the log EAO estimates.
+#' area required if the population was spread evenly at its abundance-weighted
+#' mean density, `sum(area * density)^2 / sum(area * density^2)`), lower and
+#' upper confidence intervals, log EAO, and standard error of the log EAO
+#' estimates.
 #'
 #' For `get_weighted_average()`:
 #' A data frame with columns for time, estimate (weighted average of the
@@ -414,12 +415,13 @@ get_cog <- function(obj, newdata = NULL, bias_correct = FALSE, level = 0.95,
   } else {
     cli_abort("Prediction data must include the x/y columns used for the model.")
   }
-  d_x <- get_generic(obj, value_name = "weighted_avg",
+  # x and y share one objective function, sdreport, and bias correction
+  d_xy <- get_generic(obj, value_name = "weighted_avg",
     bias_correct = bias_correct, level = level, trans = I, area = area,
-    vector = x_vec, derived_link = derived_link, area_missing = area_missing, ...)
-  d_y <- get_generic(obj, value_name = "weighted_avg",
-    bias_correct = bias_correct, level = level, trans = I, area = area,
-    vector = y_vec, derived_link = derived_link, area_missing = area_missing, ...)
+    vector = cbind(x_vec, y_vec), derived_link = derived_link,
+    area_missing = area_missing, ...)
+  d_x <- d_xy[[1]]
+  d_y <- d_xy[[2]]
   d_x <- d_x[, names(d_x) != "trans_est", drop = FALSE]
   d_y <- d_y[, names(d_y) != "trans_est", drop = FALSE]
   d_x$coord <- "X"
@@ -494,6 +496,73 @@ get_eao <- function(obj,
   d
 }
 
+# Estimates and SEs of an index objective's reports, as from
+# `summary(<sdreport>, "report")`. `args` are make_sdmTMB_adfun() arguments.
+index_report <- function(fit, args, par, ...) {
+  if (...length() == 0L) {
+    out <- joint_precision_report(fit, args, par)
+    if (!is.null(out)) return(out)
+  }
+  new_obj <- do.call(make_sdmTMB_adfun, args)
+  summary(index_sdreport(fit, new_obj, par, ...), "report")
+}
+
+# sdreport()'s delta-method covariance of the reports is J Q^-1 J', with J
+# their Jacobian in all (fixed and random) parameters at the fitted mode and Q
+# the fit's joint precision. Projection rows don't enter the likelihood, so Q
+# applies; this skips re-optimizing the random effects and computing their
+# marginal variances. NULL unless it verifiably applies.
+joint_precision_report <- function(fit, args, par) {
+  sr <- fit$sd_report
+  Q <- sr$jointPrecision
+  random <- fit$tmb_obj$env$random
+  if (!is.null(args$profile) || is.null(Q) ||
+      !length(random) || !isTRUE(sr$pdHess) ||
+      !identical(unname(sr$par.fixed), unname(par))) {
+    return(NULL)
+  }
+  args$random <- NULL
+  obj <- do.call(make_sdmTMB_adfun, c(args, ADreport = TRUE))
+  x <- obj$par
+  if (!identical(names(x), colnames(Q)) ||
+      length(x) != length(par) + length(sr$par.random)) {
+    return(NULL)
+  }
+  x[random] <- sr$par.random
+  x[-random] <- par
+  J <- obj$gr(x)
+  QiJt <- tryCatch(as.matrix(Matrix::solve(Q, t(J))), error = function(e) NULL)
+  if (is.null(QiJt)) return(NULL)
+  se <- sqrt(rowSums(J * t(QiJt)))
+  if (any(!is.finite(se))) return(NULL)
+  est <- obj$fn(x)
+  out <- cbind(Estimate = as.numeric(est), `Std. Error` = se)
+  rownames(out) <- names(est)
+  out
+}
+
+# `sdreport()` for an index objective. Projection rows don't enter the
+# likelihood, so at the fitted parameters the fixed-effect Hessian is the fit's
+# and needn't be recomputed (about two gradient evaluations per fixed effect).
+index_sdreport <- function(fit, new_obj, par,
+  hessian.fixed = fit_hessian_fixed(fit, new_obj, par), ...) {
+  sdreport_sdmTMB(new_obj, par.fixed = par, hessian.fixed = hessian.fixed, ...)
+}
+
+# The fit's fixed-effect Hessian, or NULL (recompute) unless it verifiably
+# applies to `new_obj` at `par`.
+fit_hessian_fixed <- function(fit, new_obj, par) {
+  sr <- fit$sd_report
+  if (!is.null(fit$control$profile) || is.null(sr) || !isTRUE(sr$pdHess) ||
+      !identical(unname(sr$par.fixed), unname(par)) ||
+      !isTRUE(all.equal(as.numeric(new_obj$fn(par)), fit$model$objective,
+        tolerance = 1e-8))) {
+    return(NULL)
+  }
+  H <- tryCatch(solve(sr$cov.fixed), error = function(e) NULL)
+  if (is.null(H) || any(!is.finite(H))) NULL else H
+}
+
 get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
   trans = I, area = 1, vector = NULL, silent = TRUE, derived_link = NULL,
   area_missing = FALSE, ...) {
@@ -518,6 +587,9 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
   rebuild_from_fit <- is_fit_obj &&
     value_name[[1]] %in% c("link_total", "weighted_avg", "log_eao") &&
     !use_precomputed
+  # Only these reports need standard errors from a rebuilt objective
+  adreport <- c(value_name,
+    switch(value_name[[1]], link_total = "total", log_eao = "eao"))
 
   if (!use_precomputed && !rebuild_from_fit) {
     if (is.null(obj$pred_tmb_data$proj_X_ij) ||
@@ -565,7 +637,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       if (is.null(vector)) {
         cli_abort("A vector must be provided for weighted average calculation.")
       }
-      if (length(vector) != nrow(obj$pred_tmb_data$proj_X_ij[[1]])) {
+      if (NROW(vector) != nrow(obj$pred_tmb_data$proj_X_ij[[1]])) {
         cli_abort("`vector` should be of the same length as `nrow(newdata)`.")
       }
       tmb_data$proj_vector <- vector
@@ -577,19 +649,18 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     eps_name <- "eps_index" # FIXME break out into function; add for COG?
     pars[[eps_name]] <- numeric(0)
 
-    new_obj <- make_sdmTMB_adfun(
+    args <- list(
       data = tmb_data,
       parameters = pars,
       profile = obj$fit_obj$control$profile,
       map = obj$fit_obj$tmb_map,
       random = obj$fit_obj$tmb_random,
       backend = backend_sdmTMB(obj$fit_obj),
-      silent = silent
+      silent = silent,
+      adreport = adreport
     )
-
-    old_par <- obj$fit_obj$model$par
-    bc <- FALSE ## done below
-    sr <- sdreport_sdmTMB(new_obj, par.fixed = old_par, bias.correct = bc, ...)
+    # bias correction is done below
+    ssr <- index_report(obj$fit_obj, args, obj$fit_obj$model$par, ...)
   } else if (rebuild_from_fit) {
     reinitialize(obj)
     if (bias_correct && obj$control$parallel > 1) {
@@ -622,7 +693,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       if (is.null(vector)) {
         cli_abort("A vector must be provided for weighted average calculation.")
       }
-      if (length(vector) != nrow(tmb_data$proj_X_ij[[1]])) {
+      if (NROW(vector) != nrow(tmb_data$proj_X_ij[[1]])) {
         cli_abort("`vector` should be of the same length as the original index prediction data.")
       }
       tmb_data$proj_vector <- vector
@@ -633,22 +704,21 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     eps_name <- "eps_index"
     pars[[eps_name]] <- numeric(0)
 
-    new_obj <- make_sdmTMB_adfun(
+    args <- list(
       data = tmb_data,
       parameters = pars,
       profile = obj$control$profile,
       map = obj$tmb_map,
       random = obj$tmb_random,
       backend = backend_sdmTMB(obj),
-      silent = silent
+      silent = silent,
+      adreport = adreport
     )
-
-    old_par <- obj$model$par
-    bc <- FALSE
-    sr <- sdreport_sdmTMB(new_obj, par.fixed = old_par, bias.correct = bc, ...)
+    ssr <- index_report(obj, args, obj$model$par, ...)
     obj <- list(fit_obj = obj)
   } else {
-    sr <- obj$sd_report # already done in sdmTMB(do_index = TRUE)
+    # already done in sdmTMB(do_index = TRUE)
+    ssr <- summary(obj$sd_report, "report")
     pars <- get_pars(obj)
     tmb_data <- obj$tmb_data
     if (is.null(tmb_data$proj_time_include)) {
@@ -658,13 +728,10 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     obj <- list(fit_obj = obj) # to match regular format
     eps_name <- "eps_index"
   }
-  sr_est <- as.list(sr, "Estimate", report = TRUE)
-
   if (bias_correct && value_name[[1]] %in% c("link_total", "weighted_avg", "log_eao")) {
     # extract and modify parameters
-    if (value_name[[1]] == "link_total") .n <- length(sr_est$total)
-    if (value_name[[1]] == "weighted_avg") .n <- length(sr_est$weighted_avg)
-    if (value_name[[1]] == "log_eao") .n <- length(sr_est$eao)
+    .n <- sum(row.names(ssr) == switch(value_name[[1]],
+      link_total = "total", weighted_avg = "weighted_avg", log_eao = "eao"))
     pars[[eps_name]] <- rep(0, .n)
     new_values <- rep(0, .n)
     names(new_values) <- rep(eps_name, length(new_values))
@@ -677,7 +744,11 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       random = obj$fit_obj$tmb_random,
       backend = backend_sdmTMB(obj$fit_obj),
       silent = silent,
-      intern = FALSE, # tested as faster for most models
+      # Ratio quantities (weighted_avg, eao) tag their sums in the template;
+      # only the internal inner optimizer uses those tags (lowrank = TRUE)
+      # and they are much faster there. The external optimizer is faster for
+      # the index total.
+      intern = value_name[[1]] != "link_total",
       inner.control = list(sparse = TRUE, lowrank = TRUE, trace = FALSE)
     )
     gradient <- new_obj2$gr(fixed)
@@ -687,11 +758,9 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       cli_inform(c("Bias correction is turned off.", "
         It is recommended to turn this on for final inference."))
   }
-  ssr <- summary(sr, "report")
   log_total <- ssr[row.names(ssr) %in% value_name, , drop = FALSE]
   row.names(log_total) <- NULL
   d <- as.data.frame(log_total)
-  time_name <- obj$fit_obj$time
   names(d) <- c("trans_est", "se")
   if (bias_correct) {
     if (value_name[[1]] == "weighted_avg") {
@@ -712,6 +781,19 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     d$se_natural <- as.numeric(.total[,2])
   }
 
+  # A matrix `vector` (e.g., x and y for COG) stacks one time series per
+  # column; return one data frame per column
+  if (value_name[[1]] == "weighted_avg" && NCOL(vector) > 1L) {
+    chunk <- rep(seq_len(NCOL(vector)), each = nrow(d) / NCOL(vector))
+    return(lapply(split(d, chunk), finish_generic, obj = obj,
+      tmb_data = tmb_data, value_name = value_name))
+  }
+  finish_generic(d, obj, tmb_data, value_name)
+}
+
+# Match rows of derived quantities to time steps and drop unpredicted ones
+finish_generic <- function(d, obj, tmb_data, value_name) {
+  time_name <- obj$fit_obj$time
   time_include <- NULL
   if (!is.null(tmb_data) && "proj_time_include" %in% names(tmb_data)) {
     time_include <- as.integer(tmb_data$proj_time_include)

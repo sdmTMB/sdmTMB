@@ -493,7 +493,7 @@ test_that("Random intercepts and cross validation play nicely", {
   out <- sdmTMB_cv(
     observed ~ 1 + (1 | g),
     fold_ids = fold_ids, k_folds = 2L, spatial = "off", data = s, mesh = spde,
-    parallel = FALSE
+    parallel = FALSE, predictive = "mle-eb"
   )
   expect_equal(round(out$sum_loglik, 3), -51.36)
   # Because the function fits with all the data but sets the missing fold to
@@ -633,7 +633,9 @@ test_that("Delta model works with random effects", {
 test_that("issue breakpt() version of formula doesn't break random effect prediction #423", {
   d <- pcod
   d$year_f <- as.factor(pcod$year)
-  m <- sdmTMB(
+  # flat likelihood near the breakpoint: the max gradient is ~0.03; this test
+  # checks prediction, not convergence quality
+  m <- suppressWarnings(sdmTMB(
     data = d,
     formula = density ~ 0 + breakpt(depth_scaled) + (1 | year_f),
     spatial = "off",
@@ -642,7 +644,7 @@ test_that("issue breakpt() version of formula doesn't break random effect predic
       threshold_breakpt_cut = normal(0, 1)
     ),
     family = tweedie(link = "log")
-  )
+  ))
   nd <- data.frame(
     depth_scaled = seq(min(pcod$depth_scaled) + 0.5,
       max(pcod$depth_scaled) - 0.2,

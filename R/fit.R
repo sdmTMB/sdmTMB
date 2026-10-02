@@ -148,6 +148,10 @@ NULL
 #'   (`time_lag()` terms, or `diffusion()` terms with `time` specified). In
 #'   that case, it must cover every fitted (+ `extra_time`) time slice.
 #'   Defaults to `NULL`, in which case `data` is used.
+#' @param preferential `r lifecycle::badge("experimental")` An optional
+#'   preferential-sampling specification from [preferential_sampling()].
+#'   Requires the RTMB backend (the default). The sampling
+#'   indicators are then modeled jointly with the catch data.
 #' @param weights A numeric vector representing optional likelihood weights for
 #'   the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
 #'   to sum to one and are not internally modified. Can also be used for trials
@@ -204,18 +208,6 @@ NULL
 #'   parameter transformations when priors are applied.
 #' @param experimental A named list for esoteric or in-development options. Here
 #'   be dragons.
-#   (Experimental) A column name (as character) of a predictor of a
-#   linear trend (in log space) of the spatiotemporal standard deviation. By
-#   default, this is `NULL` and fits a model with a constant spatiotemporal
-#   variance. However, this argument can also be a character name in the
-#   original data frame (a covariate that ideally has been standardized to have
-#   mean 0 and standard deviation = 1). Because the spatiotemporal field varies
-#   by time step, the standardization should be done by time. If the name of a
-#   predictor is included, a log-linear model is fit where the predictor is
-#   used to model effects on the standard deviation, e.g. `log(sd(i)) = B0 + B1
-#   * epsilon_predictor(i)`. The 'epsilon_model' argument may also be
-#   specified. This is the name of the model to use for modeling time-varying
-#   epsilon. Currently only "trend" (a log-linear model) is available.
 #' @importFrom methods as is
 #' @importFrom cli cli_abort cli_warn cli_inform
 #' @importFrom mgcv s t2
@@ -662,6 +654,7 @@ sdmTMB <- function(
     dispformula = ~ 1,
     nonlocal_formula = NULL,
     nonlocal_data = NULL,
+    preferential = NULL,
     weights = NULL,
     offset = NULL,
     extra_time = NULL,
@@ -839,20 +832,8 @@ sdmTMB <- function(
   if (!mesh_missing && spatial_model %in% c("sar", "car") && !is_areal_domain(spde)) {
     cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain from `make_areal_domain()`.")
   }
-  epsilon_model <- NULL
-  epsilon_predictor <- NULL
-  if (!is.null(experimental)) {
-    if ("epsilon_predictor" %in% names(experimental)) {
-      epsilon_predictor <- experimental$epsilon_predictor
-    } else {
-      epsilon_predictor <- NULL
-    }
-
-    if ("epsilon_model" %in% names(experimental)) {
-      epsilon_model <- experimental$epsilon_model
-    } else {
-      epsilon_model <- NULL
-    }
+  if (any(c("epsilon_model", "epsilon_predictor") %in% names(experimental))) {
+    cli_abort("`experimental$epsilon_model` and `experimental$epsilon_predictor` have been removed.")
   }
 
   normalize <- control$normalize
@@ -996,6 +977,18 @@ sdmTMB <- function(
     )
   }
 
+  if (!is.null(preferential)) {
+    .validate_preferential_scope(
+      spec = preferential, formula = formula, delta = has_two_components,
+      multi_family = is_multi_family, family = family, areal = is_areal,
+      mesh = spde,
+      mesh_missing = mesh_missing, anisotropy = anisotropy,
+      time_varying = time_varying, spatial_varying = spatial_varying,
+      nonlocal_formula = nonlocal_formula_parsed, normalize = normalize,
+      backend = backend, no_spatial = no_spatial
+    )
+  }
+
   domain <- prepare_spatial_domain(
     mesh = spde,
     data = data,
@@ -1005,7 +998,6 @@ sdmTMB <- function(
     nonlocal_formula = nonlocal_formula_parsed,
     priors = priors,
     normalize = normalize,
-    experimental = experimental,
     share_range_user = share_range_user,
     spatial_model = spatial_model,
     sar_weight_style = sar_weight_style
@@ -1080,7 +1072,8 @@ sdmTMB <- function(
         ))
       }
     }
-    z_i <- model.matrix(spatial_varying, data)
+    svc_design <- .make_design(spatial_varying, data, "`spatial_varying`")
+    z_i <- svc_design$X
     .int <- grep("(Intercept)", colnames(z_i))
     has_intercept <- length(.int) > 0L
     svc_omega_is_intercept <- has_intercept && !omit_spatial_intercept
@@ -1105,10 +1098,10 @@ sdmTMB <- function(
       ))
     }
     spatial_varying <- colnames(z_i)
-    svc_contrasts <- attr(z_i, which = "contrasts")
+    svc_design$spec$columns <- colnames(z_i)
   } else {
     z_i <- matrix(0, nrow(data), 0L)
-    svc_contrasts <- NULL
+    svc_design <- NULL
   }
   n_z <- ncol(z_i)
 
@@ -1117,7 +1110,12 @@ sdmTMB <- function(
   }
   contains_offset <- check_offset(formula[[1]]) # deprecated check
 
-  Xdisp_ij <- model.matrix(dispformula, data = data)
+  # the default `~ 1` is created in this frame; don't capture (and serialize) it
+  if (identical(environment(dispformula), environment())) {
+    environment(dispformula) <- globalenv()
+  }
+  disp_design <- .make_design(dispformula, data, "`dispformula`")
+  Xdisp_ij <- disp_design$X
 
   split_formula <- list() # passed to out structure, not TMB
   X_ij <- list() # main effects, passed into TMB
@@ -1223,6 +1221,19 @@ sdmTMB <- function(
   # always shared; only keep track of one:
   sm <- sm[[1]]
 
+  preferential_prep <- if (!is.null(preferential)) {
+    .prepare_preferential(
+      preferential,
+      model = list(
+        split_formula = split_formula, terms = mt,
+        xlevels = lapply(seq_along(mf), function(i) stats::.getXlevels(mt[[i]], mf[[i]])),
+        contrasts = lapply(X_ij, attr, which = "contrasts"),
+        smoothers = sm, data = data
+      ),
+      X_ij = X_ij, mesh = spde, time = time, time_df = time_df
+    )
+  }
+
   y_i <- model.response(mf[[1]], "any")
 
   # Keep the CV inclusion mask separate from user weights. In particular,
@@ -1253,6 +1264,13 @@ sdmTMB <- function(
   if (identical(family$link[1], "log") && min(y_i, na.rm = TRUE) < 0 && !has_two_components) {
     cli_abort("`link = 'log'` but the reponse data include values < 0.")
   }
+  if (!has_two_components && family$family[1] %in% c("truncated_nbinom1", "truncated_nbinom2") &&
+    any(y_i < 1, na.rm = TRUE)) {
+    cli_abort(c(
+      "`{family$family[1]}()` requires a response > 0.",
+      "i" = "Consider `delta_{family$family[1]}()` for data with zeros."
+    ))
+  }
   if (is.null(offset)) offset <- rep(0, length(y_i))
   assert_that(length(offset) == length(y_i), msg = "Offset doesn't match length of data")
   if (nrow(Xdisp_ij) != length(y_i)) {
@@ -1260,9 +1278,11 @@ sdmTMB <- function(
   }
 
   if (!is.null(time_varying)) {
-    X_rw_ik <- model.matrix(time_varying, data)
+    tv_design <- .make_design(time_varying, data, "`time_varying`")
+    X_rw_ik <- tv_design$X
   } else {
     X_rw_ik <- matrix(0, nrow = nrow(data), ncol = 1)
+    tv_design <- NULL
   }
 
   n_s <- domain$n_s
@@ -1276,30 +1296,6 @@ sdmTMB <- function(
   }
   estimate_student_df <- has_student_family && is.null(student_df_fixed)
 
-  if (!is.null(epsilon_model) && !identical(epsilon_model, "trend")) {
-    cli_abort("`experimental$epsilon_model` must be \"trend\".")
-  }
-  est_epsilon_model <- 0L
-  epsilon_covariate <- rep(0, length(unique(data[[time]])))
-  if (!is.null(epsilon_predictor) & !is.null(epsilon_model)) {
-    if (epsilon_model == "trend") {
-      # covariate vector dimensioned by number of time steps
-      time_steps <- unique(data[[time]])
-      for (i in seq_along(time_steps)) {
-        epsilon_covariate[i] <- data[data[[time]] == time_steps[i],
-          epsilon_predictor,
-          drop = TRUE
-        ][[1]]
-      }
-      est_epsilon_model <- 1L
-    }
-  }
-  est_epsilon_slope <- 0
-  if (!is.null(epsilon_model)) {
-    est_epsilon_slope <- 1L
-    est_epsilon_model <- 1L
-  }
-
   priors_b <- priors$b
   priors_sigma_V <- priors$sigma_V
   .priors <- priors
@@ -1309,10 +1305,13 @@ sdmTMB <- function(
     if (!is.na(priors_b[[1]])) {
       message("Expanding `b` priors to match model matrix.")
     }
-    # creates matrix that is 2 columns of NAs, rows = number of unique bs
-    # Instead of passing in a 2-column matrix of NAs, pass in a matrix that
-    # has means in first col and the remainder is Var-cov matrix
-    priors_b <- mvnormal(rep(NA, ncol(X_ij[[1]]))) # TODO change hard coded index on X_ij
+    # replicate the single prior (or NA for no prior) for each coefficient
+    n_b <- ncol(X_ij[[1]]) # TODO change hard coded index on X_ij
+    dist <- attr(priors_b, "dist")
+    priors_b <- normal(rep(priors_b[1, 1], n_b), rep(priors_b[1, 2], n_b))
+    if (dist == "mvnormal") { # scale is a variance
+      priors_b <- mvnormal(priors_b[, 1], diag(priors_b[, 2], nrow = n_b))
+    }
   }
   # ncol(X_ij) may occur if time varying model, no intercept
   if (ncol(X_ij[[1]]) > 0 & !identical(nrow(priors_b), ncol(X_ij[[1]]))) { # TODO change hard coded index on X_ij
@@ -1324,7 +1323,7 @@ sdmTMB <- function(
     if (length(priors_b[, 2]) == 1L) {
       if (is.na(priors_b[, 2])) priors_b[, 2] <- 1
     }
-    priors_b <- mvnormal(location = priors_b[, 1], scale = diag(as.numeric(priors_b[, 2]), ncol = nrow(priors_b)))
+    priors_b <- mvnormal(location = priors_b[, 1], scale = diag(as.numeric(priors_b[, 2])^2, ncol = nrow(priors_b)))
   }
   # in some cases, priors_b will be a mix of NAs (no prior) and numeric values
   # easiest way to deal with this is to subset the Sigma matrix
@@ -1437,7 +1436,7 @@ sdmTMB <- function(
     b_smooth_start = sm$b_smooth_start,
     proj_lon = 0,
     proj_lat = 0,
-    proj_vector = 0,
+    proj_vector = matrix(0),
     do_predict = 0L,
     do_rsr = do_rsr,
     calc_se = 0L,
@@ -1488,9 +1487,6 @@ sdmTMB <- function(
     X_threshold = thresh[[1]]$X_threshold, # TODO: don't hardcode index thresh[[1]]
     proj_X_threshold = 0, # dummy
     threshold_func = thresh[[1]]$threshold_func, # TODO: don't hardcode index thresh[[1]]
-    est_epsilon_model = as.integer(est_epsilon_model),
-    epsilon_predictor = epsilon_covariate,
-    est_epsilon_slope = as.integer(est_epsilon_slope),
     has_smooths = as.integer(sm$has_smooths),
     has_dispersion_model = as.integer(has_dispformula),
     upr = upr,
@@ -1508,6 +1504,7 @@ sdmTMB <- function(
     exclude_RE = 0L
   )
   tmb_data <- c(tmb_data, family_tmb)
+  tmb_data$preferential <- preferential_prep$data
   tmb_data$poisson_link_delta <- as.integer(fit_poisson_link_delta)
   b_thresh <- matrix(0, 2L, n_m)
   if (thresh[[1]]$threshold_func == 2L) b_thresh <- matrix(0, 3L, n_m) # logistic #TODO: change hard coding on index of thresh[[1]]
@@ -1548,13 +1545,13 @@ sdmTMB <- function(
     zeta_s = array(0, dim = c(n_s, n_z, n_m)),
     epsilon_st = array(0, dim = c(n_s, tmb_data$n_t, n_m)),
     b_threshold = if (thresh[[1]]$threshold_func == 2L) matrix(0, 3L, n_m) else matrix(0, 2L, n_m),
-    b_epsilon = rep(0, n_m),
     b_smooth = if (sm$has_smooths) matrix(0, sum(sm$sm_dims), n_m) else array(0),
     ln_smooth_sigma = if (sm$has_smooths) matrix(0, length(sm$sm_dims), n_m) else array(0)
   )
+  tmb_params <- c(tmb_params, preferential_prep$parameters)
   if (family_spec$n_f == 1L && identical(family$link, "inverse") && family$family[1] %in% c("Gamma", "gaussian", "student") && !has_two_components) {
     fam <- family
-    if (family$family == "student") fam$family <- "gaussian"
+    if (family$family == "student") fam <- stats::gaussian(link = "inverse")
     temp <- mgcv::gam(formula = formula[[1]], data = data, family = fam)
     tmb_params$b_j <- stats::coef(temp)
   }
@@ -1562,6 +1559,10 @@ sdmTMB <- function(
   # Map off parameters not needed
   tmb_map <- map_all_params(tmb_params)
   tmb_map$b_j <- NULL
+  # The sampling coefficients are estimated in every phase. The preference
+  # coefficient, sampling field, and temporal processes wait for the catch
+  # fields (below).
+  tmb_map$gamma_pref <- NULL
   if (!is_multi_family && has_dispformula) {
     tmb_map <- unmap(tmb_map, "b_disp_k")
   } else {
@@ -1583,46 +1584,11 @@ sdmTMB <- function(
   )
   if (!is.null(thresh[[1]]$threshold_parameter)) tmb_map$b_threshold <- NULL
 
-  if (est_epsilon_slope == 1L) {
-    tmb_map <- unmap(tmb_map, "b_epsilon")
-  }
-
   if (multiphase && is.null(previous_fit) && do_fit) {
-    original_tmb_data <- tmb_data
-    # much faster on first phase!?
-    tmb_data$no_spatial <- 1L
-    # tmb_data$include_spatial <- 0L
-    tmb_data$include_spatial <- rep(0L, length(spatial)) # for 1st phase
-    # tmb_data$spatial_only <- rep(1L, length(tmb_data$spatial_only))
-
-    # Poisson on first phase increases stability:
-    censored_code <- unname(.valid_family["censored_poisson"])
-    if (any(tmb_data$component_active == 1L & tmb_data$family_code == censored_code)) {
-      tmb_data$family_code[tmb_data$component_active == 1L & tmb_data$family_code == censored_code] <- unname(.valid_family["poisson"])
-    }
-
-    tmb_obj1 <- make_sdmTMB_adfun(
-      data = tmb_data, parameters = tmb_params,
-      profile = control$profile,
-      map = tmb_map, backend = backend, silent = silent
-    )
-    lim <- set_limits(tmb_obj1, lower = lower, upper = upper,
-      mesh = if (is_areal) NULL else spde$mesh,
-      spatial_model = tmb_data$spatial_model,
-      silent = TRUE)
-
-    tmb_opt1 <- stats::nlminb(
-      start = tmb_obj1$par, objective = tmb_obj1$fn,
-      lower = lim$lower, upper = lim$upper,
-      gradient = tmb_obj1$gr, control = .control
-    )
-
-    tmb_data <- original_tmb_data # restore
-    # Set starting values based on phase 1:
-    tmb_params <- tmb_obj1$env$parList()
-    # tmb_data$no_spatial <- FALSE
-    # often causes optimization problems if set from phase 1!?
-    tmb_params$b_threshold <- if (thresh[[1]]$threshold_func == 2L) matrix(0, 3L, n_m) else matrix(0, 2L, n_m)
+    tmb_params <- fit_first_phase(tmb_data, tmb_params, tmb_map,
+      profile = control$profile, backend = backend, lower = lower, upper = upper,
+      mesh = if (is_areal) NULL else spde$mesh, nlminb_control = .control,
+      silent = silent, suppress_warnings = isTRUE(suppress_nlminb_warnings))
   }
 
   tmb_map$log_kappaS_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_spatial)
@@ -1681,6 +1647,11 @@ sdmTMB <- function(
     if (reml) tmb_random <- c(tmb_random, "bs")
     tmb_random <- c(tmb_random, "b_smooth") # smooth random effects
     tmb_map <- unmap(tmb_map, c("b_smooth", "ln_smooth_sigma", "bs"))
+  }
+  if (!is.null(preferential_prep)) {
+    tmb_map <- unmap(tmb_map, names(preferential_prep$parameters))
+    tmb_map[names(preferential_prep$map)] <- preferential_prep$map
+    tmb_random <- c(tmb_random, preferential_prep$random)
   }
 
   if (!is.null(previous_fit)) {
@@ -1856,7 +1827,6 @@ sdmTMB <- function(
       time_varying = time_varying,
       threshold_parameter = thresh[[1]]$threshold_parameter,
       threshold_function = thresh[[1]]$threshold_func,
-      epsilon_predictor = epsilon_predictor,
       time = time,
       time_lu = time_df,
       # Keep the public field faithful to the user's input. Internal code uses
@@ -1877,6 +1847,7 @@ sdmTMB <- function(
       nonlocal_formula_parsed = nonlocal_formula_parsed,
       nonlocal_parsed = nonlocal_parsed,
       nonlocal_grid_supplied = nonlocal_grid_supplied,
+      preferential = preferential_prep$info,
       spatial = spatial_user,
       spatiotemporal = spatiotemporal,
       spatial_varying_formula = spatial_varying_formula,
@@ -1886,6 +1857,12 @@ sdmTMB <- function(
       nlminb_control = .control,
       control = control,
       contrasts = lapply(X_ij, attr, which = "contrasts"),
+      # encodings of auxiliary designs for prediction (see `.apply_design()`)
+      design_specs = list(
+        spatial_varying = svc_design$spec,
+        time_varying = tv_design$spec,
+        dispformula = disp_design$spec
+      ),
       terms = lapply(mf, attr, which = "terms"),
       extra_time = extra_time,
       fitted_time = sort(unique(data[[time]])),
@@ -1962,37 +1939,19 @@ sdmTMB <- function(
   }
 
   if (length(tmb_obj$par)) {
-    tmb_opt <- stats::nlminb(
+    tmb_opt <- maybe_suppress_warnings(suppress_nlminb_warnings)(stats::nlminb(
       start = tmb_obj$par, objective = tmb_obj$fn, gradient = tmb_obj$gr,
       lower = lim$lower, upper = lim$upper, control = .control
-    )
+    ))
   } else {
     tmb_opt <- list(par = tmb_obj$par, objective = tmb_obj$fn(tmb_obj$par))
   }
 
-  if (isTRUE(suppress_nlminb_warnings)) {
-    maybe_suppress_warnings <- suppressWarnings
-  } else {
-    maybe_suppress_warnings <- I
-  }
-
-  if (nlminb_loops > 1) {
-    if (!silent) cli_inform("running extra nlminb optimization\n")
-    for (i in seq(2, nlminb_loops, length = max(0, nlminb_loops - 1))) {
-      temp <- tmb_opt[c("iterations", "evaluations")]
-      tmb_opt <- maybe_suppress_warnings(stats::nlminb(
-        start = tmb_opt$par, objective = tmb_obj$fn, gradient = tmb_obj$gr,
-        control = .control, lower = lim$lower, upper = lim$upper
-      ))
-      tmb_opt[["iterations"]] <- tmb_opt[["iterations"]] + temp[["iterations"]]
-      tmb_opt[["evaluations"]] <- tmb_opt[["evaluations"]] + temp[["evaluations"]]
-    }
-  }
-  if (!is.null(control$upper) || !is.null(control$lower)) {
-    if (newton_loops > 0) {
-      cli_inform("Upper or lower limits were set. Newton updates that cross these limits will be skipped.")
-    }
-  }
+  tmb_opt <- run_nlminb_loops(
+    nlminb_loops = nlminb_loops - 1, opt = tmb_opt, obj = tmb_obj,
+    lower = lim$lower, upper = lim$upper, control = .control,
+    silent = silent, suppress_warnings = isTRUE(suppress_nlminb_warnings)
+  )
 
   check_bounds(tmb_opt$par, lim$lower, lim$upper)
 
@@ -2046,16 +2005,6 @@ sdmTMB <- function(
   } else {
     sd_report <- NULL
     conv <- NULL
-  }
-
-  # save params that families need to grab from environments:
-  if (family_spec$n_f == 1L && any(family$family %in% c("truncated_nbinom1", "truncated_nbinom2"))) {
-    phi <- exp(tmb_obj$par[["ln_phi"]])
-    if (has_two_components) {
-      assign(".phi", phi, environment(out_structure[["family"]][[2]][["linkinv"]]))
-    } else {
-      assign(".phi", phi, environment(out_structure[["family"]][["linkinv"]]))
-    }
   }
 
   out_structure$tmb_obj <- tmb_obj

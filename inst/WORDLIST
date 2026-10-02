@@ -120,6 +120,7 @@ boldsymbol
 breakpt
 brms
 cAIC
+catchability
 cdot
 centre
 centred
@@ -221,3 +222,6 @@ valgrind
 visreg
 warmup
 wiggliness
+Kullback
+Leibler
+Windmeijer

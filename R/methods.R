@@ -129,7 +129,8 @@ logLik.sdmTMB <- function(object, ...) {
   val <- -object$model$objective
   nobs <- nobs.sdmTMB(object)
   lpb <- names(object$tmb_obj$env$last.par.best)
-  ran <- c("omega_s", "epsilon_st", "zeta_s", "b_rw_t", "RE", "b_smooth", "re_b_pars")
+  ran <- c("omega_s", "epsilon_st", "zeta_s", "b_rw_t", "RE", "b_smooth", "re_b_pars",
+    "xi_s", "b_pref_dev", "alpha_pref_dev")
   df <- sum(!lpb %in% ran)
   structure(val,
     nobs = nobs, nall = nobs, df = df,
@@ -228,7 +229,7 @@ ranef.sdmTMB <- function(object, ...) {
 deviance.sdmTMB <- function(object, ...) {
   .check_family_capability(object, "deviance")
   implemented <- c("poisson", "Gamma", "binomial",
-    "gaussian", "lognormal", "tweedie", "nbinom1", "nbinom2")
+    "gaussian", "lognormal", "tweedie", "nbinom1", "nbinom2", "gengamma", "censored_poisson")
   if (!.object_has_two_components(object, caller = "`deviance()`")) {
     if (!object$family$family %in% implemented) {
       cli_abort("Deviance not implemented for the fitted family")
@@ -481,6 +482,11 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
   # if data is not provided, use the original data
   if (!"data" %in% names(new_args)) {
     call$data <- object$data
+  }
+
+  # likewise keep the saved preferential-sampling specification
+  if (!"preferential" %in% names(new_args) && !is.null(object$preferential)) {
+    call$preferential <- object$preferential$spec
   }
 
   # keep the fitted controls and backend unless `control` is replaced;

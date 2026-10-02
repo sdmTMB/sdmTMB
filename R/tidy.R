@@ -17,7 +17,16 @@
 #' @param exponentiate Whether to exponentiate the fixed-effect coefficient
 #'   estimates and confidence intervals.
 #' @param model Which model to tidy if a delta model (1 or 2). The `model` will be
-#'   ignored when effects is `"ran_vals"` (all returned in a single dataframe)
+#'   ignored when effects is `"ran_vals"` (all returned in a single dataframe).
+#'   For a model fit with `preferential` (see [preferential_sampling()]),
+#'   `"sampling"` tidies the sampling model instead: `effects = "fixed"` gives
+#'   its coefficients and the preference coefficient `b_pref`, and
+#'   `effects = "ran_pars"` gives the SD and range of the sampling field
+#'   (`sigma_xi`, `range_xi`) and the SDs of the temporal preference
+#'   coefficient and baseline processes (`sigma_b_pref`, `sigma_alpha_pref`)
+#'   if they were estimated, and `effects = "ran_vals"` gives the preference
+#'   coefficient (`b_pref_t`) and baseline deviation (`alpha_pref_t`) by time
+#'   step. These rows are never part of the output for `model = 1` or `2`.
 #'
 #' @param silent Omit any messages?
 #' @param ... Extra arguments (not used).
@@ -83,6 +92,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   if (exponentiate) trans <- exp else trans <- I
 
   reinitialize(x)
+  if (identical(model, "sampling")) {
+    return(.tidy_sampling(x, effects, conf.int, crit, trans))
+  }
   is_areal <- is_areal_fit(x)
   is_car <- is_car_fit(x)
   family_spec <- .object_family_spec(x, caller = "`tidy()`")
@@ -350,7 +362,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
 
   if (!multi_family && "ordbeta" %in% x$family$family) {
-    cuts <- plogis(est$psi)
+    cuts <- plogis(ordbeta_cutpoints(est$psi))
     out_re$ordbeta_cutpoint_lower <- data.frame(
       term = "ordbeta_cutpoint_lower", estimate = cuts[1],
       std.error = NA_real_, conf.low = NA_real_, conf.high = NA_real_,
@@ -848,12 +860,10 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
   re_b_df <- do.call(rbind, expanded_rows) # list to df
   rownames(re_b_df) <- NULL # reset row names
 
-  # this is all as before
-  re_indx <- grep("re_b_pars", names(x$sd_report$value), fixed = TRUE)
-  non_nas <- !is.na(x$tmb_map$re_b_pars) # parameters that don't get mapped off
-
-  re_b_df$estimate <- x$sd_report$value[re_indx][non_nas]
-  re_b_df$std.error <- x$sd_report$sd[re_indx][non_nas]
+  # estimated (unmapped) random effects, in order
+  re_indx <- names(x$sd_report$par.random) == "re_b_pars"
+  re_b_df$estimate <- unname(x$sd_report$par.random[re_indx])
+  re_b_df$std.error <- sqrt(unname(x$sd_report$diag.cov.random[re_indx]))
   re_b_df$conf.low <- re_b_df$estimate - crit * re_b_df$std.error
   re_b_df$conf.high <- re_b_df$estimate + crit * re_b_df$std.error
   re_b_df$index <- NULL

@@ -31,9 +31,11 @@ rtmb_pc_matern <- function(log_tau, log_kappa, prior, share_range = FALSE,
     log_density <- log_density + log(lambda_range) -
       2 * log(range) - lambda_range / range
   }
+  # Jacobian from (log_tau, log_kappa) to (range, sigma) is range * sigma;
+  # a shared range is counted in the spatial prior only.
   if (stan) {
-    log_density <- log_density + log(sqrt(8)) - 2 * log(range) +
-      log(sqrt(4 * pi)) + log_kappa
+    log_density <- log_density + log(sigma)
+    if (!share_range) log_density <- log_density + log(range)
   }
   log_density
 }
@@ -62,7 +64,9 @@ rtmb_prior_nll <- function(par, theta, prepared) {
     }
     if (!is.null(prior$matern_st)) {
       nll <- nll - rtmb_pc_matern(par$ln_tau_E[[m]], par$ln_kappa[2L, m],
-        prior$matern_st, share_range = prepared$share_range[[m]], stan = stan)
+        prior$matern_st, stan = stan,
+        # the range is shared and the spatial prior already includes it
+        share_range = prepared$share_range[[m]] && !is.null(prior$matern_s))
     }
     nll <- nll + normal(theta$rho[m], prior$ar1_rho)
     if (stan && !is.null(prior$ar1_rho)) {
@@ -75,6 +79,11 @@ rtmb_prior_nll <- function(par, theta, prepared) {
       normal(threshold$s50[m], prior$threshold_logistic_s50) +
       normal(threshold$s95[m], prior$threshold_logistic_s95) +
       normal(threshold$s_max[m], prior$threshold_logistic_smax)
+    # Jacobian for s95 = s50 + exp(b_threshold[2, ])
+    if (stan && length(threshold$s95) &&
+      !is.null(prior$threshold_logistic_s95)) {
+      nll <- nll - par$b_threshold[2L, m]
+    }
     for (k in seq_len(nrow(prior$sigma_V))) {
       if (!anyNA(prior$sigma_V[k, ])) {
         sigma_V <- theta$sigma_V[k, m]

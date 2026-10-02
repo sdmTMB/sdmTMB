@@ -62,10 +62,7 @@ test_that("RTMB delta models match every TMB report and sdreport row", {
       time = "time", time_varying = ~ 0 + z, spatial = "off",
       priors = sdmTMBpriors(sigma_V = gamma_cv(0.5, 0.5))),
     svc_threshold = list(response ~ breakpt(z), family = delta_gamma(),
-      spatial_varying = ~ 0 + w),
-    epsilon_trend = list(response ~ z, family = delta_gamma(), time = "time",
-      spatiotemporal = list("iid", "off"),
-      experimental = list(epsilon_model = "trend", epsilon_predictor = "time"))
+      spatial_varying = ~ 0 + w)
   )
   for (name in names(cases)) {
     fit <- do.call(sdmTMB, c(cases[[name]],

@@ -1,7 +1,5 @@
 #' Project from an \pkg{sdmTMB} model using simulation
 #'
-#' @description `r lifecycle::badge("experimental")`
-#'
 #' @description Project forward in time from an \pkg{sdmTMB} model using a
 #' simulation approach for computational efficiency.
 #' This can be helpful for calculating predictive intervals for long
@@ -163,6 +161,9 @@ project <- function(
     ...) {
   assert_that(inherits(object, "sdmTMB"))
   assert_that(is.data.frame(newdata))
+  if (!is.null(object$preferential)) {
+    cli_abort("`project()` is not supported for preferential-sampling models yet.")
+  }
   if (!is.numeric(nsim) || length(nsim) != 1L || is.na(nsim) ||
       !is.finite(nsim) || nsim < 1 || nsim != floor(nsim)) {
     cli_abort("`nsim` must be one finite, positive whole number.")

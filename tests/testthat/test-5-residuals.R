@@ -596,3 +596,22 @@ test_that("pgengamma works for Q = 0", {
   p <- pgengamma(q = 1, mean = 0.5, sigma = 0.8, .Q = 0, lower.tail = TRUE, log.p = FALSE)
   expect_equal(round(p, 4), 0.8973)
 })
+
+test_that("MVN draws are unchanged when the inner Cholesky factor is rebuilt", {
+  skip_on_cran()
+  d <- pcod[pcod$year %in% c(2003, 2004), ]
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  fit <- sdmTMB(density ~ 1, data = d, mesh = mesh, family = tweedie())
+  draws <- function(fit) {
+    set.seed(1)
+    list(
+      resid = residuals(fit, type = "mle-mvn"),
+      sim = simulate(fit, nsim = 2, type = "mle-mvn", mle_mvn_samples = "multiple")
+    )
+  }
+  expected <- draws(fit)
+  best <- fit$tmb_obj$env$last.par.best
+  fit$tmb_obj$env$L.created.by.newton <- NULL
+  expect_equal(draws(fit), expected)
+  expect_identical(fit$tmb_obj$env$last.par.best, best)
+})
