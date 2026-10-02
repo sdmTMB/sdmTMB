@@ -157,7 +157,7 @@
       numeric(0)
     },
     gengamma_Q = rep(0.5, n$gengamma_Q),
-    psi = if (has_ordbeta) c(-1, 1) else numeric(0),
+    psi = if (has_ordbeta) c(-1, log(2)) else numeric(0), # cutpoints -1 and 1
     ln_phi = rep(0, n$ln_phi)
   )
 }

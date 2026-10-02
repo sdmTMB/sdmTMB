@@ -37,6 +37,8 @@ Type dgengamma( Type x,
   Type qi = pow(Q, -2);
   Type qw = Q * w;                 // 0.5*log(pow(x,2)) as trick for abs(log(x))
   Type logres = -log(sigma*x) + 0.5*log(pow(lambda,2)) * (1 - 2 * qi) + qi * (qw - exp(qw)) - lgamma(qi);
+  // The mean exists only if 1 + sigma * Q > 0; otherwise return NaN
+  logres = CppAD::CondExpGt(Type(1) + sigma * Q, Type(0), logres, Type(NAN));
 
   // return stuff
   if(give_log) return logres; else return exp(logres);
@@ -501,6 +503,37 @@ Type devresid_nbinom2( Type y,
   Type deviance = 2 * (logp1 - logp2);
   Type devresid = sign( y - exp(logmu) ) * pow( deviance, 0.5 );
   return devresid;
+}
+
+// n-th derivative of lgamma: n = 1 is digamma and n = 2 trigamma
+template <class Type>
+Type D_lgamma(Type x, int n) {
+  CppAD::vector<Type> tx(2);
+  tx[0] = x;
+  tx[1] = Type(n);
+  return atomic::D_lgamma(tx)[0];
+}
+
+// NB1 deviance residual with phi fixed. The saturated mean r * phi solves
+// digamma(y + r) - digamma(r) = log(1 + phi). Newton steps on
+// 1 / (digamma(y + r) - digamma(r)), which is increasing and concave in r,
+// start from the exact y = 1 solution and approach the root from below.
+template <class Type>
+Type devresid_nbinom1(Type y, Type logmu, Type ln_phi) {
+  Type logp_sat = Type(0); // the limit as the mean -> 0 when y = 0
+  if (y > Type(0)) {
+    Type c = log(Type(1) + exp(ln_phi));
+    Type r = Type(1) / c;
+    for (int k = 0; k < 15; k++) {
+      Type D = D_lgamma(y + r, 1) - D_lgamma(r, 1);
+      Type D1 = D_lgamma(y + r, 2) - D_lgamma(r, 2);
+      r += (Type(1) / D - Type(1) / c) * D * D / D1;
+    }
+    Type logmu_sat = log(r) + ln_phi;
+    logp_sat = dnbinom_robust(y, logmu_sat, logmu_sat + ln_phi, true);
+  }
+  Type logp = dnbinom_robust(y, logmu, logmu + ln_phi, true);
+  return sign(y - exp(logmu)) * pow(Type(2) * (logp_sat - logp), Type(0.5));
 }
 
 // Censored Poisson deviance residual, given the log likelihood `ll`. Exact

@@ -99,7 +99,7 @@ rtmb_evaluate <- function(par, prepared) {
     projected <- rtmb_linear_predictors(par, theta, effects, prepared,
       prepared$proj)
     if (prepared$mixture) {
-      projected$eta <- rtmb_mixture_eta(projected$eta, theta, prepared)
+      projected <- rtmb_mixture_projection(projected, theta, prepared)
     }
     if (prepared$n_m > 1L) {
       projected$combined <- rtmb_combined_projection(projected, theta, prepared)

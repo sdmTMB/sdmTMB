@@ -69,7 +69,7 @@ rtmb_obs_state <- function(i, m, family, eta, par, theta, prepared, ln_phi_i) {
   if (!is.na(family$gengamma_Q)) {
     state$Q <- par$gengamma_Q[[family$gengamma_Q]]
   }
-  if (name == "ordbeta") state$psi <- par$psi
+  if (name == "ordbeta") state$psi <- ordbeta_cutpoints(par$psi)
   if (name == "censored_poisson") {
     state$upr <- fit$upr[i]
   }
@@ -130,20 +130,9 @@ rtmb_observations <- function(par, theta, prepared, eta) {
         next
       }
       if (!observing) {
-        mu <- state(rows)$mu
-        if (isTRUE(spec$logit_mu)) {
-          mu <- RTMB::plogis(mu) * fit$size[rows]
-        }
-        y_i[rows, m] <- mu
-        next
-      }
-      if (poisson_link) {
-        # The C++ template records this residual for every row, treating a
-        # missing response as zero.
         s <- state(rows)
-        y <- fit$y[rows, m]
-        devresid[rows, m] <- sqrt(-2 * spec$logpdf(ifelse(is.na(y), 0, y),
-          s$mu, s))
+        y_i[rows, m] <- if (is.null(spec$mean)) s$mu else spec$mean(s$mu, s)
+        next
       }
       i <- group$observed
       if (!length(i)) next
@@ -153,8 +142,8 @@ rtmb_observations <- function(par, theta, prepared, eta) {
       jnll_obs[i] <- jnll_obs[i] - fit$weights[i] * log_density
       if (!is.null(spec$deviance)) {
         # As in C++, some residuals can be NaN; keep them without R's
-        # warnings.
-        devresid[i, m] <- suppressWarnings(
+        # warnings. Weights scale each squared residual, as in glm().
+        devresid[i, m] <- sqrt(fit$weights[i]) * suppressWarnings(
           spec$deviance(y, s$mu, s, log_density))
       }
     }

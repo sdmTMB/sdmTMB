@@ -139,9 +139,10 @@ intervals, and standard error of center of gravity coordinates.
 
 For \code{get_eao()}:
 A data frame with columns for time, estimate (effective area occupied: the
-area required if the population was spread evenly at the arithmetic mean
-density), lower and upper confidence intervals, log EAO, and standard error
-of the log EAO estimates.
+area required if the population was spread evenly at its abundance-weighted
+mean density, \code{sum(area * density)^2 / sum(area * density^2)}), lower and
+upper confidence intervals, log EAO, and standard error of the log EAO
+estimates.
 
 For \code{get_weighted_average()}:
 A data frame with columns for time, estimate (weighted average of the

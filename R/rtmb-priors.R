@@ -64,7 +64,9 @@ rtmb_prior_nll <- function(par, theta, prepared) {
     }
     if (!is.null(prior$matern_st)) {
       nll <- nll - rtmb_pc_matern(par$ln_tau_E[[m]], par$ln_kappa[2L, m],
-        prior$matern_st, share_range = prepared$share_range[[m]], stan = stan)
+        prior$matern_st, stan = stan,
+        # the range is shared and the spatial prior already includes it
+        share_range = prepared$share_range[[m]] && !is.null(prior$matern_s))
     }
     nll <- nll + normal(theta$rho[m], prior$ar1_rho)
     if (stan && !is.null(prior$ar1_rho)) {
@@ -77,6 +79,11 @@ rtmb_prior_nll <- function(par, theta, prepared) {
       normal(threshold$s50[m], prior$threshold_logistic_s50) +
       normal(threshold$s95[m], prior$threshold_logistic_s95) +
       normal(threshold$s_max[m], prior$threshold_logistic_smax)
+    # Jacobian for s95 = s50 + exp(b_threshold[2, ])
+    if (stan && length(threshold$s95) &&
+      !is.null(prior$threshold_logistic_s95)) {
+      nll <- nll - par$b_threshold[2L, m]
+    }
     for (k in seq_len(nrow(prior$sigma_V))) {
       if (!anyNA(prior$sigma_V[k, ])) {
         sigma_V <- theta$sigma_V[k, m]

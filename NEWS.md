@@ -1,5 +1,28 @@
 # sdmTMB (development version)
 
+* Fix several statistical bugs in both the TMB and RTMB backends:
+  * `ordbeta()` cutpoints are now constrained to be ordered. The `psi`
+    parameter is now the lower cutpoint and the log difference between the
+    cutpoints.
+  * `gengamma()` returns a `NaN` likelihood where its mean does not exist
+    (`1 + phi * Q <= 0`) rather than misrepresenting `mu` as the mean.
+  * A `matern_st` `pc_matern()` prior with a shared range no longer drops
+    its range term when there is no `matern_s` prior.
+  * With `bayesian = TRUE`, the `threshold_logistic_s95` prior now includes
+    its Jacobian adjustment.
+  * Response means without observation error (e.g.,
+    `simulate(observation_error = FALSE)`) are now expectations for the
+    beta-binomial, truncated negative binomial, mixture, and ordered beta
+    families.
+  * Mixture-family predictions now respect non-log links and also apply to
+    population-level predictions (`re_form = NA`).
+  * `get_eao()` now weights density by area:
+    `sum(area * density)^2 / sum(area * density^2)`.
+  * Deviance and deviance residuals now include observation weights.
+  * `nbinom1()` deviance now uses the saturated model with `phi` fixed.
+  * Poisson-link delta encounter deviance residuals are now negative for
+    zeros, and zero for missing responses.
+
 * Fix three bugs in priors. (1) `normal()` priors on fixed effects (`b`)
   used the supplied standard deviations as variances. (2) A single `b`
   prior such as `normal(0, 2)` with multiple coefficients was announced as

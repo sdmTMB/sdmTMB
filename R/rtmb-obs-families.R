@@ -13,6 +13,7 @@
 # Optional fields:
 #
 #   logit_mu    TRUE if `mu` is logit(p) rather than the mean (binomial)
+#   mean        function(mu, s): the response expectation, if not `mu`
 #   log_nzprob  function(mu, phi): log P(Y > 0), for zero-truncated families
 #   mixture     TRUE for two-component mixtures; `s` then carries
 #               `p_extreme` and `mix_ratio`
@@ -32,6 +33,7 @@ rtmb_obs_families <- list(
   binomial = list(
     logit_mu = TRUE,
     logpdf = function(y, mu, s) RTMB::dbinom_robust(y, s$size, mu, log = TRUE),
+    mean = function(mu, s) RTMB::plogis(mu) * s$size,
     simulate = function(mu, s) {
       stats::rbinom(length(mu), s$size, stats::plogis(mu))
     },
@@ -49,6 +51,7 @@ rtmb_obs_families <- list(
   # Beta-binomial on shapes p * phi and (1 - p) * phi, with p from `eta`.
   betabinomial = list(
     logpdf = function(y, mu, s) rtmb_dbetabinom(y, s),
+    mean = function(mu, s) mu * s$size,
     simulate = function(mu, s) {
       shape <- rtmb_betabinom_shapes(s)
       stats::rbinom(length(mu), s$size,
@@ -81,7 +84,7 @@ rtmb_obs_families <- list(
       stats::rnbinom(length(mu), size = mu / s$phi, mu = mu)
     },
     deviance = function(y, mu, s, log_density) {
-      rtmb_nb_deviance(y, mu, log_density, log(mu) - s$ln_phi)
+      rtmb_nbinom1_deviance(y, mu, s, log_density)
     }
   ),
 
@@ -180,6 +183,11 @@ rtmb_obs_families <- list(
 
   ordbeta = list(
     logpdf = function(y, mu, s) rtmb_dordbeta(y, mu, s),
+    mean = function(mu, s) {
+      p0 <- RTMB::plogis(s$psi[[1L]] - s$eta)
+      p1 <- RTMB::plogis(s$eta - s$psi[[2L]])
+      p1 + (1 - p0 - p1) * mu
+    },
     simulate = function(mu, s) {
       # One uniform selects the component: P(0) = p0, P(1) = p1.
       n <- length(mu)
@@ -200,6 +208,7 @@ rtmb_truncated_nb <- function(base, size, log_nzprob) {
   force(log_nzprob)
   list(
     log_nzprob = log_nzprob,
+    mean = function(mu, s) exp(log(mu) - log_nzprob(mu, s$phi)),
     logpdf = function(y, mu, s) {
       out <- base$logpdf(y, mu, s) - log_nzprob(mu, s$phi)
       out[y < 0.001] <- -Inf # zero counts are impossible
@@ -224,6 +233,7 @@ rtmb_mixture <- function(base) {
   force(base)
   list(
     mixture = TRUE,
+    mean = function(mu, s) (1 - s$p_extreme) * mu + s$p_extreme * mu * s$mix_ratio,
     logpdf = function(y, mu, s) {
       RTMB::logspace_add(log(1 - s$p_extreme) + base$logpdf(y, mu, s),
         log(s$p_extreme) + base$logpdf(y, mu * s$mix_ratio, s))
@@ -261,6 +271,10 @@ rtmb_poisson_link_binomial <- list(
   logpdf = function(y, mu, s) {
     rtmb_ifelse_positive(y, s$log_p, s$log_one_minus_p)
   },
+  # Positive for an encounter, negative for a zero
+  deviance = function(y, mu, s, log_density) {
+    ifelse(y > 0, 1, -1) * sqrt(-2 * log_density)
+  },
   simulate = function(mu, s) stats::rbinom(length(mu), s$size, mu)
 )
 
@@ -281,6 +295,44 @@ rtmb_nb_deviance <- function(y, mu, log_density, log_theta) {
   saturated <- RTMB::dnbinom_robust(y, log_y, 2 * log_y - log_theta,
     log = TRUE)
   sign(y - mu) * sqrt(2 * (saturated - log_density))
+}
+
+# NB1 deviance residuals with phi fixed, following the C++
+# `devresid_nbinom1()`: the saturated mean r * phi solves
+# digamma(y + r) - digamma(r) = log(1 + phi).
+rtmb_nbinom1_deviance <- function(y, mu, s, log_density) {
+  positive <- y > 0
+  y1 <- ifelse(positive, y, 1) # keeps the Newton steps finite for y = 0
+  c <- log1p(s$phi)
+  r <- 1 / c
+  for (k in 1:15) {
+    D <- rtmb_digamma(y1 + r) - rtmb_digamma(r)
+    D1 <- rtmb_trigamma(y1 + r) - rtmb_trigamma(r)
+    r <- r + (1 / D - 1 / c) * D * D / D1
+  }
+  log_mu_sat <- log(r) + s$ln_phi
+  saturated <- RTMB::dnbinom_robust(y1, log_mu_sat, log_mu_sat + s$ln_phi,
+    log = TRUE)
+  saturated[!positive] <- 0 # the limit as the mean -> 0
+  sign(y - mu) * sqrt(2 * (saturated - log_density))
+}
+
+# Digamma and trigamma for AD types: shift x > 0 up by 10 with the
+# recurrence, then use the asymptotic series (relative error < 1e-12).
+rtmb_digamma <- function(x) {
+  z <- x + 10
+  out <- log(z) - 1 / (2 * z) - 1 / (12 * z^2) + 1 / (120 * z^4) -
+    1 / (252 * z^6) + 1 / (240 * z^8)
+  for (k in 0:9) out <- out - 1 / (x + k)
+  out
+}
+
+rtmb_trigamma <- function(x) {
+  z <- x + 10
+  out <- 1 / z + 1 / (2 * z^2) + 1 / (6 * z^3) - 1 / (30 * z^5) +
+    1 / (42 * z^7) - 1 / (30 * z^9)
+  for (k in 0:9) out <- out + 1 / (x + k)^2
+  out
 }
 
 # Choose between two AD vectors by an observed (data) condition.
@@ -391,11 +443,14 @@ rtmb_gengamma_qw <- function(x, mean, sigma, Q) {
   Q * (log(x) - location) / sigma
 }
 
+# The mean exists only if 1 + sigma * Q > 0; otherwise this returns NaN
+# (log(v) - log(v) is an AD-safe check).
 rtmb_dgengamma <- function(x, mean, sigma, Q) {
   k <- Q^-2
   qw <- rtmb_gengamma_qw(x, mean, sigma, Q)
+  v <- 1 + sigma * Q
   -log(sigma * x) + 0.5 * log(Q^2) * (1 - 2 * k) + k * (qw - exp(qw)) -
-    lgamma(k)
+    lgamma(k) + log(v) - log(v)
 }
 
 # The density peaks in the mean where qw = 0, so twice the log-likelihood
@@ -422,6 +477,10 @@ rtmb_dbetabinom <- function(y, s) {
     lgamma(y + a) + lgamma(n - y + b) - lgamma(n + a + b) - lgamma(a) -
     lgamma(b)
 }
+
+# Ordered beta logit-scale cutpoints from the `psi` parameter
+# c(lower cutpoint, log(upper - lower)), which keeps them ordered.
+ordbeta_cutpoints <- function(psi) c(psi[[1L]], psi[[1L]] + exp(psi[[2L]]))
 
 # Ordered beta (Kubinec 2023) with logit-scale cutpoints psi[1] < psi[2].
 rtmb_dordbeta <- function(y, mu, s) {
