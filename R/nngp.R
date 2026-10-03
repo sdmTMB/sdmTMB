@@ -28,9 +28,11 @@ nngp_correlation <- function(distance, kappa) {
   exp(-kappa * distance / sqrt(2))
 }
 
-# Ordering and predecessor graph for vertex coordinates `coords`. Lists are
-# indexed by ordered position; `order` and `neighbors` hold one-based
-# original vertex indices, and distances use the original coordinates.
+# Ordering and predecessor graph for vertex coordinates `coords`. Lists and
+# rows are indexed by ordered position; `order`, `neighbors`, and `index` hold
+# one-based original vertex indices, and distances use the original
+# coordinates. Row i of `index` holds the neighbors of ordered vertex i,
+# padded with vertex 1 (given weight zero by `nngp_factor()`).
 make_nngp_data <- function(coords, nngp_neighbors) {
   coords <- as.matrix(coords)
   if (!is.numeric(coords) || ncol(coords) != 2L || !all(is.finite(coords))) {
@@ -66,32 +68,32 @@ make_nngp_data <- function(coords, nngp_neighbors) {
   distance_between <- lapply(neighbors, function(j) {
     unname(as.matrix(stats::dist(coords[j, , drop = FALSE])))
   })
-  list(order = as.integer(order), neighbors = neighbors,
+  k <- lengths(neighbors)
+  index <- matrix(1L, n, max(1L, k))
+  for (i in which(k > 0L)) index[i, seq_len(k[[i]])] <- neighbors[[i]]
+  list(order = as.integer(order), neighbors = neighbors, index = index,
     distance_to = distance_to, distance_between = distance_between,
     m = as.integer(nngp_neighbors))
 }
 
 # Conditional weights and SDs (for unit parent variance) at inverse range
-# `kappa`. The RTMB field code uses this in place of a precision matrix. Row i of `index` and `weights` holds the neighbors of ordered
-# vertex i, padded with vertex 1 and weight zero.
+# `kappa`, with `weights` aligned to `graph$index`. The RTMB field code uses
+# this in place of a precision matrix.
 nngp_factor <- function(graph, kappa) {
   "[<-" <- RTMB::ADoverload("[<-")
-  n <- length(graph$order)
   k <- lengths(graph$neighbors)
-  index <- matrix(1L, n, max(1L, k))
-  weights <- matrix(0, n, ncol(index))
-  variance <- rep(1, n)
+  weights <- matrix(0, nrow(graph$index), ncol(graph$index))
+  variance <- rep(1, length(k))
   regularize <- 1 / (1 + nngp_nugget)
   for (i in which(k > 0L)) {
     R <- (nngp_correlation(graph$distance_between[[i]], kappa) +
       diag(nngp_nugget, k[[i]])) * regularize
     r <- nngp_correlation(graph$distance_to[[i]], kappa) * regularize
     b <- RTMB::solve(R, r)
-    index[i, seq_len(k[[i]])] <- graph$neighbors[[i]]
     weights[i, seq_len(k[[i]])] <- b
     variance[i] <- 1 - sum(r * b)
   }
-  structure(list(order = graph$order, index = index, weights = weights,
+  structure(list(order = graph$order, index = graph$index, weights = weights,
     sd = sqrt(variance)), class = "nngp_factor")
 }
 

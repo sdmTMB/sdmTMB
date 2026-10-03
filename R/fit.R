@@ -345,9 +345,10 @@ NULL
 #' `spatial_model = "nngp"` (experimental, RTMB backend only) replaces the
 #' SPDE precision of every random field with a nearest-neighbor Gaussian
 #' process prior (Datta et al. 2016) at the mesh vertices. Vertices are
-#' visited in a max-min order, and each is conditioned on up to
-#' `sdmTMBcontrol(nngp_neighbors)` nearby preceding vertices, as in
-#' tinyVAST. The parent covariance is exponential (Matérn with
+#' visited in a max-min order, and each is conditioned on up to 6 nearby
+#' preceding vertices (set with, e.g., `sdmTMBcontrol(nngp_neighbors = 10L)`).
+#' This is based on J.T. Thorson's initial NNGP implementation in the
+#' [tinyVAST](https://vast-lib.github.io/tinyVAST/) package. The parent covariance is exponential (Matérn with
 #' \eqn{\nu = 1/2}), with correlation `exp(-2 * distance / range)`, so the
 #' reported range keeps its usual meaning: the distance at which correlation
 #' is about 0.13. The reported SD and range describe this parent covariance.

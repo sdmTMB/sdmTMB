@@ -93,6 +93,60 @@ test_that("NNGP models fit, predict, and simulate with the RTMB backend", {
   )
 })
 
+test_that("New NNGP fields simulate with the right AR1 and SVC covariance", {
+  skip_on_cran()
+  skip_if_not_installed("GpGp")
+  skip_if_not_installed("GPvecchia")
+  set.seed(3)
+  n_s <- 20L
+  xy <- cbind(stats::runif(n_s, 0, 10), stats::runif(n_s, 0, 10))
+  d <- data.frame(x = xy[, 1], y = xy[, 2], year = rep(1:3, each = n_s),
+    covariate = stats::rnorm(3L * n_s), z = 0)
+  mesh <- make_mesh(d, c("x", "y"), mesh = fmesher::fm_delaunay_2d(xy))
+  fit <- sdmTMB(z ~ 1, data = d, mesh = mesh, time = "year",
+    spatial_model = "nngp", spatiotemporal = "ar1",
+    spatial_varying = ~ 0 + covariate, do_fit = FALSE)
+
+  kappa <- 0.5
+  sigma_O <- 0.5
+  sigma_E <- 0.8
+  sigma_Z <- 0.4
+  rho <- 0.6
+  ln_tau <- function(sigma) -log(sigma) - log(kappa) - log(4 * pi) / 2
+  par <- fit$tmb_obj$env$last.par
+  par[names(par) == "b_j"] <- 0
+  par[names(par) == "ln_kappa"] <- log(kappa)
+  par[names(par) == "ln_tau_O"] <- ln_tau(sigma_O)
+  par[names(par) == "ln_tau_E"] <- ln_tau(sigma_E)
+  par[names(par) == "ln_tau_Z"] <- ln_tau(sigma_Z)
+  par[names(par) == "ar1_phi"] <- stats::qlogis((rho + 1) / 2)
+  nsim <- 2000L
+  sims <- simulate(fit, nsim = nsim, seed = 1, re_form = ~0,
+    observation_error = FALSE, silent = TRUE,
+    mcmc_samples = matrix(par, length(par), nsim))
+
+  # NNGP covariance at the observations from Q = (I - B)' D^-1 (I - B)
+  graph <- fit$tmb_data$nngp_data
+  f <- nngp_factor(graph, kappa)
+  B <- matrix(0, n_s, n_s)
+  for (i in seq_len(n_s)) {
+    j <- graph$neighbors[[i]]
+    B[graph$order[i], j] <- f$weights[i, seq_along(j)]
+  }
+  L <- diag(n_s) - B
+  D <- diag(1 / f$sd[match(seq_len(n_s), f$order)]^2)
+  A <- as.matrix(fit$tmb_data$A_st)
+  C <- A %*% solve(crossprod(L, D %*% L)) %*% t(A)
+
+  # Recover the variance multiplying C at each time lag and for the SVC
+  lag <- abs(outer(d$year, d$year, "-"))
+  X <- cbind(lag0 = c((lag == 0) * C), lag1 = c((lag == 1) * C),
+    lag2 = c((lag == 2) * C), svc = c(outer(d$covariate, d$covariate) * C))
+  estimate <- stats::coef(stats::lm(c(stats::cov(t(sims))) ~ 0 + X))
+  expected <- c(sigma_O^2 + sigma_E^2 * rho^(0:2), sigma_Z^2)
+  expect_equal(unname(estimate), expected, tolerance = 0.05)
+})
+
 test_that("NNGP fits match tinyVAST's exponential NNGP", {
   skip_on_cran()
   skip_if_not_installed("tinyVAST")

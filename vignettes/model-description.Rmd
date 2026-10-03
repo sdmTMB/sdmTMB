@@ -798,6 +798,42 @@ From experimentation, values around 0.1 or 0.2 seem to work well but values much
 [This website](https://haakonbakkagit.github.io/btopic128.html) by Francesco Serafini and Haakon Bakka provides an illustration with INLA.
 The implementation within TMB was borrowed from code written by Olav Nikolai Breivik and Hans Skaug at the [TMB Case Studies](https://github.com/skaug/tmb-case-studies) GitHub site.
 
+## Nearest-neighbor Gaussian process (NNGP) fields
+
+As an experimental alternative to the SPDE precision, `spatial_model = "nngp"` gives every random field ($\bomega$, $\beps_t$, and $\bzeta_l$) a nearest-neighbor Gaussian process prior [@datta2016] at the mesh vertices.
+This option requires the RTMB backend (the default) and does not support anisotropy or barrier meshes.
+
+The vertices are ordered with a max-min ordering [@guinness2018], and each vertex $i$ is conditioned on a set $N_i$ of at most $m$ nearby vertices that precede it in that order:
+
+$$
+\begin{aligned}
+\omega_i \mid \bomega_{N_i} &\sim \RM{Normal}\left(\mathbf{b}_i^\top \bomega_{N_i},\ \sigma_\omega^2 f_i\right),\\
+\mathbf{b}_i &= \mathbf{R}_{N_i,N_i}^{-1} \mathbf{R}_{N_i,i}, \qquad
+f_i = 1 - \mathbf{R}_{i,N_i} \mathbf{b}_i,
+\end{aligned}
+$$
+
+where $\mathbf{R}$ is the parent correlation matrix and $m$ is set with `sdmTMBcontrol(nngp_neighbors = 6L)` (6 by default).
+The first vertex has no neighbors, so $\omega_1 \sim \RM{Normal}(0, \sigma_\omega^2)$.
+The product of these conditional densities is a proper multivariate normal distribution with a sparse precision matrix.
+As $m$ increases, it approaches the parent Gaussian process at the vertices.
+
+The parent correlation is exponential (Matérn with $\nu = 1/2$),
+
+$$
+R(d_{jk}) = \exp\left(-\frac{\kappa d_{jk}}{\sqrt{2}}\right) = \exp\left(-\frac{2 d_{jk}}{\textrm{range}}\right),
+$$
+
+scaled so that $\textrm{range} = \sqrt{8} / \kappa$ keeps its usual meaning: the distance at which the correlation is about 0.13.
+The SD parameters ($\sigma_\omega$, $\sigma_\epsilon$, $\sigma_\zeta$) are the marginal SDs of this parent covariance, computed from $\tau$ and $\kappa$ as for SPDE fields.
+With a finite $m$, the implied marginal SDs and correlations at the vertices can differ slightly from those of the parent.
+A fixed nugget of $10^{-10}$ is added to the diagonal of $\mathbf{R}$, with $\mathbf{R}$ rescaled so its diagonal stays at one, for numerical stability.
+
+Temporal structures (IID, AR(1), random walk) are applied to the spatiotemporal fields as described above, with this NNGP distribution in place of $\RM{MVNormal}(\bs{0}, \bSigma_\epsilon)$.
+As with SPDE fields, the values between vertices are interpolated with the projection matrix $\bA$, so mesh resolution still matters.
+This implementation is based on J.T. Thorson's initial NNGP implementation in the [tinyVAST](https://vast-lib.github.io/tinyVAST/) R package, including its use of the GPvecchia and GpGp packages for ordering and neighbor search.
+The two give identical fits when the sdmTMB mesh vertices are tinyVAST's polygon centroids.
+
 # Optimization
 
 ## Optimization details

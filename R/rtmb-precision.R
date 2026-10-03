@@ -108,7 +108,10 @@ rtmb_precision <- function(inputs, theta, r, m) {
 # Log SD parameter of a field. For SPDE-based precisions (SPDE, anisotropic,
 # barrier) this is the Matérn marginal SD, 1 / (tau kappa sqrt(4 pi)). For
 # areal precisions it is the scale 1 / tau, which need not equal each area's
-# marginal SD.
+# marginal SD. NNGP fields deliberately keep the SPDE conversion, giving the
+# parent covariance SD: `ln_tau` stays an internal scale parameter, so
+# starting values, maps, PC priors, reports, and supplied simulation
+# parameters work unchanged.
 rtmb_log_field_sd <- function(ln_tau, ln_kappa, inputs) {
   if (rtmb_areal(inputs)) -ln_tau else -ln_tau - ln_kappa - log(4 * pi) / 2
 }
