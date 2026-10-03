@@ -91,11 +91,10 @@ rtmb_as_vector <- function(out) {
 rtmb_product <- function(A, x) rtmb_as_vector(A %*% x)
 
 # Project per-time vertex values to stations, then index by station and time.
-# `values` is a list of one vector per time step.
+# `values` is a list of one vector per time step, projected in one product.
 rtmb_station_values <- function(rows, values) {
-  at_station <- do.call(cbind, lapply(values, function(v) {
-    rtmb_product(rows$A_station, v)
-  }))
+  at_station <- rows$A_station %*% do.call(cbind, values)
+  if (methods::is(at_station, "Matrix")) at_station <- as.matrix(at_station)
   at_station[rows$station_index + nrow(at_station) * (rows$time - 1L)]
 }
 

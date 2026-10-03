@@ -309,7 +309,11 @@ project <- function(
 
   ## do simulations
   if (!silent) cli::cli_progress_bar("Simulating projections", total = nsim)
-  ret <- list()
+  ## Keep only the report elements returned below; a full report holds every
+  ## projected predictor component and can be several times larger.
+  keep <- if (!is.null(sims_var)) sims_var else
+    c("proj_eta", "proj_epsilon_st_A_vec")
+  ret <- vector("list", nsim)
   for (i in seq_len(nsim)) {
     if (!silent) cli::cli_progress_update()
     lpx <- lp[, i, drop = TRUE]
@@ -342,7 +346,12 @@ project <- function(
         epsilon_active = epsilon_active
       )
     }
-    ret[[i]] <- obj$simulate(par = lpx)
+    sim <- obj$simulate(par = lpx)
+    if (!return_tmb_report) {
+      if (i == 1L && !is.null(sims_var)) check_project_sims_var(sim, sims_var)
+      sim <- sim[keep]
+    }
+    ret[[i]] <- sim
   }
   if (!silent) cli::cli_progress_done()
   if (return_tmb_report) {
@@ -663,14 +672,18 @@ project_time_extension <- function(time_lu, new_time) {
   )
 }
 
-extract_project_sims <- function(reports, sims_var) {
-  available <- names(reports[[1L]])
+check_project_sims_var <- function(report, sims_var) {
+  available <- names(report)
   if (!sims_var %in% available) {
     cli_abort(c(
       "`sims_var = \"{sims_var}\"` was not found in the TMB simulation report.",
       "i" = "Available elements include: {paste(available, collapse = ', ')}."
     ))
   }
+}
+
+extract_project_sims <- function(reports, sims_var) {
+  check_project_sims_var(reports[[1L]], sims_var)
   values <- lapply(reports, `[[`, sims_var)
   first <- values[[1L]]
   first_dim <- dim(first)

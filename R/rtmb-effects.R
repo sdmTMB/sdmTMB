@@ -20,6 +20,15 @@ rtmb_gmrf <- function(x, Q, scale, simulate) {
     value = x)
 }
 
+# `n` GMRF draws (columns) with precision `Q` and `dgmrf()` scale `scale`,
+# as from `n` calls of `rtmb_gmrf(..., simulate = TRUE)` with plain numbers.
+rtmb_rgmrf <- function(n, Q, scale) {
+  L <- Matrix::Cholesky(Q, super = TRUE, LDL = FALSE)
+  u <- matrix(stats::rnorm(ncol(L) * n), ncol(L), n)
+  u <- Matrix::solve(L, Matrix::solve(L, u, system = "Lt"), system = "Pt")
+  scale * as.matrix(u)
+}
+
 # Spatiotemporal field `epsilon_st` with IID, AR1, or RW time structure.
 # Simulation replaces only `simulate_t` steps and conditions each draw on the
 # preceding retained or simulated field. When taping, the density of all time
@@ -44,11 +53,14 @@ rtmb_spatiotemporal_field <- function(epsilon_st, par, theta, prepared, Q,
       else if (rw) epsilon_st[, t - 1L, m]
       else 0
     }
-    if (simulate) {
-      for (t in intersect(seq_len(n_t), prepared$simulate_t)) {
+    sim_t <- if (simulate) intersect(seq_len(n_t), prepared$simulate_t)
+    if (length(sim_t)) {
+      # One factorization for all steps; draws match per-step dgmrf() calls.
+      draws <- rtmb_rgmrf(length(sim_t), Q, scale)
+      for (i in seq_along(sim_t)) {
+        t <- sim_t[[i]]
         step <- if (t > 1L) innovation_scale else 1
-        draw <- rtmb_gmrf(numeric(dim(epsilon_st)[1L]), Q, scale, TRUE)
-        epsilon_st[, t, m] <- previous_mean(t) + step * draw$value
+        epsilon_st[, t, m] <- previous_mean(t) + step * draws[, i]
       }
     }
     return(list(nll = 0, value = epsilon_st))
