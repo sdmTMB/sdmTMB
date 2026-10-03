@@ -106,7 +106,8 @@ Suggests:
     testthat,
     tibble,
     visreg,
-    waywiser
+    waywiser,
+    withr
 LinkingTo:
     RcppEigen,
     TMB
