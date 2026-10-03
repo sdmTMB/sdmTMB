@@ -26,6 +26,7 @@ articles:
   - articles/residual-checking
   - articles/cross-validation
   - articles/bayesian
+  - articles/custom-priors
   - articles/nonlocal-covariates
 
 - title: Predictions and Applications
@@ -124,6 +125,7 @@ reference:
   - normal
   - halfnormal
   - mvnormal
+  - get_prior_parameters
 
 - title: 'Simulation'
   desc: |

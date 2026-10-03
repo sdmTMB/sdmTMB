@@ -245,4 +245,5 @@ rtmb_validate <- function(data, prepared, parameters, random, ...) {
   if (!is.null(prepared$priors$tweedie_p) && any(tweedie)) {
     cli::cli_abort("Priors not enabled for Tweedie p currently.")
   }
+  rtmb_check_custom_priors(parameters, prepared)
 }

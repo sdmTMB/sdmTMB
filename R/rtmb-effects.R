@@ -20,12 +20,6 @@ rtmb_gmrf <- function(x, Q, scale, simulate) {
     value = x)
 }
 
-# Log spatiotemporal SD by time step (constant over time).
-rtmb_log_sigma_E <- function(par, prepared, m) {
-  rep(rtmb_log_field_sd(par$ln_tau_E[[m]], par$ln_kappa[2L, m],
-    prepared$precision), prepared$n_t)
-}
-
 # Spatiotemporal field `epsilon_st` with IID, AR1, or RW time structure.
 # Simulation replaces only `simulate_t` steps and conditions each draw on the
 # preceding retained or simulated field. When taping, the density of all time
@@ -182,7 +176,11 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
           "zeta_s")
       }
     }
-    log_sigma_E <- rtmb_log_sigma_E(par, prepared, m)
+    # Reported by time step, as in the C++ template, which reports it even
+    # without a spatiotemporal field; `theta` has it only with one.
+    log_sigma_E <- if (prepared$temporal[[m]]) theta$log_sigma_E[1L, m] else
+      rtmb_log_field_sd(par$ln_tau_E[[m]], par$ln_kappa[2L, m], inputs)
+    log_sigma_E <- rep(log_sigma_E, prepared$n_t)
     effects$log_sigma_E[, m] <- log_sigma_E
     if (prepared$temporal[[m]]) {
       shared <- prepared$share_range[[m]] || rtmb_areal(inputs)

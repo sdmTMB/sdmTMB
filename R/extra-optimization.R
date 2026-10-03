@@ -87,6 +87,9 @@ fit_first_phase <- function(tmb_data, tmb_params, tmb_map, profile, backend,
   censored <- tmb_data$component_active == 1L &
     tmb_data$family_code == .valid_family[["censored_poisson"]]
   tmb_data$family_code[censored] <- as.integer(.valid_family[["poisson"]])
+  # Custom priors may refer to fields that are off in this phase, so they're
+  # left out; this phase only finds starting values.
+  tmb_data$priors_custom <- NULL
   obj <- make_sdmTMB_adfun(data = tmb_data, parameters = tmb_params,
     profile = profile, map = tmb_map, backend = backend, silent = silent)
   lim <- set_limits(obj, lower = lower, upper = upper, mesh = mesh,

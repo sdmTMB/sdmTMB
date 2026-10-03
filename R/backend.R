@@ -23,6 +23,11 @@ make_sdmTMB_adfun <- function(data, parameters, map, random = NULL,
   # saved before this carry a plain vector
   if (!is.null(data$proj_vector)) data$proj_vector <- as.matrix(data$proj_vector)
   if (backend == "tmb") {
+    # `sdmTMB()` checks this too; this catches rebuilding the objective of a
+    # fit with custom priors (e.g., a saved one) using the TMB backend
+    if (!is.null(data$priors_custom)) {
+      cli_abort("Custom priors need `sdmTMBcontrol(backend = \"rtmb\")`.")
+    }
     obj <- TMB::MakeADFun(data = data, parameters = parameters, map = map,
       random = random, profile = profile, DLL = "sdmTMB", silent = silent, ...)
   } else {

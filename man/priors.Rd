@@ -21,7 +21,9 @@ sdmTMBpriors(
   threshold_breakpt_cut = normal(NA, NA),
   threshold_logistic_s50 = normal(NA, NA),
   threshold_logistic_s95 = normal(NA, NA),
-  threshold_logistic_smax = normal(NA, NA)
+  threshold_logistic_smax = normal(NA, NA),
+  custom = NULL,
+  custom_log_jacobian = NULL
 )
 
 normal(location = 0, scale = 1)
@@ -70,6 +72,13 @@ f(x) = 0.95.}
 
 \item{threshold_logistic_smax}{A \code{normal()} prior for the parameter at which
 f(x) is maximized.}
+
+\item{custom}{Optional function of \verb{(par, theta)} returning one or more log
+density contributions (RTMB backend only; see \strong{Custom priors} below).}
+
+\item{custom_log_jacobian}{Optional function of \verb{(par, theta)} returning the
+log absolute Jacobian for \code{custom}. Only used if \code{bayesian = TRUE}. Requires
+\code{custom}.}
 
 \item{location}{Location parameter(s). Typically the mean.}
 
@@ -129,6 +138,66 @@ option would be to simulate from a model with a given range and sigma to
 choose reasonable values for the system or base the prior on knowledge from a
 model fit to a similar system but with more spatial information in the data.
 }
+\section{Custom priors}{
+
+With the RTMB backend (the default), \code{custom} adds arbitrary log densities
+to the joint objective. The function is called as \code{custom(par, theta)}, where
+\code{par} is the list of raw (internal) parameters and \code{theta} is a list of
+natural-scale versions of them. See \code{\link[=get_prior_parameters]{get_prior_parameters()}} for their
+names, shapes, and labels. It must return a numeric scalar, vector, or array
+of log densities (names are optional), which are summed and subtracted from the
+negative log likelihood. Custom terms are evaluated inside the objective,
+so they are included in gradients, Hessians, the Laplace approximation, and
+standard errors, and may involve random effects. They supplement, rather than
+replace, the built-in priors and random effect distributions. Use
+\code{\link[=get_prior_densities]{get_prior_densities()}} to see the contributions at the estimated parameters.
+
+The function must:
+\itemize{
+\item use operations and densities that \pkg{RTMB} can differentiate, such as
+\code{RTMB::dnorm(x, mean, sd, log = TRUE)}; \code{stats::dnorm()} can't take
+AD values;
+\item return \emph{log} densities (remember \code{log = TRUE}, which can't be checked);
+\item not branch on parameter values (e.g., \verb{if (par$b_j[1] > 0)});
+\item be deterministic and free of side effects;
+\item also work on ordinary numeric inputs.
+}
+
+Fixed hyperparameters can be defined in the function's enclosing environment.
+The functions are saved with the fitted model, so keep their environments
+small (e.g., avoid defining them inside a function holding large data).
+
+\strong{Jacobians.} With \code{bayesian = FALSE}, custom priors are penalties: the
+optimum is the posterior mode on the scale the prior is written on, and no
+Jacobian is needed. With \code{bayesian = TRUE} (e.g., for sampling with
+\pkg{tmbstan}), the result of \code{custom_log_jacobian(par, theta)} is also
+added. No Jacobian adjustment is ever inferred: without
+\code{custom_log_jacobian}, a prior on a transformed parameter (e.g.,
+\code{theta$phi}) is not a valid prior density on that parameter's natural scale
+for sampling. For a prior on \code{phi = exp(ln_phi)}, the log Jacobian is
+\code{par$ln_phi}.
+
+\strong{Matérn range and SDs.} The Matérn \code{range} and the field SDs (\code{sigma_O},
+\code{sigma_E}) are more complex than most parameters because they depend on each
+other: each SD is a function of both \verb{ln_tau_*} and \code{ln_kappa}. A Jacobian
+for one of them alone isn't well defined; it needs the joint transformation
+from (\code{ln_kappa}, \verb{ln_tau_*}) to (\code{range}, \verb{sigma_*}), whose log Jacobian is
+\verb{log(range) + log(sigma_*)}. With a shared range (the default), add
+\code{log(range)} once plus \verb{log(sigma_*)} for each field. For priors on these
+parameters we suggest the built-in PC priors, \code{\link[=pc_matern]{pc_matern()}} via the
+\code{matern_s} and \code{matern_st} arguments, which apply the Jacobian for you if
+\code{bayesian = TRUE}.
+
+\strong{Limitations.} Custom terms are not evaluated in the first phase of
+\code{sdmTMBcontrol(multiphase = TRUE)}, which only finds starting values with
+random fields turned off. Custom priors do not define a sampler:
+\code{\link[=simulate.sdmTMB]{simulate.sdmTMB()}} and other simulation methods ignore any change that
+custom terms make to the distribution of random effects. Held-out
+log likelihoods in \code{\link[=sdmTMB_cv]{sdmTMB_cv()}} exclude all priors. As with the built-in
+priors, custom terms are part of the objective, so they are included in
+\code{\link[stats:logLik]{stats::logLik()}} and \code{\link[stats:AIC]{stats::AIC()}}.
+}
+
 \examples{
 normal(0, 1)
 halfnormal(0, 1)

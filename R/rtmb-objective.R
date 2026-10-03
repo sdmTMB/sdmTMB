@@ -92,7 +92,8 @@ rtmb_evaluate <- function(par, prepared) {
   fitted$rw <- fitted$rw * active
   fitted$epsilon <- fitted$epsilon * active
   obs <- rtmb_observations(par, theta, prepared, fitted$eta)
-  jnll <- effects$nll + sum(obs$jnll_obs) + rtmb_prior_nll(par, theta, prepared)
+  jnll <- effects$nll + sum(obs$jnll_obs) + rtmb_prior_nll(par, theta, prepared) -
+    rtmb_custom_log_density(par, theta, prepared)
   projected <- derived <- NULL
   if (!is.null(prepared$proj)) {
     projected <- rtmb_linear_predictors(par, theta, effects, prepared,
@@ -120,10 +121,17 @@ rtmb_transform <- function(par, prepared) {
   n_m <- prepared$n_m
   # Maps the real line to a correlation in (-1, 1).
   correlation <- function(x) 2 * RTMB::plogis(x) - 1
-  # Components without a spatial field report sigma_O = log_sigma_O = 0.
+  # Components without a spatial (spatiotemporal) field have
+  # sigma_O = log_sigma_O = 0 (sigma_E = log_sigma_E = 0).
   log_sigma_O <- sigma_O <- matrix(0, 1L, n_m)
+  log_sigma_E <- sigma_E <- matrix(0, 1L, n_m)
   log_sigma_Z <- sigma_Z <- matrix(0, nrow(par$ln_tau_Z), n_m)
   for (m in seq_len(n_m)) {
+    if (prepared$temporal[[m]]) {
+      log_sigma_E[1L, m] <- rtmb_log_field_sd(par$ln_tau_E[[m]],
+        par$ln_kappa[2L, m], inputs)
+      sigma_E[1L, m] <- exp(log_sigma_E[1L, m])
+    }
     ln_kappa <- par$ln_kappa[1L, m]
     if (prepared$include_spatial[[m]]) {
       log_sigma_O[1L, m] <- rtmb_log_field_sd(par$ln_tau_O[[m]], ln_kappa,
@@ -151,6 +159,8 @@ rtmb_transform <- function(par, prepared) {
     log_sigma_O = log_sigma_O,
     sigma_Z = sigma_Z,
     log_sigma_Z = log_sigma_Z,
+    sigma_E = sigma_E,
+    log_sigma_E = log_sigma_E,
     rho = correlation(par$ar1_phi),
     rho_sar = correlation(par$logit_rho_sar),
     alpha_car = RTMB::plogis(par$logit_rho_sar),

@@ -27,6 +27,15 @@
   dataset: fitting (1.25x), predicting (2.6x), get_index(bias_correct = FALSE)
   (12.5x), get_index(bias_correct = TRUE) (2.1x), simulate(nsim = 500) (2.3x).
 
+* Add custom priors for the RTMB backend:
+  `sdmTMBpriors(custom = function(par, theta) ...)` adds arbitrary log
+  densities on raw (`par`) or natural-scale (`theta`) parameters, including
+  random effects, to the joint objective. With `bayesian = TRUE`,
+  `custom_log_jacobian` supplies the matching Jacobian adjustment. New
+  `get_prior_parameters()` lists the available parameters and
+  `get_prior_densities()` evaluates the terms at the estimates. See the new
+  vignette "Custom priors and penalties".
+
 * Add experimental multi-family models, where each row of the data can use a
   different observation family (e.g., binomial, count, and delta-lognormal data
   in one model with shared fields). Supply a named list to `family` and name

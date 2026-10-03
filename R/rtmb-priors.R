@@ -4,6 +4,7 @@
 rtmb_prior_inputs <- function(data) {
   template <- sdmTMBpriors()
   template$b <- template$sigma_V <- NULL
+  template$custom <- template$custom_log_jacobian <- NULL
   sizes <- lengths(template)
   stopifnot(sum(sizes) == length(data$priors))
   values <- split(data$priors,
@@ -15,6 +16,7 @@ rtmb_prior_inputs <- function(data) {
   }
   priors$sigma_V <- data$priors_sigma_V
   priors$stan <- data$stan_flag == 1L
+  priors$custom <- data$priors_custom
   priors
 }
 
@@ -96,4 +98,62 @@ rtmb_prior_nll <- function(par, theta, prepared) {
   nll <- nll + normal(theta$phi, prior$phi)
   if (stan && !is.null(prior$phi)) nll <- nll - sum(par$ln_phi)
   nll
+}
+
+# Custom priors ------------------------------------------------------------
+
+# The `custom` and `custom_log_jacobian` functions from `sdmTMBpriors()` as
+# they are stored in the data list, or NULL without them.
+custom_prior_spec <- function(priors, backend) {
+  if (is.null(priors$custom)) return(NULL)
+  if (backend != "rtmb") {
+    cli_abort("Custom priors need `sdmTMBcontrol(backend = \"rtmb\")`.")
+  }
+  list(density = priors$custom, log_jacobian = priors$custom_log_jacobian)
+}
+
+# Log density terms from one custom prior function, naming the function if
+# it fails.
+rtmb_custom_terms <- function(par, theta, custom, which) {
+  arg <- c(density = "custom", log_jacobian = "custom_log_jacobian")[[which]]
+  f <- custom[[which]]
+  if (is.null(f)) return(NULL)
+  tryCatch(f(par, theta), error = function(e) {
+    cli_abort("The {.arg {arg}} prior function failed.", parent = e,
+      call = NULL)
+  })
+}
+
+# Summed log density of the custom priors, with the Jacobian only for
+# `bayesian = TRUE`. Zero without custom priors.
+rtmb_custom_log_density <- function(par, theta, prepared) {
+  custom <- prepared$priors$custom
+  if (is.null(custom)) return(0)
+  out <- sum(rtmb_custom_terms(par, theta, custom, "density"))
+  if (prepared$priors$stan) {
+    out <- out + sum(rtmb_custom_terms(par, theta, custom, "log_jacobian"))
+  }
+  out
+}
+
+# Check that the custom prior functions return finite numeric values at the
+# starting `parameters`, evaluated with plain numbers before taping. The
+# Jacobian is only checked if it enters the objective (`bayesian = TRUE`).
+rtmb_check_custom_priors <- function(parameters, prepared) {
+  custom <- prepared$priors$custom
+  if (is.null(custom)) return(invisible())
+  theta <- rtmb_transform(parameters, prepared)
+  used <- c("density", if (prepared$priors$stan) "log_jacobian")
+  for (which in used) {
+    if (is.null(custom[[which]])) next
+    arg <- c(density = "custom", log_jacobian = "custom_log_jacobian")[[which]]
+    x <- rtmb_custom_terms(parameters, theta, custom, which)
+    if (!is.numeric(x) || !length(x)) {
+      cli_abort("The {.arg {arg}} prior function must return numeric log densities.")
+    }
+    if (!all(is.finite(x))) {
+      cli_abort("The {.arg {arg}} prior function returned non-finite values at the starting parameters.")
+    }
+  }
+  invisible()
 }

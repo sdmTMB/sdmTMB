@@ -879,6 +879,7 @@ sdmTMB <- function(
   if (!is.null(time_varying)) assert_that(class(time_varying) %in% c("formula", "list"))
   if (!is.null(previous_fit)) assert_that(identical(class(previous_fit), "sdmTMB"))
   assert_that(is.list(priors))
+  priors_custom <- custom_prior_spec(priors, backend)
   assert_that(is.list(.control))
   if (!is.null(time)) assert_that(is.character(time))
   if (is_areal) {
@@ -1271,6 +1272,7 @@ sdmTMB <- function(
   .priors <- priors
   .priors$b <- NULL # removes this in the list, so not passed in as data
   .priors$sigma_V <- NULL # removes this in the list, so not passed in as data
+  .priors$custom <- .priors$custom_log_jacobian <- NULL # passed separately
   if (nrow(priors_b) == 1L && ncol(X_ij[[1]]) > 1L) { # TODO change hard coded index on X_ij
     if (!is.na(priors_b[[1]])) {
       message("Expanding `b` priors to match model matrix.")
@@ -1473,6 +1475,9 @@ sdmTMB <- function(
     Zt_list_proj = list(),
     exclude_RE = 0L
   )
+  # R functions, so RTMB only; kept in the data list so every rebuilt
+  # objective (prediction, index, simulation, saved fits) includes them
+  tmb_data$priors_custom <- priors_custom
   tmb_data <- c(tmb_data, family_tmb)
   tmb_data$poisson_link_delta <- as.integer(fit_poisson_link_delta)
   b_thresh <- matrix(0, 2L, n_m)
