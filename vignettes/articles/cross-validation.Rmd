@@ -64,9 +64,9 @@ pcod$fyear <- as.factor(pcod$year)
 
 
 ```{r ex1, eval=TRUE}
-# Set parallel processing if desired:
-library(future)
-plan(multisession, workers = 2)
+# Parallel processing can be used by setting a `future::plan()`, e.g.:
+# library(future)
+# plan(multisession, workers = 2)
 m_cv <- sdmTMB::sdmTMB_cv(
   density ~ 0 + s(depth_scaled) + fyear,
   data = pcod,
@@ -81,7 +81,7 @@ In the above example, folds are assigned randomly, but these can be modified for
 Without getting into the complexities of the `blockCV` or `spatialsample` packages, we could simply use `kmeans()` to generate spatial clusters, e.g.
 
 ```{r ex2, eval=TRUE}
-clust <- kmeans(pcod[, c("X", "Y")], 20)$cluster
+clust <- kmeans(pcod[, c("X", "Y")], 8)$cluster
 
 m_cv <- sdmTMB::sdmTMB_cv(
   density ~ 0 + s(depth_scaled) + fyear,
@@ -211,11 +211,12 @@ table(example_data$cv_fold, example_data$year)
 # Comparing two or more models
 
 We can use the output of `sdmTMB_cv()` to compare two or more models.
-For example, if we wanted to evaluate support for a depth effect, we could do 10-fold cross-validation (it is important that the folds be the same across the two models).
+For example, if we wanted to evaluate support for a depth effect, we could do 5-fold cross-validation (it is important that the folds be the same across the two models).
 In this example, using either the predictive log-likelihood or ELPD would lead one to conclude that including depth improves the predictive accuracy of the model.
 
 ```{r ex7, eval=TRUE}
-clust <- sample(seq_len(10), size = nrow(pcod), replace = TRUE)
+set.seed(1)
+clust <- sample(seq_len(5), size = nrow(pcod), replace = TRUE)
 
 m1 <- sdmTMB::sdmTMB_cv(
   density ~ 0 + fyear,

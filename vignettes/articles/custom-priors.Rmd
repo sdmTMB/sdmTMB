@@ -30,7 +30,7 @@ library(ggplot2)
 
 `sdmTMBpriors()` has built-in priors for common cases, such as normal priors on the main effects or PC priors on Matérn random fields.
 With the RTMB backend (the default), you can also write your own prior or penalty as an R function.
-The function can refer to any parameter, transform parameters, or combine several of them.
+The function can refer to any parameter, transformed parameters, or even combine several of them.
 
 The function is passed to `sdmTMBpriors(custom = ...)`.
 It's called as `custom(par, theta)`, where:
