@@ -78,7 +78,11 @@
   latent state uncertainty, and future process variation, and a `future_re`
   argument for including (the default), zeroing, or fixing future
   spatiotemporal and time-varying effects. Projections are faster when
-  `newdata` repeats spatial locations across time.
+  `newdata` repeats spatial locations across time. With the RTMB backend,
+  projections are also about 1.75x faster than with the TMB backend (e.g., an
+  AR1 spatiotemporal model projected 30 years over a 130,000-row grid), and
+  `project()` now keeps only the simulated values it returns, which more than
+  halves peak memory use with many simulations.
 
 * `sdmTMB_cv(lfo = TRUE)` now supports delta/hurdle families.
 

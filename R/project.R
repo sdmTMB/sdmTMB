@@ -309,11 +309,28 @@ project <- function(
 
   ## do simulations
   if (!silent) cli::cli_progress_bar("Simulating projections", total = nsim)
-  ## Keep only the report elements returned below; a full report holds every
-  ## projected predictor component and can be several times larger.
-  keep <- if (!is.null(sims_var)) sims_var else
-    c("proj_eta", "proj_epsilon_st_A_vec")
-  ret <- vector("list", nsim)
+  if (delta) {
+    element_names <- c("est1", "est2", "epsilon_st1", "epsilon_st2")
+    element_internal <- c(
+      "proj_eta", "proj_eta", "proj_epsilon_st_A_vec",
+      "proj_epsilon_st_A_vec"
+    )
+    linear_predictor <- c(1L, 2L, 1L, 2L)
+  } else {
+    element_names <- c("est", "epsilon_st")
+    element_internal <- c("proj_eta", "proj_epsilon_st_A_vec")
+    linear_predictor <- c(1L, 1L)
+  }
+  if (all("off" == object$spatiotemporal)) {
+    element_names <- element_names[element_internal == "proj_eta"]
+    linear_predictor <- linear_predictor[element_internal == "proj_eta"]
+    element_internal <- element_internal[element_internal == "proj_eta"]
+  }
+  ## By default, fill one column per simulation of each returned element
+  ## rather than keeping the reports, which hold every projected predictor
+  ## component and can be several times larger.
+  ret <- if (return_tmb_report || !is.null(sims_var)) vector("list", nsim)
+  out <- list()
   for (i in seq_len(nsim)) {
     if (!silent) cli::cli_progress_update()
     lpx <- lp[, i, drop = TRUE]
@@ -347,11 +364,18 @@ project <- function(
       )
     }
     sim <- obj$simulate(par = lpx)
-    if (!return_tmb_report) {
-      if (i == 1L && !is.null(sims_var)) check_project_sims_var(sim, sims_var)
-      sim <- sim[keep]
+    if (return_tmb_report) {
+      ret[[i]] <- sim
+    } else if (!is.null(sims_var)) {
+      if (i == 1L) check_project_sims_var(sim, sims_var)
+      ret[[i]] <- sim[sims_var]
+    } else {
+      for (j in seq_along(element_names)) {
+        value <- sim[[element_internal[j]]][, linear_predictor[j]]
+        if (i == 1L) out[[element_names[j]]] <- matrix(NA_real_, length(value), nsim)
+        out[[element_names[j]]][, i] <- value
+      }
     }
-    ret[[i]] <- sim
   }
   if (!silent) cli::cli_progress_done()
   if (return_tmb_report) {
@@ -359,28 +383,6 @@ project <- function(
   }
   if (!is.null(sims_var)) {
     return(extract_project_sims(ret, sims_var))
-  }
-
-  out <- list()
-  if (delta) {
-    element_names <- c("est1", "est2", "epsilon_st1", "epsilon_st2")
-    element_internal <- c(
-      "proj_eta", "proj_eta", "proj_epsilon_st_A_vec",
-      "proj_epsilon_st_A_vec"
-    )
-    linear_predictor <- c(1L, 2L, 1L, 2L)
-  } else {
-    element_names <- c("est", "epsilon_st")
-    element_internal <- c("proj_eta", "proj_epsilon_st_A_vec")
-    linear_predictor <- c(1L, 1L)
-  }
-  for (i in seq_along(element_names)) {
-    eni <- element_names[i]
-    out[[eni]] <- lapply(ret, \(x) x[[element_internal[i]]][, linear_predictor[i]])
-    out[[eni]] <- do.call(cbind, out[[eni]])
-  }
-  if (all("off" == object$spatiotemporal)) {
-    out$epsilon_st1 <- out$epsilon_st2 <- out$epsilon_st <- NULL
   }
   out
 }
