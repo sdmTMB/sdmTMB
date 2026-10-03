@@ -116,7 +116,7 @@ mathematical details. Capitalization is ignored. \code{TRUE} gets converted to
 continuous-space SPDE approximation. \code{"sar"} and \code{"car"} use areal spatial
 autoregressive models with an areal domain supplied to \code{mesh}.
 \ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}} \code{"nngp"} uses a mesh-based
-nearest-neighbor Gaussian process (NNGP) prior with exponential
+nearest-neighbour Gaussian process (NNGP) prior with exponential
 covariance at the mesh vertices (see Details). Capitalization is ignored.}
 
 \item{share_range}{Logical: estimate a shared spatial and spatiotemporal
@@ -396,13 +396,13 @@ parameters can be shared across the models.
 
 See the \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-model vignette}.
 
-\strong{Nearest-neighbor Gaussian process (NNGP) fields}
+\strong{Nearest-neighbour Gaussian process (NNGP) fields}
 
 \code{spatial_model = "nngp"} (experimental, RTMB backend only) replaces the
-SPDE precision of every random field with a nearest-neighbor Gaussian
+SPDE precision of every random field with a nearest-neighbour Gaussian
 process prior (Datta et al. 2016) at the mesh vertices. Vertices are
 visited in a max-min order, and each is conditioned on up to 6 nearby
-preceding vertices (set with, e.g., \code{sdmTMBcontrol(nngp_neighbors = 10L)}).
+preceding vertices (set with, e.g., \code{sdmTMBcontrol(nngp_neighbours = 10L)}).
 This is based on J.T. Thorson's initial NNGP implementation in the
 \href{https://vast-lib.github.io/tinyVAST/}{tinyVAST} package. The parent covariance is exponential (Matérn with
 \eqn{\nu = 1/2}), with correlation \code{exp(-2 * distance / range)}, so the
@@ -633,7 +633,7 @@ sdmTMB: an R package for fast, flexible, and user-friendly generalized linear
 mixed effects models with spatial and spatiotemporal random fields.
 Journal of Statistical Software. 115(2):1--46. \doi{10.18637/jss.v115.i02}.
 
-\emph{Reference for nearest-neighbor Gaussian processes:}
+\emph{Reference for nearest-neighbour Gaussian processes:}
 
 Datta, A., S. Banerjee, A.O. Finley, A.E. Gelfand. 2016. Hierarchical
 nearest-neighbor Gaussian process models for large geostatistical datasets.

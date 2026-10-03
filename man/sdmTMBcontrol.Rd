@@ -28,7 +28,7 @@ sdmTMBcontrol(
   collapse_spatiotemporal_ar1 = FALSE,
   collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
-  nngp_neighbors = 6L,
+  nngp_neighbours = 6L,
   get_rsr = FALSE,
   backend = getOption("sdmTMB.backend", "rtmb"),
   ...
@@ -150,7 +150,7 @@ greater than zero and less than 0.5. Only used when
 uses row-normalized weights and is the default. \code{"raw"} uses the raw
 adjacency/weight matrix for direct comparisons to packages that do so.}
 
-\item{nngp_neighbors}{Maximum number of neighboring (preceding) mesh
+\item{nngp_neighbours}{Maximum number of neighbouring (preceding) mesh
 vertices each vertex is conditioned on with \code{spatial_model = "nngp"} in
 \code{\link[=sdmTMB]{sdmTMB()}}. Larger values give a closer approximation to the exponential
 covariance at the mesh vertices but are slower.}

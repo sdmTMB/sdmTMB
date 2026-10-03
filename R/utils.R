@@ -102,7 +102,7 @@
 #' @param sar_weight_style Weight matrix to use for areal SAR models. `"row"`
 #'   uses row-normalized weights and is the default. `"raw"` uses the raw
 #'   adjacency/weight matrix for direct comparisons to packages that do so.
-#' @param nngp_neighbors Maximum number of neighboring (preceding) mesh
+#' @param nngp_neighbours Maximum number of neighbouring (preceding) mesh
 #'   vertices each vertex is conditioned on with `spatial_model = "nngp"` in
 #'   [sdmTMB()]. Larger values give a closer approximation to the exponential
 #'   covariance at the mesh vertices but are slower.
@@ -160,7 +160,7 @@ sdmTMBcontrol <- function(
   collapse_spatiotemporal_ar1 = FALSE,
   collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
-  nngp_neighbors = 6L,
+  nngp_neighbours = 6L,
   get_rsr = FALSE,
   backend = getOption("sdmTMB.backend", "rtmb"),
   ...) {
@@ -209,11 +209,11 @@ sdmTMBcontrol <- function(
   )
   sar_weight_style <- match.arg(sar_weight_style)
   assert_that(
-    is.numeric(nngp_neighbors), length(nngp_neighbors) == 1L,
-    is.finite(nngp_neighbors), nngp_neighbors >= 1,
-    nngp_neighbors == round(nngp_neighbors)
+    is.numeric(nngp_neighbours), length(nngp_neighbours) == 1L,
+    is.finite(nngp_neighbours), nngp_neighbours >= 1,
+    nngp_neighbours == round(nngp_neighbours)
   )
-  nngp_neighbors <- as.integer(nngp_neighbors)
+  nngp_neighbours <- as.integer(nngp_neighbours)
   backend <- match.arg(backend, c("tmb", "rtmb"))
 
   out <- named_list(
@@ -240,7 +240,7 @@ sdmTMBcontrol <- function(
     collapse_spatiotemporal_ar1,
     collapse_ar1_threshold,
     sar_weight_style,
-    nngp_neighbors,
+    nngp_neighbours,
     get_rsr
   )
   c(out, list(...))

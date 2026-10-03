@@ -30,7 +30,7 @@ NULL
 #'   continuous-space SPDE approximation. `"sar"` and `"car"` use areal spatial
 #'   autoregressive models with an areal domain supplied to `mesh`.
 #'   `r lifecycle::badge("experimental")` `"nngp"` uses a mesh-based
-#'   nearest-neighbor Gaussian process (NNGP) prior with exponential
+#'   nearest-neighbour Gaussian process (NNGP) prior with exponential
 #'   covariance at the mesh vertices (see Details). Capitalization is ignored.
 #' @param time An optional time column name (as character). Can be left as
 #'   `NULL` for a model with only spatial random fields; however, if the data
@@ -340,13 +340,13 @@ NULL
 #'
 #' See the [delta-model vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html).
 #'
-#' **Nearest-neighbor Gaussian process (NNGP) fields**
+#' **Nearest-neighbour Gaussian process (NNGP) fields**
 #'
 #' `spatial_model = "nngp"` (experimental, RTMB backend only) replaces the
-#' SPDE precision of every random field with a nearest-neighbor Gaussian
+#' SPDE precision of every random field with a nearest-neighbour Gaussian
 #' process prior (Datta et al. 2016) at the mesh vertices. Vertices are
 #' visited in a max-min order, and each is conditioned on up to 6 nearby
-#' preceding vertices (set with, e.g., `sdmTMBcontrol(nngp_neighbors = 10L)`).
+#' preceding vertices (set with, e.g., `sdmTMBcontrol(nngp_neighbours = 10L)`).
 #' This is based on J.T. Thorson's initial NNGP implementation in the
 #' [tinyVAST](https://vast-lib.github.io/tinyVAST/) package. The parent covariance is exponential (Matérn with
 #' \eqn{\nu = 1/2}), with correlation `exp(-2 * distance / range)`, so the
@@ -373,7 +373,7 @@ NULL
 #' mixed effects models with spatial and spatiotemporal random fields.
 #' Journal of Statistical Software. 115(2):1--46. \doi{10.18637/jss.v115.i02}.
 #'
-#' *Reference for nearest-neighbor Gaussian processes:*
+#' *Reference for nearest-neighbour Gaussian processes:*
 #'
 #' Datta, A., S. Banerjee, A.O. Finley, A.E. Gelfand. 2016. Hierarchical
 #' nearest-neighbor Gaussian process models for large geostatistical datasets.
@@ -891,7 +891,7 @@ sdmTMB <- function(
     "suppress_nlminb_warnings", "collapse_spatial_variance",
     "collapse_spatial_variance_threshold",
     "collapse_spatiotemporal_ar1", "collapse_ar1_threshold",
-    "sar_weight_style", "get_rsr", "backend", "nngp_neighbors"
+    "sar_weight_style", "get_rsr", "backend", "nngp_neighbours"
   )
   .control <- control
   # FIXME; automate this from sdmTMcontrol args?
@@ -1014,7 +1014,7 @@ sdmTMB <- function(
     share_range_user = share_range_user,
     spatial_model = spatial_model,
     sar_weight_style = sar_weight_style,
-    nngp_neighbors = control$nngp_neighbors
+    nngp_neighbours = control$nngp_neighbours
   )
   is_areal <- identical(domain$type, "areal")
 

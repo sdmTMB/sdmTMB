@@ -316,7 +316,7 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
                                    share_range_user = share_range,
                                    spatial_model = c("spde", "sar", "car", "nngp"),
                                    sar_weight_style = c("row", "raw"),
-                                   nngp_neighbors = 6L) {
+                                   nngp_neighbours = 6L) {
   spatial_model <- match.arg(tolower(spatial_model[1L]),
     c("spde", "sar", "car", "nngp"))
   sar_weight_style <- match.arg(sar_weight_style)
@@ -415,7 +415,7 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
     spde_aniso_struct = make_anisotropy_spde(spde, anisotropy),
     spde_barrier_struct = make_barrier_spde(spde),
     nngp_data = if (spatial_model == "nngp" && !mesh_missing) {
-      make_nngp_data(spde$mesh$loc[, 1:2, drop = FALSE], nngp_neighbors)
+      make_nngp_data(spde$mesh$loc[, 1:2, drop = FALSE], nngp_neighbours)
     }
   )
 }

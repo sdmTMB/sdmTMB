@@ -15,15 +15,15 @@ test_that("make_nngp_data builds a reproducible predecessor graph", {
   expect_identical(make_nngp_data(coords, 4L), graph)
 
   expect_identical(sort(graph$order), seq_len(nrow(coords)))
-  expect_identical(lengths(graph$neighbors), pmin(0:29, 4L))
+  expect_identical(lengths(graph$neighbours), pmin(0:29, 4L))
   position <- match(seq_len(nrow(coords)), graph$order)
   for (i in seq_along(graph$order)) {
-    expect_true(all(position[graph$neighbors[[i]]] < i))
+    expect_true(all(position[graph$neighbours[[i]]] < i))
   }
   expect_equal(graph$distance_to[[5]],
-    sqrt(colSums((t(coords[graph$neighbors[[5]], ]) - coords[graph$order[5], ])^2)))
+    sqrt(colSums((t(coords[graph$neighbours[[5]], ]) - coords[graph$order[5], ])^2)))
 
-  expect_identical(make_nngp_data(matrix(c(1, 2), 1L), 4L)$neighbors,
+  expect_identical(make_nngp_data(matrix(c(1, 2), 1L), 4L)$neighbours,
     list(integer(0)))
   expect_error(make_nngp_data(coords[c(1, 1:3), ], 2L), "unique")
 })
@@ -44,12 +44,12 @@ test_that("NNGP density matches the dense Gaussian it defines", {
   expect_equal(nngp_nll(x, full, sigma),
     -mvtnorm::dmvnorm(x, sigma = sigma^2 * R, log = TRUE))
 
-  # With few neighbors: Q = (I - B)' D^-1 (I - B) in the original order
+  # With few neighbours: Q = (I - B)' D^-1 (I - B) in the original order
   graph <- make_nngp_data(coords, 3L)
   f <- nngp_factor(graph, kappa)
   B <- matrix(0, n, n)
   for (i in seq_len(n)) {
-    j <- graph$neighbors[[i]]
+    j <- graph$neighbours[[i]]
     B[graph$order[i], j] <- f$weights[i, seq_along(j)]
   }
   L <- diag(n) - B
@@ -130,7 +130,7 @@ test_that("New NNGP fields simulate with the right AR1 and SVC covariance", {
   f <- nngp_factor(graph, kappa)
   B <- matrix(0, n_s, n_s)
   for (i in seq_len(n_s)) {
-    j <- graph$neighbors[[i]]
+    j <- graph$neighbours[[i]]
     B[graph$order[i], j] <- f$weights[i, seq_along(j)]
   }
   L <- diag(n_s) - B
@@ -175,7 +175,7 @@ test_that("NNGP fits match tinyVAST's exponential NNGP", {
     control = tinyVAST::tinyVASTcontrol(gmrf_parameterization = "projection"))
   mesh <- make_mesh(d, c("x", "y"), mesh = fmesher::fm_delaunay_2d(xy))
   fit <- sdmTMB(z ~ 1, data = d, mesh = mesh, spatial_model = "nngp",
-    control = sdmTMBcontrol(nngp_neighbors = 6L))
+    control = sdmTMBcontrol(nngp_neighbours = 6L))
 
   expect_equal(as.numeric(logLik(fit)), as.numeric(logLik(tv)),
     tolerance = 1e-7)
