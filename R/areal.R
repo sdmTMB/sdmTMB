@@ -314,15 +314,17 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
                                    anisotropy = FALSE, nonlocal_formula, priors = sdmTMBpriors(),
                                    normalize,
                                    share_range_user = share_range,
-                                   spatial_model = c("spde", "sar", "car"),
-                                   sar_weight_style = c("row", "raw")) {
-  spatial_model <- match.arg(tolower(spatial_model[1L]), c("spde", "sar", "car"))
+                                   spatial_model = c("spde", "sar", "car", "nngp"),
+                                   sar_weight_style = c("row", "raw"),
+                                   nngp_neighbors = 6L) {
+  spatial_model <- match.arg(tolower(spatial_model[1L]),
+    c("spde", "sar", "car", "nngp"))
   sar_weight_style <- match.arg(sar_weight_style)
   is_areal <- !mesh_missing && is_areal_domain(mesh)
   spde <- mesh
 
-  if (spatial_model == "spde" && is_areal) {
-    cli::cli_abort("`spatial_model = \"spde\"` requires an SPDE mesh from `make_mesh()`. Use `spatial_model = \"sar\"` or `\"car\"` with an areal domain.")
+  if (spatial_model %in% c("spde", "nngp") && is_areal) {
+    cli::cli_abort("`spatial_model = \"{spatial_model}\"` requires an SPDE mesh from `make_mesh()`. Use `spatial_model = \"sar\"` or `\"car\"` with an areal domain.")
   }
   if (spatial_model %in% c("sar", "car") && !is_areal) {
     cli::cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain from `make_areal_domain()`.")
@@ -381,6 +383,9 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
   }
 
   barrier <- "spde_barrier" %in% names(spde)
+  if (spatial_model == "nngp" && (barrier || isTRUE(anisotropy))) {
+    cli::cli_abort("Barrier meshes and `anisotropy` are not supported with `spatial_model = \"nngp\"`.")
+  }
   if (barrier && anisotropy) {
     cli::cli_warn("Using a barrier mesh; therefore, anistropy will be disabled.")
     anisotropy <- FALSE
@@ -408,7 +413,10 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
     anisotropy = as.integer(anisotropy),
     spde_struct = get_spde_matrices(spde),
     spde_aniso_struct = make_anisotropy_spde(spde, anisotropy),
-    spde_barrier_struct = make_barrier_spde(spde)
+    spde_barrier_struct = make_barrier_spde(spde),
+    nngp_data = if (spatial_model == "nngp" && !mesh_missing) {
+      make_nngp_data(spde$mesh$loc[, 1:2, drop = FALSE], nngp_neighbors)
+    }
   )
 }
 

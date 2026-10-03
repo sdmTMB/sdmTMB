@@ -19,6 +19,7 @@ rtmb_precision_inputs <- function(data) {
     return(list(type = "car", D = general(Matrix::Diagonal(x = D)), W = W))
   }
   if (data$no_spatial == 1L) return(list(type = "none"))
+  if (data$spatial_model == 3L) return(list(type = "nngp", graph = data$nngp_data))
   if (data$barrier == 1L) {
     b <- data$spde_barrier
     fraction <- if (length(data$barrier_scaling) > 1L)
@@ -67,7 +68,8 @@ rtmb_aniso_bases <- function(a) {
 }
 
 # Precision for component `m`; `r = 1` for spatial and SVC fields and `r = 2`
-# for spatiotemporal fields. Areal precisions have no range parameter.
+# for spatiotemporal fields. Areal precisions have no range parameter. NNGP
+# fields return their conditional factor instead (see `nngp_factor()`).
 rtmb_precision <- function(inputs, theta, r, m) {
   switch(inputs$type,
     spde = {
@@ -98,7 +100,8 @@ rtmb_precision <- function(inputs, theta, r, m) {
       rho <- theta$rho_sar[[m]]
       inputs$I - rho * inputs$W_sum + rho^2 * inputs$WtW
     },
-    car = inputs$D - theta$alpha_car[[m]] * inputs$W
+    car = inputs$D - theta$alpha_car[[m]] * inputs$W,
+    nngp = nngp_factor(inputs$graph, theta$kappa[r, m])
   )
 }
 
@@ -112,10 +115,13 @@ rtmb_log_field_sd <- function(ln_tau, ln_kappa, inputs) {
 
 # `dgmrf()` scale for a field with log SD parameter `log_sd`. The barrier
 # precision already has unit marginal SD and areal fields are scaled by
-# 1 / tau directly, so both use the SD itself. SPDE and anisotropic
-# precisions are unscaled by tau, so their scale is 1 / tau.
+# 1 / tau directly, so both use the SD itself, as do NNGP fields (the parent
+# SD). SPDE and anisotropic precisions are unscaled by tau, so their scale is
+# 1 / tau.
 rtmb_gmrf_scale <- function(log_sd, ln_kappa, inputs) {
-  if (inputs$type == "barrier" || rtmb_areal(inputs)) return(exp(log_sd))
+  if (inputs$type %in% c("barrier", "nngp") || rtmb_areal(inputs)) {
+    return(exp(log_sd))
+  }
   exp(log_sd + ln_kappa + log(4 * pi) / 2)
 }
 

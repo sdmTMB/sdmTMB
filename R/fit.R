@@ -25,11 +25,13 @@ NULL
 #'   before fitting, as with `na.action = na.omit` in [stats::glm()]. The
 #'   rows used are stored in the returned object as `data`.
 #' @param mesh An object from [make_mesh()] for `spatial_model = "spde"` or
-#'   from [make_areal_domain()] for `"sar"` or `"car"`.
+#'   `"nngp"`, or from [make_areal_domain()] for `"sar"` or `"car"`.
 #' @param spatial_model Spatial process model. `"spde"` uses the default
 #'   continuous-space SPDE approximation. `"sar"` and `"car"` use areal spatial
 #'   autoregressive models with an areal domain supplied to `mesh`.
-#'   Capitalization is ignored.
+#'   `r lifecycle::badge("experimental")` `"nngp"` uses a mesh-based
+#'   nearest-neighbor Gaussian process (NNGP) prior with exponential
+#'   covariance at the mesh vertices (see Details). Capitalization is ignored.
 #' @param time An optional time column name (as character). Can be left as
 #'   `NULL` for a model with only spatial random fields; however, if the data
 #'   are actually spatiotemporal and you wish to calculate derived quantities
@@ -338,6 +340,21 @@ NULL
 #'
 #' See the [delta-model vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html).
 #'
+#' **Nearest-neighbor Gaussian process (NNGP) fields**
+#'
+#' `spatial_model = "nngp"` (experimental, RTMB backend only) replaces the
+#' SPDE precision of every random field with a nearest-neighbor Gaussian
+#' process prior (Datta et al. 2016) at the mesh vertices. Vertices are
+#' visited in a max-min order, and each is conditioned on up to
+#' `sdmTMBcontrol(nngp_neighbors)` nearby preceding vertices, as in
+#' tinyVAST. The parent covariance is exponential (Matérn with
+#' \eqn{\nu = 1/2}), with correlation `exp(-2 * distance / range)`, so the
+#' reported range keeps its usual meaning: the distance at which correlation
+#' is about 0.13. The reported SD and range describe this parent covariance.
+#' The field between vertices is still interpolated with the mesh, so mesh
+#' resolution matters as for SPDE fields. Anisotropy and barrier meshes are
+#' not supported. Requires the \pkg{GPvecchia} and \pkg{GpGp} packages.
+#'
 #' **Index standardization**
 #'
 #' For index standardization, you may wish to include `0 + as.factor(year)`
@@ -354,6 +371,13 @@ NULL
 #' sdmTMB: an R package for fast, flexible, and user-friendly generalized linear
 #' mixed effects models with spatial and spatiotemporal random fields.
 #' Journal of Statistical Software. 115(2):1--46. \doi{10.18637/jss.v115.i02}.
+#'
+#' *Reference for nearest-neighbor Gaussian processes:*
+#'
+#' Datta, A., S. Banerjee, A.O. Finley, A.E. Gelfand. 2016. Hierarchical
+#' nearest-neighbor Gaussian process models for large geostatistical datasets.
+#' Journal of the American Statistical Association. 111(514):800--812.
+#' \doi{10.1080/01621459.2015.1044091}.
 #'
 #' *Reference for local trends:*
 #'
@@ -642,7 +666,7 @@ sdmTMB <- function(
     distribution_column = NULL,
     spatial = c("on", "off"),
     spatiotemporal = c("iid", "ar1", "rw", "off"),
-    spatial_model = c("spde", "sar", "car"),
+    spatial_model = c("spde", "sar", "car", "nngp"),
     share_range = TRUE,
     time_varying = NULL,
     time_varying_type = c("rw", "rw0", "ar1"),
@@ -668,7 +692,8 @@ sdmTMB <- function(
     experimental = NULL) {
   nonlocal_data_arg <- nonlocal_data
   mesh_missing <- missing(mesh)
-  spatial_model <- match.arg(tolower(spatial_model[1L]), c("spde", "sar", "car"))
+  spatial_model <- match.arg(tolower(spatial_model[1L]),
+    c("spde", "sar", "car", "nngp"))
   if (mesh_missing && spatial_model %in% c("sar", "car")) {
     cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain supplied to `mesh`.")
   }
@@ -821,8 +846,8 @@ sdmTMB <- function(
   share_range[spatial == "off"] <- TRUE
 
   spde <- mesh
-  if (!mesh_missing && spatial_model == "spde" && is_areal_domain(spde)) {
-    cli_abort("`spatial_model = \"spde\"` requires an SPDE mesh from `make_mesh()`. Use `spatial_model = \"sar\"` or `\"car\"` with an areal domain.")
+  if (!mesh_missing && spatial_model %in% c("spde", "nngp") && is_areal_domain(spde)) {
+    cli_abort("`spatial_model = \"{spatial_model}\"` requires an SPDE mesh from `make_mesh()`. Use `spatial_model = \"sar\"` or `\"car\"` with an areal domain.")
   }
   if (!mesh_missing && spatial_model %in% c("sar", "car") && !is_areal_domain(spde)) {
     cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain from `make_areal_domain()`.")
@@ -835,6 +860,9 @@ sdmTMB <- function(
   backend <- control$backend
   if (backend == "rtmb" && isTRUE(normalize)) {
     cli_abort("`normalize = TRUE` is unavailable with the RTMB backend; its densities are fully normalized.")
+  }
+  if (backend != "rtmb" && spatial_model == "nngp") {
+    cli_abort("`spatial_model = \"nngp\"` needs `sdmTMBcontrol(backend = \"rtmb\")`.")
   }
   nlminb_loops <- control$nlminb_loops
   newton_loops <- control$newton_loops
@@ -862,7 +890,7 @@ sdmTMB <- function(
     "suppress_nlminb_warnings", "collapse_spatial_variance",
     "collapse_spatial_variance_threshold",
     "collapse_spatiotemporal_ar1", "collapse_ar1_threshold",
-    "sar_weight_style", "get_rsr", "backend"
+    "sar_weight_style", "get_rsr", "backend", "nngp_neighbors"
   )
   .control <- control
   # FIXME; automate this from sdmTMcontrol args?
@@ -984,7 +1012,8 @@ sdmTMB <- function(
     normalize = normalize,
     share_range_user = share_range_user,
     spatial_model = spatial_model,
-    sar_weight_style = sar_weight_style
+    sar_weight_style = sar_weight_style,
+    nngp_neighbors = control$nngp_neighbors
   )
   is_areal <- identical(domain$type, "areal")
 
@@ -1387,7 +1416,8 @@ sdmTMB <- function(
     offset_i = offset,
     proj_offset_i = 0,
     A_st = A_st,
-    spatial_model = switch(domain$spatial_model, spde = 0L, sar = 1L, car = 2L),
+    spatial_model = switch(domain$spatial_model, spde = 0L, sar = 1L, car = 2L,
+      nngp = 3L),
     W_ss = domain$W_ss,
     sar_rho_transform = 0L,
     sim_re = if ("sim_re" %in% names(experimental)) as.integer(experimental$sim_re) else rep(0L, 6),
@@ -1478,6 +1508,7 @@ sdmTMB <- function(
   # R functions, so RTMB only; kept in the data list so every rebuilt
   # objective (prediction, index, simulation, saved fits) includes them
   tmb_data$priors_custom <- priors_custom
+  tmb_data$nngp_data <- domain$nngp_data
   tmb_data <- c(tmb_data, family_tmb)
   tmb_data$poisson_link_delta <- as.integer(fit_poisson_link_delta)
   b_thresh <- matrix(0, 2L, n_m)

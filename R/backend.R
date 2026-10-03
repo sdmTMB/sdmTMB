@@ -28,6 +28,9 @@ make_sdmTMB_adfun <- function(data, parameters, map, random = NULL,
     if (!is.null(data$priors_custom)) {
       cli_abort("Custom priors need `sdmTMBcontrol(backend = \"rtmb\")`.")
     }
+    if (identical(data$spatial_model, 3L)) {
+      cli_abort("`spatial_model = \"nngp\"` needs `sdmTMBcontrol(backend = \"rtmb\")`.")
+    }
     obj <- TMB::MakeADFun(data = data, parameters = parameters, map = map,
       random = random, profile = profile, DLL = "sdmTMB", silent = silent, ...)
   } else {

@@ -8,8 +8,14 @@ rtmb_value <- function(x) if (inherits(x, "simref")) x$orig else x
 # One GMRF slice `x`: drawn first when simulating, then its negative log
 # density. With plain numbers (report and simulate, which discard the joint
 # nll), the density is skipped: outside a tape, RTMB::dgmrf() builds and
-# evaluates a throwaway tape, including a sparse log-determinant.
+# evaluates a throwaway tape, including a sparse log-determinant. `Q` may
+# instead be an NNGP factor.
 rtmb_gmrf <- function(x, Q, scale, simulate) {
+  if (inherits(Q, "nngp_factor")) {
+    if (simulate) x <- as.vector(simulate_nngp(Q, scale))
+    nll <- if (inherits(x, "advector")) nngp_nll(x, Q, scale) else 0
+    return(list(nll = nll, value = x))
+  }
   if (simulate) {
     draw <- RTMB::simref(length(x))
     RTMB::dgmrf(draw, Q = Q, scale = scale, log = TRUE)
@@ -23,6 +29,7 @@ rtmb_gmrf <- function(x, Q, scale, simulate) {
 # `n` GMRF draws (columns) with precision `Q` and `dgmrf()` scale `scale`,
 # as from `n` calls of `rtmb_gmrf(..., simulate = TRUE)` with plain numbers.
 rtmb_rgmrf <- function(n, Q, scale) {
+  if (inherits(Q, "nngp_factor")) return(simulate_nngp(Q, scale, n))
   L <- Matrix::Cholesky(Q, super = TRUE, LDL = FALSE)
   u <- matrix(stats::rnorm(ncol(L) * n), ncol(L), n)
   u <- Matrix::solve(L, Matrix::solve(L, u, system = "Lt"), system = "Pt")
@@ -73,7 +80,8 @@ rtmb_spatiotemporal_field <- function(epsilon_st, par, theta, prepared, Q,
     if (ar1) previous <- rho * previous
     innovation[, -1L] <- (eps[, -1L] - previous) / innovation_scale
   }
-  nll <- -sum(RTMB::dgmrf(t(innovation), Q = Q, scale = scale, log = TRUE))
+  nll <- if (inherits(Q, "nngp_factor")) nngp_nll(innovation, Q, scale) else
+    -sum(RTMB::dgmrf(t(innovation), Q = Q, scale = scale, log = TRUE))
   if (ar1) nll <- nll + (n_t - 1L) * nrow(eps) * log(innovation_scale)
   list(nll = nll, value = epsilon_st)
 }

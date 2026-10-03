@@ -94,6 +94,8 @@ Suggests:
     ggforce,
     glmmTMB,
     ggplot2,
+    GpGp,
+    GPvecchia,
     knitr,
     lme4,
     loo,

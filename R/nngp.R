@@ -1,0 +1,124 @@
+# Mesh-based nearest-neighbor Gaussian process (NNGP) prior for random
+# fields (`spatial_model = "nngp"`, RTMB backend only).
+#
+# The field is still defined at mesh vertices and interpolated with the usual
+# A matrices; only its prior changes. Vertices are visited in a max-min
+# order, and each vertex is conditioned on up to `m` nearby preceding
+# vertices (Datta et al. 2016; Guinness 2018), which defines a proper
+# Gaussian distribution:
+#
+#   w_i | w[N_i] ~ Normal(sum(b_i * w[N_i]), sigma * sqrt(f_i)),
+#   b_i = solve(R[N_i, N_i], R[N_i, i]),  f_i = 1 - sum(R[N_i, i] * b_i),
+#
+# where R is the parent correlation. The ordering and neighbor search follow
+# tinyVAST's NNGP (Jim Thorson), using GPvecchia and GpGp.
+#
+# `make_nngp_data()` builds the data-only graph once per fit;
+# `nngp_factor()` turns it into weights and conditional SDs for one range;
+# `nngp_nll()` and `simulate_nngp()` evaluate and draw fields with them.
+
+# Fixed parent nugget keeping local correlation matrices well conditioned:
+# R_delta = (R + delta I) / (1 + delta), so the diagonal stays at one.
+nngp_nugget <- 1e-10
+
+# Exponential (Matérn nu = 1/2) parent correlation. It is scaled so that the
+# correlation at sdmTMB's conventional range sqrt(8) / kappa is exp(-2),
+# close to the Matérn nu = 1 correlation at that range.
+nngp_correlation <- function(distance, kappa) {
+  exp(-kappa * distance / sqrt(2))
+}
+
+# Ordering and predecessor graph for vertex coordinates `coords`. Lists are
+# indexed by ordered position; `order` and `neighbors` hold one-based
+# original vertex indices, and distances use the original coordinates.
+make_nngp_data <- function(coords, nngp_neighbors) {
+  coords <- as.matrix(coords)
+  if (!is.numeric(coords) || ncol(coords) != 2L || !all(is.finite(coords))) {
+    cli_abort("NNGP vertex coordinates must be a finite two-column matrix.")
+  }
+  if (anyDuplicated(coords)) {
+    cli_abort("NNGP mesh vertices must have unique coordinates.")
+  }
+  n <- nrow(coords)
+  if (n == 1L) {
+    order <- 1L
+    neighbors <- list(integer(0))
+  } else {
+    rlang::check_installed(c("GPvecchia", "GpGp", "withr"),
+      reason = "for `spatial_model = \"nngp\"`.")
+    # GpGp perturbs coordinates at random in its neighbor search; a fixed
+    # seed makes the graph reproducible without changing the caller's RNG.
+    withr::with_seed(1L, {
+      order <- GPvecchia::order_maxmin_exact(coords)
+      nn <- GpGp::find_ordered_nn(coords[order, , drop = FALSE],
+        nngp_neighbors)
+    })
+    # Column 1 is the vertex itself; missing predecessors are NA.
+    neighbors <- lapply(seq_len(n), function(i) {
+      j <- nn[i, -1L]
+      order[j[!is.na(j)]]
+    })
+  }
+  distance_to <- lapply(seq_len(n), function(i) {
+    sqrt(colSums((t(coords[neighbors[[i]], , drop = FALSE]) -
+      coords[order[[i]], ])^2))
+  })
+  distance_between <- lapply(neighbors, function(j) {
+    unname(as.matrix(stats::dist(coords[j, , drop = FALSE])))
+  })
+  list(order = as.integer(order), neighbors = neighbors,
+    distance_to = distance_to, distance_between = distance_between,
+    m = as.integer(nngp_neighbors))
+}
+
+# Conditional weights and SDs (for unit parent variance) at inverse range
+# `kappa`. The RTMB field code uses this in place of a precision matrix. Row i of `index` and `weights` holds the neighbors of ordered
+# vertex i, padded with vertex 1 and weight zero.
+nngp_factor <- function(graph, kappa) {
+  "[<-" <- RTMB::ADoverload("[<-")
+  n <- length(graph$order)
+  k <- lengths(graph$neighbors)
+  index <- matrix(1L, n, max(1L, k))
+  weights <- matrix(0, n, ncol(index))
+  variance <- rep(1, n)
+  regularize <- 1 / (1 + nngp_nugget)
+  for (i in which(k > 0L)) {
+    R <- (nngp_correlation(graph$distance_between[[i]], kappa) +
+      diag(nngp_nugget, k[[i]])) * regularize
+    r <- nngp_correlation(graph$distance_to[[i]], kappa) * regularize
+    b <- RTMB::solve(R, r)
+    index[i, seq_len(k[[i]])] <- graph$neighbors[[i]]
+    weights[i, seq_len(k[[i]])] <- b
+    variance[i] <- 1 - sum(r * b)
+  }
+  structure(list(order = graph$order, index = index, weights = weights,
+    sd = sqrt(variance)), class = "nngp_factor")
+}
+
+# Negative log density of fields `x` (a vector, or one field per column)
+# with parent SD `sigma`.
+nngp_nll <- function(x, factor, sigma) {
+  n <- length(factor$order)
+  dim(x) <- c(n, length(x) / n)
+  nll <- 0
+  for (j in seq_len(ncol(x))) {
+    field <- x[, j]
+    neighbors <- field[factor$index]
+    dim(neighbors) <- dim(factor$index)
+    mean <- (factor$weights * neighbors) %*% rep(1, ncol(neighbors))
+    nll <- nll - sum(RTMB::dnorm(field[factor$order], mean,
+      sigma * factor$sd, log = TRUE))
+  }
+  nll
+}
+
+# `n` independent fields (columns) with parent SD `sigma`, drawn forward in
+# the NNGP order. Plain numbers only.
+simulate_nngp <- function(factor, sigma, n = 1L) {
+  x <- matrix(0, length(factor$order), n)
+  for (i in seq_along(factor$order)) {
+    mean <- colSums(factor$weights[i, ] * x[factor$index[i, ], , drop = FALSE])
+    x[factor$order[[i]], ] <- mean + sigma * factor$sd[[i]] * stats::rnorm(n)
+  }
+  x
+}

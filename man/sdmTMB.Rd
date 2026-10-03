@@ -13,7 +13,7 @@ sdmTMB(
   distribution_column = NULL,
   spatial = c("on", "off"),
   spatiotemporal = c("iid", "ar1", "rw", "off"),
-  spatial_model = c("spde", "sar", "car"),
+  spatial_model = c("spde", "sar", "car", "nngp"),
   share_range = TRUE,
   time_varying = NULL,
   time_varying_type = c("rw", "rw0", "ar1"),
@@ -52,7 +52,7 @@ before fitting, as with \code{na.action = na.omit} in \code{\link[stats:glm]{sta
 rows used are stored in the returned object as \code{data}.}
 
 \item{mesh}{An object from \code{\link[=make_mesh]{make_mesh()}} for \code{spatial_model = "spde"} or
-from \code{\link[=make_areal_domain]{make_areal_domain()}} for \code{"sar"} or \code{"car"}.}
+\code{"nngp"}, or from \code{\link[=make_areal_domain]{make_areal_domain()}} for \code{"sar"} or \code{"car"}.}
 
 \item{time}{An optional time column name (as character). Can be left as
 \code{NULL} for a model with only spatial random fields; however, if the data
@@ -115,7 +115,9 @@ mathematical details. Capitalization is ignored. \code{TRUE} gets converted to
 \item{spatial_model}{Spatial process model. \code{"spde"} uses the default
 continuous-space SPDE approximation. \code{"sar"} and \code{"car"} use areal spatial
 autoregressive models with an areal domain supplied to \code{mesh}.
-Capitalization is ignored.}
+\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}} \code{"nngp"} uses a mesh-based
+nearest-neighbor Gaussian process (NNGP) prior with exponential
+covariance at the mesh vertices (see Details). Capitalization is ignored.}
 
 \item{share_range}{Logical: estimate a shared spatial and spatiotemporal
 range parameter (\code{TRUE}, default) or independent range parameters
@@ -394,6 +396,21 @@ parameters can be shared across the models.
 
 See the \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-model vignette}.
 
+\strong{Nearest-neighbor Gaussian process (NNGP) fields}
+
+\code{spatial_model = "nngp"} (experimental, RTMB backend only) replaces the
+SPDE precision of every random field with a nearest-neighbor Gaussian
+process prior (Datta et al. 2016) at the mesh vertices. Vertices are
+visited in a max-min order, and each is conditioned on up to
+\code{sdmTMBcontrol(nngp_neighbors)} nearby preceding vertices, as in
+tinyVAST. The parent covariance is exponential (Matérn with
+\eqn{\nu = 1/2}), with correlation \code{exp(-2 * distance / range)}, so the
+reported range keeps its usual meaning: the distance at which correlation
+is about 0.13. The reported SD and range describe this parent covariance.
+The field between vertices is still interpolated with the mesh, so mesh
+resolution matters as for SPDE fields. Anisotropy and barrier meshes are
+not supported. Requires the \pkg{GPvecchia} and \pkg{GpGp} packages.
+
 \strong{Index standardization}
 
 For index standardization, you may wish to include \code{0 + as.factor(year)}
@@ -614,6 +631,13 @@ Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett, J.T. Thorson. 2025.
 sdmTMB: an R package for fast, flexible, and user-friendly generalized linear
 mixed effects models with spatial and spatiotemporal random fields.
 Journal of Statistical Software. 115(2):1--46. \doi{10.18637/jss.v115.i02}.
+
+\emph{Reference for nearest-neighbor Gaussian processes:}
+
+Datta, A., S. Banerjee, A.O. Finley, A.E. Gelfand. 2016. Hierarchical
+nearest-neighbor Gaussian process models for large geostatistical datasets.
+Journal of the American Statistical Association. 111(514):800--812.
+\doi{10.1080/01621459.2015.1044091}.
 
 \emph{Reference for local trends:}
 

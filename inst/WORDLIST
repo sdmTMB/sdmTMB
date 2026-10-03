@@ -6,6 +6,7 @@ Anisotropy
 Aquat
 Articles’
 Bakka
+Banerjee
 Barro
 Bastardie
 Beilschmiedia
@@ -129,6 +130,7 @@ cloglog
 colour
 cplm
 crs
+Datta
 decorrelation
 directionally
 dlnorm
@@ -148,6 +150,8 @@ ggeffects
 ggplot
 glm
 glmmTMB
+GpGp
+GPvecchia
 gridded
 groundfishes
 hardcoded
@@ -179,6 +183,7 @@ nd
 neighbouring
 newcommand
 newdata
+NNGP
 nw
 oneSamplePosterior
 operatorname
@@ -212,6 +217,7 @@ tibble
 tibbles
 tidybayes
 tidyverse
+tinyVAST
 tmbstan
 tvc
 umbers
