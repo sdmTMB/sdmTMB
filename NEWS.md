@@ -16,13 +16,16 @@
 
 ## New features
 
-* *RTMB is now the default backend*. The model code is written in R (via RTMB)
+* *RTMB is now the default backend.* The model code is written in R (via RTMB)
   with about 50% fewer lines, and gives the same results as the TMB backend in
-  our tests. The TMB backend is retained for now but will eventually be
-  dropped. To use it, set `control = sdmTMBcontrol(backend = "tmb")` per fit or
-  `options(sdmTMB.backend = "tmb")` per session. The move uncovered many bugs,
-  fixed as listed below, and speed has been improved due to several optimizations
-  during the port to RTMB.
+  all our tests. The TMB backend is retained for now but will eventually be
+  dropped. To keep using the TMB backend, set
+  `control = sdmTMBcontrol(backend = "tmb")` per fit or
+  `options(sdmTMB.backend = "tmb")` per session. The move uncovered several bugs,
+  which are fixed as listed below. The move also allowed for optimization of
+  the model. Resulting speedups on an example model with the built-in `pcod`
+  dataset: fitting (1.25x), predicting (2.6x), get_index(bias_correct = FALSE)
+  (12.5x), get_index(bias_correct = TRUE) (2.1x), simulate(nsim = 500) (2.3x).
 
 * Add experimental multi-family models, where each row of the data can use a
   different observation family (e.g., binomial, count, and delta-lognormal data
@@ -32,7 +35,8 @@
 
 * Add `ordbeta()` for ordered beta regression (Kubinec 2023), an alternative to
   zero-one-inflated beta for continuous data on `[0, 1]` with point masses at 0
-  and 1 (#515).
+  and 1 (#515). Response-scale predictions and indices include the point
+  masses.
 
 * Add the `dispformula` argument to `sdmTMB()` for modelling the observation
   dispersion parameter with fixed-effect predictors. It is not supported for
@@ -171,6 +175,12 @@
 * Mixture-family predictions now respect non-log links and population-level
   predictions (`re_form = NA`).
 
+* Fix delta models with `spatial_varying` where a component has
+  `spatial = "off"` (e.g., `spatial = list("on", "off")`). That component's
+  spatially varying coefficient fields entered the model without a random
+  field penalty and with an unidentified SD parameter. They now have a random
+  field density and their own estimated range.
+
 ## Bug fixes: prediction, indices, and other
 
 * `predict.sdmTMB()` without `newdata` now returns the same values as
@@ -203,6 +213,12 @@
   `truncated_nbinom2()`, which used the starting value of `phi`. `phi` now
   comes from each fit's own parameters rather than the family object, so
   calling `family$linkinv()` directly for these families requires `phi`.
+
+* Fix `residuals(type = "response")` for `truncated_nbinom1()` and
+  `truncated_nbinom2()`, which subtracted the untruncated mean.
+
+* Fix randomized quantile residuals for zero observations with
+  `betabinomial()`, which were all set to the same value.
 
 * Fix calling the index functions directly on a `do_index = TRUE` fit:
   `get_index()` now honours `area`, and `get_eao()`, `get_weighted_average()`,

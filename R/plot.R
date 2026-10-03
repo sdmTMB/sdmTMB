@@ -298,7 +298,8 @@ plot_smooth <- function(object, select = 1, n = 100, level = 0.95,
   if (return_data) {
     return(p)
   }
-  inv <- .bind_phi_linkinv(family(object), .object_ln_phi(object))
+  inv <- .response_linkinv(family(object), .object_par(object, "ln_phi"),
+    .object_par(object, "psi"))
   qv <- stats::qnorm(1 - (1 - level) / 2)
 
   if (!ggplot) {

@@ -33,10 +33,11 @@ rtmb_prepare <- function(data) {
     epsilon_ar1 = data$ar1_fields[components] == 1L,
     epsilon_rw = data$rw_fields[components] == 1L,
     share_range = data$share_range[components] == 1L,
-    # SVC fields enter the predictor whenever present; like the C++ template,
-    # their density is only evaluated for components with a spatial field.
+    # SVC fields enter every component's predictor, so each component has an
+    # SVC density whether or not it has a spatial intercept field. (The first
+    # fitting phase turns fields off with `no_spatial`.)
     svc = svc,
-    svc_density = svc & include_spatial,
+    svc_density = svc && any_field,
 
     # Other effects and predictor terms
     time_varying = time_varying_type != "none",

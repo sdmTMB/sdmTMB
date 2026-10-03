@@ -26,12 +26,16 @@ rtmb_logit_inverse_link <- function(eta, link) {
 }
 
 # Response mean of one component, as used for combined projections. The
-# truncated negative binomials report the mean of the truncated distribution.
+# truncated negative binomials report the mean of the truncated distribution
+# and ordered beta includes its point masses at 0 and 1.
 rtmb_component_mean <- function(eta, family, m, theta) {
   mu <- rtmb_inverse_link(eta, family$link[[m]])
   spec <- rtmb_obs_family(family$family[[m]])
   if (!is.null(spec$log_nzprob)) {
     mu <- mu / exp(spec$log_nzprob(mu, theta$phi[[family$phi]]))
+  }
+  if (family$family[[m]] == "ordbeta") {
+    mu <- spec$mean(mu, list(eta = eta, psi = theta$psi))
   }
   mu
 }
@@ -61,7 +65,7 @@ rtmb_obs_state <- function(i, m, family, eta, par, theta, prepared, ln_phi_i) {
   if (!is.na(family$gengamma_Q)) {
     state$Q <- par$gengamma_Q[[family$gengamma_Q]]
   }
-  if (name == "ordbeta") state$psi <- ordbeta_cutpoints(par$psi)
+  if (name == "ordbeta") state$psi <- theta$psi
   if (name == "censored_poisson") {
     state$upr <- fit$upr[i]
   }

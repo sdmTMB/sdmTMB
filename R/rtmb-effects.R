@@ -166,8 +166,7 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
     result$value
   }
   for (m in seq_len(n_m)) {
-    if (prepared$spatial[[m]] || prepared$temporal[[m]] ||
-        prepared$svc_density[[m]]) {
+    if (prepared$spatial[[m]] || prepared$temporal[[m]] || prepared$svc_density) {
       Q <- rtmb_precision(inputs, theta, 1L, m)
     }
     if (prepared$spatial[[m]]) {
@@ -175,7 +174,7 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
         inputs)
       effects$omega_s[, m] <- gmrf(effects$omega_s[, m], Q, scale, "omega_s")
     }
-    if (prepared$svc_density[[m]]) {
+    if (prepared$svc_density) {
       for (z in seq_len(dim(effects$zeta_s)[2L])) {
         scale <- rtmb_gmrf_scale(theta$log_sigma_Z[z, m], par$ln_kappa[1L, m],
           inputs)

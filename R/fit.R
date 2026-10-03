@@ -1623,7 +1623,9 @@ sdmTMB <- function(
   if (!is.null(previous_fit)) tmb_map <- previous_fit$tmb_map
 
   # this is complex; pulled it out into own function:
-  tmb_map$ln_kappa <- get_kappa_map(n_m = n_m, spatial = spatial, spatiotemporal = spatiotemporal, share_range = share_range)
+  # SVC fields use the spatial range of every component:
+  kappa_spatial <- if (is.null(spatial_varying)) spatial else rep("on", n_m)
+  tmb_map$ln_kappa <- get_kappa_map(n_m = n_m, spatial = kappa_spatial, spatiotemporal = spatiotemporal, share_range = share_range)
   if (is_areal) {
     tmb_map$ln_kappa <- factor(rep(NA_integer_, length(tmb_params$ln_kappa)))
     areal_field_active <- any(spatial == "on" & !omit_spatial_intercept) ||

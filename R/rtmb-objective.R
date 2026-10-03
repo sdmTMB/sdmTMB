@@ -171,6 +171,7 @@ rtmb_transform <- function(par, prepared) {
     phi = exp(par$ln_phi),
     tweedie_p = RTMB::plogis(par$thetaf) + 1,
     student_df = exp(par$ln_student_df) + 1,
+    psi = if (length(par$psi)) ordbeta_cutpoints(par$psi),
     # The larger mixture component's mean is `mix_ratio` times the smaller.
     p_extreme = RTMB::plogis(par$logit_p_extreme),
     mix_ratio = exp(par$log_ratio_mix) + 1

@@ -505,7 +505,7 @@ project_apply_future_re <- function(
     if (future_re == "zero") {
       b_rw_t[future_index, , ] <- 0
     } else if (future_re == "fix") {
-      b_rw_t[future_index, , ] <- b_rw_t[historical_n_t, , ]
+      for (tt in future_index) b_rw_t[tt, , ] <- b_rw_t[historical_n_t, , ]
     } else if (isTRUE(object$tmb_data$ar1_time == 1L)) {
       rho_time <- 2 * stats::plogis(pars$rho_time_unscaled) - 1
       for (m in seq_len(dim(b_rw_t)[3])) {

@@ -83,7 +83,7 @@ qres_betabinomial <- function(object, y, mu, .n = NULL) {
 
   if (is.null(.n)) .n <- rep(1, length(y))
 
-  a <- pbbinom(pmax(0, y - 1), size = .n, alpha = alpha, beta = beta)
+  a <- pbbinom(y - 1, size = .n, alpha = alpha, beta = beta)
   b <- pbbinom(y, size = .n, alpha = alpha, beta = beta)
   u <- stats::runif(n = length(y), min = pmin(a, b), max = pmax(a, b))
   stats::qnorm(u)
@@ -512,9 +512,14 @@ residuals.sdmTMB <- function(object,
     nd <- object$data
     est_column <- if (model == 1L) "est1" else "est2"
   }
-  if(fam %in% c("truncated_nbinom1", "truncated_nbinom2")){
-    linkinv <- function(eta){exp(eta)}
-  } # for residuals, use untruncated mean
+  if (type == "response") {
+    # response residuals use the response mean, as in `predict()`
+    fam_linkinv <- list(family = fam, linkinv = linkinv)
+    linkinv <- .response_linkinv(fam_linkinv, .object_par(object, "ln_phi"),
+      .object_par(object, "psi"))
+  } else if (fam %in% c("truncated_nbinom1", "truncated_nbinom2")) {
+    linkinv <- exp # quantile residuals use the untruncated mean
+  }
   if (is.null(qres_func) && type != "deviance") {
     res_func <- switch(fam,
       gaussian = qres_gaussian,
