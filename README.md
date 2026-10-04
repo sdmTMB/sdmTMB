@@ -53,9 +53,20 @@ sdmTMB can be installed from CRAN:
 install.packages("sdmTMB", dependencies = TRUE)
 ```
 
-Assuming you have a [C++
+The development version is recommended. Prebuilt binaries (tracking
+`main`) are available from r-universe and do not require a C++ compiler:
+
+``` r
+install.packages(
+  "sdmTMB",
+  dependencies = TRUE,
+  repos = c("https://sdmtmb.r-universe.dev", "https://cloud.r-project.org")
+)
+```
+
+Alternatively, assuming you have a [C++
 compiler](https://support.posit.co/hc/en-us/articles/200486498-Package-Development-Prerequisites)
-installed, the development version is recommended and can be installed:
+installed, the development version can be built from source:
 
 ``` r
 # install.packages("pak")
