@@ -30,8 +30,6 @@ knitr::opts_chunk$set(
 
 This vignette describes the statistical model underlying sdmTMB. sdmTMB fits spatial and spatiotemporal generalized linear mixed models (GLMMs) using Template Model Builder (TMB) [@kristensen2016], with spatial random fields approximated with the SPDE approach [@lindgren2011]. Further details are available in the sdmTMB paper [@sdmTMB], which should be referenced and cited when using sdmTMB in a publication.
 
-# Other vignettes available
-
 <style>
 div.blue { background-color:#e6f0ff; border-radius: 5px; padding: 20px;}
 </style>
@@ -126,7 +124,132 @@ Penalized smoothers are included in $\bX^{\RM{main}}_{\s,t} \bbeta$ for brevity 
 Delta (hurdle) families have two linear predictors, each of which can contain the above components (see [Delta models](#delta-models)).
 
 A single sdmTMB model will rarely, if ever, contain all of the above components.
-Next, we will split the model to describe the various parts in more detail using '$\ldots$' to represent the other optional components.
+
+# Gaussian random fields
+
+This section describes how the spatial ($\bomega$), spatiotemporal ($\beps_t$), and spatially varying coefficient ($\bzeta_l$) random fields are constructed. How each field enters the model is described under [Linear predictor components](#linear-predictor-components).
+
+## Matérn parameterization
+
+The spatial and spatiotemporal random fields in sdmTMB are Gaussian random fields with (approximately) Matérn covariance.
+The Matérn covariance between the field values at locations $\s_j$ and $\s_k$, separated by distance $d_{jk} = \lVert \s_j - \s_k \rVert$, is
+
+$$
+\mathrm{Cov}\left( \omega_{\s_j}, \omega_{\s_k} \right) = \frac{\sigma^2}{2^{\nu - 1}\Gamma(\nu)} (\kappa d_{jk})^\nu K_\nu \left( \kappa d_{jk} \right),
+$$
+
+where $\sigma^2$ is the marginal variance, $\nu$ controls the smoothness of the field, $\Gamma$ is the gamma function, $K_\nu$ is the modified Bessel function of the second kind, and $\kappa$ is a scaling parameter (larger $\kappa$ means correlation decays faster with distance).
+
+Computing with a dense Matérn covariance matrix is slow for many locations.
+Instead, sdmTMB uses the stochastic partial differential equation (SPDE) approach of @lindgren2011.
+A Gaussian field with Matérn covariance is the solution to the SPDE $(\kappa^2 - \Delta)^{\alpha/2}(\tau\,\omega(\s)) = \mathcal{W}(\s)$, where $\Delta$ is the Laplacian, $\mathcal{W}$ is Gaussian white noise, and $\alpha = \nu + d/2$ for $d$ spatial dimensions.
+sdmTMB uses $d = 2$ and $\alpha = 2$, so $\nu = 1$.
+Approximating the solution on a triangulated mesh with piecewise-linear basis functions (the finite element method) gives field values at the mesh vertices with a sparse precision matrix
+
+$$
+\bQ = \tau^2 \left( \kappa^4 \mathbf{C} + 2 \kappa^2 \mathbf{G} + \mathbf{G} \mathbf{C}^{-1} \mathbf{G} \right),
+$$
+
+where $\mathbf{C}$ (a diagonal "mass" matrix) and $\mathbf{G}$ (a sparse "stiffness" matrix) depend only on the mesh.
+The sparsity of $\bQ$ is what makes the computations fast.
+
+The parameters $\kappa$ and $\tau$ are reported as the range and marginal standard deviation:
+
+$$
+\textrm{range} = \frac{\sqrt{8}}{\kappa}, \qquad
+\sigma = \frac{1}{\sqrt{4 \pi}\, \tau \kappa}.
+$$
+
+The range is the distance at which the correlation between two points has dropped to approximately 0.13.
+Note that for a fixed $\tau$, increasing $\kappa$ decreases $\sigma$.
+
+In the case of a spatiotemporal model with both spatial and spatiotemporal fields, if `share_range = TRUE` in `sdmTMB()` (the default), then a single $\kappa$ and range are estimated with separate $\sigma_\omega$ and $\sigma_\epsilon$.
+This often makes sense since data are often only weakly informative about $\kappa$.
+If `share_range = FALSE`, then separate $\kappa_\omega$ and $\kappa_\epsilon$ are estimated.
+Spatially varying coefficient fields always share $\kappa$ with the spatial random field.
+
+## Projection $\bA$ matrix
+
+In the SPDE approach, the random field at any location is defined by the piecewise-linear basis expansion $\omega(\s) = \sum_k \psi_k(\s)\, \omega_k$, where $\omega_k$ is the field value at mesh vertex $k$ and $\psi_k$ is a "tent" function that is 1 at vertex $k$ and decreases linearly to 0 at the neighbouring vertices.
+Evaluating the field at observed or prediction locations is therefore a multiplication by a sparse projection matrix $\bA$ with elements $A_{ik} = \psi_k(\s_i)$ [@lindgren2015]:
+
+$$
+\bomega^* = \bA \bomega,
+$$ where $\bomega^*$ represents the values of the spatial random fields at the observed locations or predicted data locations.
+The matrix $\bA$ has a row for each data point or prediction point and a column for each mesh vertex.
+Each row has at most three non-zero elements: the barycentric weights of the vertices of the triangle containing that location.
+This interpolation is part of the model definition rather than a separate approximation step.
+The same interpolation happens for any spatiotemporal random fields
+
+$$
+\beps_t^* = \bA \beps_t.
+$$
+
+## Anisotropy
+
+TMB allows for anisotropy, where spatial covariance may depend on direction ([full details](https://kaskr.github.io/adcomp/namespaceR__inla.html)).
+Anisotropy can be turned on or off with the logical `anisotropy` argument to `sdmTMB()`.
+There are a number of ways to implement anisotropic covariance [@fuglstad2015a], and we adopt geometric anisotropy defined by a 2-parameter matrix $\bH$, which replaces Euclidean distance with $d_{jk} = \sqrt{(\s_j - \s_k)^\top \bH^{-1} (\s_j - \s_k)}$.
+The elements of $\bH$ are defined by the parameters $h_1 > 0$ and $h_2$ so that $H_{1,1} = h_{1}$, $H_{1,2} = H_{2,1} = h_{2}$ and $H_{2,2} = (1 + h_{2}^2) / h_{1}$.
+$\bH$ is symmetric and positive definite with determinant 1, so it stretches distances along one axis and shrinks them along the perpendicular axis without changing area.
+The result is a different range in each direction, with the orientation of the major axis estimated.
+
+Once a model is fitted with `sdmTMB()`, the anisotropy relationships may be plotted using the `plot_anisotropy()` function, which takes the fitted object as an argument.
+If a barrier mesh is used, anisotropy is disabled.
+
+## Incorporating physical barriers into the SPDE
+
+In some cases the spatial domain of interest may be complex and bounded by some barrier such as by land or water (e.g., coastlines, islands, lakes).
+SPDE models allow for physical barriers to be incorporated into the modelling [@bakka2019].
+With `sdmTMB()` models, the mesh construction occurs in two steps: the user (1) constructs a mesh with a call to `sdmTMB::make_mesh()`, and (2) passes the mesh to `sdmTMBextra::add_barrier_mesh()`.
+The barriers must be constructed as `sf` objects [@pebesma2018] with polygons defining the barriers.
+See `?sdmTMBextra::add_barrier_mesh` for an example.
+
+The barrier implementation requires the user to select a fraction value (`range_fraction` argument) that defines the fraction of the usual spatial range when crossing the barrier [@bakka2019].
+For example, if the range was estimated at 10 km, `range_fraction = 0.2` would assign a 2 km range to the triangles marked as barrier.
+That makes correlation decay much faster through the barrier than around it, which effectively discourages spatial smoothing from “jumping” across landmasses.
+From experimentation, values around 0.1 or 0.2 seem to work well but values much lower than 0.1 can result in convergence issues.
+
+[This website](https://haakonbakkagit.github.io/btopic128.html) by Francesco Serafini and Haakon Bakka provides an illustration with INLA.
+The implementation within TMB was borrowed from code written by Olav Nikolai Breivik and Hans Skaug at the [TMB Case Studies](https://github.com/skaug/tmb-case-studies) GitHub site.
+
+## Areal autoregressive models (SAR/CAR)
+
+In addition to continuous-space SPDE random fields, sdmTMB can fit areal spatial autoregressive models with `spatial_model = "sar"` or `spatial_model = "car"`.
+These require an areal domain supplied to `mesh` with the help of `make_areal_domain()`.
+
+For both areal options, the latent spatial and spatiotemporal effects are Gaussian Markov random fields with precision defined by the areal weight matrix $\mathbf{W}$:
+
+$$
+\bomega \sim \RM{MVNormal}\left(\bs{0}, \sigma_\omega^2 \bQ^{-1}\right), \:
+\beps_t \sim \RM{MVNormal}\left(\bs{0}, \sigma_\epsilon^2 \bQ^{-1}\right).
+$$
+
+Unlike the SPDE case, $\sigma_\omega$ and $\sigma_\epsilon$ here are scale parameters, not marginal standard deviations: the marginal variance of each area is $\sigma^2 (\bQ^{-1})_{ii}$, which depends on $\mathbf{W}$ and the autocorrelation parameter and generally differs among areas.
+
+For SAR (`spatial_model = "sar"`), the precision matrix is
+
+$$
+\bQ_{\mathrm{SAR}} = \left(\mathbf{I} - \rho_{\mathrm{SAR}}\mathbf{W}\right)^\top
+\left(\mathbf{I} - \rho_{\mathrm{SAR}}\mathbf{W}\right),
+$$
+
+where $\rho_{\mathrm{SAR}} \in (-1, 1)$ is reported as `rho_sar`.
+By default, SAR uses a row-normalized $\mathbf{W}$ (`sar_weight_style = "row"`), with an option to use raw weights.
+With `sar_weight_style = "raw"`, SAR uses the unnormalized adjacency/weight matrix directly, so neighbour influence depends on the original edge weights (and, if unweighted, on the number of neighbours) rather than being scaled to sum to 1 within each row.
+
+For CAR (`spatial_model = "car"`), the precision matrix is
+
+$$
+\bQ_{\mathrm{CAR}} = \mathbf{D} - \alpha_{\mathrm{CAR}}\mathbf{W},
+$$
+
+where $\mathbf{D}$ is diagonal with elements $D_{ii} = \sum_j W_{ij}$ (the number of neighbours for unweighted adjacency; set to 1 for areas with no neighbours) and $\alpha_{\mathrm{CAR}} \in (0, 1)$ is reported as `alpha_car`.
+CAR requires a symmetric adjacency matrix.
+
+# Linear predictor components
+
+This section describes each component of the linear predictor in more detail, using '$\ldots$' to represent the other optional components.
 
 ## Main effects
 
@@ -173,6 +296,93 @@ The parameter $s50$ is unconstrained but $s95$ is constrained to be larger than 
 
 These models can be fit by including `+ logistic(x)` in the model formula, where `x` is a covariate.
 The formula can contain a single logistic covariate.
+
+## Offset terms
+
+Offset terms can be included through the `offset` argument in `sdmTMB()`.
+These are included in the linear predictor as
+
+$$
+\begin{aligned}
+  \mu_{\s,t} &= f^{-1} \left( \ldots + O_{\s,t} + \ldots \right),
+\end{aligned}
+$$
+
+where $O_{\s,t}$ is an offset term---a variable on the linear predictor scale with its coefficient fixed at one.
+With a log link, the offset is usually a **log-transformed** measure of effort (e.g., `log(area_swept)`), so that $\mu_{\s,t}$ is proportional to effort.
+
+When predicting, `predict.sdmTMB()` without `newdata` uses the offset from the fitted model.
+With `newdata`, the offset is 0 unless an `offset` vector is supplied to `predict.sdmTMB()`.
+Therefore, if the offset represents log effort, predictions on `newdata` are for one unit of effort (`log(1) = 0`) by default.
+
+## Random intercepts and slopes
+
+Multilevel (hierarchical) intercepts and slopes follow the familiar lme4/glmmTMB formulation.
+Each grouping factor $k$ can carry an intercept-only term or a vector of random effects (intercept plus slopes) with a full covariance matrix:
+
+$$
+\begin{aligned}
+  \mu_{\s,t} &= f^{-1} \left( \ldots + \sum_{k} \mathbf{z}_{k,\s,t}^\top \mathbf{b}_{k,g} + \ldots \right),\\
+  \mathbf{b}_{k,g} &\sim \RM{MVNormal} \left( \bs{0}, \bSigma_{k} \right),
+\end{aligned}
+$$
+
+where $g$ is the level of grouping factor $k$ for the observation at $(\s, t)$, $\mathbf{b}_{k,g}$ is the vector of random effects for that level, and $\mathbf{z}_{k,\s,t}$ contains the corresponding covariate values (1 for an intercept and the covariate value for each slope).
+Random effects are independent across levels and grouping factors.
+The scalar special case `(1 | g)` is a random intercept $b_{g} \sim \RM{Normal}(0, \sigma_{b}^2)$.
+
+Use lme4-style syntax in `formula`, e.g. `(1 | g)` for random intercepts, `(1 + x | g)` for correlated intercepts and slopes, or `(1 | g1) + (1 + x | g2)` to give each grouping factor its own (co)variance.
+
+Internally, standard deviations are estimated on the log scale, and correlations are represented by unconstrained parameters of a Cholesky factor of the correlation matrix (TMB's `UNSTRUCTURED_CORR`), which guarantees a positive-definite $\bSigma_{k}$ for each grouping factor.
+
+## Time-varying regression parameters
+
+Parameters can be modelled as time-varying according to a random walk or first-order autoregressive, AR(1), process. The time-series model is defined by `time_varying_type`. For all types:
+
+$$
+\begin{aligned}
+  \mu_{\s,t} &= f^{-1} \left( \ldots +  \bX^{\RM{tvc}}_{\s,t} \bgam_{t} + \ldots \right),
+\end{aligned}
+$$
+where $\bgam_{t}$ is an optional vector of time-varying regression parameters and $\bX^{\RM{tvc}}_{\s,t}$ is the corresponding model matrix with covariate values.
+This is defined via the `time_varying` argument, assuming that the `time` argument is also supplied a column name.
+`time_varying` takes a *one-sided* formula.
+` ~ 1` implies a time-varying intercept.
+
+The following equations describe the time-series process for a single time-varying coefficient $\gamma_{p,t}$, where $p$ indexes the time-varying coefficient.
+When multiple time-varying coefficients are specified, each follows its time-series process independently with its own variance $\sigma_{\gamma,p}^2$ and (for AR1) correlation parameter $\rho_{\gamma,p}$.
+
+For `time_varying_type = 'rw'`, the first time step is estimated as a fixed effect (equivalent to an improper flat prior):
+
+$$
+\begin{aligned}
+  \gamma_{p,t>1} &\sim \RM{Normal} \left(\gamma_{p,t-1}, \sigma_{\gamma,p}^2 \right).
+\end{aligned}
+$$
+
+Because the initial value is estimated as part of the time-varying formula, the same variable should not appear in the fixed-effects formula.
+The formula `time_varying = ~ 1` implicitly represents a time-varying intercept (assuming the `time` argument has been supplied) and, in this case, the intercept should be omitted from the main-effects formula (e.g., `formula = y ~ 0 + ...` or `formula = y ~ -1 + ...`).
+
+For `time_varying_type = 'rw0'`, the first time step is estimated from a mean-zero prior:
+
+$$
+\begin{aligned}
+  \gamma_{p,t=1} &\sim \RM{Normal} \left(0, \sigma_{\gamma,p}^2 \right),\\
+  \gamma_{p,t>1} &\sim \RM{Normal} \left(\gamma_{p,t-1}, \sigma_{\gamma,p}^2 \right).
+\end{aligned}
+$$
+In this case, the time-varying variable (including the intercept) *should* be included in the main effects.
+
+For `time_varying_type = 'ar1'`:
+
+$$
+\begin{aligned}
+  \gamma_{p,t=1} &\sim \RM{Normal} \left(0, \sigma_{\gamma,p}^2 \right),\\
+  \gamma_{p,t>1} &\sim \RM{Normal} \left(\rho_{\gamma,p}\gamma_{p,t-1}, (1 - \rho_{\gamma,p}^2) \sigma_{\gamma,p}^2 \right),
+\end{aligned}
+$$
+where $\rho_{\gamma,p}$ is the correlation between subsequent time steps.
+The first time step is given a mean-zero prior.
 
 ## Spatial random fields
 
@@ -264,55 +474,6 @@ where the distribution of the spatiotemporal field in the initial time step is t
 A random walk has no stationary variance: the marginal variance grows with each time step.
 Therefore, $\sigma_\epsilon$ is the standard deviation of the innovations $\bdelta_t$ (and of the field in the first time step), not the marginal standard deviation of the field in later time steps.
 
-## Time-varying regression parameters
-
-Parameters can be modelled as time-varying according to a random walk or first-order autoregressive, AR(1), process. The time-series model is defined by `time_varying_type`. For all types:
-
-$$
-\begin{aligned}
-  \mu_{\s,t} &= f^{-1} \left( \ldots +  \bX^{\RM{tvc}}_{\s,t} \bgam_{t} + \ldots \right),
-\end{aligned}
-$$
-where $\bgam_{t}$ is an optional vector of time-varying regression parameters and $\bX^{\RM{tvc}}_{\s,t}$ is the corresponding model matrix with covariate values.
-This is defined via the `time_varying` argument, assuming that the `time` argument is also supplied a column name.
-`time_varying` takes a *one-sided* formula.
-` ~ 1` implies a time-varying intercept.
-
-The following equations describe the time-series process for a single time-varying coefficient $\gamma_{p,t}$, where $p$ indexes the time-varying coefficient.
-When multiple time-varying coefficients are specified, each follows its time-series process independently with its own variance $\sigma_{\gamma,p}^2$ and (for AR1) correlation parameter $\rho_{\gamma,p}$.
-
-For `time_varying_type = 'rw'`, the first time step is estimated as a fixed effect (equivalent to an improper flat prior):
-
-$$
-\begin{aligned}
-  \gamma_{p,t>1} &\sim \RM{Normal} \left(\gamma_{p,t-1}, \sigma_{\gamma,p}^2 \right).
-\end{aligned}
-$$
-
-Because the initial value is estimated as part of the time-varying formula, the same variable should not appear in the fixed-effects formula.
-The formula `time_varying = ~ 1` implicitly represents a time-varying intercept (assuming the `time` argument has been supplied) and, in this case, the intercept should be omitted from the main-effects formula (e.g., `formula = y ~ 0 + ...` or `formula = y ~ -1 + ...`).
-
-For `time_varying_type = 'rw0'`, the first time step is estimated from a mean-zero prior:
-
-$$
-\begin{aligned}
-  \gamma_{p,t=1} &\sim \RM{Normal} \left(0, \sigma_{\gamma,p}^2 \right),\\
-  \gamma_{p,t>1} &\sim \RM{Normal} \left(\gamma_{p,t-1}, \sigma_{\gamma,p}^2 \right).
-\end{aligned}
-$$
-In this case, the time-varying variable (including the intercept) *should* be included in the main effects.
-
-For `time_varying_type = 'ar1'`:
-
-$$
-\begin{aligned}
-  \gamma_{p,t=1} &\sim \RM{Normal} \left(0, \sigma_{\gamma,p}^2 \right),\\
-  \gamma_{p,t>1} &\sim \RM{Normal} \left(\rho_{\gamma,p}\gamma_{p,t-1}, (1 - \rho_{\gamma,p}^2) \sigma_{\gamma,p}^2 \right),
-\end{aligned}
-$$
-where $\rho_{\gamma,p}$ is the correlation between subsequent time steps.
-The first time step is given a mean-zero prior.
-
 ## Spatially varying coefficients (SVC)
 
 Spatially varying coefficient models are defined as
@@ -337,44 +498,6 @@ $$
 $$
 
 Each $\bQ_{\zeta,l}$ has its own $\tau_{\zeta,l}$ (and therefore $\sigma_{\zeta,l}$) but shares $\kappa$ with the spatial random field $\bomega$.
-
-## Random intercepts and slopes
-
-Multilevel (hierarchical) intercepts and slopes follow the familiar lme4/glmmTMB formulation.
-Each grouping factor $k$ can carry an intercept-only term or a vector of random effects (intercept plus slopes) with a full covariance matrix:
-
-$$
-\begin{aligned}
-  \mu_{\s,t} &= f^{-1} \left( \ldots + \sum_{k} \mathbf{z}_{k,\s,t}^\top \mathbf{b}_{k,g} + \ldots \right),\\
-  \mathbf{b}_{k,g} &\sim \RM{MVNormal} \left( \bs{0}, \bSigma_{k} \right),
-\end{aligned}
-$$
-
-where $g$ is the level of grouping factor $k$ for the observation at $(\s, t)$, $\mathbf{b}_{k,g}$ is the vector of random effects for that level, and $\mathbf{z}_{k,\s,t}$ contains the corresponding covariate values (1 for an intercept and the covariate value for each slope).
-Random effects are independent across levels and grouping factors.
-The scalar special case `(1 | g)` is a random intercept $b_{g} \sim \RM{Normal}(0, \sigma_{b}^2)$.
-
-Use lme4-style syntax in `formula`, e.g. `(1 | g)` for random intercepts, `(1 + x | g)` for correlated intercepts and slopes, or `(1 | g1) + (1 + x | g2)` to give each grouping factor its own (co)variance.
-
-Internally, standard deviations are estimated on the log scale, and correlations are represented by unconstrained parameters of a Cholesky factor of the correlation matrix (TMB's `UNSTRUCTURED_CORR`), which guarantees a positive-definite $\bSigma_{k}$ for each grouping factor.
-
-## Offset terms
-
-Offset terms can be included through the `offset` argument in `sdmTMB()`.
-These are included in the linear predictor as
-
-$$
-\begin{aligned}
-  \mu_{\s,t} &= f^{-1} \left( \ldots + O_{\s,t} + \ldots \right),
-\end{aligned}
-$$
-
-where $O_{\s,t}$ is an offset term---a variable on the linear predictor scale with its coefficient fixed at one.
-With a log link, the offset is usually a **log-transformed** measure of effort (e.g., `log(area_swept)`), so that $\mu_{\s,t}$ is proportional to effort.
-
-When predicting, `predict.sdmTMB()` without `newdata` uses the offset from the fitted model.
-With `newdata`, the offset is 0 unless an `offset` vector is supplied to `predict.sdmTMB()`.
-Therefore, if the offset represents log effort, predictions on `newdata` are for one unit of effort (`log(1) = 0`) by default.
 
 ## Nonlocal formula (covariate diffusion)
 
@@ -413,40 +536,6 @@ Larger $\rho_T$ means a longer memory of past covariate values.
 
 When both wrappers are applied to the same covariate, spatial smoothing and temporal propagation act on the same evolving field (this corresponds to `kappaST = 0` in @thorson2026), and the reported `MSDK` and `RMSDK` account for both.
 Separate $\kappa_S$ and $\kappa_T$ parameters are estimated for each covariate.
-
-## Areal autoregressive models (SAR/CAR)
-
-In addition to continuous-space SPDE random fields, sdmTMB can fit areal spatial autoregressive models with `spatial_model = "sar"` or `spatial_model = "car"`.
-These require an areal domain supplied to `mesh` with the help of `make_areal_domain()`.
-
-For both areal options, the latent spatial and spatiotemporal effects are Gaussian Markov random fields with precision defined by the areal weight matrix $\mathbf{W}$:
-
-$$
-\bomega \sim \RM{MVNormal}\left(\bs{0}, \sigma_\omega^2 \bQ^{-1}\right), \:
-\beps_t \sim \RM{MVNormal}\left(\bs{0}, \sigma_\epsilon^2 \bQ^{-1}\right).
-$$
-
-Unlike the SPDE case, $\sigma_\omega$ and $\sigma_\epsilon$ here are scale parameters, not marginal standard deviations: the marginal variance of each area is $\sigma^2 (\bQ^{-1})_{ii}$, which depends on $\mathbf{W}$ and the autocorrelation parameter and generally differs among areas.
-
-For SAR (`spatial_model = "sar"`), the precision matrix is
-
-$$
-\bQ_{\mathrm{SAR}} = \left(\mathbf{I} - \rho_{\mathrm{SAR}}\mathbf{W}\right)^\top
-\left(\mathbf{I} - \rho_{\mathrm{SAR}}\mathbf{W}\right),
-$$
-
-where $\rho_{\mathrm{SAR}} \in (-1, 1)$ is reported as `rho_sar`.
-By default, SAR uses a row-normalized $\mathbf{W}$ (`sar_weight_style = "row"`), with an option to use raw weights.
-With `sar_weight_style = "raw"`, SAR uses the unnormalized adjacency/weight matrix directly, so neighbour influence depends on the original edge weights (and, if unweighted, on the number of neighbours) rather than being scaled to sum to 1 within each row.
-
-For CAR (`spatial_model = "car"`), the precision matrix is
-
-$$
-\bQ_{\mathrm{CAR}} = \mathbf{D} - \alpha_{\mathrm{CAR}}\mathbf{W},
-$$
-
-where $\mathbf{D}$ is diagonal with elements $D_{ii} = \sum_j W_{ij}$ (the number of neighbours for unweighted adjacency; set to 1 for areas with no neighbours) and $\alpha_{\mathrm{CAR}} \in (0, 1)$ is reported as `alpha_car`.
-CAR requires a symmetric adjacency matrix.
 
 # Observation model families
 
@@ -715,9 +804,7 @@ Code defined [within sdmTMB](https://github.com/sdmTMB/sdmTMB/blob/18a39eabc111e
 
 Example: `family = student(link = "identity", df = 7)`
 
-## Zero-inflated and hurdle structures
-
-### Delta models
+# Delta models
 
 sdmTMB allows for several different kinds of delta (also known as hurdle) models. These families are implemented by specifying the family as a delta distribution. For example:
 
@@ -759,92 +846,6 @@ sdmTMB(
 All other arguments are shared between the linear predictors.
 
 Currently if delta models contain smoothers, both components must have the same main-effects formula.
-
-# Gaussian random fields
-
-## Matérn parameterization
-
-The spatial and spatiotemporal random fields in sdmTMB are Gaussian random fields with (approximately) Matérn covariance.
-The Matérn covariance between the field values at locations $\s_j$ and $\s_k$, separated by distance $d_{jk} = \lVert \s_j - \s_k \rVert$, is
-
-$$
-\mathrm{Cov}\left( \omega_{\s_j}, \omega_{\s_k} \right) = \frac{\sigma^2}{2^{\nu - 1}\Gamma(\nu)} (\kappa d_{jk})^\nu K_\nu \left( \kappa d_{jk} \right),
-$$
-
-where $\sigma^2$ is the marginal variance, $\nu$ controls the smoothness of the field, $\Gamma$ is the gamma function, $K_\nu$ is the modified Bessel function of the second kind, and $\kappa$ is a scaling parameter (larger $\kappa$ means correlation decays faster with distance).
-
-Computing with a dense Matérn covariance matrix is slow for many locations.
-Instead, sdmTMB uses the stochastic partial differential equation (SPDE) approach of @lindgren2011.
-A Gaussian field with Matérn covariance is the solution to the SPDE $(\kappa^2 - \Delta)^{\alpha/2}(\tau\,\omega(\s)) = \mathcal{W}(\s)$, where $\Delta$ is the Laplacian, $\mathcal{W}$ is Gaussian white noise, and $\alpha = \nu + d/2$ for $d$ spatial dimensions.
-sdmTMB uses $d = 2$ and $\alpha = 2$, so $\nu = 1$.
-Approximating the solution on a triangulated mesh with piecewise-linear basis functions (the finite element method) gives field values at the mesh vertices with a sparse precision matrix
-
-$$
-\bQ = \tau^2 \left( \kappa^4 \mathbf{C} + 2 \kappa^2 \mathbf{G} + \mathbf{G} \mathbf{C}^{-1} \mathbf{G} \right),
-$$
-
-where $\mathbf{C}$ (a diagonal "mass" matrix) and $\mathbf{G}$ (a sparse "stiffness" matrix) depend only on the mesh.
-The sparsity of $\bQ$ is what makes the computations fast.
-
-The parameters $\kappa$ and $\tau$ are reported as the range and marginal standard deviation:
-
-$$
-\textrm{range} = \frac{\sqrt{8}}{\kappa}, \qquad
-\sigma = \frac{1}{\sqrt{4 \pi}\, \tau \kappa}.
-$$
-
-The range is the distance at which the correlation between two points has dropped to approximately 0.13.
-Note that for a fixed $\tau$, increasing $\kappa$ decreases $\sigma$.
-
-In the case of a spatiotemporal model with both spatial and spatiotemporal fields, if `share_range = TRUE` in `sdmTMB()` (the default), then a single $\kappa$ and range are estimated with separate $\sigma_\omega$ and $\sigma_\epsilon$.
-This often makes sense since data are often only weakly informative about $\kappa$.
-If `share_range = FALSE`, then separate $\kappa_\omega$ and $\kappa_\epsilon$ are estimated.
-Spatially varying coefficient fields always share $\kappa$ with the spatial random field.
-
-## Projection $\bA$ matrix
-
-In the SPDE approach, the random field at any location is defined by the piecewise-linear basis expansion $\omega(\s) = \sum_k \psi_k(\s)\, \omega_k$, where $\omega_k$ is the field value at mesh vertex $k$ and $\psi_k$ is a "tent" function that is 1 at vertex $k$ and decreases linearly to 0 at the neighbouring vertices.
-Evaluating the field at observed or prediction locations is therefore a multiplication by a sparse projection matrix $\bA$ with elements $A_{ik} = \psi_k(\s_i)$ [@lindgren2015]:
-
-$$
-\bomega^* = \bA \bomega,
-$$ where $\bomega^*$ represents the values of the spatial random fields at the observed locations or predicted data locations.
-The matrix $\bA$ has a row for each data point or prediction point and a column for each mesh vertex.
-Each row has at most three non-zero elements: the barycentric weights of the vertices of the triangle containing that location.
-This interpolation is part of the model definition rather than a separate approximation step.
-The same interpolation happens for any spatiotemporal random fields
-
-$$
-\beps_t^* = \bA \beps_t.
-$$
-
-## Anisotropy
-
-TMB allows for anisotropy, where spatial covariance may depend on direction ([full details](https://kaskr.github.io/adcomp/namespaceR__inla.html)).
-Anisotropy can be turned on or off with the logical `anisotropy` argument to `sdmTMB()`.
-There are a number of ways to implement anisotropic covariance [@fuglstad2015a], and we adopt geometric anisotropy defined by a 2-parameter matrix $\bH$, which replaces Euclidean distance with $d_{jk} = \sqrt{(\s_j - \s_k)^\top \bH^{-1} (\s_j - \s_k)}$.
-The elements of $\bH$ are defined by the parameters $h_1 > 0$ and $h_2$ so that $H_{1,1} = h_{1}$, $H_{1,2} = H_{2,1} = h_{2}$ and $H_{2,2} = (1 + h_{2}^2) / h_{1}$.
-$\bH$ is symmetric and positive definite with determinant 1, so it stretches distances along one axis and shrinks them along the perpendicular axis without changing area.
-The result is a different range in each direction, with the orientation of the major axis estimated.
-
-Once a model is fitted with `sdmTMB()`, the anisotropy relationships may be plotted using the `plot_anisotropy()` function, which takes the fitted object as an argument.
-If a barrier mesh is used, anisotropy is disabled.
-
-## Incorporating physical barriers into the SPDE
-
-In some cases the spatial domain of interest may be complex and bounded by some barrier such as by land or water (e.g., coastlines, islands, lakes).
-SPDE models allow for physical barriers to be incorporated into the modelling [@bakka2019].
-With `sdmTMB()` models, the mesh construction occurs in two steps: the user (1) constructs a mesh with a call to `sdmTMB::make_mesh()`, and (2) passes the mesh to `sdmTMBextra::add_barrier_mesh()`.
-The barriers must be constructed as `sf` objects [@pebesma2018] with polygons defining the barriers.
-See `?sdmTMBextra::add_barrier_mesh` for an example.
-
-The barrier implementation requires the user to select a fraction value (`range_fraction` argument) that defines the fraction of the usual spatial range when crossing the barrier [@bakka2019].
-For example, if the range was estimated at 10 km, `range_fraction = 0.2` would assign a 2 km range to the triangles marked as barrier.
-That makes correlation decay much faster through the barrier than around it, which effectively discourages spatial smoothing from “jumping” across landmasses.
-From experimentation, values around 0.1 or 0.2 seem to work well but values much lower than 0.1 can result in convergence issues.
-
-[This website](https://haakonbakkagit.github.io/btopic128.html) by Francesco Serafini and Haakon Bakka provides an illustration with INLA.
-The implementation within TMB was borrowed from code written by Olav Nikolai Breivik and Hans Skaug at the [TMB Case Studies](https://github.com/skaug/tmb-case-studies) GitHub site.
 
 # Optimization
 
