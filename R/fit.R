@@ -30,8 +30,8 @@ NULL
 #'   continuous-space SPDE approximation. `"sar"` and `"car"` use areal spatial
 #'   autoregressive models with an areal domain supplied to `mesh`.
 #'   `r lifecycle::badge("experimental")` `"nngp"` uses a mesh-based
-#'   nearest-neighbour Gaussian process (NNGP) prior with exponential
-#'   covariance at the mesh vertices (see Details). Capitalization is ignored.
+#'   nearest-neighbour Gaussian process (NNGP) prior with exponential or
+#'   Matérn covariance at the mesh vertices (see Details). Capitalization is ignored.
 #' @param time An optional time column name (as character). Can be left as
 #'   `NULL` for a model with only spatial random fields; however, if the data
 #'   are actually spatiotemporal and you wish to calculate derived quantities
@@ -348,10 +348,14 @@ NULL
 #' visited in a max-min order, and each is conditioned on up to 6 nearby
 #' preceding vertices (set with, e.g., `sdmTMBcontrol(nngp_neighbours = 10L)`).
 #' This is based on J.T. Thorson's initial NNGP implementation in the
-#' [tinyVAST](https://vast-lib.github.io/tinyVAST/) package. The parent covariance is exponential (Matérn with
-#' \eqn{\nu = 1/2}), with correlation `exp(-2 * distance / range)`, so the
-#' reported range keeps its usual meaning: the distance at which correlation
-#' is about 0.13. The reported SD and range describe this parent covariance.
+#' [tinyVAST](https://vast-lib.github.io/tinyVAST/) package. By default, the
+#' parent covariance is exponential (Matérn with \eqn{\nu = 1/2}), with
+#' correlation `exp(-2 * distance / range)`, so the reported range keeps its
+#' usual meaning: the distance at which correlation is about 0.13.
+#' `sdmTMBcontrol(nngp_covariance = "matern")` instead uses the Matérn
+#' covariance with \eqn{\nu = 1} that the SPDE approximates (correlation of
+#' about 0.14 at the range). The reported SD and range describe the parent
+#' covariance.
 #' The field between vertices is still interpolated with the mesh, so mesh
 #' resolution matters as for SPDE fields. Anisotropy and barrier meshes are
 #' not supported. Requires the \pkg{GPvecchia} and \pkg{GpGp} packages.
@@ -891,7 +895,8 @@ sdmTMB <- function(
     "suppress_nlminb_warnings", "collapse_spatial_variance",
     "collapse_spatial_variance_threshold",
     "collapse_spatiotemporal_ar1", "collapse_ar1_threshold",
-    "sar_weight_style", "get_rsr", "backend", "nngp_neighbours"
+    "sar_weight_style", "get_rsr", "backend", "nngp_neighbours",
+    "nngp_covariance"
   )
   .control <- control
   # FIXME; automate this from sdmTMcontrol args?
@@ -1014,7 +1019,8 @@ sdmTMB <- function(
     share_range_user = share_range_user,
     spatial_model = spatial_model,
     sar_weight_style = sar_weight_style,
-    nngp_neighbours = control$nngp_neighbours
+    nngp_neighbours = control$nngp_neighbours,
+    nngp_covariance = control$nngp_covariance
   )
   is_areal <- identical(domain$type, "areal")
 

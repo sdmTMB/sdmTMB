@@ -104,8 +104,12 @@
 #'   adjacency/weight matrix for direct comparisons to packages that do so.
 #' @param nngp_neighbours Maximum number of neighbouring (preceding) mesh
 #'   vertices each vertex is conditioned on with `spatial_model = "nngp"` in
-#'   [sdmTMB()]. Larger values give a closer approximation to the exponential
+#'   [sdmTMB()]. Larger values give a closer approximation to the parent
 #'   covariance at the mesh vertices but are slower.
+#' @param nngp_covariance Parent covariance for `spatial_model = "nngp"` in
+#'   [sdmTMB()]. `"exponential"` (the default) is the Matérn with
+#'   \eqn{\nu = 1/2}. `"matern"` is the Matérn with \eqn{\nu = 1}, as
+#'   approximated by the SPDE; it is smoother and somewhat slower to evaluate.
 #' @param get_rsr Experimental option, whether to calculate the restricted
 #'   spatial regression (RSR) adjusted estimator for covariate responses. If
 #'   `get_rsr = TRUE`, these will be available via
@@ -161,6 +165,7 @@ sdmTMBcontrol <- function(
   collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
   nngp_neighbours = 6L,
+  nngp_covariance = c("exponential", "matern"),
   get_rsr = FALSE,
   backend = getOption("sdmTMB.backend", "rtmb"),
   ...) {
@@ -214,6 +219,7 @@ sdmTMBcontrol <- function(
     nngp_neighbours == round(nngp_neighbours)
   )
   nngp_neighbours <- as.integer(nngp_neighbours)
+  nngp_covariance <- match.arg(nngp_covariance)
   backend <- match.arg(backend, c("tmb", "rtmb"))
 
   out <- named_list(
@@ -241,6 +247,7 @@ sdmTMBcontrol <- function(
     collapse_ar1_threshold,
     sar_weight_style,
     nngp_neighbours,
+    nngp_covariance,
     get_rsr
   )
   c(out, list(...))

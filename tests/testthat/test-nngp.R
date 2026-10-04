@@ -64,6 +64,36 @@ test_that("NNGP density matches the dense Gaussian it defines", {
   expect_equal(stats::cov(t(draws)), solve(Q), tolerance = 0.05)
 })
 
+test_that("Matérn NNGP correlation matches the Matérn nu = 1 and its dense GP", {
+  skip_if_not_installed("GpGp")
+  skip_if_not_installed("GPvecchia")
+  kappa <- 0.6
+  d <- c(0, 0.1, 1, 5, 20)
+  expect_equal(nngp_correlation(d, kappa, "matern"),
+    c(1, (kappa * d[-1]) * besselK(kappa * d[-1], 1)))
+  # Correlation at the range sqrt(8) / kappa, as for the SPDE
+  expect_equal(nngp_correlation(sqrt(8) / kappa, kappa, "matern"),
+    sqrt(8) * besselK(sqrt(8), 1))
+
+  coords <- nngp_test_coords(15L)
+  n <- nrow(coords)
+  x <- stats::rnorm(n)
+  graph <- make_nngp_data(coords, n - 1L, "matern")
+  expect_identical(graph$covariance, "matern")
+  R <- nngp_correlation(as.matrix(stats::dist(coords)), kappa, "matern")
+  R <- (R + diag(nngp_nugget, n)) / (1 + nngp_nugget)
+  expect_equal(nngp_nll(x, nngp_factor(graph, kappa), 1.7),
+    -mvtnorm::dmvnorm(x, sigma = 1.7^2 * R, log = TRUE))
+
+  # The kappa gradient through besselK() matches finite differences
+  f <- RTMB::MakeTape(function(k) nngp_nll(x, nngp_factor(graph, k), 1.7),
+    kappa)
+  h <- 1e-5
+  expect_equal(as.numeric(f$jacobian(kappa)),
+    (f(kappa + h) - f(kappa - h)) / (2 * h), tolerance = 1e-5)
+  expect_error(sdmTMBcontrol(nngp_covariance = "gaussian"))
+})
+
 test_that("NNGP models fit, predict, and simulate with the RTMB backend", {
   skip_on_cran()
   skip_if_not_installed("GpGp")
@@ -80,6 +110,13 @@ test_that("NNGP models fit, predict, and simulate with the RTMB backend", {
   p <- predict(fit, newdata = nd, nsim = 3L)
   expect_identical(dim(p), c(nrow(nd), 3L))
   expect_length(simulate(fit, nsim = 2L, type = "mle-mvn"), 2L * nrow(d))
+
+  fit_matern <- sdmTMB(density ~ 1, data = d, mesh = mesh, time = "year",
+    family = tweedie(), spatial_model = "nngp", spatiotemporal = "ar1",
+    control = sdmTMBcontrol(nngp_covariance = "matern"))
+  expect_true(all(unlist(sanity(fit_matern, silent = TRUE))))
+  expect_identical(fit_matern$tmb_data$nngp_data$covariance, "matern")
+  expect_length(predict(fit_matern, newdata = nd, nsim = 2L), 2L * nrow(nd))
 
   expect_error(
     sdmTMB(density ~ 1, data = d, mesh = mesh, spatial_model = "nngp",

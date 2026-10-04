@@ -21,19 +21,30 @@
 # R_delta = (R + delta I) / (1 + delta), so the diagonal stays at one.
 nngp_nugget <- 1e-10
 
-# Exponential (Matérn nu = 1/2) parent correlation. It is scaled so that the
-# correlation at sdmTMB's conventional range sqrt(8) / kappa is exp(-2),
-# close to the Matérn nu = 1 correlation at that range.
-nngp_correlation <- function(distance, kappa) {
-  exp(-kappa * distance / sqrt(2))
+# Parent correlation at inverse range `kappa`. The exponential (Matérn
+# nu = 1/2) is scaled so that the correlation at sdmTMB's conventional range
+# sqrt(8) / kappa is exp(-2), close to the Matérn nu = 1 correlation there.
+# The Matérn nu = 1 is the covariance the SPDE approximates; zero distances
+# (data) are set to one directly since K_1(0) is infinite.
+nngp_correlation <- function(distance, kappa, covariance = "exponential") {
+  if (covariance == "exponential") return(exp(-kappa * distance / sqrt(2)))
+  "[<-" <- RTMB::ADoverload("[<-")
+  out <- distance * 0 + 1
+  nonzero <- distance > 0
+  x <- kappa * distance[nonzero]
+  if (length(x)) out[nonzero] <- x * RTMB::besselK(x, 1)
+  out
 }
 
 # Ordering and predecessor graph for vertex coordinates `coords`. Lists and
 # rows are indexed by ordered position; `order`, `neighbours`, and `index` hold
 # one-based original vertex indices, and distances use the original
 # coordinates. Row i of `index` holds the neighbours of ordered vertex i,
-# padded with vertex 1 (given weight zero by `nngp_factor()`).
-make_nngp_data <- function(coords, nngp_neighbours) {
+# padded with vertex 1 (given weight zero by `nngp_factor()`). `covariance`
+# is the parent correlation passed to `nngp_correlation()`.
+make_nngp_data <- function(coords, nngp_neighbours,
+                           covariance = c("exponential", "matern")) {
+  covariance <- match.arg(covariance)
   coords <- as.matrix(coords)
   if (!is.numeric(coords) || ncol(coords) != 2L || !all(is.finite(coords))) {
     cli_abort("NNGP vertex coordinates must be a finite two-column matrix.")
@@ -73,7 +84,7 @@ make_nngp_data <- function(coords, nngp_neighbours) {
   for (i in which(k > 0L)) index[i, seq_len(k[[i]])] <- neighbours[[i]]
   list(order = as.integer(order), neighbours = neighbours, index = index,
     distance_to = distance_to, distance_between = distance_between,
-    m = as.integer(nngp_neighbours))
+    m = as.integer(nngp_neighbours), covariance = covariance)
 }
 
 # Conditional weights and SDs (for unit parent variance) at inverse range
@@ -85,10 +96,11 @@ nngp_factor <- function(graph, kappa) {
   weights <- matrix(0, nrow(graph$index), ncol(graph$index))
   variance <- rep(1, length(k))
   regularize <- 1 / (1 + nngp_nugget)
+  covariance <- graph$covariance
   for (i in which(k > 0L)) {
-    R <- (nngp_correlation(graph$distance_between[[i]], kappa) +
+    R <- (nngp_correlation(graph$distance_between[[i]], kappa, covariance) +
       diag(nngp_nugget, k[[i]])) * regularize
-    r <- nngp_correlation(graph$distance_to[[i]], kappa) * regularize
+    r <- nngp_correlation(graph$distance_to[[i]], kappa, covariance) * regularize
     b <- RTMB::solve(R, r)
     weights[i, seq_len(k[[i]])] <- b
     variance[i] <- 1 - sum(r * b)

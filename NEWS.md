@@ -19,7 +19,9 @@
 * Add experimental `spatial_model = "nngp"` for the RTMB backend: a
   nearest-neighbour Gaussian process (NNGP) prior with exponential covariance
   at the mesh vertices, in place of the SPDE precision, for all random fields.
-  `sdmTMBcontrol(nngp_neighbours = 6)` sets the number of neighbours. Fits match
+  `sdmTMBcontrol(nngp_neighbours = 6)` sets the number of neighbours, and
+  `sdmTMBcontrol(nngp_covariance = "matern")` uses the Matérn (nu = 1)
+  covariance approximated by the SPDE instead. Exponential fits match
   tinyVAST's NNGP when the mesh vertices are its polygon centroids.
 
 * *RTMB is now the default backend.* The model code is written in R (via RTMB)

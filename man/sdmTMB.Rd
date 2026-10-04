@@ -116,8 +116,8 @@ mathematical details. Capitalization is ignored. \code{TRUE} gets converted to
 continuous-space SPDE approximation. \code{"sar"} and \code{"car"} use areal spatial
 autoregressive models with an areal domain supplied to \code{mesh}.
 \ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}} \code{"nngp"} uses a mesh-based
-nearest-neighbour Gaussian process (NNGP) prior with exponential
-covariance at the mesh vertices (see Details). Capitalization is ignored.}
+nearest-neighbour Gaussian process (NNGP) prior with exponential or
+Matérn covariance at the mesh vertices (see Details). Capitalization is ignored.}
 
 \item{share_range}{Logical: estimate a shared spatial and spatiotemporal
 range parameter (\code{TRUE}, default) or independent range parameters
@@ -404,10 +404,14 @@ process prior (Datta et al. 2016) at the mesh vertices. Vertices are
 visited in a max-min order, and each is conditioned on up to 6 nearby
 preceding vertices (set with, e.g., \code{sdmTMBcontrol(nngp_neighbours = 10L)}).
 This is based on J.T. Thorson's initial NNGP implementation in the
-\href{https://vast-lib.github.io/tinyVAST/}{tinyVAST} package. The parent covariance is exponential (Matérn with
-\eqn{\nu = 1/2}), with correlation \code{exp(-2 * distance / range)}, so the
-reported range keeps its usual meaning: the distance at which correlation
-is about 0.13. The reported SD and range describe this parent covariance.
+\href{https://vast-lib.github.io/tinyVAST/}{tinyVAST} package. By default, the
+parent covariance is exponential (Matérn with \eqn{\nu = 1/2}), with
+correlation \code{exp(-2 * distance / range)}, so the reported range keeps its
+usual meaning: the distance at which correlation is about 0.13.
+\code{sdmTMBcontrol(nngp_covariance = "matern")} instead uses the Matérn
+covariance with \eqn{\nu = 1} that the SPDE approximates (correlation of
+about 0.14 at the range). The reported SD and range describe the parent
+covariance.
 The field between vertices is still interpolated with the mesh, so mesh
 resolution matters as for SPDE fields. Anisotropy and barrier meshes are
 not supported. Requires the \pkg{GPvecchia} and \pkg{GpGp} packages.

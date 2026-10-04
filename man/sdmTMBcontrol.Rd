@@ -29,6 +29,7 @@ sdmTMBcontrol(
   collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
   nngp_neighbours = 6L,
+  nngp_covariance = c("exponential", "matern"),
   get_rsr = FALSE,
   backend = getOption("sdmTMB.backend", "rtmb"),
   ...
@@ -152,8 +153,13 @@ adjacency/weight matrix for direct comparisons to packages that do so.}
 
 \item{nngp_neighbours}{Maximum number of neighbouring (preceding) mesh
 vertices each vertex is conditioned on with \code{spatial_model = "nngp"} in
-\code{\link[=sdmTMB]{sdmTMB()}}. Larger values give a closer approximation to the exponential
+\code{\link[=sdmTMB]{sdmTMB()}}. Larger values give a closer approximation to the parent
 covariance at the mesh vertices but are slower.}
+
+\item{nngp_covariance}{Parent covariance for \code{spatial_model = "nngp"} in
+\code{\link[=sdmTMB]{sdmTMB()}}. \code{"exponential"} (the default) is the Matérn with
+\eqn{\nu = 1/2}. \code{"matern"} is the Matérn with \eqn{\nu = 1}, as
+approximated by the SPDE; it is smoother and somewhat slower to evaluate.}
 
 \item{get_rsr}{Experimental option, whether to calculate the restricted
 spatial regression (RSR) adjusted estimator for covariate responses. If

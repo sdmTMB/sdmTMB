@@ -819,14 +819,22 @@ The first vertex has no neighbours, so $\omega_1 \sim \RM{Normal}(0, \sigma_\ome
 The product of these conditional densities is a proper multivariate normal distribution with a sparse precision matrix.
 When every vertex conditions on all its predecessors ($m \ge n-1$), the joint distribution equals the regularized parent Gaussian process at the vertices.
 
-The parent correlation is exponential (Matérn with $\nu = 1/2$),
+By default, the parent correlation is exponential (Matérn with $\nu = 1/2$),
 
 $$
 R_0(d_{jk}) = \exp\left(-\frac{\kappa d_{jk}}{\sqrt{2}}\right) = \exp\left(-\frac{2 d_{jk}}{\textrm{range}}\right),
 $$
 
 scaled so that $\textrm{range} = \sqrt{8} / \kappa$ keeps its usual meaning: the distance at which the correlation is about 0.13.
-The SD parameters ($\sigma_\omega$, $\sigma_\epsilon$, $\sigma_\zeta$) are the marginal SDs of this parent covariance, computed from $\tau$ and $\kappa$ as for SPDE fields.
+With `sdmTMBcontrol(nngp_covariance = "matern")`, the parent correlation is instead the Matérn with $\nu = 1$ that the SPDE approximates,
+
+$$
+R_0(d_{jk}) = \kappa d_{jk} K_1(\kappa d_{jk}),
+$$
+
+with $R_0(0) = 1$ and the same $\textrm{range} = \sqrt{8} / \kappa$ (correlation of about 0.14).
+This smoother covariance requires modified Bessel function evaluations, which are slower than exponentials, although fitting time is usually dominated by other calculations.
+The SD parameters ($\sigma_\omega$, $\sigma_\epsilon$, $\sigma_\zeta$) are the marginal SDs of the parent covariance, computed from $\tau$ and $\kappa$ as for SPDE fields.
 For numerical stability, the conditional formulas use
 
 $$
