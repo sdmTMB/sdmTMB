@@ -446,6 +446,11 @@ extract_call_name <- function(call_element, max_width = 80) {
     return(deparsed)
   }
 
+  # String literals (e.g., time = "year")
+  if (is.character(call_element) && length(call_element) == 1L) {
+    return(call_element)
+  }
+
   obj_class <- class(call_element)[1]
   return(obj_class)
 }

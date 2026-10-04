@@ -252,6 +252,9 @@
   `multiphase` phase falls back to the default starting values. The needless
   Newton/parameter-limit message is removed.
 
+* Fix `print()` showing `Time column: character` instead of the time column
+  name (a regression in sdmTMB 0.8.1).
+
 * Fix `reload_model()` for models fit with `normalize = TRUE`.
 
 * Fix `update.sdmTMB()` for binomial `cbind()` responses with random effects

@@ -44,6 +44,12 @@ test-optional:
 cran-check:
 	echo "devtools::check(\".\")" | $(R) --no-echo
 
+# Knit README.Rmd and losslessly compress its figures (requires optipng)
+.PHONY: readme
+readme:
+	echo "devtools::load_all(quiet = TRUE); rmarkdown::render('README.Rmd', quiet = TRUE)" | $(R) --no-echo
+	optipng -o2 -quiet man/figures/README-*.png
+
 # Reference-fit regression suite (see reference-fits/README.md)
 REF_CORES=5
 reference-check:

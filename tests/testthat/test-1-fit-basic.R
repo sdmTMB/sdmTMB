@@ -221,3 +221,9 @@ test_that("poly() works on newdata", {
   p2 <- predict(m2, newdata = nd)
   expect_equal(p, p2, tolerance = 1e-4)
 })
+
+test_that("extract_call_name() returns string literals for print()", {
+  expect_identical(extract_call_name(quote(year)), "year")
+  expect_identical(extract_call_name("year"), "year")
+  expect_null(extract_call_name(NULL))
+})
