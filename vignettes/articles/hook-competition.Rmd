@@ -208,11 +208,11 @@ grid$log_depth <- log(pmin(pmax(grid$depth, min(d$depth)), max(d$depth)))
 ```
 
 ```{r index}
-get_ind <- function(fit, label) {
+get_ind <- function(fit, label, ...) {
   ind <- get_index(
     fit, newdata = grid, offset = rep(0, nrow(grid)),
     predict_args = list(re_form_iid = NA),
-    bias_correct = TRUE
+    bias_correct = TRUE, ...
   )
   ind$model <- label
   ind
@@ -227,17 +227,23 @@ ind <- rbind(
 Since these are relative indices, we'll scale each by its geometric mean before plotting:
 
 ```{r plot-index}
-ind <- do.call(rbind, lapply(split(ind, ind$model), function(x) {
-  gm <- exp(mean(log(x$est)))
-  x[, c("est", "lwr", "upr")] <- x[, c("est", "lwr", "upr")] / gm
-  x
-}))
-ggplot(ind, aes(year, est, colour = model, fill = model)) +
-  geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.15, colour = NA) +
-  geom_line() +
-  geom_point() +
-  labs(x = "Year", y = "Relative index", colour = NULL, fill = NULL) +
-  theme(legend.position = "bottom")
+scale_index <- function(ind) {
+  do.call(rbind, lapply(split(ind, ind$model), function(x) {
+    gm <- exp(mean(log(x$est)))
+    x[, c("est", "lwr", "upr")] <- x[, c("est", "lwr", "upr")] / gm
+    x
+  }))
+}
+plot_index <- function(ind) {
+  ggplot(ind, aes(year, est, colour = model, fill = model)) +
+    geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.15, colour = NA) +
+    geom_line() +
+    geom_point() +
+    labs(x = "Year", y = "Relative index", colour = NULL, fill = NULL) +
+    theme(legend.position = "bottom")
+}
+ind <- scale_index(ind)
+plot_index(ind)
 ```
 
 The censored models differ most from the uncensored Poisson model in years with an unusually high or low proportion of censored sets.
@@ -245,12 +251,67 @@ For example, 2011 had the highest proportion of saturated sets, and its index is
 2014 had very few saturated sets, and its index is lower relative to the other years.
 Here, the upper bound mostly has a modest effect, pulling some years (e.g., 2022) partway back towards the Poisson estimates by limiting how large the censored counts can be.
 
+# A censored beta-binomial
+
+A Poisson model has no upper limit on the count, but a set can't catch more fish than it has hooks.
+An alternative is a beta-binomial with the number of hooks as the number of trials.
+With a complementary log-log link, the probability that a hook catches the target species is $p = 1 - \exp(-\exp(\eta))$, where $\eta$ is the linear predictor.
+Then $\exp(\eta)$ is a per-hook catch rate, comparable to the mean of the Poisson model with log hook count as an offset.
+The beta-binomial dispersion parameter accounts for overdispersion, so we don't need an observation-level random intercept.
+
+The `censored_betabinomial()` family works like `censored_poisson()`.
+The latent count without hook competition still can't exceed the number of hooks, so a right-censored set has a count between the observed count and the number of hooks:
+
+$$
+\Pr(c \mid p, \phi) = \Pr(c \le Y \le n), \quad Y \sim \operatorname{BetaBinomial}(n, p, \phi),
+$$
+
+where $n$ is the number of hooks.
+This gives every censored set an upper bound, so we can use the same `censored_upper` vector with `NA` for censored sets and don't need to calculate one.
+The number of hooks is supplied through `weights`.
+
+```{r fit-bb}
+fit_bb <- sdmTMB(
+  catch_count ~ 0 + fyear + poly(log_depth, 2),
+  weights = d$hook_count,
+  data = d,
+  mesh = mesh,
+  family = betabinomial(link = "cloglog"),
+  time = "year",
+  spatial = "on",
+  spatiotemporal = "off"
+)
+fit_bb_cens <- update(
+  fit_bb,
+  family = censored_betabinomial(link = "cloglog"),
+  control = sdmTMBcontrol(censored_upper = upr)
+)
+sanity(fit_bb_cens)
+```
+
+The beta-binomial distribution function has no closed form, so the likelihood of each censored set is a sum over every possible count in its interval.
+Fitting is therefore slower than for the censored Poisson when sets have many hooks.
+
+For the index, `derived_link = "log"` sums $\exp(\eta)$, the per-hook catch rate, over the grid instead of the probability $p$, which can't exceed 1:
+
+```{r index-bb}
+ind_bb <- rbind(
+  get_ind(fit_bb, "Beta-binomial", derived_link = "log"),
+  get_ind(fit_bb_cens, "Censored beta-binomial", derived_link = "log")
+)
+ind_bb <- scale_index(ind_bb)
+plot_index(rbind(ind_bb, ind[ind$model == "Censored Poisson", ]))
+```
+
+Accounting for hook competition moves the beta-binomial index in the same direction as the Poisson index, e.g., up in 2011 and down in 2014, but by less here.
+
 # Summary
 
 - Calculate the proportion of baits removed for each set.
 - Choose a breakdown point $p^*$, e.g., by plotting a smoother of catch against bait removal.
 - Build a `censored_upper` vector: the observed count for uncensored sets and `NA` (or an upper bound) for sets at or above $p^*$.
 - Fit with `family = censored_poisson()` and `control = sdmTMBcontrol(censored_upper = ...)`, ideally with an observation-level random intercept to account for overdispersion.
+- Alternatively, fit with `family = censored_betabinomial(link = "cloglog")` and the number of hooks as `weights`, which limits each count to the number of hooks.
 
 See @watson2023 for the full method, simulation tests, and an application to 11 species.
 

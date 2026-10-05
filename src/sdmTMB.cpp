@@ -24,7 +24,8 @@ enum valid_family {
   nbinom2_mix_family = 15,
   gengamma_family = 16,
   betabinomial_family = 17,
-  ordbeta_family = 18
+  ordbeta_family = 18,
+  censored_betabinomial_family = 19
 };
 
 enum valid_link {
@@ -1248,7 +1249,8 @@ Type objective_function<Type>::operator()()
             if (!resolved.is_poisson_link_delta()) mean = invlogit(mu_i(i,m)) * size(i);
             break;
           }
-          case betabinomial_family: {
+          case betabinomial_family:
+          case censored_betabinomial_family: {
             mean = mu_i(i,m) * size(i);
             break;
           }
@@ -1338,12 +1340,19 @@ Type objective_function<Type>::operator()()
             }
             break;
           }
-          case betabinomial_family: {
+          case betabinomial_family:
+          case censored_betabinomial_family: {
             // Transform to logit scale independent of link
             s3 = LogitInverseLink(eta_i(i,m), resolved.link_code); // logit(p)
             s1 = log(InverseLink(s3, logit_link)) + log(resolved.phi); // log(mu*phi)
             s2 = log(InverseLink(-s3, logit_link)) + log(resolved.phi); // log((1-mu)*phi)
-            if (notNA) tmp_ll = sdmTMB::dbetabinom_robust(y_i(i,m), s1, s2, size(i), true);
+            if (notNA) {
+              if (resolved.family_code == censored_betabinomial_family) {
+                tmp_ll = sdmTMB::dcensbetabinom(y_i(i,m), s1, s2, size(i), upr(i), true);
+              } else {
+                tmp_ll = sdmTMB::dbetabinom_robust(y_i(i,m), s1, s2, size(i), true);
+              }
+            }
             if (sim_obs) SIMULATE{
               Type rbeta_val = rbeta(exp(s1), exp(s2));
               y_i(i,m) = rbinom(size(i), rbeta_val);

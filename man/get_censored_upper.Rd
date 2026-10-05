@@ -56,6 +56,11 @@ and the right-censored Poisson density with an upper limit can be written as:
 
 In practice, these computations are done in log space for numerical
 stability.
+
+With \code{\link[=censored_betabinomial]{censored_betabinomial()}}, the number of hooks is already an upper
+bound on the count, so \code{NA} can be used for censored fishing events. If
+using this function instead, cap the bound at the number of hooks with
+\code{pmin(upr, n_hooks)}.
 }
 \examples{
 dat <- structure(
@@ -98,6 +103,6 @@ longline surveys. Canadian Journal of Fisheries and Aquatic Sciences. 80(3):
 468--486. \doi{10.1139/cjfas-2022-0159}
 }
 \seealso{
-\code{\link[=censored_poisson]{censored_poisson()}}, and the
+\code{\link[=censored_poisson]{censored_poisson()}}, \code{\link[=censored_betabinomial]{censored_betabinomial()}}, and the
 \href{https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html}{hook competition article}.
 }

@@ -658,6 +658,11 @@ get_scale_factor <- function(prop_removed, n_hooks, pstar) {
 #' In practice, these computations are done in log space for numerical
 #' stability.
 #'
+#' With [censored_betabinomial()], the number of hooks is already an upper
+#' bound on the count, so `NA` can be used for censored fishing events. If
+#' using this function instead, cap the bound at the number of hooks with
+#' `pmin(upr, n_hooks)`.
+#'
 #' @return A numeric vector of upper bound catch counts of the target species to
 #'   improve convergence of the censored method.
 #'
@@ -667,7 +672,7 @@ get_scale_factor <- function(prop_removed, n_hooks, pstar) {
 #' longline surveys. Canadian Journal of Fisheries and Aquatic Sciences. 80(3):
 #' 468--486. \doi{10.1139/cjfas-2022-0159}
 #'
-#' @seealso [censored_poisson()], and the
+#' @seealso [censored_poisson()], [censored_betabinomial()], and the
 #'   [hook competition article](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html).
 #' @export
 #'

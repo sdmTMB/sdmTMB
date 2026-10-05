@@ -556,6 +556,37 @@ Type dbetabinom_robust(Type y, Type loga, Type logb, Type n, int give_log=0)
   else return logres;
 }
 
+// Interval-censored beta-binomial: log P(x <= Y <= upr) for
+// Y ~ BetaBinomial(n, exp(loga), exp(logb)); `upr` NA means upr = n, and
+// `upr == x` is an exact count. The support is finite, so the PMF is summed
+// over the interval, avoiding the cancellation in 1 - F(x - 1). Successive
+// terms use the PMF ratio p(k + 1) / p(k) = (n - k) (k + a) /
+// ((k + 1) (n - k - 1 + b)). The bounds are data, so the number of terms is
+// fixed on the tape.
+template<class Type>
+Type dcensbetabinom(Type x, Type loga, Type logb, Type n, Type upr, int give_log=0)
+{
+  int lower = (int) std::floor(asDouble(x) + 0.5);
+  int upper = (int) std::floor(asDouble(isNA(upr) ? n : upr) + 0.5);
+  int size = (int) std::floor(asDouble(n) + 0.5);
+  Type logres;
+  if (lower == 0 && upper >= size) {
+    logres = Type(0); // the whole support
+  } else {
+    Type a = exp(loga);
+    Type b = exp(logb);
+    Type term = dbetabinom_robust(x, loga, logb, n, true);
+    logres = term;
+    for (int k = lower; k < upper; k++) {
+      term += log(Type(k) + a) - log(n - Type(k) - Type(1) + b) +
+        log(n - Type(k)) - log(Type(k) + Type(1));
+      logres = logspace_add(logres, term);
+    }
+  }
+  if(!give_log) return exp(logres);
+  else return logres;
+}
+
 // Helper for low-rank sparse Hessian bias correction
 // Used by derived quantities (index, cog, weighted_avg, eao)
 // See Kristensen et al. (2016) doi:10.18637/jss.v070.i05 and

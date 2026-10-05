@@ -42,6 +42,7 @@ NULL
 #'   \code{\link[sdmTMB:families]{nbinom1()}},
 #'   \code{\link[sdmTMB:families]{truncated_nbinom1()}},
 #'   \code{\link[sdmTMB:families]{censored_poisson()}},
+#'   \code{\link[sdmTMB:families]{censored_betabinomial()}},
 #'   \code{\link[sdmTMB:families]{gamma_mix()}},
 #'   \code{\link[sdmTMB:families]{lognormal()}},
 #'   \code{\link[sdmTMB:families]{lognormal_mix()}},
@@ -1001,12 +1002,13 @@ sdmTMB <- function(
   }
   # FIXME parallel setup here?
 
-  uses_censored_poisson <- any(family_spec$components$family_name == "censored_poisson")
-  if (uses_censored_poisson) {
+  uses_censored <- any(family_spec$components$family_name %in%
+    c("censored_poisson", "censored_betabinomial"))
+  if (uses_censored) {
     if ("lwr" %in% names(experimental) || "upr" %in% names(experimental)) {
       cli_abort("Detected `lwr` or `upr` in `experimental`. `lwr` is no longer needed and `upr` is now specified as `control = sdmTMBcontrol(censored_upper = ...)`.")
     }
-    if (is.null(upr)) cli_abort("`censored_upper` must be defined in `control = sdmTMBcontrol()` to use the censored Poisson distribution.")
+    if (is.null(upr)) cli_abort("`censored_upper` must be defined in `control = sdmTMBcontrol()` to use a censored family.")
     assert_that(length(upr) == nrow(data))
   }
   if (is.null(upr)) upr <- Inf
@@ -1226,6 +1228,7 @@ sdmTMB <- function(
   y_i <- response$y_i
   size <- response$size
   weights <- response$weights
+  if (!is.null(response$upr)) upr <- response$upr
 
   likelihood_weights <- if (!is.null(weights)) weights else rep(1, NROW(y_i))
   if (!is.null(cv_fold_weights)) {

@@ -23,8 +23,9 @@
 #' @param silent Logical. Suppress progress messages?
 #' @param derived_link Optional override for the inverse link used when
 #'   calculating derived quantities such as the index. By default, the fitted
-#'   family link is used. Currently supported for non-delta `binomial()` and
-#'   `betabinomial()` models fit with `link = "cloglog"`.
+#'   family link is used. Currently supported for non-delta `binomial()`,
+#'   `betabinomial()`, and `censored_betabinomial()` models fit with
+#'   `link = "cloglog"`.
 #' @param predict_args A named list of less commonly used arguments to pass to
 #'   [predict.sdmTMB()]. `newdata` and `offset` should be supplied directly.
 #' @param ... Passed to [TMB::sdreport()].
@@ -196,8 +197,8 @@ get_index <- function(obj, newdata = NULL, bias_correct = TRUE, level = 0.95,
   if (.family_spec_has_two_components(family_spec)) {
     cli_abort("`derived_link` is not currently supported for delta or hurdle families.")
   }
-  if (!family$family %in% c("binomial", "betabinomial")) {
-    cli_abort("`derived_link` is currently only supported for binomial and betabinomial models.")
+  if (!family$family %in% c("binomial", "betabinomial", "censored_betabinomial")) {
+    cli_abort("`derived_link` is currently only supported for binomial and (censored) betabinomial models.")
   }
   if (!identical(family$link, "cloglog")) {
     cli_abort("`derived_link` is currently only supported when the fitted family uses `link = 'cloglog'`.")

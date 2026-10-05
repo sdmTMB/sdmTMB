@@ -26,6 +26,7 @@
 \alias{delta_poisson_link_gamma}
 \alias{delta_poisson_link_lognormal}
 \alias{betabinomial}
+\alias{censored_betabinomial}
 \alias{delta_beta}
 \title{Additional families}
 \usage{
@@ -81,6 +82,8 @@ delta_poisson_link_gamma(link1 = "log", link2 = "log")
 delta_poisson_link_lognormal(link1 = "log", link2 = "log")
 
 betabinomial(link = "logit")
+
+censored_betabinomial(link = "logit")
 
 delta_beta(link1 = "logit", link2 = "logit")
 }
@@ -149,6 +152,18 @@ linearly with the mean (Hilbe 2011).
 
 For \code{student()}, the degrees of freedom parameter is estimated by default (\code{df = NULL}).
 You can fix it at a specific value by providing a number > 1 (e.g., \code{df = 3}).
+
+\code{censored_poisson()} and \code{censored_betabinomial()} treat some counts as
+censored, e.g., to account for hook competition in longline surveys
+(Watson et al. 2023). Bounds are given with
+\code{control = sdmTMBcontrol(censored_upper = ...)}: a value equal to the
+observed count is uncensored, a larger value gives an interval-censored
+count between the observed count and that value, and \code{NA} gives a
+right-censored count. For \code{censored_betabinomial()}, the number of trials
+(e.g., hooks) is supplied via \code{weights} and is the largest possible count,
+so \code{NA} means censoring between the observed count and the number of trials.
+See the
+\href{https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html}{hook competition article}.
 }
 \examples{
 Beta(link = "logit")
@@ -174,6 +189,7 @@ delta_lognormal_mix()
 delta_truncated_nbinom2()
 delta_truncated_nbinom1()
 betabinomial(link = "logit")
+censored_betabinomial(link = "cloglog")
 delta_beta()
 }
 \references{
@@ -213,5 +229,12 @@ Thorson, J.T. 2018. Three problems with the conventional delta-model for
 biomass sampling data, and a computationally efficient alternative. Canadian
 Journal of Fisheries and Aquatic Sciences, 75(9), 1369-1382.
 \doi{10.1139/cjfas-2017-0266}
+
+\emph{Censored families}:
+
+Watson, J., Edwards, A.M., and Auger-Méthé, M. 2023. A statistical
+censoring approach accounts for hook competition in abundance indices from
+longline surveys. Canadian Journal of Fisheries and Aquatic Sciences. 80(3):
+468--486. \doi{10.1139/cjfas-2022-0159}
 }
 \keyword{internal}

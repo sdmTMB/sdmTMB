@@ -66,7 +66,7 @@ rtmb_obs_state <- function(i, m, family, eta, par, theta, prepared, ln_phi_i) {
     state$Q <- par$gengamma_Q[[family$gengamma_Q]]
   }
   if (name == "ordbeta") state$psi <- theta$psi
-  if (name == "censored_poisson") {
+  if (name %in% c("censored_poisson", "censored_betabinomial")) {
     state$upr <- fit$upr[i]
   }
   if (family$combine == "poisson_link") {

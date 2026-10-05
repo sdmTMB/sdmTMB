@@ -19,7 +19,8 @@
   nbinom2_mix = 15,
   gengamma = 16,
   betabinomial = 17,
-  ordbeta = 18
+  ordbeta = 18,
+  censored_betabinomial = 19
 )
 .valid_link <- c(
   identity = 0,

@@ -89,6 +89,19 @@ qres_betabinomial <- function(object, y, mu, .n = NULL) {
   stats::qnorm(u)
 }
 
+# Censored counts are uniform over the CDF across their interval [y, upr].
+qres_censored_betabinomial <- function(object, y, mu, .n = NULL) {
+  upr <- object$tmb_data$upr
+  upr <- ifelse(is.na(upr), .n, upr)
+  phi <- exp(get_pars(object)[["ln_phi"]])
+  alpha <- mu * phi
+  beta <- (1 - mu) * phi
+  a <- pbbinom(y - 1, size = .n, alpha = alpha, beta = beta)
+  b <- pbbinom(upr, size = .n, alpha = alpha, beta = beta)
+  u <- stats::runif(n = length(y), min = pmin(a, b), max = pmax(a, b))
+  stats::qnorm(u)
+}
+
 qres_nbinom2 <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
@@ -525,6 +538,7 @@ residuals.sdmTMB <- function(object,
       gaussian = qres_gaussian,
       binomial = qres_binomial,
       betabinomial = qres_betabinomial,
+      censored_betabinomial = qres_censored_betabinomial,
       tweedie  = qres_tweedie,
       Beta     = qres_beta,
       ordbeta  = qres_ordbeta,

@@ -67,6 +67,7 @@ downstream (e.g., \code{\link[=get_index]{get_index()}} or \code{\link[=get_cog]
 \code{\link[sdmTMB:families]{nbinom1()}},
 \code{\link[sdmTMB:families]{truncated_nbinom1()}},
 \code{\link[sdmTMB:families]{censored_poisson()}},
+\code{\link[sdmTMB:families]{censored_betabinomial()}},
 \code{\link[sdmTMB:families]{gamma_mix()}},
 \code{\link[sdmTMB:families]{lognormal()}},
 \code{\link[sdmTMB:families]{lognormal_mix()}},

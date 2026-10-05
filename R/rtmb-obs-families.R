@@ -59,6 +59,17 @@ rtmb_obs_families <- list(
     }
   ),
 
+  # Beta-binomial with counts censored to [y, upr]; `upr` NA means `size`.
+  censored_betabinomial = list(
+    logpdf = function(y, mu, s) rtmb_dcensbetabinom(y, s),
+    mean = function(mu, s) mu * s$size,
+    simulate = function(mu, s) {
+      shape <- rtmb_betabinom_shapes(s)
+      stats::rbinom(length(mu), s$size,
+        stats::rbeta(length(mu), shape$a, shape$b))
+    }
+  ),
+
   poisson = list(
     logpdf = function(y, mu, s) RTMB::dpois(y, mu, log = TRUE),
     simulate = function(mu, s) stats::rpois(length(mu), mu),
@@ -517,6 +528,33 @@ rtmb_dbetabinom <- function(y, s) {
   lgamma(n + 1) - lgamma(y + 1) - lgamma(n - y + 1) + lgamma(a + b) +
     lgamma(y + a) + lgamma(n - y + b) - lgamma(n + a + b) - lgamma(a) -
     lgamma(b)
+}
+
+# log P(y <= Y <= upr) for a beta-binomial Y, with `upr` NA meaning `size` and
+# `upr == y` an exact count. Mirrors the C++ `dcensbetabinom()`: the PMF is
+# summed over the interval, which avoids the cancellation in 1 - F(y - 1), with
+# successive terms from the PMF ratio p(k + 1) / p(k). Term `j` of every
+# interval longer than `j` is added at once, so the loop runs over interval
+# lengths rather than rows.
+rtmb_dcensbetabinom <- function(y, s) {
+  shape <- rtmb_betabinom_shapes(s)
+  a <- shape$a
+  b <- shape$b
+  n <- s$size
+  upr <- ifelse(is.na(s$upr), n, s$upr)
+  term <- rtmb_dbetabinom(y, s)
+  out <- term
+  extra <- round(upr - y)
+  extra[y == 0 & upr >= n] <- 0 # the whole support, set to 0 below
+  for (j in seq_len(max(extra, 0))) {
+    i <- which(extra >= j)
+    k <- y[i] + j - 1
+    term[i] <- term[i] + log(k + a[i]) - log(n[i] - k - 1 + b[i]) +
+      log(n[i] - k) - log(k + 1)
+    out[i] <- RTMB::logspace_add(out[i], term[i])
+  }
+  out[y == 0 & upr >= n] <- 0
+  out
 }
 
 # Ordered beta logit-scale cutpoints from the `psi` parameter

@@ -658,6 +658,38 @@ betabinomial <- function(link = "logit") {
   add_to_family(x)
 }
 
+#' @details
+#' `censored_poisson()` and `censored_betabinomial()` treat some counts as
+#' censored, e.g., to account for hook competition in longline surveys
+#' (Watson et al. 2023). Bounds are given with
+#' `control = sdmTMBcontrol(censored_upper = ...)`: a value equal to the
+#' observed count is uncensored, a larger value gives an interval-censored
+#' count between the observed count and that value, and `NA` gives a
+#' right-censored count. For `censored_betabinomial()`, the number of trials
+#' (e.g., hooks) is supplied via `weights` and is the largest possible count,
+#' so `NA` means censoring between the observed count and the number of trials.
+#' See the
+#' [hook competition article](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html).
+#' @export
+#' @examples
+#' censored_betabinomial(link = "cloglog")
+#' @rdname families
+#' @references
+#' *Censored families*:
+#'
+#' Watson, J., Edwards, A.M., and Auger-Méthé, M. 2023. A statistical
+#' censoring approach accounts for hook competition in abundance indices from
+#' longline surveys. Canadian Journal of Fisheries and Aquatic Sciences. 80(3):
+#' 468--486. \doi{10.1139/cjfas-2022-0159}
+censored_betabinomial <- function(link = "logit") {
+  linktemp <- substitute(link)
+  if (!is.character(linktemp))
+    linktemp <- deparse(linktemp)
+  x <- betabinomial(link = linktemp)
+  x$family <- "censored_betabinomial"
+  x
+}
+
 
 #' @export
 #' @examples

@@ -243,6 +243,83 @@ test_that("censored Poisson random-effect models are consistent", {
     tolerance = 1e-6)
 })
 
+# log P(L <= Y <= U) for a beta-binomial Y by brute force.
+censbetabinom_oracle <- function(L, U, n, a, b) {
+  k <- L:U
+  log(sum(exp(lchoose(n, k) + lbeta(k + a, n - k + b) - lbeta(a, b))))
+}
+
+test_that("censored beta-binomial log probabilities match a direct sum", {
+  cases <- expand.grid(n = c(1, 10, 140), L = c(0, 1, 5, 140),
+    p = c(0.02, 0.5, 0.95), phi = c(0.5, 5, 200))
+  cases <- cases[cases$L <= cases$n, ]
+  cases$U <- ifelse(seq_len(nrow(cases)) %% 2 == 0, NA,
+    pmin(cases$n, cases$L + seq_len(nrow(cases)) %% 7))
+  s <- list(eta = qlogis(cases$p), link = "logit", phi = cases$phi,
+    size = cases$n, upr = cases$U)
+  expected <- with(cases, mapply(function(L, U, n, p, phi) {
+    censbetabinom_oracle(L, if (is.na(U)) n else U, n, p * phi, (1 - p) * phi)
+  }, L, U, n, p, phi))
+  expect_equal(rtmb_dcensbetabinom(cases$L, s), expected, tolerance = 1e-10)
+})
+
+test_that("censored beta-binomial likelihood is correct in both backends", {
+  skip_if_not_installed("numDeriv")
+  set.seed(81)
+  n <- 30L
+  d <- data.frame(z = rnorm(n), hooks = sample(c(20, 50), n, replace = TRUE))
+  p <- 1 - exp(-exp(-1.5 + 0.4 * d$z))
+  d$y <- rbinom(n, d$hooks, rbeta(n, p * 10, (1 - p) * 10))
+  type <- seq_len(n) %% 3
+  upr <- ifelse(type == 0, NA, ifelse(type == 1, d$y, pmin(d$y + 4, d$hooks)))
+  fit <- sdmTMB(y ~ z, data = d, weights = d$hooks, spatial = "off",
+    do_fit = FALSE, family = censored_betabinomial(link = "cloglog"),
+    control = sdmTMBcontrol(censored_upper = upr))
+  expect_equal(fit$tmb_data$upr, ifelse(is.na(upr), d$hooks, upr))
+  nll <- function(par) {
+    p <- 1 - exp(-exp(par[[1L]] + par[[2L]] * d$z))
+    phi <- exp(par[[3L]])
+    -sum(mapply(censbetabinom_oracle, d$y, fit$tmb_data$upr, d$hooks,
+      p * phi, (1 - p) * phi))
+  }
+  for (backend in c("tmb", "rtmb")) {
+    obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
+      fit$tmb_random, backend = backend)
+    for (par in list(c(-1.2, 0.2, 1), c(-2, -0.3, 3))) {
+      expect_equal(obj$fn(par), nll(par), tolerance = 1e-8, info = backend)
+      expect_equal(as.vector(obj$gr(par)), numDeriv::grad(nll, par),
+        tolerance = 1e-6, info = backend)
+    }
+  }
+})
+
+# The Laplace gradient needs third derivatives of the censored terms.
+test_that("censored beta-binomial random-effect models are consistent", {
+  skip_if_not_installed("numDeriv")
+  set.seed(3)
+  n <- 60L
+  d <- data.frame(g = factor(rep(1:10, each = 6)), z = rnorm(n), hooks = 30)
+  p <- plogis(-1 + 0.4 * d$z + rnorm(10, 0, 0.5)[d$g])
+  d$y <- rbinom(n, d$hooks, rbeta(n, p * 8, (1 - p) * 8))
+  type <- seq_len(n) %% 3
+  upr <- ifelse(type == 0, NA, ifelse(type == 1, d$y, pmin(d$y + 3, d$hooks)))
+  fits <- list()
+  for (backend in c("tmb", "rtmb")) {
+    fits[[backend]] <- sdmTMB(y ~ z + (1 | g), data = d, weights = d$hooks,
+      spatial = "off", family = censored_betabinomial(),
+      control = sdmTMBcontrol(censored_upper = upr, backend = backend))
+    obj <- fits[[backend]]$tmb_obj
+    for (par in list(obj$par, obj$par + c(0.3, -0.2, 0.4, -0.5))) {
+      expect_equal(as.vector(obj$gr(par)), numDeriv::grad(obj$fn, par),
+        tolerance = 1e-6, info = backend)
+    }
+    expect_true(fits[[backend]]$sd_report$pdHess, label = backend)
+  }
+  expect_equal(tidy(fits$rtmb), tidy(fits$tmb), tolerance = 1e-6)
+  expect_equal(tidy(fits$rtmb, "ran_pars"), tidy(fits$tmb, "ran_pars"),
+    tolerance = 1e-6)
+})
+
 # Observation draws from each backend against closed-form means and
 # variances at fixed parameters, at two linear-predictor values. Tolerances
 # are 5 Monte Carlo standard errors; variance errors use the sample fourth

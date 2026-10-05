@@ -73,9 +73,32 @@
     "Binomial", allow_counts = FALSE
   )
   .process_binomial_like_rows(
-    out$y_i, out$size, out$weights, single & family_name == "betabinomial",
+    out$y_i, out$size, out$weights,
+    single & family_name %in% c("betabinomial", "censored_betabinomial"),
     "Betabinomial", allow_counts = TRUE, weighted_binary_counts = TRUE
   )
+}
+
+# Censored beta-binomial bounds on the count scale, or NULL if there are no
+# such rows. `NA` (right-censored) becomes the number of trials, the largest
+# possible count.
+.censored_betabinomial_upper <- function(y_i, size, family_spec, upr = NULL) {
+  row_family <- .family_spec_response_family_id(family_spec, y_i)
+  component1 <- family_spec$components[family_spec$components$component == 1L, ]
+  family_name <- component1$family_name[match(row_family, component1$family_id)]
+  single <- family_spec$families$combine_kind[row_family] == "single"
+  rows <- single & family_name == "censored_betabinomial"
+  if (is.null(upr) || !any(rows)) return(NULL)
+  right <- rows & is.na(upr)
+  upr[right] <- size[right]
+  tol <- sqrt(.Machine$double.eps) # proportions times trials may be inexact
+  if (any(y_i[rows] > upr[rows] + tol | upr[rows] > size[rows] + tol, na.rm = TRUE)) {
+    cli_abort(paste(
+      "`control$censored_upper` must be between the observed count and the",
+      "number of trials (from `weights`) for censored beta-binomial rows."
+    ))
+  }
+  upr
 }
 
 .family_spec_validate_response <- function(y_i, family_spec, upr = NULL) {
@@ -118,7 +141,7 @@
 .prepare_family_response <- function(y_i, weights, family_spec, upr = NULL) {
   component1 <- .family_spec_component_value(family_spec, 1L, 1L, "family_name")
   ordinary_binomial_like <- family_spec$n_f == 1L && family_spec$n_m == 1L &&
-    component1 %in% c("binomial", "betabinomial")
+    component1 %in% c("binomial", "betabinomial", "censored_betabinomial")
   if (ordinary_binomial_like && (is.character(y_i) || is.factor(y_i))) {
     y_i <- factor(y_i)
     if (nlevels(y_i) > 2L) cli_abort("More than 2 levels detected for response")
@@ -130,12 +153,15 @@
     .family_spec_validate_response(y_i, family_spec, upr)
     return(list(
       y_i = y_i, size = size, weights = weights,
-      response = .family_spec_build_response(y_i, family_spec)
+      response = .family_spec_build_response(y_i, family_spec),
+      upr = .censored_betabinomial_upper(y_i, size, family_spec, upr)
     ))
   }
   size <- rep(1, NROW(y_i))
   processed <- .family_spec_process_response(y_i, size, weights, family_spec)
   .family_spec_validate_response(processed$y_i, family_spec, upr)
   processed$response <- .family_spec_build_response(processed$y_i, family_spec)
+  processed$upr <- .censored_betabinomial_upper(processed$y_i, processed$size,
+    family_spec, upr)
   processed
 }

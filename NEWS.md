@@ -47,6 +47,13 @@
   and 1 (#515). Response-scale predictions and indices include the point
   masses.
 
+* Add `censored_betabinomial()` for censored beta-binomial counts, e.g., to
+  account for hook competition in hook-and-line surveys with the number of
+  hooks as the number of trials. It uses
+  `sdmTMBcontrol(censored_upper = ...)` like `censored_poisson()`, with `NA`
+  meaning censoring between the observed count and the number of trials. See
+  the updated hook competition article.
+
 * Add the `dispformula` argument to `sdmTMB()` for modelling the observation
   dispersion parameter with fixed-effect predictors. It is not supported for
   multi-family models or truncated negative binomial families.

@@ -77,16 +77,20 @@ maybe_suppress_warnings <- function(suppress) {
 }
 
 # First of two phases: fit the fixed effects with random fields off (and
-# censored Poisson as Poisson for stability), returning starting values for
-# the full model. Falls back to `tmb_params` if this phase fails.
+# censored families as uncensored for stability), returning starting values
+# for the full model. Falls back to `tmb_params` if this phase fails.
 fit_first_phase <- function(tmb_data, tmb_params, tmb_map, profile, backend,
                             lower, upper, mesh, nlminb_control, silent,
                             suppress_warnings = FALSE) {
   tmb_data$no_spatial <- 1L
   tmb_data$include_spatial <- integer(ncol(tmb_data$component_active)) # per component
-  censored <- tmb_data$component_active == 1L &
-    tmb_data$family_code == .valid_family[["censored_poisson"]]
-  tmb_data$family_code[censored] <- as.integer(.valid_family[["poisson"]])
+  uncensored <- c(censored_poisson = "poisson",
+    censored_betabinomial = "betabinomial")
+  for (f in names(uncensored)) {
+    censored <- tmb_data$component_active == 1L &
+      tmb_data$family_code == .valid_family[[f]]
+    tmb_data$family_code[censored] <- as.integer(.valid_family[[uncensored[[f]]]])
+  }
   # Custom priors may refer to fields that are off in this phase, so they're
   # left out; this phase only finds starting values.
   tmb_data$priors_custom <- NULL
