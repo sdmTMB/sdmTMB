@@ -23,6 +23,7 @@ sdmTMB(
   nonlocal_data = NULL,
   weights = NULL,
   offset = NULL,
+  censored_upper = NULL,
   extra_time = NULL,
   reml = FALSE,
   silent = TRUE,
@@ -196,6 +197,15 @@ value representing the column name of the offset. In delta/hurdle models,
 this applies only to the positive component except for Poisson-link delta
 models, where it also enters the occurrence-probability calculation.
 Usually a log transformed variable.}
+
+\item{censored_upper}{Upper bounds for censored families
+(\code{\link[=censored_poisson]{censored_poisson()}} and \code{\link[=censored_betabinomial]{censored_betabinomial()}}): a numeric vector
+\emph{or} a character value naming a column in \code{data}. Each observation is
+treated as a count between the response and this bound: a value equal to
+the response is uncensored, a larger value is interval-censored, and \code{NA}
+is right-censored (up to the number of trials for
+\code{\link[=censored_betabinomial]{censored_betabinomial()}}). For left censoring (e.g., fewer than 5), use a
+response of 0 and the largest possible count as the bound (e.g., 4).}
 
 \item{extra_time}{Optional extra time slices (e.g., years) to include for
 interpolation or forecasting with the predict function. See the Details

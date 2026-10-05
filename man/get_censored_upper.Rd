@@ -32,7 +32,7 @@ with catch counts as the response, an offset for log(hook count), and
 proportion of baits removed for each fishing event as the predictor.
 Check when the curve drops off as the proportion bait removed increases.
 
-Pass the returned vector to \code{control = sdmTMBcontrol(censored_upper = ...)}
+Pass the returned vector to the \code{censored_upper} argument of \code{\link[=sdmTMB]{sdmTMB()}}
 with \code{family = censored_poisson()} and the observed catch counts
 (\code{n_catch}) as the response. Fishing events with \code{prop_removed} below
 \code{pstar} get an upper bound equal to the observed catch and are therefore

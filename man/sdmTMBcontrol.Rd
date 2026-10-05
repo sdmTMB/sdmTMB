@@ -16,7 +16,7 @@ sdmTMBcontrol(
   map = NULL,
   lower = NULL,
   upper = NULL,
-  censored_upper = NULL,
+  censored_upper = deprecated(),
   censored_method = c("auto", "direct"),
   multiphase = TRUE,
   profile = FALSE,
@@ -86,10 +86,8 @@ setting limits.}
 
 \item{upper}{An optional named list of upper bounds within the optimization.}
 
-\item{censored_upper}{An optional vector of upper bounds for
-\code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}}. Values of \code{NA} indicate an unbounded right-censored
-distribution, values greater than the observation indicate an upper bound,
-and values equal to the observation indicate no censoring.}
+\item{censored_upper}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} Use the
+\code{censored_upper} argument of \code{\link[=sdmTMB]{sdmTMB()}} instead.}
 
 \item{censored_method}{How \code{\link[=censored_betabinomial]{censored_betabinomial()}} sums the likelihood.
 \code{"auto"} (default) sums the interval or its

@@ -124,8 +124,8 @@ round(tapply(d$prop_removed >= pstar, d$year, mean), 2)
 
 # Fitting the models
 
-We specify censoring with the `censored_upper` argument in `sdmTMBcontrol()`.
-It is a vector with one element per row of data:
+We specify censoring with the `censored_upper` argument in `sdmTMB()`.
+It is a vector with one element per row of data (or the name of a column in the data):
 
 - a value equal to the observed count means the observation is **not** censored;
 - `NA` means the observation is right-censored with no upper bound;
@@ -165,7 +165,7 @@ We only need to change the family and pass `censored_upper`:
 fit_cens <- update(
   fit_pois,
   family = censored_poisson(),
-  control = sdmTMBcontrol(censored_upper = upr)
+  censored_upper = upr
 )
 sanity(fit_cens)
 fit_cens
@@ -188,7 +188,7 @@ upr_bounded <- get_censored_upper(
 fit_cens_bounded <- update(
   fit_pois,
   family = censored_poisson(),
-  control = sdmTMBcontrol(censored_upper = upr_bounded)
+  censored_upper = upr_bounded
 )
 ```
 
@@ -289,7 +289,7 @@ fit_bb <- sdmTMB(
 fit_bb_cens <- update(
   fit_bb,
   family = censored_betabinomial(link = "cloglog"),
-  control = sdmTMBcontrol(censored_upper = upr)
+  censored_upper = upr
 )
 sanity(fit_bb_cens)
 ```
@@ -318,7 +318,7 @@ The two models account for overdispersion differently (a beta-binomial dispersio
 - Calculate the proportion of baits removed for each set.
 - Choose a breakdown point $p^*$, e.g., by plotting a smoother of catch against bait removal.
 - Build a `censored_upper` vector: the observed count for uncensored sets and `NA` (or an upper bound) for sets at or above $p^*$.
-- Fit with `family = censored_poisson()` and `control = sdmTMBcontrol(censored_upper = ...)`, ideally with an observation-level random intercept to account for overdispersion.
+- Fit with `family = censored_poisson()` and `censored_upper = ...`, ideally with an observation-level random intercept to account for overdispersion.
 - Alternatively, fit with `family = censored_betabinomial(link = "cloglog")` and the number of hooks as `weights`, which limits each count to the number of hooks.
 
 See @watson2023 for the full method, simulation tests, and an application to 11 species.

@@ -661,11 +661,10 @@ betabinomial <- function(link = "logit") {
 #' @details
 #' `censored_poisson()` and `censored_betabinomial()` treat some counts as
 #' censored, e.g., to account for hook competition in longline surveys
-#' (Watson et al. 2023). Bounds are given with
-#' `control = sdmTMBcontrol(censored_upper = ...)`: a value equal to the
-#' observed count is uncensored, a larger value gives an interval-censored
-#' count between the observed count and that value, and `NA` gives a
-#' right-censored count. For `censored_betabinomial()`, the number of trials
+#' (Watson et al. 2023). Bounds are given with `sdmTMB(censored_upper = ...)`:
+#' a value equal to the observed count is uncensored, a larger value gives an
+#' interval-censored count between the observed count and that value, and `NA`
+#' gives a right-censored count. For `censored_betabinomial()`, the number of trials
 #' (e.g., hooks) is supplied via `weights` and is the largest possible count,
 #' so `NA` means censoring between the observed count and the number of trials.
 #' Counts and numbers of trials must be whole numbers, and a non-integer bound

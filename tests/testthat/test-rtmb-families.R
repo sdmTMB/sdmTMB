@@ -140,7 +140,7 @@ test_that("censored Poisson likelihood is correct away from the taping point", {
     ifelse(seq_len(n) %% 3 == 1, d$y, d$y + 2))
   fit <- sdmTMB(y ~ z, data = d, spatial = "off", do_fit = FALSE,
     family = censored_poisson(),
-    control = sdmTMBcontrol(censored_upper = upr))
+    censored_upper = upr)
   nll <- function(b) {
     lambda <- exp(b[[1L]] + b[[2L]] * d$z)
     ll <- ifelse(is.na(upr),
@@ -197,7 +197,7 @@ test_that("censored Poisson log probabilities are stable in the tails", {
     d <- data.frame(y = L, o = log(lambda))
     fit <- sdmTMB(y ~ 1, offset = "o", data = d, spatial = "off",
       do_fit = FALSE, family = censored_poisson(),
-      control = sdmTMBcontrol(censored_upper = upr[k]))
+      censored_upper = upr[k])
     for (backend in c("tmb", "rtmb")) {
       obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
         backend = backend)
@@ -223,7 +223,7 @@ test_that("censored Poisson random-effect models are consistent", {
   d$y[1:2] <- c(60, 80) # far upper tail at the starting values
   upr[1:2] <- c(NA, 85)
   fit <- sdmTMB(y ~ z + (1 | g), data = d, spatial = "off", do_fit = FALSE,
-    family = censored_poisson(), control = sdmTMBcontrol(censored_upper = upr))
+    family = censored_poisson(), censored_upper = upr)
   fits <- list()
   for (backend in c("tmb", "rtmb")) {
     obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
@@ -235,7 +235,8 @@ test_that("censored Poisson random-effect models are consistent", {
     }
     fits[[backend]] <- sdmTMB(y ~ z + (1 | g), data = d, spatial = "off",
       family = censored_poisson(),
-      control = sdmTMBcontrol(censored_upper = upr, backend = backend))
+      censored_upper = upr,
+      control = sdmTMBcontrol(backend = backend))
     expect_true(fits[[backend]]$sd_report$pdHess, label = backend)
   }
   expect_equal(tidy(fits$rtmb), tidy(fits$tmb), tolerance = 1e-6)
@@ -282,7 +283,7 @@ test_that("censored beta-binomial likelihood and gradient are correct", {
   upr <- ifelse(type == 0, NA, ifelse(type == 1, d$y, pmin(d$y + 4, d$hooks)))
   fit <- sdmTMB(y ~ z, data = d, weights = d$hooks, spatial = "off",
     do_fit = FALSE, family = censored_betabinomial(link = "cloglog"),
-    control = sdmTMBcontrol(censored_upper = upr))
+    censored_upper = upr)
   expect_equal(fit$tmb_data$upr, ifelse(is.na(upr), d$hooks, upr))
   nll <- function(par) {
     p <- 1 - exp(-exp(par[[1L]] + par[[2L]] * d$z))
@@ -309,7 +310,7 @@ test_that("censored beta-binomial bounds are whole counts", {
   upr <- c(2.5, 3 - 1e-12, 3.99, 4 + 1e-12, NA, 10, NA)
   fit <- sdmTMB(y ~ 1, data = d, weights = d$n, spatial = "off",
     do_fit = FALSE, family = censored_betabinomial(),
-    control = sdmTMBcontrol(censored_upper = upr))
+    censored_upper = upr)
   expect_identical(fit$tmb_data$upr, c(2, 3, 3, 4, 10, 10, 6))
   nll <- function(par) {
     p <- plogis(par[[1L]])
@@ -329,7 +330,7 @@ test_that("censored beta-binomial bounds are whole counts", {
   d1 <- data.frame(y = 2, n = 10)
   fit1 <- sdmTMB(y ~ 1, data = d1, weights = d1$n, spatial = "off",
     do_fit = FALSE, family = censored_betabinomial(),
-    control = sdmTMBcontrol(censored_upper = 2.5))
+    censored_upper = 2.5)
   obj <- make_sdmTMB_adfun(fit1$tmb_data, fit1$tmb_params, fit1$tmb_map,
     fit1$tmb_random, backend = "rtmb")
   expect_equal(obj$fn(c(0, log(2))), log(11), tolerance = 1e-10)
@@ -341,7 +342,7 @@ test_that("censored beta-binomial responses must be whole counts", {
     formula = y ~ 1) {
     sdmTMB(formula, data = data, weights = weights, spatial = "off",
       do_fit = FALSE, family = censored_betabinomial(),
-      control = sdmTMBcontrol(censored_upper = upr))
+      censored_upper = upr)
   }
   # proportions times trials are converted to exact whole counts
   fit <- cens_bb(d)
@@ -393,7 +394,8 @@ test_that("censored beta-binomial random-effect models are consistent", {
   for (method in c("auto", "direct")) {
     fits[[method]] <- sdmTMB(y ~ z + (1 | g), data = d, weights = d$hooks,
       spatial = "off", family = censored_betabinomial(),
-      control = sdmTMBcontrol(censored_upper = upr, censored_method = method))
+      censored_upper = upr,
+      control = sdmTMBcontrol(censored_method = method))
     obj <- fits[[method]]$tmb_obj
     for (par in list(obj$par, obj$par + c(0.3, -0.2, 0.4, -0.5))) {
       expect_equal(as.vector(obj$gr(par)), numDeriv::grad(obj$fn, par),
@@ -406,7 +408,8 @@ test_that("censored beta-binomial random-effect models are consistent", {
     tolerance = 1e-6)
   expect_error(sdmTMB(y ~ z, data = d, weights = d$hooks, spatial = "off",
     family = censored_betabinomial(),
-    control = sdmTMBcontrol(censored_upper = upr, backend = "tmb")),
+    censored_upper = upr,
+    control = sdmTMBcontrol(backend = "tmb")),
     regexp = "backend")
 })
 
@@ -423,7 +426,8 @@ test_that("censored beta-binomial fits sum the shorter side with a precision che
   fit <- function(method, silent = TRUE) {
     sdmTMB(y ~ z, data = d, weights = d$hooks, spatial = "off",
       family = censored_betabinomial(), silent = silent,
-      control = sdmTMBcontrol(censored_upper = upr, censored_method = method))
+      censored_upper = upr,
+      control = sdmTMBcontrol(censored_method = method))
   }
   expect_message(fit_auto <- fit("auto", silent = FALSE),
     regexp = "1 row that failed the precision check")
@@ -441,7 +445,7 @@ test_that("censored beta-binomial fits sum the shorter side with a precision che
   d1 <- data.frame(y = 10, n = 450)
   fit1 <- sdmTMB(y ~ 1, data = d1, weights = d1$n, spatial = "off",
     do_fit = FALSE, family = censored_betabinomial(),
-    control = sdmTMBcontrol(censored_upper = NA))
+    censored_upper = NA)
   expect_identical(fit1$tmb_data$cens_direct, 0L)
   par <- c(qlogis(1e-4), log(1e6))
   obj <- make_sdmTMB_adfun(fit1$tmb_data, fit1$tmb_params, fit1$tmb_map,
@@ -466,7 +470,8 @@ test_that("censored beta-binomial held-out CV rows use the direct sum", {
     sdmTMB_cv(y ~ z, data = d, mesh = mesh, weights = d$hooks, spatial = "off",
       family = censored_betabinomial(), k_folds = 3,
       fold_ids = rep(1:3, length.out = n),
-      control = sdmTMBcontrol(censored_upper = upr, censored_method = method))
+      censored_upper = upr,
+      control = sdmTMBcontrol(censored_method = method))
   }
   cv_auto <- cv("auto")
   for (m in cv_auto$models) {

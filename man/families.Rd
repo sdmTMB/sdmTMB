@@ -155,11 +155,10 @@ You can fix it at a specific value by providing a number > 1 (e.g., \code{df = 3
 
 \code{censored_poisson()} and \code{censored_betabinomial()} treat some counts as
 censored, e.g., to account for hook competition in longline surveys
-(Watson et al. 2023). Bounds are given with
-\code{control = sdmTMBcontrol(censored_upper = ...)}: a value equal to the
-observed count is uncensored, a larger value gives an interval-censored
-count between the observed count and that value, and \code{NA} gives a
-right-censored count. For \code{censored_betabinomial()}, the number of trials
+(Watson et al. 2023). Bounds are given with \code{sdmTMB(censored_upper = ...)}:
+a value equal to the observed count is uncensored, a larger value gives an
+interval-censored count between the observed count and that value, and \code{NA}
+gives a right-censored count. For \code{censored_betabinomial()}, the number of trials
 (e.g., hooks) is supplied via \code{weights} and is the largest possible count,
 so \code{NA} means censoring between the observed count and the number of trials.
 Counts and numbers of trials must be whole numbers, and a non-integer bound

@@ -212,9 +212,8 @@ test_that("Censored Poisson deviance residuals are correct", {
   for (backend in c("tmb", "rtmb")) {
     control <- sdmTMBcontrol(backend = backend)
     # Without censoring, it is the Poisson deviance.
-    control$censored_upper <- d$y
     m <- sdmTMB(y ~ x, family = censored_poisson(), spatial = "off",
-      data = d, control = control)
+      data = d, censored_upper = d$y, control = control)
     expect_equal(residuals(m, type = "deviance"), unname(residuals(mpois)),
       tolerance = 1e-4, info = backend)
     expect_equal(deviance(m), deviance(mpois), tolerance = 1e-4,
@@ -222,9 +221,8 @@ test_that("Censored Poisson deviance residuals are correct", {
 
     # With censoring, matches 2 * (saturated - fitted) log likelihood, with
     # the saturated likelihood maximized numerically.
-    control$censored_upper <- upr
     m <- sdmTMB(y ~ x, family = censored_poisson(), spatial = "off",
-      data = d, control = control)
+      data = d, censored_upper = upr, control = control)
     lambda <- exp(predict(m)$est)
     ll <- function(lambda) rtmb_dcenspois(d$y, lambda, upr)
     sat <- vapply(seq_len(nrow(d)), function(i) {

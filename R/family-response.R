@@ -110,7 +110,7 @@
   upr[rows] <- floor(snap(upr[rows]))
   if (any(upr[rows] < y_i[rows] | upr[rows] > size[rows])) {
     cli_abort(paste(
-      "`control$censored_upper` must be between the observed count and the",
+      "`censored_upper` must be between the observed count and the",
       "number of trials (from `weights`) for censored beta-binomial rows.",
       "Non-integer bounds are rounded down to the largest possible count."
     ))
@@ -137,7 +137,7 @@
   }
   censored <- single & family_name == "censored_poisson"
   if (!is.null(upr) && any(y_i[censored] > upr[censored], na.rm = TRUE)) {
-    cli_abort("Observed values must be <= `control$censored_upper` for censored Poisson rows.")
+    cli_abort("Observed values must be <= `censored_upper` for censored Poisson rows.")
   }
   invisible(NULL)
 }
@@ -177,4 +177,23 @@
   processed[names(censored)] <- censored
   processed$response <- .family_spec_build_response(processed$y_i, family_spec)
   processed
+}
+
+# Resolve `sdmTMB(censored_upper = )`: a vector or a column name in `data`.
+.censored_upper_arg <- function(censored_upper, control, data) {
+  # e.g., the control list of a fit made with an older version
+  if (!is.null(control$censored_upper)) {
+    cli_abort("Supply `censored_upper` to `sdmTMB()` instead of `sdmTMBcontrol()`.")
+  }
+  if (is.null(censored_upper)) return(NULL)
+  if (is.character(censored_upper)) {
+    if (length(censored_upper) != 1L || !censored_upper %in% names(data)) {
+      cli_abort("`censored_upper` must be a numeric vector or the name of a column in `data`.")
+    }
+    censored_upper <- data[[censored_upper]]
+  }
+  if (length(censored_upper) != nrow(data)) {
+    cli_abort("`censored_upper` must have one value per row of `data`.")
+  }
+  censored_upper
 }

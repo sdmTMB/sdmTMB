@@ -398,6 +398,15 @@ sdmTMB_cv <- function(
   }
   user_weights <- user_weights[data[["_sdm_order_"]]]
 
+  # Censoring bounds follow the reordered data, as `weights` do
+  .censored_upper <- eval(dot_args$censored_upper, envir = parent.frame())
+  if (!is.null(.censored_upper) && !is.character(.censored_upper)) {
+    if (length(.censored_upper) != nrow(data)) {
+      cli_abort("`censored_upper` must have one value per row of `data`.")
+    }
+    .censored_upper <- .censored_upper[data[["_sdm_order_"]]]
+  }
+
   if ("offset" %in% names(dot_args)) {
     if (!is.character(dot_args$offset)) {
       cli_abort("Please use a character value for 'offset' (indicating the column name) for cross validation.")
@@ -437,6 +446,7 @@ sdmTMB_cv <- function(
     dot_args$offset <- NULL
     dot_args$weights <- NULL
     dot_args$control <- cv_control(dot_args$control)
+    dot_args$censored_upper <- .censored_upper
     experimental <- dot_args$experimental
     if (is.null(experimental)) experimental <- list()
     experimental[[".cv_fold_weights"]] <- fold_weights
@@ -478,6 +488,7 @@ sdmTMB_cv <- function(
       dot_args$offset <- NULL
       dot_args$weights <- NULL
       dot_args$control <- cv_control(dot_args$control)
+      dot_args$censored_upper <- .censored_upper
       experimental <- dot_args$experimental
       if (is.null(experimental)) experimental <- list()
       experimental[[".cv_fold_weights"]] <- fold_weights

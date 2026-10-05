@@ -49,13 +49,18 @@
 
 * Add `censored_betabinomial()` for censored beta-binomial counts, e.g., to
   account for hook competition in hook-and-line surveys with the number of
-  hooks as the number of trials. It uses
-  `sdmTMBcontrol(censored_upper = ...)` like `censored_poisson()`, with `NA`
-  meaning censoring between the observed count and the number of trials. It
+  hooks as the number of trials. It uses `sdmTMB(censored_upper = ...)` like
+  `censored_poisson()`, with `NA` meaning censoring between the observed count and the number of trials. It
   needs the RTMB backend. The likelihood sums the shorter of each interval and
   its complement, with a precision check and fallback to the direct sum after
   fitting (`sdmTMBcontrol(censored_method = "direct")` forces the direct sum).
   See the updated hook competition article.
+
+* Censoring bounds for `censored_poisson()` and `censored_betabinomial()` are
+  now supplied with the `censored_upper` argument of `sdmTMB()`, which also
+  accepts a column name in `data`. `sdmTMBcontrol(censored_upper = )` is now
+  an error. This also fixes `sdmTMB_cv()` misaligning the bounds with the
+  data when folds were assigned randomly with a `time` column.
 
 * Add the `dispformula` argument to `sdmTMB()` for modelling the observation
   dispersion parameter with fixed-effect predictors. It is not supported for

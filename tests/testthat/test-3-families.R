@@ -299,7 +299,7 @@ test_that("Censored Poisson fits", {
   m_nocens_pois <- sdmTMB(
     data = sim_dat, formula = observed ~ 1,
     mesh = mesh, family = censored_poisson(link = "log"),
-    control = sdmTMBcontrol(censored_upper = sim_dat$observed)
+    censored_upper = sim_dat$observed
   )
   expect_equal(m_nocens_pois$tmb_data$y_i[,1], m_nocens_pois$tmb_data$upr)
   expect_equal(m_nocens_pois$tmb_data$family_code[1, 1], unname(.valid_family["censored_poisson"]))
@@ -335,7 +335,7 @@ test_that("Censored Poisson fits", {
   m_right_cens_pois <- sdmTMB(
     data = sim_dat, formula = observed ~ 1,
     family = censored_poisson(link = "log"),
-    control = sdmTMBcontrol(censored_upper = upr),
+    censored_upper = upr,
     spatial = "off"
   )
 
@@ -349,7 +349,7 @@ test_that("Censored Poisson fits", {
   m_interval_cens_pois <- sdmTMB(
     data = sim_dat, formula = observed ~ 1,
     family = censored_poisson(link = "log"),
-    control = sdmTMBcontrol(censored_upper = upr),
+    censored_upper = upr,
     spatial = "off"
   )
   expect_true(all(!is.na(summary(m_interval_cens_pois$sd_report)[, "Std. Error"])))
@@ -367,8 +367,8 @@ test_that("Censored Poisson fits", {
     m <- sdmTMB(
       data = sim_dat, formula = observed ~ 1,
       mesh = mesh, family = censored_poisson(link = "log"),
-      control = sdmTMBcontrol(censored_upper = c(4, 5, 6))
-    ), regexp = "upr")
+      censored_upper = c(4, 5, 6)
+    ), regexp = "one value per row")
 
   # missing lwr/upr
   expect_error(
@@ -377,6 +377,37 @@ test_that("Censored Poisson fits", {
       mesh = mesh, family = censored_poisson(link = "log"),
     ), regexp = "censored_upper")
 
+})
+
+test_that("censored_upper accepts a column name", {
+  set.seed(1)
+  d <- data.frame(x = rnorm(60), year = rep(1:3, 20), X = runif(60),
+    Y = runif(60))
+  d$y <- rpois(60, exp(1 + 0.3 * d$x))
+  d$upr <- ifelse(seq_len(60) %% 4 == 0, NA, d$y)
+  fit <- function(...) sdmTMB(y ~ x, data = d, spatial = "off",
+    family = censored_poisson(), ...)
+  m <- fit(censored_upper = d$upr)
+  m_col <- fit(censored_upper = "upr")
+  expect_equal(m_col$model$par, m$model$par)
+  expect_error(sdmTMBcontrol(censored_upper = d$upr), class = "defunctError")
+  control <- sdmTMBcontrol()
+  control$censored_upper <- d$upr # e.g., a fit from an older version
+  expect_error(fit(control = control), regexp = "instead of")
+  expect_error(fit(censored_upper = "nope"), regexp = "column")
+
+  # Random folds stratified by time reorder the data; the bounds must follow.
+  cv <- function(...) {
+    set.seed(2)
+    sdmTMB_cv(y ~ x, data = d, mesh = make_mesh(d, c("X", "Y"), cutoff = 0.2),
+      time = "year", spatial = "off", spatiotemporal = "off",
+      family = censored_poisson(), k_folds = 3, predictive = "mle-eb", ...)
+  }
+  cv_vec <- cv(censored_upper = d$upr)
+  cv_col <- cv(censored_upper = "upr")
+  expect_equal(cv_vec$data$cv_loglik, cv_col$data$cv_loglik)
+  m1 <- cv_vec$models[[1]]
+  expect_identical(m1$tmb_data$upr, m1$data$upr)
 })
 
 test_that("Censored beta-binomial family works", {
@@ -393,14 +424,14 @@ test_that("Censored beta-binomial family works", {
     family = betabinomial(link = "cloglog"))
   m_exact <- sdmTMB(y ~ 0 + year, data = d, weights = d$hooks, spatial = "off",
     family = censored_betabinomial(link = "cloglog"),
-    control = sdmTMBcontrol(censored_upper = d$y))
+    censored_upper = d$y)
   expect_equal(m_exact$model$par, m_bb$model$par, tolerance = 1e-6)
   expect_equal(m_exact$tmb_data$family_code[1, 1],
     unname(.valid_family["censored_betabinomial"]))
 
   m_cens <- sdmTMB(y ~ 0 + year, data = d, weights = d$hooks, spatial = "off",
     family = censored_betabinomial(link = "cloglog"),
-    control = sdmTMBcontrol(censored_upper = upr))
+    censored_upper = upr)
   expect_equal(m_cens$tmb_data$upr, ifelse(censored, d$hooks, d$y))
   expect_true(m_cens$sd_report$pdHess)
   # censored counts are lower bounds, so the estimates increase:
@@ -415,7 +446,7 @@ test_that("Censored beta-binomial family works", {
   # a two-column response gives the same model
   m_cbind <- sdmTMB(cbind(y, hooks - y) ~ 0 + year, data = d, spatial = "off",
     family = censored_betabinomial(link = "cloglog"),
-    control = sdmTMBcontrol(censored_upper = upr))
+    censored_upper = upr)
   expect_equal(m_cbind$model$par, m_cens$model$par, tolerance = 1e-6)
 
   # censored zeros up to the number of hooks contribute nothing
@@ -423,7 +454,7 @@ test_that("Censored beta-binomial family works", {
   d0$y[censored] <- 0
   m0 <- sdmTMB(y ~ 0 + year, data = d0, weights = d0$hooks, spatial = "off",
     family = censored_betabinomial(link = "cloglog"),
-    control = sdmTMBcontrol(censored_upper = upr), do_fit = FALSE)
+    censored_upper = upr, do_fit = FALSE)
   m0_bb <- sdmTMB(y ~ 0 + year, data = d0[!censored, ],
     weights = d0$hooks[!censored], spatial = "off",
     family = betabinomial(link = "cloglog"), do_fit = FALSE)
@@ -432,11 +463,11 @@ test_that("Censored beta-binomial family works", {
 
   expect_error(sdmTMB(y ~ 0 + year, data = d, weights = d$hooks,
     spatial = "off", family = censored_betabinomial(),
-    control = sdmTMBcontrol(censored_upper = d$hooks + 1)),
+    censored_upper = d$hooks + 1),
     regexp = "number of trials")
   expect_error(sdmTMB(y ~ 0 + year, data = d, weights = d$hooks,
     spatial = "off", family = censored_betabinomial(),
-    control = sdmTMBcontrol(censored_upper = d$y - 1)),
+    censored_upper = d$y - 1),
     regexp = "observed count")
   expect_error(sdmTMB(y ~ 0 + year, data = d, weights = d$hooks,
     spatial = "off", family = censored_betabinomial()),

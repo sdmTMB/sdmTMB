@@ -159,6 +159,14 @@ NULL
 #'   this applies only to the positive component except for Poisson-link delta
 #'   models, where it also enters the occurrence-probability calculation.
 #'   Usually a log transformed variable.
+#' @param censored_upper Upper bounds for censored families
+#'   ([censored_poisson()] and [censored_betabinomial()]): a numeric vector
+#'   *or* a character value naming a column in `data`. Each observation is
+#'   treated as a count between the response and this bound: a value equal to
+#'   the response is uncensored, a larger value is interval-censored, and `NA`
+#'   is right-censored (up to the number of trials for
+#'   [censored_betabinomial()]). For left censoring (e.g., fewer than 5), use a
+#'   response of 0 and the largest possible count as the bound (e.g., 4).
 #' @param extra_time Optional extra time slices (e.g., years) to include for
 #'   interpolation or forecasting with the predict function. See the Details
 #'   section below.
@@ -653,6 +661,7 @@ sdmTMB <- function(
     nonlocal_data = NULL,
     weights = NULL,
     offset = NULL,
+    censored_upper = NULL,
     extra_time = NULL,
     reml = FALSE,
     silent = TRUE,
@@ -677,6 +686,7 @@ sdmTMB <- function(
   if (!inherits(dispformula, "formula") || length(dispformula) != 2L) {
     cli_abort("`dispformula` must be a one-sided formula such as `~ 1`.")
   }
+  censored_upper <- .censored_upper_arg(censored_upper, control, data)
   # Omit rows with missing values in any variable the model uses, as with
   # `na.action = na.omit` in glm(). Doing this before anything is built from
   # `data` keeps the stored data, mesh rows, and post-fit methods aligned.
@@ -697,7 +707,7 @@ sdmTMB <- function(
     data <- data[rows, , drop = FALSE]
     weights <- .subset_rows(weights, rows, n)
     offset <- .subset_rows(offset, rows, n)
-    control$censored_upper <- .subset_rows(control$censored_upper, rows, n)
+    censored_upper <- .subset_rows(censored_upper, rows, n)
     if (!is.null(experimental$.cv_fold_weights)) {
       experimental$.cv_fold_weights <- .subset_rows(experimental$.cv_fold_weights, rows, n)
     }
@@ -847,7 +857,7 @@ sdmTMB <- function(
   lower <- control$lower
   upper <- control$upper
   get_joint_precision <- control$get_joint_precision
-  upr <- control$censored_upper
+  upr <- censored_upper
   suppress_nlminb_warnings <- control$suppress_nlminb_warnings
   collapse_spatial_variance <- control$collapse_spatial_variance
   collapse_spatial_variance_threshold <- control$collapse_spatial_variance_threshold
@@ -857,7 +867,7 @@ sdmTMB <- function(
   do_rsr <- as.integer(isTRUE(control$get_rsr))
 
   dot_checks <- c(
-    "lower", "upper", "profile", "parallel", "censored_upper", "getsd",
+    "lower", "upper", "profile", "parallel", "getsd",
     "nlminb_loops", "newton_steps", "mgcv", "quadratic_roots", "multiphase",
     "newton_loops", "start", "map", "get_joint_precision", "normalize",
     "suppress_nlminb_warnings", "collapse_spatial_variance",
@@ -1010,10 +1020,9 @@ sdmTMB <- function(
     c("censored_poisson", "censored_betabinomial"))
   if (uses_censored) {
     if ("lwr" %in% names(experimental) || "upr" %in% names(experimental)) {
-      cli_abort("Detected `lwr` or `upr` in `experimental`. `lwr` is no longer needed and `upr` is now specified as `control = sdmTMBcontrol(censored_upper = ...)`.")
+      cli_abort("Detected `lwr` or `upr` in `experimental`. `lwr` is no longer needed and `upr` is now specified with `sdmTMB(censored_upper = ...)`.")
     }
-    if (is.null(upr)) cli_abort("`censored_upper` must be defined in `control = sdmTMBcontrol()` to use a censored family.")
-    assert_that(length(upr) == nrow(data))
+    if (is.null(upr)) cli_abort("`censored_upper` must be supplied to use a censored family.")
   }
   if (is.null(upr)) upr <- Inf
 
