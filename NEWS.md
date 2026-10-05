@@ -51,8 +51,11 @@
   account for hook competition in hook-and-line surveys with the number of
   hooks as the number of trials. It uses
   `sdmTMBcontrol(censored_upper = ...)` like `censored_poisson()`, with `NA`
-  meaning censoring between the observed count and the number of trials. See
-  the updated hook competition article.
+  meaning censoring between the observed count and the number of trials. It
+  needs the RTMB backend. The likelihood sums the shorter of each interval and
+  its complement, with a precision check and fallback to the direct sum after
+  fitting (`sdmTMBcontrol(censored_method = "direct")` forces the direct sum).
+  See the updated hook competition article.
 
 * Add the `dispformula` argument to `sdmTMB()` for modelling the observation
   dispersion parameter with fixed-effect predictors. It is not supported for

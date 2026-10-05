@@ -61,6 +61,13 @@
 #'   [sdmTMBcontrol()]. Values of `NA` indicate an unbounded right-censored
 #'   distribution, values greater than the observation indicate an upper bound,
 #'   and values equal to the observation indicate no censoring.
+#' @param censored_method How [censored_betabinomial()] sums the likelihood.
+#'   `"auto"` (default) sums the interval or its
+#'   complement, whichever has fewer terms, and checks the precision at the
+#'   estimate, refitting with the direct sum for any rows that fail. `"direct"`
+#'   always sums the interval, which can be much slower. The check only
+#'   applies at the estimate, so consider `"direct"` when evaluating the
+#'   likelihood far from it (e.g., MCMC sampling).
 #' @param get_joint_precision Logical. Passed to `getJointPrecision` in
 #'   [TMB::sdreport()]. Must be `TRUE` to use simulation-based methods in
 #'   [predict.sdmTMB()] or [get_index_sims()]. If not needed, setting this to
@@ -145,6 +152,7 @@ sdmTMBcontrol <- function(
   lower = NULL,
   upper = NULL,
   censored_upper = NULL,
+  censored_method = c("auto", "direct"),
   multiphase = TRUE,
   profile = FALSE,
   get_joint_precision = TRUE,
@@ -203,6 +211,7 @@ sdmTMBcontrol <- function(
     collapse_ar1_threshold < 0.5
   )
   sar_weight_style <- match.arg(sar_weight_style)
+  censored_method <- match.arg(censored_method)
   backend <- match.arg(backend, c("tmb", "rtmb"))
 
   out <- named_list(
@@ -220,6 +229,7 @@ sdmTMBcontrol <- function(
     lower,
     upper,
     censored_upper,
+    censored_method,
     multiphase,
     parallel,
     get_joint_precision,

@@ -17,6 +17,7 @@ sdmTMBcontrol(
   lower = NULL,
   upper = NULL,
   censored_upper = NULL,
+  censored_method = c("auto", "direct"),
   multiphase = TRUE,
   profile = FALSE,
   get_joint_precision = TRUE,
@@ -89,6 +90,14 @@ setting limits.}
 \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}}. Values of \code{NA} indicate an unbounded right-censored
 distribution, values greater than the observation indicate an upper bound,
 and values equal to the observation indicate no censoring.}
+
+\item{censored_method}{How \code{\link[=censored_betabinomial]{censored_betabinomial()}} sums the likelihood.
+\code{"auto"} (default) sums the interval or its
+complement, whichever has fewer terms, and checks the precision at the
+estimate, refitting with the direct sum for any rows that fail. \code{"direct"}
+always sums the interval, which can be much slower. The check only
+applies at the estimate, so consider \code{"direct"} when evaluating the
+likelihood far from it (e.g., MCMC sampling).}
 
 \item{multiphase}{Logical: estimate the fixed and random effects in phases?
 Phases are usually faster and more stable.}

@@ -164,6 +164,12 @@ right-censored count. For \code{censored_betabinomial()}, the number of trials
 so \code{NA} means censoring between the observed count and the number of trials.
 Counts and numbers of trials must be whole numbers, and a non-integer bound
 means the largest count it allows (e.g., 2.5 means 2).
+\code{censored_betabinomial()} needs the RTMB backend (the default). It sums the
+probabilities of the counts inside or outside each interval, whichever is
+shorter. After
+fitting, it checks the precision of each row at the estimate and refits with
+the direct sum over the interval for any row that fails;
+\code{sdmTMBcontrol(censored_method = "direct")} always uses the direct sum.
 See the
 \href{https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html}{hook competition article}.
 }

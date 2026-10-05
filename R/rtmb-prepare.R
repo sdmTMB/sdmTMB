@@ -149,7 +149,10 @@ rtmb_row_inputs <- function(data, families, projection) {
       time = data$year_i + 1L,
       family_id = data$obs_family_id + 1L,
       y = data$y_i, size = data$size, weights = data$weights_i,
-      upr = rep_len(data$upr, nrow(data$y_i)), Xdisp = data$Xdisp_ij
+      upr = rep_len(data$upr, nrow(data$y_i)), Xdisp = data$Xdisp_ij,
+      # Censored beta-binomial rows summed directly (see rtmb_dcensbetabinom())
+      cens_direct = rep_len(if (is.null(data$cens_direct)) 1L else
+        data$cens_direct, nrow(data$y_i))
     )
   }
   out$active <- do.call(rbind, lapply(families, `[[`, "active"))[

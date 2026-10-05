@@ -246,12 +246,15 @@ test_that("censored Poisson random-effect models are consistent", {
 # log P(L <= Y <= U) for a beta-binomial Y by brute force.
 censbetabinom_oracle <- function(L, U, n, a, b) {
   k <- L:U
-  log(sum(exp(lchoose(n, k) + lbeta(k + a, n - k + b) - lbeta(a, b))))
+  l <- lchoose(n, k) + lbeta(k + a, n - k + b) - lbeta(a, b)
+  max(l) + log(sum(exp(l - max(l))))
 }
 
+# `cens_direct = 0` sums the shorter of the interval and its complement, which
+# is accurate unless the interval probability is small.
 test_that("censored beta-binomial log probabilities match a direct sum", {
-  cases <- expand.grid(n = c(1, 10, 140), L = c(0, 1, 5, 140),
-    p = c(0.02, 0.5, 0.95), phi = c(0.5, 5, 200))
+  cases <- expand.grid(n = c(1, 10, 140, 450), L = c(0, 1, 5, 140, 300),
+    p = c(0.001, 0.02, 0.5, 0.95), phi = c(0.5, 5, 200, 1000))
   cases <- cases[cases$L <= cases$n, ]
   cases$U <- ifelse(seq_len(nrow(cases)) %% 2 == 0, NA,
     pmin(cases$n, cases$L + seq_len(nrow(cases)) %% 7))
@@ -260,10 +263,15 @@ test_that("censored beta-binomial log probabilities match a direct sum", {
   expected <- with(cases, mapply(function(L, U, n, p, phi) {
     censbetabinom_oracle(L, if (is.na(U)) n else U, n, p * phi, (1 - p) * phi)
   }, L, U, n, p, phi))
-  expect_equal(rtmb_dcensbetabinom(cases$L, s), expected, tolerance = 1e-10)
+  direct <- rtmb_dcensbetabinom(cases$L, c(s, list(cens_direct = 1)))
+  expect_equal(direct, expected, tolerance = 1e-10)
+  shorter <- rtmb_dcensbetabinom(cases$L, c(s, list(cens_direct = 0)))
+  ok <- exp(expected) >= 1e-4
+  expect_gt(sum(ok), 100)
+  expect_lt(max(abs(shorter - expected)[ok]), 1e-8)
 })
 
-test_that("censored beta-binomial likelihood is correct in both backends", {
+test_that("censored beta-binomial likelihood and gradient are correct", {
   skip_if_not_installed("numDeriv")
   set.seed(81)
   n <- 30L
@@ -282,18 +290,19 @@ test_that("censored beta-binomial likelihood is correct in both backends", {
     -sum(mapply(censbetabinom_oracle, d$y, fit$tmb_data$upr, d$hooks,
       p * phi, (1 - p) * phi))
   }
-  for (backend in c("tmb", "rtmb")) {
+  for (cens_direct in 0:1) {
+    fit$tmb_data$cens_direct[] <- cens_direct
     obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
-      fit$tmb_random, backend = backend)
+      fit$tmb_random, backend = "rtmb")
     for (par in list(c(-1.2, 0.2, 1), c(-2, -0.3, 3))) {
-      expect_equal(obj$fn(par), nll(par), tolerance = 1e-8, info = backend)
+      expect_equal(obj$fn(par), nll(par), tolerance = 1e-8, info = cens_direct)
       expect_equal(as.vector(obj$gr(par)), numDeriv::grad(nll, par),
-        tolerance = 1e-6, info = backend)
+        tolerance = 1e-6, info = cens_direct)
     }
   }
 })
 
-test_that("censored beta-binomial bounds are whole counts in both backends", {
+test_that("censored beta-binomial bounds are whole counts", {
   d <- data.frame(y = c(2, 3, 1, 4, 0, 5, 6), n = c(10, 10, 10, 10, 10, 10, 6))
   # U = 2.5 contains only Y = 2; values within rounding error of an integer
   # are that integer; others are rounded down; NA and U = n are full support
@@ -308,11 +317,12 @@ test_that("censored beta-binomial bounds are whole counts in both backends", {
     -sum(mapply(censbetabinom_oracle, d$y, fit$tmb_data$upr, d$n,
       p * phi, (1 - p) * phi))
   }
-  for (backend in c("tmb", "rtmb")) {
+  for (cens_direct in 0:1) {
+    fit$tmb_data$cens_direct[] <- cens_direct
     obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
-      fit$tmb_random, backend = backend)
+      fit$tmb_random, backend = "rtmb")
     for (par in list(c(0, 0), c(-1.5, 2))) {
-      expect_equal(obj$fn(par), nll(par), tolerance = 1e-10, info = backend)
+      expect_equal(obj$fn(par), nll(par), tolerance = 1e-10, info = cens_direct)
     }
   }
   # n = 10, a = b = 1, Y = 2 exactly: log(11)
@@ -320,11 +330,9 @@ test_that("censored beta-binomial bounds are whole counts in both backends", {
   fit1 <- sdmTMB(y ~ 1, data = d1, weights = d1$n, spatial = "off",
     do_fit = FALSE, family = censored_betabinomial(),
     control = sdmTMBcontrol(censored_upper = 2.5))
-  for (backend in c("tmb", "rtmb")) {
-    obj <- make_sdmTMB_adfun(fit1$tmb_data, fit1$tmb_params, fit1$tmb_map,
-      fit1$tmb_random, backend = backend)
-    expect_equal(obj$fn(c(0, log(2))), log(11), tolerance = 1e-10)
-  }
+  obj <- make_sdmTMB_adfun(fit1$tmb_data, fit1$tmb_params, fit1$tmb_map,
+    fit1$tmb_random, backend = "rtmb")
+  expect_equal(obj$fn(c(0, log(2))), log(11), tolerance = 1e-10)
 })
 
 test_that("censored beta-binomial responses must be whole counts", {
@@ -382,19 +390,91 @@ test_that("censored beta-binomial random-effect models are consistent", {
   type <- seq_len(n) %% 3
   upr <- ifelse(type == 0, NA, ifelse(type == 1, d$y, pmin(d$y + 3, d$hooks)))
   fits <- list()
-  for (backend in c("tmb", "rtmb")) {
-    fits[[backend]] <- sdmTMB(y ~ z + (1 | g), data = d, weights = d$hooks,
+  for (method in c("auto", "direct")) {
+    fits[[method]] <- sdmTMB(y ~ z + (1 | g), data = d, weights = d$hooks,
       spatial = "off", family = censored_betabinomial(),
-      control = sdmTMBcontrol(censored_upper = upr, backend = backend))
-    obj <- fits[[backend]]$tmb_obj
+      control = sdmTMBcontrol(censored_upper = upr, censored_method = method))
+    obj <- fits[[method]]$tmb_obj
     for (par in list(obj$par, obj$par + c(0.3, -0.2, 0.4, -0.5))) {
       expect_equal(as.vector(obj$gr(par)), numDeriv::grad(obj$fn, par),
-        tolerance = 1e-6, info = backend)
+        tolerance = 1e-6, info = method)
     }
-    expect_true(fits[[backend]]$sd_report$pdHess, label = backend)
+    expect_true(fits[[method]]$sd_report$pdHess, label = method)
   }
-  expect_equal(tidy(fits$rtmb), tidy(fits$tmb), tolerance = 1e-6)
-  expect_equal(tidy(fits$rtmb, "ran_pars"), tidy(fits$tmb, "ran_pars"),
+  expect_equal(tidy(fits$auto), tidy(fits$direct), tolerance = 1e-6)
+  expect_equal(tidy(fits$auto, "ran_pars"), tidy(fits$direct, "ran_pars"),
+    tolerance = 1e-6)
+  expect_error(sdmTMB(y ~ z, data = d, weights = d$hooks, spatial = "off",
+    family = censored_betabinomial(),
+    control = sdmTMBcontrol(censored_upper = upr, backend = "tmb")),
+    regexp = "backend")
+})
+
+test_that("censored beta-binomial fits sum the shorter side with a precision check", {
+  set.seed(4)
+  n <- 100L
+  d <- data.frame(z = rnorm(n), hooks = 300)
+  p <- plogis(-3 + 0.4 * d$z)
+  d$y <- rbinom(n, d$hooks, rbeta(n, p * 200, (1 - p) * 200))
+  upr <- ifelse(seq_len(n) %% 3 == 0, NA, d$y)
+  # a right-censored count far above what the model expects
+  d$y[1] <- 100
+  upr[1] <- NA
+  fit <- function(method, silent = TRUE) {
+    sdmTMB(y ~ z, data = d, weights = d$hooks, spatial = "off",
+      family = censored_betabinomial(), silent = silent,
+      control = sdmTMBcontrol(censored_upper = upr, censored_method = method))
+  }
+  expect_message(fit_auto <- fit("auto", silent = FALSE),
+    regexp = "1 row that failed the precision check")
+  expect_identical(which(fit_auto$tmb_data$cens_direct == 1L), 1L)
+  fit_direct <- fit("direct")
+  expect_true(all(fit_direct$tmb_data$cens_direct == 1L))
+  expect_equal(c(logLik(fit_auto)), c(logLik(fit_direct)), tolerance = 1e-8)
+  expect_equal(fit_auto$sd_report$par.fixed, fit_direct$sd_report$par.fixed,
+    tolerance = 1e-6)
+  expect_equal(sqrt(diag(fit_auto$sd_report$cov.fixed)),
+    sqrt(diag(fit_direct$sd_report$cov.fixed)), tolerance = 1e-6)
+
+  # The complement cancels badly here (n = 450, L = 10, U = n): the check
+  # flags the row and the direct sum is exact.
+  d1 <- data.frame(y = 10, n = 450)
+  fit1 <- sdmTMB(y ~ 1, data = d1, weights = d1$n, spatial = "off",
+    do_fit = FALSE, family = censored_betabinomial(),
+    control = sdmTMBcontrol(censored_upper = NA))
+  expect_identical(fit1$tmb_data$cens_direct, 0L)
+  par <- c(qlogis(1e-4), log(1e6))
+  obj <- make_sdmTMB_adfun(fit1$tmb_data, fit1$tmb_params, fit1$tmb_map,
+    fit1$tmb_random, backend = "rtmb")
+  expect_gt(abs(obj$fn(par) - 45.82369), 1)
+  expect_identical(check_censored_betabinomial(obj, fit1$tmb_data), 1L)
+  fit1$tmb_data$cens_direct <- 1L
+  obj <- make_sdmTMB_adfun(fit1$tmb_data, fit1$tmb_params, fit1$tmb_map,
+    fit1$tmb_random, backend = "rtmb")
+  expect_equal(obj$fn(par), 45.82369, tolerance = 1e-6)
+})
+
+test_that("censored beta-binomial held-out CV rows use the direct sum", {
+  set.seed(5)
+  n <- 60L
+  d <- data.frame(z = rnorm(n), hooks = 100, X = runif(n), Y = runif(n))
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.2)
+  p <- plogis(-2 + 0.4 * d$z)
+  d$y <- rbinom(n, d$hooks, rbeta(n, p * 10, (1 - p) * 10))
+  upr <- ifelse(seq_len(n) %% 3 == 0, NA, d$y)
+  cv <- function(method) {
+    sdmTMB_cv(y ~ z, data = d, mesh = mesh, weights = d$hooks, spatial = "off",
+      family = censored_betabinomial(), k_folds = 3,
+      fold_ids = rep(1:3, length.out = n),
+      control = sdmTMBcontrol(censored_upper = upr, censored_method = method))
+  }
+  cv_auto <- cv("auto")
+  for (m in cv_auto$models) {
+    expect_identical(m$tmb_data$cens_direct,
+      as.integer(m$tmb_data$weights_i == 0))
+  }
+  cv_direct <- cv("direct")
+  expect_equal(cv_auto$data$cv_loglik, cv_direct$data$cv_loglik,
     tolerance = 1e-6)
 })
 

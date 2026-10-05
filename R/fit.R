@@ -863,7 +863,7 @@ sdmTMB <- function(
     "suppress_nlminb_warnings", "collapse_spatial_variance",
     "collapse_spatial_variance_threshold",
     "collapse_spatiotemporal_ar1", "collapse_ar1_threshold",
-    "sar_weight_style", "get_rsr", "backend"
+    "sar_weight_style", "get_rsr", "backend", "censored_method"
   )
   .control <- control
   # FIXME; automate this from sdmTMcontrol args?
@@ -1002,6 +1002,10 @@ sdmTMB <- function(
   }
   # FIXME parallel setup here?
 
+  uses_censored_bb <- "censored_betabinomial" %in% family_spec$components$family_name
+  if (uses_censored_bb && backend != "rtmb") {
+    cli_abort("`censored_betabinomial()` needs `sdmTMBcontrol(backend = \"rtmb\")`.")
+  }
   uses_censored <- any(family_spec$components$family_name %in%
     c("censored_poisson", "censored_betabinomial"))
   if (uses_censored) {
@@ -1465,6 +1469,7 @@ sdmTMB <- function(
     has_smooths = as.integer(sm$has_smooths),
     has_dispersion_model = as.integer(has_dispformula),
     upr = upr,
+    cens_direct = .censored_direct_init(weights, NROW(y_i), control$censored_method),
     lwr = 0L, # in case we want to reintroduce this
     stan_flag = as.integer(bayesian),
     no_spatial = no_spatial,
@@ -1920,6 +1925,15 @@ sdmTMB <- function(
     lower = lim$lower, upper = lim$upper, control = .control,
     silent = silent, suppress_warnings = isTRUE(suppress_nlminb_warnings)
   )
+
+  if (uses_censored_bb) {
+    refit <- refit_censored_betabinomial(tmb_obj, tmb_opt, tmb_data, tmb_map,
+      tmb_random, lim, .control, profile = control$profile, silent = silent,
+      suppress_warnings = isTRUE(suppress_nlminb_warnings))
+    tmb_obj <- out_structure$tmb_obj <- refit$obj
+    tmb_data <- out_structure$tmb_data <- refit$data
+    tmb_opt <- refit$opt
+  }
 
   check_bounds(tmb_opt$par, lim$lower, lim$upper)
 

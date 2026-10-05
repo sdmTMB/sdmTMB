@@ -69,6 +69,7 @@ rtmb_obs_state <- function(i, m, family, eta, par, theta, prepared, ln_phi_i) {
   if (name %in% c("censored_poisson", "censored_betabinomial")) {
     state$upr <- fit$upr[i]
   }
+  if (name == "censored_betabinomial") state$cens_direct <- fit$cens_direct[i]
   if (family$combine == "poisson_link") {
     # Poisson-link delta: component 1 models log numbers density, and
     # component 2 log weight, with the offset inside both means.

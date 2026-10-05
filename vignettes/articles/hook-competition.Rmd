@@ -294,8 +294,8 @@ fit_bb_cens <- update(
 sanity(fit_bb_cens)
 ```
 
-The beta-binomial distribution function has no closed form, so the likelihood of each censored set is a sum over every possible count in its interval.
-Fitting is therefore slower than for the censored Poisson when sets have many hooks.
+The beta-binomial distribution function has no closed form, so the likelihood of each censored set is a sum over every possible count in its interval, or one minus the sum over the counts outside it when that is shorter.
+Fitting can therefore be slower than for the censored Poisson when sets have many hooks.
 
 For the index, `derived_link = "log"` sums $\exp(\eta) = -\log(1 - p)$ over the grid instead of the probability $p$, which can't exceed 1.
 This is a transformation of the mean catch probability.
