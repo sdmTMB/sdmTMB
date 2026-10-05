@@ -203,7 +203,7 @@ test_that("Censored Poisson deviance residuals are correct", {
   x <- rnorm(60)
   d <- data.frame(x = x, y = rpois(60, exp(1 + 0.5 * x)))
   upr <- d$y
-  upr[1:15] <- NA # right censored
+  upr[1:15] <- Inf # right censored
   upr[16:30] <- d$y[16:30] + 3 # interval censored
   d$y[31:35] <- 0 # interval starting at zero
   upr[31:35] <- 2

@@ -105,7 +105,7 @@
       "(e.g., proportions times `weights` must be whole numbers)."
     ))
   }
-  right <- rows & is.na(upr)
+  right <- rows & !is.finite(upr)
   upr[right] <- size[right]
   upr[rows] <- floor(snap(upr[rows]))
   if (any(upr[rows] < y_i[rows] | upr[rows] > size[rows])) {
@@ -194,6 +194,13 @@
   }
   if (length(censored_upper) != nrow(data)) {
     cli_abort("`censored_upper` must have one value per row of `data`.")
+  }
+  if (anyNA(censored_upper)) {
+    cli_warn(c(
+      "Using `NA` in `censored_upper` for no upper bound is deprecated.",
+      "i" = "Use `Inf` instead. `NA` is being treated as `Inf`."
+    ), .frequency = "regularly", .frequency_id = "sdmTMB_censored_upper_na")
+    censored_upper[is.na(censored_upper)] <- Inf
   }
   censored_upper
 }

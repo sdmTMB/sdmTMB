@@ -128,13 +128,13 @@ We specify censoring with the `censored_upper` argument in `sdmTMB()`.
 It is a vector with one element per row of data (or the name of a column in the data):
 
 - a value equal to the observed count means the observation is **not** censored;
-- `NA` means the observation is right-censored with no upper bound;
+- `Inf` means the observation is right-censored with no upper bound;
 - a value greater than the observed count means the observation is interval-censored between the observed count and that value.
 
 The response is the observed catch count.
 
 ```{r upr}
-upr <- ifelse(d$prop_removed >= pstar, NA, d$catch_count)
+upr <- ifelse(d$prop_removed >= pstar, Inf, d$catch_count)
 ```
 
 We'll fit a model with year effects, a quadratic effect of log depth, a spatial random field, and an observation-level random intercept, `(1 | obs_id)`.
@@ -266,7 +266,7 @@ $$
 $$
 
 where $n$ is the number of hooks.
-This gives every censored set an upper bound, so we can use the same `censored_upper` vector with `NA` for censored sets and don't need to calculate one.
+This gives every censored set an upper bound, so we can use the same `censored_upper` vector with `Inf` for censored sets and don't need to calculate one.
 The number of hooks is supplied through `weights`.
 Counts must be whole numbers, and a non-integer bound means the largest count it allows (e.g., 2.5 means 2).
 
@@ -315,6 +315,12 @@ Accounting for hook competition moves the beta-binomial index in the same direct
 The two models account for overdispersion differently (a beta-binomial dispersion parameter versus a lognormal observation-level random intercept) and their indices are on different scales, so differences in their indices and uncertainty aren't only due to the upper limit on the count.
 Also, the beta-binomial was able to fit with a spatiotemporal random field, whereas we turned that off for this simple example for the censored Poisson.
 
+Both censored likelihoods are probabilities of the same intervals of counts, so their marginal AIC values are comparable (comparisons with the uncensored models or the bounded censored Poisson are not, because they treat the observations differently):
+
+```{r aic}
+AIC(fit_cens, fit_bb_cens)
+```
+
 We can see that the beta-binomial better reflects the properties of the observed data here:
 
 ```{r}
@@ -331,16 +337,16 @@ dharma_residuals(s_pois, object = fit_cens)
 Note how these families have different implications for the maximum number of fish:
 
 ```{r}
-max(s_bb) # upper bound is max number of hooks
-max(s_pois_bounded) # upper is bounded
-max(s_pois) # no upper bound! probably not realistic
+max(s_bb) # can't exceed the number of hooks
+max(s_pois_bounded) # not limited: `censored_upper` only affects the likelihood
+max(s_pois) # not limited
 ```
 
 # Summary
 
 - Calculate the proportion of baits removed for each set.
 - Choose a breakdown point $p^*$, e.g., by plotting a smoother of catch against bait removal.
-- Build a `censored_upper` vector: the observed count for uncensored sets and `NA` (or an upper bound) for sets at or above $p^*$.
+- Build a `censored_upper` vector: the observed count for uncensored sets and `Inf` (or an upper bound) for sets at or above $p^*$.
 - Fit with `family = censored_poisson()` and `censored_upper = ...`, ideally with an observation-level random intercept to account for overdispersion.
 - Alternatively, fit with `family = censored_betabinomial(link = "cloglog")` and the number of hooks as `weights`, which limits each count to the number of hooks.
 

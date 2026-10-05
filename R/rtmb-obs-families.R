@@ -59,7 +59,7 @@ rtmb_obs_families <- list(
     }
   ),
 
-  # Beta-binomial with counts censored to [y, upr]; `upr` NA means `size`.
+  # Beta-binomial with counts censored to [y, upr]; `upr` Inf means `size`.
   censored_betabinomial = list(
     logpdf = function(y, mu, s) rtmb_dcensbetabinom(y, s),
     mean = function(mu, s) mu * s$size,
@@ -394,14 +394,14 @@ rtmb_ifelse_positive <- function(y, positive, other) {
   out
 }
 
-# Right-censored Poisson (`upr = NA`), interval-censored Poisson
+# Right-censored Poisson (`upr = Inf`), interval-censored Poisson
 # (`y <= count <= upr`), or an exact count (`upr == y`).
 rtmb_dcenspois <- function(y, lambda, upr) {
   out <- lambda * 0
-  exact <- !is.na(upr) & upr == y
+  exact <- is.finite(upr) & upr == y
   out[exact] <- RTMB::dpois(y[exact], lambda[exact], log = TRUE)
   if (any(!exact)) {
-    U <- ifelse(is.na(upr), Inf, upr)[!exact]
+    U <- ifelse(is.finite(upr), upr, Inf)[!exact]
     out[!exact] <- rtmb_censpois_logprob(y[!exact], U)(lambda[!exact])
   }
   out
@@ -413,9 +413,9 @@ rtmb_dcenspois <- function(y, lambda, upr) {
 # derivative p(L - 1) - p(U) = 0, at lambda^(U - L + 1) = U! / (L - 1)!. The
 # saturated values depend only on data.
 rtmb_censpois_devresid <- function(y, lambda, upr, log_density) {
-  exact <- !is.na(upr) & upr == y
-  interval <- !is.na(upr) & !exact & y > 0
-  log_lambda_sat <- ifelse(is.na(upr), Inf, -Inf)
+  exact <- is.finite(upr) & upr == y
+  interval <- is.finite(upr) & !exact & y > 0
+  log_lambda_sat <- ifelse(is.finite(upr), -Inf, Inf)
   log_lambda_sat[interval] <- (lgamma(upr[interval] + 1) -
     lgamma(y[interval])) / (upr[interval] - y[interval] + 1)
   log_sat <- numeric(length(y))
@@ -564,7 +564,7 @@ rtmb_dcensbetabinom <- function(y, s) {
   a <- shape$a
   b <- shape$b
   n <- s$size
-  upr <- ifelse(is.na(s$upr), n, s$upr) # whole numbers (normalized in R)
+  upr <- ifelse(is.finite(s$upr), s$upr, n) # whole numbers (normalized in R)
   full <- y == 0 & upr >= n # the whole support, set to 0 below
   n_low <- y # counts 0, ..., y - 1
   n_high <- n - upr # counts upr + 1, ..., n

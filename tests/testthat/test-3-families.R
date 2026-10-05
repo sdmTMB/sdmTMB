@@ -321,7 +321,7 @@ test_that("Censored Poisson fits", {
   U_1 <- 8 # U_1 and above cannot be directly observed - instead we see >= U1
   y <- sim_dat$observed
   lwr <- ifelse(y >= U_1, U_1, y)
-  upr <- ifelse(y >= U_1, NA, y)
+  upr <- ifelse(y >= U_1, Inf, y)
 
   # old:
   expect_error(m_right_cens_pois <- sdmTMB(
@@ -384,7 +384,7 @@ test_that("censored_upper accepts a column name", {
   d <- data.frame(x = rnorm(60), year = rep(1:3, 20), X = runif(60),
     Y = runif(60))
   d$y <- rpois(60, exp(1 + 0.3 * d$x))
-  d$upr <- ifelse(seq_len(60) %% 4 == 0, NA, d$y)
+  d$upr <- ifelse(seq_len(60) %% 4 == 0, Inf, d$y)
   fit <- function(...) sdmTMB(y ~ x, data = d, spatial = "off",
     family = censored_poisson(), ...)
   m <- fit(censored_upper = d$upr)
@@ -395,6 +395,12 @@ test_that("censored_upper accepts a column name", {
   control$censored_upper <- d$upr # e.g., a fit from an older version
   expect_error(fit(control = control), regexp = "instead of")
   expect_error(fit(censored_upper = "nope"), regexp = "column")
+  # NA is deprecated and treated as Inf
+  rlang::local_options(rlib_warning_verbosity = "verbose")
+  upr_na <- d$upr
+  upr_na[is.infinite(upr_na)] <- NA
+  expect_warning(m_na <- fit(censored_upper = upr_na), regexp = "deprecated")
+  expect_equal(m_na$model$par, m$model$par)
 
   # Random folds stratified by time reorder the data; the bounds must follow.
   cv <- function(...) {
@@ -418,7 +424,7 @@ test_that("Censored beta-binomial family works", {
   p <- 1 - exp(-exp(c(-2.5, -2)[d$year]))
   d$y <- rbinom(n, d$hooks, rbeta(n, p * 10, (1 - p) * 10))
   censored <- seq_len(n) %% 3 == 0
-  upr <- ifelse(censored, NA, d$y)
+  upr <- ifelse(censored, Inf, d$y)
 
   m_bb <- sdmTMB(y ~ 0 + year, data = d, weights = d$hooks, spatial = "off",
     family = betabinomial(link = "cloglog"))
@@ -502,6 +508,9 @@ test_that("Censored Poisson upper limit function works", {
     pstar = 0.9
   )
   expect_equal(x, c(3, 3, 3))
+  # bounds are capped at the number of hooks
+  x <- get_censored_upper(prop_removed = 1, n_catch = 9, n_hooks = 10, pstar = 0.5)
+  expect_equal(x, 10)
   expect_error(
     get_censored_upper(
       prop_removed = c(0.5, 0.3, 0.2),

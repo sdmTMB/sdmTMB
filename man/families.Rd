@@ -157,10 +157,10 @@ You can fix it at a specific value by providing a number > 1 (e.g., \code{df = 3
 censored, e.g., to account for hook competition in longline surveys
 (Watson et al. 2023). Bounds are given with \code{sdmTMB(censored_upper = ...)}:
 a value equal to the observed count is uncensored, a larger value gives an
-interval-censored count between the observed count and that value, and \code{NA}
+interval-censored count between the observed count and that value, and \code{Inf}
 gives a right-censored count. For \code{censored_betabinomial()}, the number of trials
 (e.g., hooks) is supplied via \code{weights} and is the largest possible count,
-so \code{NA} means censoring between the observed count and the number of trials.
+so \code{Inf} means censoring between the observed count and the number of trials.
 Counts and numbers of trials must be whole numbers, and a non-integer bound
 means the largest count it allows (e.g., 2.5 means 2).
 \code{censored_betabinomial()} needs the RTMB backend (the default). It sums the

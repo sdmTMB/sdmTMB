@@ -136,7 +136,7 @@ test_that("censored Poisson likelihood is correct away from the taping point", {
   n <- 30L
   d <- data.frame(z = rnorm(n))
   d$y <- rpois(n, exp(0.5 + 0.4 * d$z))
-  upr <- ifelse(seq_len(n) %% 3 == 0, NA,
+  upr <- ifelse(seq_len(n) %% 3 == 0, Inf,
     ifelse(seq_len(n) %% 3 == 1, d$y, d$y + 2))
   fit <- sdmTMB(y ~ z, data = d, spatial = "off", do_fit = FALSE,
     family = censored_poisson(),
@@ -186,8 +186,7 @@ test_that("censored Poisson log probabilities are stable in the tails", {
     c(1, 100, Inf), c(1, 100, 102), c(1000, 0, 2), c(3, 0, Inf), c(3, 0, 5),
     c(3, 2, 6), c(1e-3, 50, Inf), c(50, 3, 3), c(5, 10, 500),
     c(1000, 10, 200), c(300, 200, 400), c(1e-8, 2, Inf), c(400, 2, Inf))
-  upr <- ifelse(is.infinite(cases[, 3]), NA, cases[, 3])
-  expect_equal(rtmb_dcenspois(cases[, 2], cases[, 1], upr),
+  expect_equal(rtmb_dcenspois(cases[, 2], cases[, 1], cases[, 3]),
     apply(cases, 1, function(x) censpois_oracle(x[1], x[2], x[3])[[1]]),
     tolerance = 1e-12)
   # The same tape at several log means, in both backends.
@@ -197,7 +196,7 @@ test_that("censored Poisson log probabilities are stable in the tails", {
     d <- data.frame(y = L, o = log(lambda))
     fit <- sdmTMB(y ~ 1, offset = "o", data = d, spatial = "off",
       do_fit = FALSE, family = censored_poisson(),
-      censored_upper = upr[k])
+      censored_upper = cases[k, 3])
     for (backend in c("tmb", "rtmb")) {
       obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
         backend = backend)
@@ -219,9 +218,9 @@ test_that("censored Poisson random-effect models are consistent", {
   d <- data.frame(g = factor(rep(1:10, each = 6)), z = rnorm(n))
   d$y <- rpois(n, exp(0.5 + 0.4 * d$z + rnorm(10, 0, 0.5)[d$g]))
   type <- seq_len(n) %% 3
-  upr <- ifelse(type == 0, NA, ifelse(type == 1, d$y, d$y + 3))
+  upr <- ifelse(type == 0, Inf, ifelse(type == 1, d$y, d$y + 3))
   d$y[1:2] <- c(60, 80) # far upper tail at the starting values
-  upr[1:2] <- c(NA, 85)
+  upr[1:2] <- c(Inf, 85)
   fit <- sdmTMB(y ~ z + (1 | g), data = d, spatial = "off", do_fit = FALSE,
     family = censored_poisson(), censored_upper = upr)
   fits <- list()
@@ -280,11 +279,11 @@ test_that("censored beta-binomial likelihood and gradient are correct", {
   p <- 1 - exp(-exp(-1.5 + 0.4 * d$z))
   d$y <- rbinom(n, d$hooks, rbeta(n, p * 10, (1 - p) * 10))
   type <- seq_len(n) %% 3
-  upr <- ifelse(type == 0, NA, ifelse(type == 1, d$y, pmin(d$y + 4, d$hooks)))
+  upr <- ifelse(type == 0, Inf, ifelse(type == 1, d$y, pmin(d$y + 4, d$hooks)))
   fit <- sdmTMB(y ~ z, data = d, weights = d$hooks, spatial = "off",
     do_fit = FALSE, family = censored_betabinomial(link = "cloglog"),
     censored_upper = upr)
-  expect_equal(fit$tmb_data$upr, ifelse(is.na(upr), d$hooks, upr))
+  expect_equal(fit$tmb_data$upr, ifelse(is.infinite(upr), d$hooks, upr))
   nll <- function(par) {
     p <- 1 - exp(-exp(par[[1L]] + par[[2L]] * d$z))
     phi <- exp(par[[3L]])
@@ -306,8 +305,8 @@ test_that("censored beta-binomial likelihood and gradient are correct", {
 test_that("censored beta-binomial bounds are whole counts", {
   d <- data.frame(y = c(2, 3, 1, 4, 0, 5, 6), n = c(10, 10, 10, 10, 10, 10, 6))
   # U = 2.5 contains only Y = 2; values within rounding error of an integer
-  # are that integer; others are rounded down; NA and U = n are full support
-  upr <- c(2.5, 3 - 1e-12, 3.99, 4 + 1e-12, NA, 10, NA)
+  # are that integer; others are rounded down; Inf and U = n are full support
+  upr <- c(2.5, 3 - 1e-12, 3.99, 4 + 1e-12, Inf, 10, Inf)
   fit <- sdmTMB(y ~ 1, data = d, weights = d$n, spatial = "off",
     do_fit = FALSE, family = censored_betabinomial(),
     censored_upper = upr)
@@ -338,7 +337,7 @@ test_that("censored beta-binomial bounds are whole counts", {
 
 test_that("censored beta-binomial responses must be whole counts", {
   d <- data.frame(y = c(0.2, 0.3, 0.1, 0.4), n = 10)
-  cens_bb <- function(data, upr = rep(NA, nrow(data)), weights = data$n,
+  cens_bb <- function(data, upr = rep(Inf, nrow(data)), weights = data$n,
     formula = y ~ 1) {
     sdmTMB(formula, data = data, weights = weights, spatial = "off",
       do_fit = FALSE, family = censored_betabinomial(),
@@ -355,7 +354,7 @@ test_that("censored beta-binomial responses must be whole counts", {
   expect_error(cens_bb(d, upr = c(1.5, 3, 1, 4)), regexp = "observed count")
   # two-column responses
   d$fail <- d$n - d$y
-  fit_cbind <- cens_bb(d, upr = c(2.5, NA, 1, 4), weights = NULL,
+  fit_cbind <- cens_bb(d, upr = c(2.5, Inf, 1, 4), weights = NULL,
     formula = cbind(y, fail) ~ 1)
   expect_identical(fit_cbind$tmb_data$upr, c(2, 10, 1, 4))
   d$y[1] <- 2.5
@@ -364,7 +363,7 @@ test_that("censored beta-binomial responses must be whole counts", {
     regexp = "whole-number counts")
   # a missing trial size drops the row without checking its bound
   d$y[1] <- 2
-  fit_na <- cens_bb(d, upr = c(5, NA, 1, 4), weights = c(NA, 10, 10, 10))
+  fit_na <- cens_bb(d, upr = c(5, Inf, 1, 4), weights = c(NA, 10, 10, 10))
   expect_identical(fit_na$tmb_data$y_i[, 1], c(3, 1, 4))
   expect_identical(fit_na$tmb_data$upr, c(10, 1, 4))
 })
@@ -389,7 +388,7 @@ test_that("censored beta-binomial random-effect models are consistent", {
   p <- plogis(-1 + 0.4 * d$z + rnorm(10, 0, 0.5)[d$g])
   d$y <- rbinom(n, d$hooks, rbeta(n, p * 8, (1 - p) * 8))
   type <- seq_len(n) %% 3
-  upr <- ifelse(type == 0, NA, ifelse(type == 1, d$y, pmin(d$y + 3, d$hooks)))
+  upr <- ifelse(type == 0, Inf, ifelse(type == 1, d$y, pmin(d$y + 3, d$hooks)))
   fits <- list()
   for (method in c("auto", "direct")) {
     fits[[method]] <- sdmTMB(y ~ z + (1 | g), data = d, weights = d$hooks,
@@ -419,10 +418,10 @@ test_that("censored beta-binomial fits sum the shorter side with a precision che
   d <- data.frame(z = rnorm(n), hooks = 300)
   p <- plogis(-3 + 0.4 * d$z)
   d$y <- rbinom(n, d$hooks, rbeta(n, p * 200, (1 - p) * 200))
-  upr <- ifelse(seq_len(n) %% 3 == 0, NA, d$y)
+  upr <- ifelse(seq_len(n) %% 3 == 0, Inf, d$y)
   # a right-censored count far above what the model expects
   d$y[1] <- 100
-  upr[1] <- NA
+  upr[1] <- Inf
   fit <- function(method, silent = TRUE) {
     sdmTMB(y ~ z, data = d, weights = d$hooks, spatial = "off",
       family = censored_betabinomial(), silent = silent,
@@ -445,7 +444,7 @@ test_that("censored beta-binomial fits sum the shorter side with a precision che
   d1 <- data.frame(y = 10, n = 450)
   fit1 <- sdmTMB(y ~ 1, data = d1, weights = d1$n, spatial = "off",
     do_fit = FALSE, family = censored_betabinomial(),
-    censored_upper = NA)
+    censored_upper = Inf)
   expect_identical(fit1$tmb_data$cens_direct, 0L)
   par <- c(qlogis(1e-4), log(1e6))
   obj <- make_sdmTMB_adfun(fit1$tmb_data, fit1$tmb_params, fit1$tmb_map,
@@ -465,7 +464,7 @@ test_that("censored beta-binomial held-out CV rows use the direct sum", {
   mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.2)
   p <- plogis(-2 + 0.4 * d$z)
   d$y <- rbinom(n, d$hooks, rbeta(n, p * 10, (1 - p) * 10))
-  upr <- ifelse(seq_len(n) %% 3 == 0, NA, d$y)
+  upr <- ifelse(seq_len(n) %% 3 == 0, Inf, d$y)
   cv <- function(method) {
     sdmTMB_cv(y ~ z, data = d, mesh = mesh, weights = d$hooks, spatial = "off",
       family = censored_betabinomial(), k_folds = 3,

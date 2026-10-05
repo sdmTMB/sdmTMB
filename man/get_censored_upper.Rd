@@ -21,7 +21,8 @@ breakdown point of observed catch counts as a result of hook competition.}
 }
 \value{
 A numeric vector of upper bound catch counts of the target species to
-improve convergence of the censored method.
+improve convergence of the censored method. Bounds are capped at
+\code{n_hooks}.
 }
 \description{
 Calculate an upper bound on catch counts for the censored Poisson family
@@ -36,7 +37,7 @@ Pass the returned vector to the \code{censored_upper} argument of \code{\link[=s
 with \code{family = censored_poisson()} and the observed catch counts
 (\code{n_catch}) as the response. Fishing events with \code{prop_removed} below
 \code{pstar} get an upper bound equal to the observed catch and are therefore
-treated as uncensored. Alternatively, set \code{censored_upper} to \code{NA} for
+treated as uncensored. Alternatively, set \code{censored_upper} to \code{Inf} for
 fishing events above \code{pstar} to use the right-censored likelihood without
 an upper bound.
 
@@ -58,9 +59,7 @@ In practice, these computations are done in log space for numerical
 stability.
 
 With \code{\link[=censored_betabinomial]{censored_betabinomial()}}, the number of hooks is already an upper
-bound on the count, so \code{NA} can be used for censored fishing events. If
-using this function instead, cap the bound at the number of hooks with
-\code{pmin(upr, n_hooks)}.
+bound on the count, so \code{Inf} can be used for censored fishing events.
 }
 \examples{
 dat <- structure(

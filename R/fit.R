@@ -163,7 +163,7 @@ NULL
 #'   ([censored_poisson()] and [censored_betabinomial()]): a numeric vector
 #'   *or* a character value naming a column in `data`. Each observation is
 #'   treated as a count between the response and this bound: a value equal to
-#'   the response is uncensored, a larger value is interval-censored, and `NA`
+#'   the response is uncensored, a larger value is interval-censored, and `Inf`
 #'   is right-censored (up to the number of trials for
 #'   [censored_betabinomial()]). For left censoring (e.g., fewer than 5), use a
 #'   response of 0 and the largest possible count as the bound (e.g., 4).

@@ -166,7 +166,7 @@ Type censpois_logprob(Type lambda, Type L, Type U) {
   return censpois_logprob(tx)[0];
 }
 
-// Right-censored (`upr` NA: count >= x), interval-censored
+// Right-censored (`upr` Inf or NA: count >= x), interval-censored
 // (x <= count <= upr), or exact (upr == x) Poisson.
 template <class Type>
 Type dcenspois2(Type x, Type lambda, Type upr, int give_log = 0) {
@@ -512,13 +512,14 @@ Type devresid_nbinom2( Type y,
 // lambda^(U - L + 1) = U! / (L - 1)!.
 template<class Type>
 Type devresid_censpois(Type x, Type lambda, Type upr, Type ll) {
-  if (!isNA(upr) && upr == x) {
+  bool bounded = !isNA(upr) && upr < Type(R_PosInf);
+  if (bounded && upr == x) {
     return sign(x - lambda) *
       pow(Type(2) * (x * log((Type(1e-10) + x) / lambda) - (x - lambda)), 0.5);
   }
   Type log_sat = Type(0);
   Type direction = Type(1); // saturated lambda above (1) or below (-1) the fit
-  if (!isNA(upr)) {
+  if (bounded) {
     direction = Type(-1);
     if (x > 0) {
       Type log_lambda_sat = (lgamma(upr + Type(1)) - lgamma(x)) / (upr - x + Type(1));

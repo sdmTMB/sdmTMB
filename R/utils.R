@@ -646,7 +646,7 @@ get_scale_factor <- function(prop_removed, n_hooks, pstar) {
 #' with `family = censored_poisson()` and the observed catch counts
 #' (`n_catch`) as the response. Fishing events with `prop_removed` below
 #' `pstar` get an upper bound equal to the observed catch and are therefore
-#' treated as uncensored. Alternatively, set `censored_upper` to `NA` for
+#' treated as uncensored. Alternatively, set `censored_upper` to `Inf` for
 #' fishing events above `pstar` to use the right-censored likelihood without
 #' an upper bound.
 #'
@@ -670,12 +670,11 @@ get_scale_factor <- function(prop_removed, n_hooks, pstar) {
 #' stability.
 #'
 #' With [censored_betabinomial()], the number of hooks is already an upper
-#' bound on the count, so `NA` can be used for censored fishing events. If
-#' using this function instead, cap the bound at the number of hooks with
-#' `pmin(upr, n_hooks)`.
+#' bound on the count, so `Inf` can be used for censored fishing events.
 #'
 #' @return A numeric vector of upper bound catch counts of the target species to
-#'   improve convergence of the censored method.
+#'   improve convergence of the censored method. Bounds are capped at
+#'   `n_hooks`.
 #'
 #' @references
 #' Watson, J., Edwards, A.M., and Auger-Méthé, M. 2023. A statistical
@@ -761,7 +760,7 @@ get_censored_upper <- function(
   high <- n_catch
   high[prop_removed >= pstar] <- high[prop_removed >= pstar] +
     upper_bound[prop_removed >= pstar]
-  round(high)
+  pmin(round(high), n_hooks)
 }
 
 #' Set delta model for [ggeffects::ggpredict()]

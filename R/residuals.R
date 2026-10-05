@@ -92,7 +92,7 @@ qres_betabinomial <- function(object, y, mu, .n = NULL) {
 # Censored counts are uniform over the CDF across their interval [y, upr].
 qres_censored_betabinomial <- function(object, y, mu, .n = NULL) {
   upr <- object$tmb_data$upr
-  upr <- ifelse(is.na(upr), .n, upr)
+  upr <- ifelse(is.finite(upr), upr, .n)
   phi <- exp(get_pars(object)[["ln_phi"]])
   alpha <- mu * phi
   beta <- (1 - mu) * phi
