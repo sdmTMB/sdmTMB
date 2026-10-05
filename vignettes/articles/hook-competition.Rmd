@@ -255,9 +255,9 @@ Here, the upper bound mostly has a modest effect, pulling some years (e.g., 2022
 
 A Poisson model has no upper limit on the count, but a set can't catch more fish than it has hooks.
 An alternative is a beta-binomial with the number of hooks as the number of trials.
-With a complementary log-log link, the probability that a hook catches the target species is $p = 1 - \exp(-\exp(\eta))$, where $\eta$ is the linear predictor.
-Then $\exp(\eta)$ is a per-hook catch rate, comparable to the mean of the Poisson model with log hook count as an offset.
-The beta-binomial dispersion parameter accounts for overdispersion, so we don't need an observation-level random intercept.
+With a complementary log-log link, the mean probability that a hook catches the target species is $p = 1 - \exp(-\exp(\eta))$, where $\eta$ is the linear predictor.
+If each hook caught fish as a Poisson process with rate $\lambda$, then $p = 1 - \exp(-\lambda)$ and $\exp(\eta) = \lambda$ would be a per-hook catch rate.
+The beta-binomial dispersion parameter accounts for overdispersion instead of an observation-level random intercept, so the two models describe overdispersion differently.
 
 The `censored_betabinomial()` family works like `censored_poisson()`.
 The latent count without hook competition still can't exceed the number of hooks, so a right-censored set has a count between the observed count and the number of hooks:
@@ -269,6 +269,11 @@ $$
 where $n$ is the number of hooks.
 This gives every censored set an upper bound, so we can use the same `censored_upper` vector with `NA` for censored sets and don't need to calculate one.
 The number of hooks is supplied through `weights`.
+Counts must be whole numbers, and a non-integer bound means the largest count it allows (e.g., 2.5 means 2).
+
+As with the censored Poisson, this is a true interval-censoring likelihood only if which sets are censored, and their bounds, carry no extra information about the parameters.
+Hook competition doesn't censor counts at random: it reduces catches through a process that also depends on the abundance of the target and other species.
+The censored likelihood is therefore best thought of as a working likelihood, and how well it recovers trends depends on how competition actually reduces catches [see the simulations in @watson2023].
 
 ```{r fit-bb}
 fit_bb <- sdmTMB(
@@ -292,7 +297,9 @@ sanity(fit_bb_cens)
 The beta-binomial distribution function has no closed form, so the likelihood of each censored set is a sum over every possible count in its interval.
 Fitting is therefore slower than for the censored Poisson when sets have many hooks.
 
-For the index, `derived_link = "log"` sums $\exp(\eta)$, the per-hook catch rate, over the grid instead of the probability $p$, which can't exceed 1:
+For the index, `derived_link = "log"` sums $\exp(\eta) = -\log(1 - p)$ over the grid instead of the probability $p$, which can't exceed 1.
+This is a transformation of the mean catch probability.
+Because the beta-binomial mixes over hook-level probabilities, it isn't in general the mean of an underlying Poisson catch rate, so treating it as proportional to abundance is an additional assumption:
 
 ```{r index-bb}
 ind_bb <- rbind(
@@ -304,6 +311,7 @@ plot_index(rbind(ind_bb, ind[ind$model == "Censored Poisson", ]))
 ```
 
 Accounting for hook competition moves the beta-binomial index in the same direction as the Poisson index, e.g., up in 2011 and down in 2014, but by less here.
+The two models account for overdispersion differently (a beta-binomial dispersion parameter versus a lognormal observation-level random intercept) and their indices are on different scales, so differences in their indices and uncertainty aren't only due to the upper limit on the count.
 
 # Summary
 

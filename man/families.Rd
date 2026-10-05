@@ -162,6 +162,8 @@ count between the observed count and that value, and \code{NA} gives a
 right-censored count. For \code{censored_betabinomial()}, the number of trials
 (e.g., hooks) is supplied via \code{weights} and is the largest possible count,
 so \code{NA} means censoring between the observed count and the number of trials.
+Counts and numbers of trials must be whole numbers, and a non-integer bound
+means the largest count it allows (e.g., 2.5 means 2).
 See the
 \href{https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html}{hook competition article}.
 }

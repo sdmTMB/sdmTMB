@@ -293,6 +293,84 @@ test_that("censored beta-binomial likelihood is correct in both backends", {
   }
 })
 
+test_that("censored beta-binomial bounds are whole counts in both backends", {
+  d <- data.frame(y = c(2, 3, 1, 4, 0, 5, 6), n = c(10, 10, 10, 10, 10, 10, 6))
+  # U = 2.5 contains only Y = 2; values within rounding error of an integer
+  # are that integer; others are rounded down; NA and U = n are full support
+  upr <- c(2.5, 3 - 1e-12, 3.99, 4 + 1e-12, NA, 10, NA)
+  fit <- sdmTMB(y ~ 1, data = d, weights = d$n, spatial = "off",
+    do_fit = FALSE, family = censored_betabinomial(),
+    control = sdmTMBcontrol(censored_upper = upr))
+  expect_identical(fit$tmb_data$upr, c(2, 3, 3, 4, 10, 10, 6))
+  nll <- function(par) {
+    p <- plogis(par[[1L]])
+    phi <- exp(par[[2L]])
+    -sum(mapply(censbetabinom_oracle, d$y, fit$tmb_data$upr, d$n,
+      p * phi, (1 - p) * phi))
+  }
+  for (backend in c("tmb", "rtmb")) {
+    obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
+      fit$tmb_random, backend = backend)
+    for (par in list(c(0, 0), c(-1.5, 2))) {
+      expect_equal(obj$fn(par), nll(par), tolerance = 1e-10, info = backend)
+    }
+  }
+  # n = 10, a = b = 1, Y = 2 exactly: log(11)
+  d1 <- data.frame(y = 2, n = 10)
+  fit1 <- sdmTMB(y ~ 1, data = d1, weights = d1$n, spatial = "off",
+    do_fit = FALSE, family = censored_betabinomial(),
+    control = sdmTMBcontrol(censored_upper = 2.5))
+  for (backend in c("tmb", "rtmb")) {
+    obj <- make_sdmTMB_adfun(fit1$tmb_data, fit1$tmb_params, fit1$tmb_map,
+      fit1$tmb_random, backend = backend)
+    expect_equal(obj$fn(c(0, log(2))), log(11), tolerance = 1e-10)
+  }
+})
+
+test_that("censored beta-binomial responses must be whole counts", {
+  d <- data.frame(y = c(0.2, 0.3, 0.1, 0.4), n = 10)
+  cens_bb <- function(data, upr = rep(NA, nrow(data)), weights = data$n,
+    formula = y ~ 1) {
+    sdmTMB(formula, data = data, weights = weights, spatial = "off",
+      do_fit = FALSE, family = censored_betabinomial(),
+      control = sdmTMBcontrol(censored_upper = upr))
+  }
+  # proportions times trials are converted to exact whole counts
+  fit <- cens_bb(d)
+  expect_identical(fit$tmb_data$y_i[, 1], c(2, 3, 1, 4))
+  expect_identical(fit$tmb_data$upr, rep(10, 4))
+  d$y[1] <- 0.25
+  expect_error(cens_bb(d), regexp = "whole-number counts")
+  d$y <- c(2, 3, 1, 4)
+  expect_error(cens_bb(d, weights = d$n + 0.5), regexp = "whole-number trial")
+  expect_error(cens_bb(d, upr = c(1.5, 3, 1, 4)), regexp = "observed count")
+  # two-column responses
+  d$fail <- d$n - d$y
+  fit_cbind <- cens_bb(d, upr = c(2.5, NA, 1, 4), weights = NULL,
+    formula = cbind(y, fail) ~ 1)
+  expect_identical(fit_cbind$tmb_data$upr, c(2, 10, 1, 4))
+  d$y[1] <- 2.5
+  d$fail[1] <- 7.5
+  expect_error(cens_bb(d, weights = NULL, formula = cbind(y, fail) ~ 1),
+    regexp = "whole-number counts")
+  # a missing trial size drops the row without checking its bound
+  d$y[1] <- 2
+  fit_na <- cens_bb(d, upr = c(5, NA, 1, 4), weights = c(NA, 10, 10, 10))
+  expect_identical(fit_na$tmb_data$y_i[, 1], c(3, 1, 4))
+  expect_identical(fit_na$tmb_data$upr, c(10, 1, 4))
+})
+
+test_that("censored_betabinomial() accepts links like betabinomial()", {
+  lk <- "cloglog"
+  expect_identical(censored_betabinomial(link = lk)$link, "cloglog")
+  expect_identical(censored_betabinomial(link = cloglog)$link, "cloglog")
+  expect_identical(censored_betabinomial("cloglog")$link, "cloglog")
+  expect_identical(censored_betabinomial()$link, "logit")
+  expect_identical(censored_betabinomial()$family, "censored_betabinomial")
+  lk <- "log"
+  expect_error(censored_betabinomial(link = lk), regexp = "not available")
+})
+
 # The Laplace gradient needs third derivatives of the censored terms.
 test_that("censored beta-binomial random-effect models are consistent", {
   skip_if_not_installed("numDeriv")

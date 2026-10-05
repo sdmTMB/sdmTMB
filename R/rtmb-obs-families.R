@@ -544,7 +544,7 @@ rtmb_dcensbetabinom <- function(y, s) {
   upr <- ifelse(is.na(s$upr), n, s$upr)
   term <- rtmb_dbetabinom(y, s)
   out <- term
-  extra <- round(upr - y)
+  extra <- upr - y # whole numbers (normalized in R)
   extra[y == 0 & upr >= n] <- 0 # the whole support, set to 0 below
   for (j in seq_len(max(extra, 0))) {
     i <- which(extra >= j)

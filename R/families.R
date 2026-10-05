@@ -668,6 +668,8 @@ betabinomial <- function(link = "logit") {
 #' right-censored count. For `censored_betabinomial()`, the number of trials
 #' (e.g., hooks) is supplied via `weights` and is the largest possible count,
 #' so `NA` means censoring between the observed count and the number of trials.
+#' Counts and numbers of trials must be whole numbers, and a non-integer bound
+#' means the largest count it allows (e.g., 2.5 means 2).
 #' See the
 #' [hook competition article](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html).
 #' @export
@@ -685,6 +687,8 @@ censored_betabinomial <- function(link = "logit") {
   linktemp <- substitute(link)
   if (!is.character(linktemp))
     linktemp <- deparse(linktemp)
+  # a bare link name, otherwise the value of `link` (e.g., a variable)
+  if (!linktemp %in% c("logit", "cloglog")) linktemp <- link
   x <- betabinomial(link = linktemp)
   x$family <- "censored_betabinomial"
   x

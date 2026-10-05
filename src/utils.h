@@ -562,13 +562,13 @@ Type dbetabinom_robust(Type y, Type loga, Type logb, Type n, int give_log=0)
 // over the interval, avoiding the cancellation in 1 - F(x - 1). Successive
 // terms use the PMF ratio p(k + 1) / p(k) = (n - k) (k + a) /
 // ((k + 1) (n - k - 1 + b)). The bounds are data, so the number of terms is
-// fixed on the tape.
+// fixed on the tape. `x`, `upr`, and `n` are whole numbers (normalized in R).
 template<class Type>
 Type dcensbetabinom(Type x, Type loga, Type logb, Type n, Type upr, int give_log=0)
 {
-  int lower = (int) std::floor(asDouble(x) + 0.5);
-  int upper = (int) std::floor(asDouble(isNA(upr) ? n : upr) + 0.5);
-  int size = (int) std::floor(asDouble(n) + 0.5);
+  int lower = (int) asDouble(x);
+  int upper = (int) asDouble(isNA(upr) ? n : upr);
+  int size = (int) asDouble(n);
   Type logres;
   if (lower == 0 && upper >= size) {
     logres = Type(0); // the whole support
