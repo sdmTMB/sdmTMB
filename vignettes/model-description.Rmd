@@ -678,6 +678,7 @@ A Poisson distribution in which some observations are censored: the true count i
 The likelihood of a censored observation is $\Pr(y \le Y \le U)$ under $\operatorname{Poisson}(\mu)$.
 Upper bounds are supplied with `sdmTMBcontrol(censored_upper = ...)`, where `NA` indicates no upper bound and a value equal to $y$ indicates an uncensored observation.
 @watson2023 developed this approach to account for hook competition in longline surveys, where observed catch counts are lower bounds on what would have been caught in the absence of competition for baited hooks.
+See the [hook competition article](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html) for a worked example.
 
 Example: `family = censored_poisson(link = "log")`
 

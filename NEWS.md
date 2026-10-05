@@ -302,6 +302,8 @@
 
 * Make sdmTMB compatible with visreg 3.0.0.
 
+* Add articles, including a censored Poisson hook competition article.
+
 # sdmTMB 1.1.0
 
 ## New features

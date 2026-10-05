@@ -1,0 +1,257 @@
+---
+title: "Accounting for hook competition with a censored Poisson"
+bibliography: '../refs.bib'
+csl: '../mee.csl'
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Accounting for hook competition with a censored Poisson}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+---
+
+```{r setup, echo=FALSE, cache=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  echo = TRUE,
+  error = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 7,
+  fig.asp = 0.618
+)
+```
+
+```{r packages}
+library(sdmTMB)
+library(ggplot2)
+```
+
+# Introduction
+
+A longline set has a fixed number of baited hooks.
+Once most baits have been taken, by the target species, other species, or lost to mechanical failure, fish of the target species have fewer chances to find a baited hook.
+Catch counts from sets with high bait removal therefore underestimate what would have been caught without hook competition.
+This bias can differ by year, depending on how many sets were saturated.
+
+@watson2023 proposed treating catch counts from these sets as right-censored.
+For a set where the proportion of baits removed reaches a species-specific breakdown point $p^*$, the observed count $c$ is treated as a lower bound on the count that would have been observed without hook competition.
+For all other sets, the count is used as usual:
+
+$$
+\Pr(c \mid \mu) =
+\begin{cases}
+  f(c; \mu), & p < p^* \ \text{(uncensored)},\\
+  1 - F(c - 1; \mu), & p \ge p^* \ \text{(right-censored)},
+\end{cases}
+$$
+
+where $f$ and $F$ are the Poisson probability mass function and cumulative distribution function and $p$ is the proportion of baits removed.
+A censored zero has a likelihood of exactly 1, so it contributes no information.
+
+@watson2023 used simulations to show that this approach recovers relative abundance trends much better than raw CPUE or instantaneous catch rate corrections.
+It is available in sdmTMB through the `censored_poisson()` family.
+
+# The data
+
+We'll use the `yelloweye` dataset that comes with sdmTMB.
+It contains Yelloweye Rockfish catch counts from the Hard Bottom Longline Survey (South) off the west coast of Vancouver Island, British Columbia.
+For each set, we know the number of hooks deployed and the number of hooks that came back still baited.
+
+```{r data}
+d <- yelloweye
+d$prop_removed <- 1 - d$bait_returned / d$hook_count
+d$fyear <- as.factor(d$year)
+d$log_depth <- log(d$depth)
+d$obs_id <- as.factor(seq_len(nrow(d)))
+head(d)
+```
+
+In many sets, nearly all baits were removed:
+
+```{r hist}
+ggplot(d, aes(prop_removed)) +
+  geom_histogram(bins = 30) +
+  labs(x = "Proportion of baits removed", y = "Number of sets")
+```
+
+# Choosing the breakdown point
+
+@watson2023 suggest choosing $p^*$ by looking at how mean catch changes as bait removal increases.
+They fit a smoother of catch against the proportion of baits removed, accounting for year and with log hook count as an offset, and look for where the curve starts to decline.
+We can do this with mgcv:
+
+```{r gam}
+library(mgcv)
+fit_gam <- gam(
+  catch_count ~ s(prop_removed) + fyear + offset(log(hook_count)),
+  family = nb(), data = d
+)
+nd <- data.frame(
+  prop_removed = seq(min(d$prop_removed), 1, length.out = 200),
+  fyear = d$fyear[1],
+  hook_count = 1
+)
+p <- predict(fit_gam, newdata = nd, se.fit = TRUE)
+nd$est <- p$fit
+nd$se <- p$se.fit
+ggplot(nd, aes(prop_removed, exp(est - max(est)))) +
+  geom_ribbon(aes(ymin = exp(est - 2 * se - max(est)),
+    ymax = exp(est + 2 * se - max(est))), alpha = 0.3) +
+  geom_line() +
+  geom_vline(xintercept = 0.85, lty = 2) +
+  labs(x = "Proportion of baits removed", y = "Relative mean catch")
+```
+
+Mean catch rises with bait removal, because sets with more fish remove more baits, until about 0.85.
+After that it drops, consistent with hook competition.
+@watson2023 also chose $p^* = 0.85$ for Yelloweye Rockfish, so we'll use that value.
+
+```{r pstar}
+pstar <- 0.85
+mean(d$prop_removed >= pstar)
+```
+
+About `r round(100 * mean(d$prop_removed >= pstar))`% of sets will be treated as censored.
+The proportion varies by year, and that variation is what biases an uncorrected index:
+
+```{r prop-censored}
+round(tapply(d$prop_removed >= pstar, d$year, mean), 2)
+```
+
+# Fitting the models
+
+We specify censoring with the `censored_upper` argument in `sdmTMBcontrol()`.
+It is a vector with one element per row of data:
+
+- a value equal to the observed count means the observation is **not** censored;
+- `NA` means the observation is right-censored with no upper bound;
+- a value greater than the observed count means the observation is interval-censored between the observed count and that value.
+
+The response is the observed catch count.
+
+```{r upr}
+upr <- ifelse(d$prop_removed >= pstar, NA, d$catch_count)
+```
+
+We'll fit a model with year effects, a quadratic effect of log depth, a spatial random field, and an observation-level random intercept, `(1 | obs_id)`.
+The observation-level intercept makes this a Poisson-lognormal model and accounts for overdispersion, as in @watson2023.
+The offset is log hook count, so the index is relative catch per hook.
+
+First, a standard Poisson model that ignores hook competition:
+
+```{r fit-pois}
+mesh <- make_mesh(d, c("X", "Y"), cutoff = 10)
+
+fit_pois <- sdmTMB(
+  catch_count ~ 0 + fyear + poly(log_depth, 2) + (1 | obs_id),
+  offset = log(d$hook_count),
+  data = d,
+  mesh = mesh,
+  family = poisson(),
+  time = "year",
+  spatial = "on",
+  spatiotemporal = "off"
+)
+```
+
+Now the censored version.
+We only need to change the family and pass `censored_upper`:
+
+```{r fit-cens}
+fit_cens <- update(
+  fit_pois,
+  family = censored_poisson(),
+  control = sdmTMBcontrol(censored_upper = upr)
+)
+sanity(fit_cens)
+fit_cens
+```
+
+## Adding an upper bound
+
+When many observations are censored and the data are limited, the right-censored model may not converge.
+@watson2023 describe an optional upper bound on the censored counts (their Supplementary Material S.3), turning right-censored observations into interval-censored ones.
+The bound adds the expected number of target-species catches "missed" because of hook competition, based on the number of hooks emptied past the breakdown point.
+The function `get_censored_upper()` calculates this bound:
+
+```{r upr-bound}
+upr_bounded <- get_censored_upper(
+  prop_removed = d$prop_removed,
+  n_catch = d$catch_count,
+  n_hooks = d$hook_count,
+  pstar = pstar
+)
+fit_cens_bounded <- update(
+  fit_pois,
+  family = censored_poisson(),
+  control = sdmTMBcontrol(censored_upper = upr_bounded)
+)
+```
+
+@watson2023 also suggest treating the largest catch counts each year as uncensored, regardless of bait removal, to help convergence.
+To do that, set `censored_upper` equal to `catch_count` for those rows.
+
+# Comparing indices
+
+We'll predict over the survey grid `hbll_s_grid` and calculate an index for each model.
+We set the offset to 0 for prediction (i.e., one hook) and leave out the observation-level random intercepts with `re_form_iid = NA`.
+The grid contains depths outside the sampled range, so we clamp depth to the range of the data so that the quadratic is not extrapolated.
+
+```{r grid}
+grid <- replicate_df(hbll_s_grid, "year", unique(d$year))
+grid$fyear <- as.factor(grid$year)
+grid$log_depth <- log(pmin(pmax(grid$depth, min(d$depth)), max(d$depth)))
+```
+
+```{r index}
+get_ind <- function(fit, label) {
+  ind <- get_index(
+    fit, newdata = grid, offset = rep(0, nrow(grid)),
+    predict_args = list(re_form_iid = NA),
+    bias_correct = TRUE
+  )
+  ind$model <- label
+  ind
+}
+ind <- rbind(
+  get_ind(fit_pois, "Poisson"),
+  get_ind(fit_cens, "Censored Poisson"),
+  get_ind(fit_cens_bounded, "Censored Poisson (upper bound)")
+)
+```
+
+Since these are relative indices, we'll scale each by its geometric mean before plotting:
+
+```{r plot-index}
+ind <- do.call(rbind, lapply(split(ind, ind$model), function(x) {
+  gm <- exp(mean(log(x$est)))
+  x[, c("est", "lwr", "upr")] <- x[, c("est", "lwr", "upr")] / gm
+  x
+}))
+ggplot(ind, aes(year, est, colour = model, fill = model)) +
+  geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.15, colour = NA) +
+  geom_line() +
+  geom_point() +
+  labs(x = "Year", y = "Relative index", colour = NULL, fill = NULL) +
+  theme(legend.position = "bottom")
+```
+
+The censored models differ most from the uncensored Poisson model in years with an unusually high or low proportion of censored sets.
+For example, 2011 had the highest proportion of saturated sets, and its index is higher once we account for hook competition.
+2014 had very few saturated sets, and its index is lower relative to the other years.
+Here, the upper bound mostly has a modest effect, pulling some years (e.g., 2022) partway back towards the Poisson estimates by limiting how large the censored counts can be.
+
+# Summary
+
+- Calculate the proportion of baits removed for each set.
+- Choose a breakdown point $p^*$, e.g., by plotting a smoother of catch against bait removal.
+- Build a `censored_upper` vector: the observed count for uncensored sets and `NA` (or an upper bound) for sets at or above $p^*$.
+- Fit with `family = censored_poisson()` and `control = sdmTMBcontrol(censored_upper = ...)`, ideally with an observation-level random intercept to account for overdispersion.
+
+See @watson2023 for the full method, simulation tests, and an application to 11 species.
+
+# References

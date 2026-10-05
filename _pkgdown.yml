@@ -12,6 +12,7 @@ articles:
   contents:
   - articles/delta-models
   - articles/poisson-link
+  - articles/hook-competition
   - articles/threshold-models
   - articles/zoib
   - articles/multi-family
@@ -103,6 +104,7 @@ reference:
   - student
   - tweedie
   - censored_poisson
+  - get_censored_upper
   - truncated_nbinom1
   - truncated_nbinom2
   - delta_gamma

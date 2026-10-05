@@ -181,7 +181,9 @@ estimation.
 - Families for overdispersed or zero-heavy data: `nbinom1()`,
   `nbinom2()`, `tweedie()`, `betabinomial()`, `gengamma()`, mixture
   families for extreme events (e.g., `gamma_mix()`), and truncated and
-  censored families
+  censored families (e.g., `censored_poisson()` for [hook competition in
+  longline
+  surveys](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html))
 - `ordbeta()` for proportions that include exact 0s and 1s
 - Delta (hurdle) models that separately model presence and positive
   values, e.g., `delta_gamma()` and `delta_lognormal()`, including
@@ -990,6 +992,8 @@ for a marine species or water for a terrestrial one. See
 sdmTMB is heavily inspired by the
 [VAST](https://github.com/James-Thorson-NOAA/VAST) and
 [glmmTMB](https://github.com/glmmTMB/glmmTMB) R packages.
+
+The [sdmTMBexperiments](https://github.com/DeepWaterIMR/sdmTMBexperiments) R package (not maintained by the sdmTMB developers) provides experimental helper functions for working with fitted sdmTMB models, including model comparison, mesh-resolution sensitivity, retrospective analyses, and index plotting.
 
 The newer [tinyVAST](https://github.com/vast-lib/tinyVAST) R package can
 fit many of the models that VAST and sdmTMB can, with an interface

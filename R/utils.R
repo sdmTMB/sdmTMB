@@ -631,11 +631,13 @@ get_scale_factor <- function(prop_removed, n_hooks, pstar) {
 #'   proportion of baits removed for each fishing event as the predictor.
 #'   Check when the curve drops off as the proportion bait removed increases.
 #'
-#' The `lwr` limit for [sdmTMB::censored_poisson()] should be the observed catch
-#' counts, i.e., `n_catch` here.
-#'
-#' If `upr` in [sdmTMB::censored_poisson()] is set to NA, the full
-#' right-censored Poisson likelihood is used without any upper bound.
+#' Pass the returned vector to `control = sdmTMBcontrol(censored_upper = ...)`
+#' with `family = censored_poisson()` and the observed catch counts
+#' (`n_catch`) as the response. Fishing events with `prop_removed` below
+#' `pstar` get an upper bound equal to the observed catch and are therefore
+#' treated as uncensored. Alternatively, set `censored_upper` to `NA` for
+#' fishing events above `pstar` to use the right-censored likelihood without
+#' an upper bound.
 #'
 #' The right-censored Poisson density can be written as:
 #'
@@ -659,8 +661,15 @@ get_scale_factor <- function(prop_removed, n_hooks, pstar) {
 #' @return A numeric vector of upper bound catch counts of the target species to
 #'   improve convergence of the censored method.
 #'
-#' @references See \doi{10.1139/cjfas-2022-0159} for more details.
-#' @noRd
+#' @references
+#' Watson, J., Edwards, A.M., and Auger-Méthé, M. 2023. A statistical
+#' censoring approach accounts for hook competition in abundance indices from
+#' longline surveys. Canadian Journal of Fisheries and Aquatic Sciences. 80(3):
+#' 468--486. \doi{10.1139/cjfas-2022-0159}
+#'
+#' @seealso [censored_poisson()], and the
+#'   [hook competition article](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html).
+#' @export
 #'
 #' @examples
 #' dat <- structure(
