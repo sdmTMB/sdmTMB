@@ -1,5 +1,5 @@
 ---
-title: "Accounting for hook competition with a censored Poisson"
+title: "Accounting for hook competition with a censored Poisson or censored betabinomial"
 bibliography: '../refs.bib'
 csl: '../mee.csl'
 output:
@@ -7,7 +7,7 @@ output:
     toc: true
     toc_depth: 2
 vignette: >
-  %\VignetteIndexEntry{Accounting for hook competition with a censored Poisson}
+  %\VignetteIndexEntry{Accounting for hook competition with a censored Poisson or censored betabinomial}
   %\VignetteEncoding{UTF-8}
   %\VignetteEngine{knitr::rmarkdown}
 ---
@@ -32,8 +32,8 @@ library(ggplot2)
 
 # Introduction
 
-A longline set has a fixed number of baited hooks.
-Once most baits have been taken, by the target species, other species, or lost to mechanical failure, fish of the target species have fewer chances to find a baited hook.
+In fisheries-indepedent surveys, longline set has a fixed number of baited hooks.
+Once most baits have been taken by fish or lost to mechanical failure, fish have fewer chances to find a baited hook.
 Catch counts from sets with high bait removal therefore underestimate what would have been caught without hook competition.
 This bias can differ by year, depending on how many sets were saturated.
 
@@ -52,8 +52,8 @@ $$
 where $f$ and $F$ are the Poisson probability mass function and cumulative distribution function and $p$ is the proportion of baits removed.
 A censored zero has a likelihood of exactly 1, so it contributes no information.
 
-@watson2023 used simulations to show that this approach recovers relative abundance trends much better than raw CPUE or instantaneous catch rate corrections.
-It is available in sdmTMB through the `censored_poisson()` family.
+@watson2023 used simulations to show that this approach recovers relative abundance trends better than raw CPUE or instantaneous catch rate corrections.
+This censored Poisson approach is available in sdmTMB through the `censored_poisson()` family.
 
 # The data
 
@@ -70,7 +70,7 @@ d$obs_id <- as.factor(seq_len(nrow(d)))
 head(d)
 ```
 
-In many sets, nearly all baits were removed:
+In some sets, nearly all baits were removed:
 
 ```{r hist}
 ggplot(d, aes(prop_removed)) +
@@ -80,7 +80,7 @@ ggplot(d, aes(prop_removed)) +
 
 # Choosing the breakdown point
 
-@watson2023 suggest choosing $p^*$ by looking at how mean catch changes as bait removal increases.
+@watson2023 suggest choosing $p^*$ (point at which one deems catch rate to be affected strongly by hook comeptition) by looking at how mean catch changes as bait removal increases.
 They fit a smoother of catch against the proportion of baits removed, accounting for year and with log hook count as an offset, and look for where the curve starts to decline.
 We can do this with mgcv:
 
@@ -199,12 +199,11 @@ To do that, set `censored_upper` equal to `catch_count` for those rows.
 
 We'll predict over the survey grid `hbll_s_grid` and calculate an index for each model.
 We set the offset to 0 for prediction (i.e., one hook) and leave out the observation-level random intercepts with `re_form_iid = NA`.
-The grid contains depths outside the sampled range, so we clamp depth to the range of the data so that the quadratic is not extrapolated.
 
 ```{r grid}
 grid <- replicate_df(hbll_s_grid, "year", unique(d$year))
 grid$fyear <- as.factor(grid$year)
-grid$log_depth <- log(pmin(pmax(grid$depth, min(d$depth)), max(d$depth)))
+grid$log_depth <- log(grid$depth)
 ```
 
 ```{r index}
@@ -275,6 +274,8 @@ As with the censored Poisson, this is a true interval-censoring likelihood only 
 Hook competition doesn't censor counts at random: it reduces catches through a process that also depends on the abundance of the target and other species.
 The censored likelihood is therefore best thought of as a working likelihood, and how well it recovers trends depends on how competition actually reduces catches [see the simulations in @watson2023].
 
+For these data and this family, the model converges with a standard spatiotemporal field. So, we'll add that back here:
+
 ```{r fit-bb}
 fit_bb <- sdmTMB(
   catch_count ~ 0 + fyear + poly(log_depth, 2),
@@ -284,7 +285,7 @@ fit_bb <- sdmTMB(
   family = betabinomial(link = "cloglog"),
   time = "year",
   spatial = "on",
-  spatiotemporal = "off"
+  spatiotemporal = "iid"
 )
 fit_bb_cens <- update(
   fit_bb,
@@ -312,6 +313,28 @@ plot_index(rbind(ind_bb, ind[ind$model == "Censored Poisson", ]))
 
 Accounting for hook competition moves the beta-binomial index in the same direction as the Poisson index, e.g., up in 2011 and down in 2014, but by less here.
 The two models account for overdispersion differently (a beta-binomial dispersion parameter versus a lognormal observation-level random intercept) and their indices are on different scales, so differences in their indices and uncertainty aren't only due to the upper limit on the count.
+Also, the beta-binomial was able to fit with a spatiotemporal random field, whereas we turned that off for this simple example for the censored Poisson.
+
+We can see that the beta-binomial better reflects the properties of the observed data here:
+
+```{r}
+set.seed(1)
+s_bb <- simulate(fit_bb_cens, nsim = 300, type = "mle-mvn")
+s_pois_bounded <- simulate(fit_cens_bounded, nsim = 300, type = "mle-mvn")
+s_pois <- simulate(fit_cens, nsim = 300, type = "mle-mvn")
+
+dharma_residuals(s_bb, object = fit_bb_cens)
+dharma_residuals(s_pois_bounded, object = fit_cens_bounded)
+dharma_residuals(s_pois, object = fit_cens)
+```
+
+Note how these families have different implications for the maximum number of fish:
+
+```{r}
+max(s_bb) # upper bound is max number of hooks
+max(s_pois_bounded) # upper is bounded
+max(s_pois) # no upper bound! probably not realistic
+```
 
 # Summary
 
