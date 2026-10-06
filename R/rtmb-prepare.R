@@ -48,6 +48,7 @@ rtmb_prepare <- function(data) {
     smooth_index = if (smooths) rtmb_smooth_index(data) else list(),
     threshold = c("none", "breakpt", "logistic")[data$threshold_func + 1L],
     diffusion = rtmb_diffusion_inputs(data),
+    lsas = data$lsas, # length-stratified age sampling (see R/lsas.R)
     priors = rtmb_prior_inputs(data),
 
     # Simulation: which time steps, latent effects, and whether the response

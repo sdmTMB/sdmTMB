@@ -24,6 +24,7 @@ sdmTMB(
   weights = NULL,
   offset = NULL,
   censored_upper = NULL,
+  length_stratified = NULL,
   extra_time = NULL,
   reml = FALSE,
   silent = TRUE,
@@ -206,6 +207,10 @@ the response is uncensored, a larger value is interval-censored, and \code{Inf}
 is right-censored (up to the number of trials for
 \code{\link[=censored_betabinomial]{censored_betabinomial()}}). For left censoring (e.g., fewer than 5), use a
 response of 0 and the largest possible count as the bound (e.g., 4).}
+
+\item{length_stratified}{Optional length-stratified age sampling design from
+\code{\link[=lsas]{lsas()}}. Conditions each fish's length on it having been selected for
+ageing. RTMB backend only.}
 
 \item{extra_time}{Optional extra time slices (e.g., years) to include for
 interpolation or forecasting with the predict function. See the Details

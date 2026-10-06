@@ -489,6 +489,7 @@ residuals.sdmTMB <- function(object,
                              mcmc_samples = NULL,
                              qres_func = NULL,
                              ...) {
+  .check_lsas_diagnostics(object, "`residuals()`")
   type_was_missing <- missing(type)
   type <- match.arg(type[[1]], choices = c("mle-mvn", "mle-laplace", "mle-eb", "mle-mcmc", "response", "pearson", "deviance"))
   .check_family_capability(

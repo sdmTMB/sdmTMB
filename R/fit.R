@@ -167,6 +167,9 @@ NULL
 #'   is right-censored (up to the number of trials for
 #'   [censored_betabinomial()]). For left censoring (e.g., fewer than 5), use a
 #'   response of 0 and the largest possible count as the bound (e.g., 4).
+#' @param length_stratified Optional length-stratified age sampling design from
+#'   [lsas()]. Conditions each fish's length on it having been selected for
+#'   ageing. RTMB backend only.
 #' @param extra_time Optional extra time slices (e.g., years) to include for
 #'   interpolation or forecasting with the predict function. See the Details
 #'   section below.
@@ -662,6 +665,7 @@ sdmTMB <- function(
     weights = NULL,
     offset = NULL,
     censored_upper = NULL,
+    length_stratified = NULL,
     extra_time = NULL,
     reml = FALSE,
     silent = TRUE,
@@ -1497,6 +1501,7 @@ sdmTMB <- function(
   tmb_data$priors_custom <- priors_custom
   tmb_data <- c(tmb_data, family_tmb)
   tmb_data$poisson_link_delta <- as.integer(fit_poisson_link_delta)
+  tmb_data$lsas <- .lsas_tmb_data(length_stratified, data, y_i, family_spec, backend)
   b_thresh <- matrix(0, 2L, n_m)
   if (thresh[[1]]$threshold_func == 2L) b_thresh <- matrix(0, 3L, n_m) # logistic #TODO: change hard coding on index of thresh[[1]]
   family_params <- .family_parameter_values(

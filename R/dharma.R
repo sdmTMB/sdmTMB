@@ -119,6 +119,7 @@ dharma_residuals <- function(simulated_response, object, plot = TRUE,
   return_DHARMa = FALSE, test_uniformity = FALSE, test_outliers = FALSE,
   test_dispersion = FALSE, ...) {
 
+  .check_lsas_diagnostics(object, "`dharma_residuals()`")
   if (!requireNamespace("DHARMa", quietly = TRUE)) {
     cli_abort("DHARMa must be installed to use this function.")
   }

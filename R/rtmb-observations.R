@@ -136,6 +136,10 @@ rtmb_observations <- function(par, theta, prepared, eta) {
       s <- state(i)
       y <- fit$y[i, m]
       log_density <- spec$logpdf(y, s$mu, s)
+      if (!is.null(prepared$lsas)) {
+        log_density <- log_density -
+          rtmb_lsas_log_selection(s, family$family[[m]], prepared$lsas, i)
+      }
       jnll_obs[i] <- jnll_obs[i] - fit$weights[i] * log_density
       if (prepared$deviance && !is.null(spec$deviance)) {
         # As in C++, some residuals can be NaN; keep them without R's

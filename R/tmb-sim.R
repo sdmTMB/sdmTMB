@@ -594,6 +594,7 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
                             size = NULL,
                             silent = FALSE,
                             ...) {
+  .check_lsas_diagnostics(object, "`simulate()`")
   set.seed(seed)
   type <- tolower(type)
   type <- match.arg(type)

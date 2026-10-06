@@ -1,0 +1,172 @@
+---
+title: "Length-at-age from length-stratified age samples"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Length-at-age from length-stratified age samples}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
+has_dplyr <- requireNamespace("dplyr", quietly = TRUE)
+EVAL <- identical(Sys.getenv("NOT_CRAN"), "true") && has_dplyr && has_ggplot
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = EVAL,
+  purl = EVAL
+)
+knitr::opts_chunk$set(fig.width = 6, fig.height = 4)
+```
+
+```{r setup, message=FALSE, warning=FALSE}
+library(sdmTMB)
+library(ggplot2)
+library(dplyr)
+theme_set(theme_light())
+```
+
+Fish surveys usually measure the length of every fish caught but read ages for only a subsample.
+A common design is length-stratified age sampling: ages are read for up to a fixed number of fish in each length bin (e.g., 5 fish per 2 cm bin).
+Fish in rare length bins, such as unusually small young fish or unusually large old fish, are then much more likely to be aged than fish in common bins.
+Fitting length-at-age to the aged fish as if they were a random sample therefore biases length-at-age: too short for young ages and too long for old ages (Perreault et al. 2020).
+If abundance changes over time, the sampling fractions change, and so does the bias, which can create spurious trends in length-at-age.
+
+The `length_stratified` argument of `sdmTMB()` corrects for this by conditioning each fish's length on it having been selected for ageing (Candy et al. 2007).
+The likelihood of fish $i$'s length $l_i$, given its age $a_i$ and that it was aged, is
+
+$$
+f(l_i \mid a_i, \textrm{aged}) =
+\frac{\pi_{k(l_i)} f(l_i \mid a_i)}{\sum_k \pi_k \Pr(l \in \textrm{bin } k \mid a_i)},
+$$
+
+where $\pi_k$ is the fraction of measured fish that were aged in length bin $k$ of the fish's sampling unit (e.g., a survey set or survey-year).
+The denominator is the probability that a fish of this age (and location and time, in a spatiotemporal model) would have been aged.
+Because the model is conditional on age, no model of the age distribution is needed.
+
+This implements Candy's conditional-on-age method: sampling fractions are treated as fixed, and bins with no measured fish are excluded from the denominator (sampling fraction zero).
+It is not the joint age-length empirical proportion (EP) likelihood.
+Excluding empty bins matters when they carry appreciable model probability; even ageing every measured fish does not remove this truncation if empty bins remain.
+
+Every sampling unit in the fitted data must occur in the counts, and bins containing fitted fish must have positive measured and aged counts.
+Omitted bins within a represented unit are treated as empty, so supply the complete measured counts, including bins where no fish were aged.
+
+This requires the RTMB backend (the default) and the `lognormal()`, `gaussian()`, `Gamma()`, or `gengamma()` family.
+Gaussian and lognormal models use stable log-tail bin probabilities.
+Gamma and generalized-gamma support is provisional and emits an informational notice: ordinary CDF differences can lose precision in extreme tails and produce non-finite likelihoods or gradients.
+If the optimizer reports a `NA/NaN gradient evaluation`, starting from a fit that ignores the design (via `sdmTMBcontrol(start = ...)`) often helps.
+Residuals, response simulations, and DHARMa diagnostics are currently blocked because they do not account for selection for ageing.
+Population predictions remain available with `predict()`.
+
+## Simulating a length-stratified age sample
+
+We simulate a population of fish caught in 5 survey years with lognormal lengths around a von Bertalanffy curve and declining abundance with age.
+Every fish is measured, but ages are read for at most 5 fish per year and 2 cm length bin.
+
+```{r simulate}
+set.seed(1)
+ages <- 1:12
+true <- data.frame(age = ages, length = 60 * (1 - exp(-0.25 * (ages + 0.5))))
+
+measured <- lapply(1:5, function(year) {
+  age <- sample(ages, 4000, replace = TRUE, prob = exp(-0.35 * ages))
+  mu <- true$length[age]
+  data.frame(year = year, age = age,
+    length = rlnorm(length(age), log(mu) - 0.1^2 / 2, sdlog = 0.1))
+}) |> bind_rows()
+
+breaks <- seq(0, 80, by = 2)
+measured <- measured |>
+  mutate(bin = findInterval(length, breaks)) |>
+  group_by(year, bin) |>
+  mutate(aged = row_number() %in% sample(n(), min(n(), 5))) |>
+  ungroup()
+
+aged <- filter(measured, aged)
+nrow(aged)
+```
+
+The aged fish over-represent the tails of each age's length distribution:
+
+```{r plot-sample}
+ggplot(measured, aes(age, length)) +
+  geom_jitter(width = 0.2, alpha = 0.05, size = 0.6) +
+  geom_jitter(data = aged, width = 0.2, colour = "red", size = 0.6, alpha = 0.5) +
+  labs(x = "Age", y = "Length (cm)",
+    title = "All measured fish (grey) and aged fish (red)")
+```
+
+## The sampling design
+
+`lsas()` needs the number of fish measured and aged in each sampling unit and length bin.
+Here, ages were sampled by year, so the year is the sampling unit.
+The `length` column can be any length within the bin; we use the bin's lower edge.
+
+```{r counts}
+counts <- measured |>
+  group_by(year, bin) |>
+  summarise(n_measured = n(), n_aged = sum(aged), .groups = "drop") |>
+  mutate(length = breaks[bin])
+head(counts)
+
+design <- lsas(unit = "year", breaks = breaks, counts = counts)
+```
+
+## Fitting length-at-age
+
+We fit lognormal length-at-age models to the aged fish, ignoring and accounting for the design.
+For comparison, we also fit the model to all fish with their (normally unknown) ages.
+Spatial and spatiotemporal fields, smoothers, and other terms can be added as usual; here we keep the model non-spatial.
+
+```{r fit}
+fit_ignore <- sdmTMB(length ~ 0 + factor(age), data = aged,
+  family = lognormal(), spatial = "off")
+
+fit_lsas <- sdmTMB(length ~ 0 + factor(age), data = aged,
+  family = lognormal(), spatial = "off",
+  length_stratified = design)
+
+fit_all <- sdmTMB(length ~ 0 + factor(age), data = measured,
+  family = lognormal(), spatial = "off")
+
+fit_lsas
+```
+
+Predictions from the corrected model are of the population, not of the aged sample:
+
+```{r compare}
+nd <- data.frame(age = ages)
+fits <- list(
+  "Ignoring design" = fit_ignore,
+  "Length-stratified" = fit_lsas,
+  "All fish aged" = fit_all
+)
+pred <- lapply(names(fits), function(model) {
+  p <- predict(fits[[model]], newdata = nd, re_form = NA, se_fit = TRUE)
+  mutate(p, model = model)
+}) |> bind_rows()
+
+ggplot(pred, aes(age, exp(est), colour = model)) +
+  geom_line(data = true, aes(age, length), colour = "black", lty = 2,
+    inherit.aes = FALSE) +
+  geom_pointrange(aes(ymin = exp(est - 2 * est_se), ymax = exp(est + 2 * est_se)),
+    position = position_dodge(width = 0.5), size = 0.3) +
+  labs(x = "Age", y = "Mean length (cm)", colour = NULL,
+    caption = "Dashed line: true mean length-at-age")
+```
+
+Ignoring the design overestimates length at older ages by several centimetres and overestimates the variability in length-at-age:
+
+```{r sigma}
+sapply(fits, function(fit) tidy(fit, "ran_pars")$estimate)
+```
+
+Accounting for the design recovers length-at-age close to the estimates from ageing every fish.
+
+## References
+
+Candy, S.G., Constable, A.J., Lamb, T., and Williams, R. 2007. A von Bertalanffy growth model for toothfish at Heard Island fitted to length-at-age data and compared to observed growth from mark-recapture studies. CCAMLR Science, 14: 43–66.
+
+Perreault, A.M.J., Zheng, N., and Cadigan, N.G. 2020. Estimation of growth parameters based on length-stratified age samples. Canadian Journal of Fisheries and Aquatic Sciences, 77(3): 439–450. <https://doi.org/10.1139/cjfas-2019-0129>
