@@ -59,6 +59,7 @@ Population predictions remain available with `predict()`.
 
 We simulate a population of fish caught in 5 survey years with lognormal lengths around a von Bertalanffy curve and declining abundance with age.
 Every fish is measured, but ages are read for at most 5 fish per year and 2 cm length bin.
+We keep each fish's true age as `true_age` for comparison, but, as in a real survey, `age` is known only for aged fish.
 
 ```{r simulate}
 set.seed(1)
@@ -68,7 +69,7 @@ true <- data.frame(age = ages, length = 60 * (1 - exp(-0.25 * (ages + 0.5))))
 measured <- lapply(1:5, function(year) {
   age <- sample(ages, 4000, replace = TRUE, prob = exp(-0.35 * ages))
   mu <- true$length[age]
-  data.frame(year = year, age = age,
+  data.frame(year = year, true_age = age,
     length = rlnorm(length(age), log(mu) - 0.1^2 / 2, sdlog = 0.1))
 }) |> bind_rows()
 
@@ -77,7 +78,9 @@ measured <- measured |>
   mutate(bin = findInterval(length, breaks)) |>
   group_by(year, bin) |>
   mutate(aged = row_number() %in% sample(n(), min(n(), 5))) |>
-  ungroup()
+  ungroup() |>
+  mutate(age = if_else(aged, true_age, NA))
+head(measured)
 
 aged <- filter(measured, aged)
 nrow(aged)
@@ -86,16 +89,16 @@ nrow(aged)
 The aged fish over-represent the tails of each age's length distribution:
 
 ```{r plot-sample}
-ggplot(measured, aes(age, length)) +
+ggplot(measured, aes(true_age, length)) +
   geom_jitter(width = 0.2, alpha = 0.05, size = 0.6) +
   geom_jitter(data = aged, width = 0.2, colour = "red", size = 0.6, alpha = 0.5) +
-  labs(x = "Age", y = "Length (cm)",
+  labs(x = "True age", y = "Length (cm)",
     title = "All measured fish (grey) and aged fish (red)")
 ```
 
 ## The sampling design
 
-`length_strata()` takes all measured fish, with their lengths and whether each was aged, and tabulates the fraction aged in each sampling unit and length bin.
+`length_strata()` takes all measured fish, with their lengths and whether each has an age, and tabulates the fraction aged in each sampling unit and length bin.
 Here, ages were sampled by year, so the year is the sampling unit.
 Every sampling unit in the fitted data must occur in `measured`, and every fitted fish must fall in a bin with aged fish.
 
@@ -107,7 +110,7 @@ design <- length_strata(measured, unit = "year", breaks = breaks,
 ## Fitting length-at-age
 
 We fit lognormal length-at-age models to the aged fish, ignoring and accounting for the design.
-For comparison, we also fit the model to all fish with their (normally unknown) ages.
+For comparison, we also fit the model to all fish with their true (normally unknown) ages.
 Spatial and spatiotemporal fields, smoothers, and other terms can be added as usual; here we keep the model non-spatial.
 
 ```{r fit}
@@ -118,7 +121,7 @@ fit_lsas <- sdmTMB(length ~ 0 + factor(age), data = aged,
   family = lognormal(), spatial = "off",
   length_stratified = design)
 
-fit_all <- sdmTMB(length ~ 0 + factor(age), data = measured,
+fit_all <- sdmTMB(length ~ 0 + factor(age), data = mutate(measured, age = true_age),
   family = lognormal(), spatial = "off")
 
 fit_lsas

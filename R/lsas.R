@@ -41,7 +41,8 @@
 #'   11.5) so that bins match true lengths.
 #' @param length Name of the length column in `measured`.
 #' @param aged Name of the logical column in `measured` that is `TRUE` for
-#'   fish that were aged.
+#'   fish with an age (typically `!is.na(age)`) and `FALSE` for fish that were
+#'   measured but not aged, including any whose age could not be read.
 #'
 #' @return An object to pass to `sdmTMB(length_stratified = ...)`.
 #' @references
@@ -62,6 +63,7 @@
 #' measured$length <- rlnorm(1000, log(40 * (1 - exp(-0.4 * measured$age))), 0.1)
 #' bin <- findInterval(measured$length, seq(0, 60, by = 5))
 #' measured$aged <- ave(seq_len(1000), measured$year, bin, FUN = seq_along) <= 5
+#' measured$age[!measured$aged] <- NA # ages are only known for aged fish
 #' design <- length_strata(measured, unit = "year", breaks = seq(0, 60, by = 5))
 #'
 #' fit <- sdmTMB(length ~ 0 + factor(age), data = measured[measured$aged, ],

@@ -22,7 +22,8 @@ lowest and highest bins are open-ended. If lengths are recorded rounded
 \item{length}{Name of the length column in \code{measured}.}
 
 \item{aged}{Name of the logical column in \code{measured} that is \code{TRUE} for
-fish that were aged.}
+fish with an age (typically \code{!is.na(age)}) and \code{FALSE} for fish that were
+measured but not aged, including any whose age could not be read.}
 }
 \value{
 An object to pass to \code{sdmTMB(length_stratified = ...)}.
@@ -65,6 +66,7 @@ measured <- data.frame(year = rep(1:2, each = 500), age = rpois(1000, 3) + 1)
 measured$length <- rlnorm(1000, log(40 * (1 - exp(-0.4 * measured$age))), 0.1)
 bin <- findInterval(measured$length, seq(0, 60, by = 5))
 measured$aged <- ave(seq_len(1000), measured$year, bin, FUN = seq_along) <= 5
+measured$age[!measured$aged] <- NA # ages are only known for aged fish
 design <- length_strata(measured, unit = "year", breaks = seq(0, 60, by = 5))
 
 fit <- sdmTMB(length ~ 0 + factor(age), data = measured[measured$aged, ],
