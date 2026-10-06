@@ -88,6 +88,7 @@ reference:
   - replicate_df
   - set_delta_model
   - make_category_svc
+  - length_strata
   - make_zero_one_map
   - coef.sdmTMB
   - sigma.sdmTMB

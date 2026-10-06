@@ -50,13 +50,8 @@ This implements Candy's conditional-on-age method: sampling fractions are treate
 It is not the joint age-length empirical proportion (EP) likelihood.
 Excluding empty bins matters when they carry appreciable model probability; even ageing every measured fish does not remove this truncation if empty bins remain.
 
-Every sampling unit in the fitted data must occur in the counts, and bins containing fitted fish must have positive measured and aged counts.
-Omitted bins within a represented unit are treated as empty, so supply the complete measured counts, including bins where no fish were aged.
-
-This requires the RTMB backend (the default) and the `lognormal()`, `gaussian()`, `Gamma()`, or `gengamma()` family.
-Gaussian and lognormal models use stable log-tail bin probabilities.
-Gamma and generalized-gamma support is provisional and emits an informational notice: ordinary CDF differences can lose precision in extreme tails and produce non-finite likelihoods or gradients.
-If the optimizer reports a `NA/NaN gradient evaluation`, starting from a fit that ignores the design (via `sdmTMBcontrol(start = ...)`) often helps.
+This requires the RTMB backend (the default) and the `lognormal()` or `gaussian()` family.
+The log likelihood is conditional on selection for ageing, so it can't be compared (e.g., with AIC) to that of a model fitted without `length_stratified`.
 Residuals, response simulations, and DHARMa diagnostics are currently blocked because they do not account for selection for ageing.
 Population predictions remain available with `predict()`.
 
@@ -100,18 +95,13 @@ ggplot(measured, aes(age, length)) +
 
 ## The sampling design
 
-`lsas()` needs the number of fish measured and aged in each sampling unit and length bin.
+`length_strata()` takes all measured fish, with their lengths and whether each was aged, and tabulates the fraction aged in each sampling unit and length bin.
 Here, ages were sampled by year, so the year is the sampling unit.
-The `length` column can be any length within the bin; we use the bin's lower edge.
+Every sampling unit in the fitted data must occur in `measured`, and every fitted fish must fall in a bin with aged fish.
 
-```{r counts}
-counts <- measured |>
-  group_by(year, bin) |>
-  summarise(n_measured = n(), n_aged = sum(aged), .groups = "drop") |>
-  mutate(length = breaks[bin])
-head(counts)
-
-design <- lsas(unit = "year", breaks = breaks, counts = counts)
+```{r design}
+design <- length_strata(measured, unit = "year", breaks = breaks,
+  length = "length", aged = "aged")
 ```
 
 ## Fitting length-at-age
@@ -157,7 +147,7 @@ ggplot(pred, aes(age, exp(est), colour = model)) +
     caption = "Dashed line: true mean length-at-age")
 ```
 
-Ignoring the design overestimates length at older ages by several centimetres and overestimates the variability in length-at-age:
+Ignoring the design overestimates length at older ages by several cm and overestimates the variability in length-at-age:
 
 ```{r sigma}
 sapply(fits, function(fit) tidy(fit, "ran_pars")$estimate)

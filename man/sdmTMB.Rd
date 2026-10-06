@@ -209,8 +209,8 @@ is right-censored (up to the number of trials for
 response of 0 and the largest possible count as the bound (e.g., 4).}
 
 \item{length_stratified}{Optional length-stratified age sampling design from
-\code{\link[=lsas]{lsas()}}. Conditions each fish's length on it having been selected for
-ageing. RTMB backend only.}
+\code{\link[=length_strata]{length_strata()}}. Conditions each fish's length on it having been
+selected for ageing. RTMB backend only.}
 
 \item{extra_time}{Optional extra time slices (e.g., years) to include for
 interpolation or forecasting with the predict function. See the Details

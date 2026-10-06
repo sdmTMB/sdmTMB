@@ -14,36 +14,34 @@
 #' bin \eqn{k} of the fish's sampling unit and \eqn{f(l_i \mid a_i)} is the
 #' model's length distribution for fish \eqn{i}. The numerator's
 #' \eqn{\pi_{k(l_i)}} does not depend on parameters, so only the denominator,
-#' the probability the fish would have been aged, enters the fit.
-#'
-#' Only the RTMB backend and the [gaussian()], [lognormal()], [Gamma()], and
-#' [gengamma()] families are supported. Predictions are of the population, not
-#' of the aged sample. Residuals, response simulations, and DHARMa diagnostics
-#' are not yet supported for these fits. Gaussian and lognormal bin
-#' probabilities use stable log-tail calculations. Gamma and generalized-gamma
-#' support is provisional: their ordinary CDF differences can lose precision
-#' in extreme tails and cause non-finite likelihoods or gradients. Generalized
-#' gamma can also be unstable near its lognormal limit (`Q = 0`).
+#' the probability the fish would have been aged, enters the fit. The
+#' resulting log likelihood is therefore not comparable (e.g., by AIC) with
+#' that of a model fitted without `length_stratified`.
 #'
 #' This implements Candy's conditional-on-age method, not the joint age-length
 #' empirical proportion (EP) likelihood. Sampling fractions are treated as
-#' fixed, and empty length strata are excluded from the selection denominator.
+#' fixed. Bins with no measured fish in a unit have sampling fraction zero
+#' and are excluded from that unit's selection probability, as described by
+#' Perreault et al. (2020), so very fine bins with sparse tails truncate the
+#' modelled length distribution.
 #'
-#' @param unit Name of the column in both `data` and `counts` identifying the
-#'   sampling unit within which ages were sampled by length bin (e.g., a survey
-#'   set or a survey-year).
+#' Only the RTMB backend and the [gaussian()] and [lognormal()] families are
+#' supported. Predictions are of the population, not of the aged sample.
+#' Residuals, response simulations, and DHARMa diagnostics are not yet
+#' supported for these fits.
+#'
+#' @param measured A data frame with one row per measured fish, including
+#'   those not aged.
+#' @param unit Name of the column in both `measured` and the fitted `data`
+#'   identifying the sampling unit within which ages were sampled by length
+#'   bin (e.g., a survey set or a survey-year).
 #' @param breaks Increasing length bin edges on the scale of the response. The
 #'   lowest and highest bins are open-ended. If lengths are recorded rounded
 #'   (e.g., to the nearest cm), place edges between recorded values (e.g., 9.5,
 #'   11.5) so that bins match true lengths.
-#' @param counts A data frame with the `unit` column, `length` (any length in
-#'   the bin, e.g., a recorded length or the bin's lower edge), `n_measured`,
-#'   and `n_aged`. Rows with the same unit and bin are summed. Counts must be
-#'   finite, nonnegative integers, with `n_aged <= n_measured`. Every sampling
-#'   unit in `data` must occur in `counts`, and every bin containing fitted
-#'   fish must have positive measured and aged counts. Omitted bins within a
-#'   represented unit are treated as empty, with sampling fraction zero,
-#'   following Candy's method as described by Perreault et al. (2020).
+#' @param length Name of the length column in `measured`.
+#' @param aged Name of the logical column in `measured` that is `TRUE` for
+#'   fish that were aged.
 #'
 #' @return An object to pass to `sdmTMB(length_stratified = ...)`.
 #' @references
@@ -57,33 +55,51 @@
 #' Fisheries and Aquatic Sciences, 77(3): 439–450.
 #' \doi{10.1139/cjfas-2019-0129}
 #' @export
-lsas <- function(unit, breaks, counts) {
-  if (!is.character(unit) || length(unit) != 1L || is.na(unit) || !nzchar(unit)) {
-    cli_abort("`unit` must be the name of a column.")
+#' @examples
+#' # 1000 measured fish in two years; up to 5 aged per 5 cm bin and year
+#' set.seed(1)
+#' measured <- data.frame(year = rep(1:2, each = 500), age = rpois(1000, 3) + 1)
+#' measured$length <- rlnorm(1000, log(40 * (1 - exp(-0.4 * measured$age))), 0.1)
+#' bin <- findInterval(measured$length, seq(0, 60, by = 5))
+#' measured$aged <- ave(seq_len(1000), measured$year, bin, FUN = seq_along) <= 5
+#' design <- length_strata(measured, unit = "year", breaks = seq(0, 60, by = 5))
+#'
+#' fit <- sdmTMB(length ~ 0 + factor(age), data = measured[measured$aged, ],
+#'   family = lognormal(), spatial = "off", length_stratified = design)
+length_strata <- function(measured, unit, breaks, length = "length",
+                          aged = "aged") {
+  if (!is.data.frame(measured)) cli_abort("`measured` must be a data frame.")
+  for (column in c(unit, length, aged)) {
+    if (!is.character(column) || length(column) != 1L ||
+        !column %in% names(measured)) {
+      cli_abort("{.val {column}} must name a column of `measured`.")
+    }
   }
   if (!is.numeric(breaks) || length(breaks) < 2L || anyNA(breaks) ||
       is.unsorted(breaks, strictly = TRUE)) {
     cli_abort("`breaks` must be at least two increasing numbers.")
   }
-  needed <- c(unit, "length", "n_measured", "n_aged")
-  if (!is.data.frame(counts) || !all(needed %in% names(counts))) {
-    cli_abort("`counts` must be a data frame with columns {.val {needed}}.")
+  if (anyNA(measured[[unit]])) {
+    cli_abort("Sampling units in `measured` can't have missing values.")
   }
-  if (anyNA(counts[[unit]])) cli_abort("`counts` sampling units can't have missing values.")
-  if (!is.numeric(counts$length) || any(!is.finite(counts$length))) {
-    cli_abort("`counts$length` must contain finite numbers.")
+  if (!is.numeric(measured[[length]]) || any(!is.finite(measured[[length]]))) {
+    cli_abort("Lengths in `measured` must be finite numbers.")
   }
-  for (column in c("n_measured", "n_aged")) {
-    z <- counts[[column]]
-    if (!is.numeric(z) || any(!is.finite(z) | z < 0 | z != floor(z))) {
-      cli_abort("`counts${column}` must contain finite, nonnegative integers.")
-    }
+  if (!is.logical(measured[[aged]]) || anyNA(measured[[aged]])) {
+    cli_abort("{.val {aged}} in `measured` must be `TRUE` or `FALSE`.")
   }
-  if (any(counts$n_aged > counts$n_measured)) {
-    cli_abort("`counts$n_aged` can't exceed `counts$n_measured`.")
-  }
-  structure(list(unit = unit, breaks = breaks, counts = counts),
-    class = "sdmTMB_lsas")
+
+  units <- unique(measured[[unit]])
+  unit_f <- factor(match(measured[[unit]], units), levels = seq_along(units))
+  bin_f <- factor(.lsas_bin(measured[[length]], breaks),
+    levels = seq_len(length(breaks) - 1L))
+  is_aged <- measured[[aged]]
+  n_measured <- table(unit_f, bin_f)
+  n_aged <- table(unit_f[is_aged], bin_f[is_aged])
+  # Empty bins have no aged fish, so their fraction is zero.
+  frac <- matrix(n_aged / pmax(n_measured, 1), nrow = length(units))
+  structure(list(unit = unit, units = units, breaks = breaks, frac = frac),
+    class = "sdmTMB_length_strata")
 }
 
 # Length bin of each length; lengths beyond the edges fall in the open-ended
@@ -94,134 +110,70 @@ lsas <- function(unit, breaks, counts) {
 }
 
 # Data for the RTMB objective: the unit-by-bin matrix of sampling fractions,
-# the interior bin edges, and each fish's unit.
+# the bin edges, and each fish's unit.
 .lsas_tmb_data <- function(x, data, y, family_spec, backend) {
   if (is.null(x)) return(NULL)
-  if (!inherits(x, "sdmTMB_lsas")) {
-    cli_abort("`length_stratified` must be created with `lsas()`.")
+  if (!inherits(x, "sdmTMB_length_strata")) {
+    cli_abort("`length_stratified` must be created with `length_strata()`.")
   }
   if (backend != "rtmb") {
     cli_abort("`length_stratified` needs `sdmTMBcontrol(backend = \"rtmb\")`.")
   }
   family <- family_spec$family$family
-  if (length(family) != 1L || !family %in% c("gaussian", "lognormal", "Gamma", "gengamma")) {
-    cli_abort("`length_stratified` needs the `gaussian()`, `lognormal()`, `Gamma()`, or `gengamma()` family.")
-  }
-  if (family %in% c("Gamma", "gengamma")) {
-    cli_inform(c("i" = paste0(
-      "Length-stratified sampling with `", family, "()` is provisional: ",
-      "bin probabilities use ordinary CDF differences, which can lose precision ",
-      "in extreme tails and cause non-finite likelihoods or gradients.",
-      if (family == "gengamma") " Generalized gamma can also be unstable near Q = 0."
-    )))
+  if (length(family) != 1L || !family %in% c("gaussian", "lognormal")) {
+    cli_abort("`length_stratified` needs the `gaussian()` or `lognormal()` family.")
   }
   if (!x$unit %in% names(data)) {
     cli_abort("Column {.val {x$unit}} is missing from `data`.")
   }
   if (anyNA(data[[x$unit]])) cli_abort("Sampling units in `data` can't have missing values.")
-  units <- unique(data[[x$unit]])
-  if (any(!units %in% x$counts[[x$unit]])) {
-    cli_abort("Every sampling unit in `data` must occur in `counts`.")
+  unit_i <- match(data[[x$unit]], x$units)
+  if (anyNA(unit_i)) {
+    cli_abort("Every sampling unit in `data` must occur in `measured`.")
   }
-  unit_i <- match(data[[x$unit]], units)
-
-  counts <- x$counts[x$counts[[x$unit]] %in% units, , drop = FALSE]
-  n_bins <- length(x$breaks) - 1L
-  unit_c <- factor(match(counts[[x$unit]], units), levels = seq_along(units))
-  bin_c <- factor(.lsas_bin(counts$length, x$breaks), levels = seq_len(n_bins))
-  measured <- unclass(stats::xtabs(counts$n_measured ~ unit_c + bin_c))
-  aged <- unclass(stats::xtabs(counts$n_aged ~ unit_c + bin_c))
-  pi <- ifelse(measured > 0, aged / measured, 0)
-  dimnames(pi) <- NULL
-
-  if (any(pi[cbind(unit_i, .lsas_bin(y, x$breaks))] == 0)) {
-    cli_abort("Some fish in `data` fall in a unit and length bin with no aged fish in `counts`.")
+  if (any(x$frac[cbind(unit_i, .lsas_bin(y, x$breaks))] == 0)) {
+    cli_abort("Some fish in `data` fall in a unit and length bin with no aged fish in `measured`.")
   }
-  list(pi = pi, cuts = x$breaks[-c(1L, n_bins + 1L)], unit_i = unit_i)
+  list(frac = x$frac, breaks = x$breaks, unit_i = unit_i)
 }
 
 # Log probability that each fitted fish `i` was selected for ageing given its
-# age: the sum over length bins of the bin's sampling fraction times the
-# probability of the bin under the fish's length distribution `s`.
+# age: the log sum over length bins of the bin's sampling fraction times the
+# bin's probability under the fish's length distribution `s`. Both families
+# are normal on the modelled scale, so bin edges become z-scores.
 rtmb_lsas_log_selection <- function(s, family, lsas, i) {
   "[<-" <- RTMB::ADoverload("[<-")
-  pi <- lsas$pi[lsas$unit_i[i], , drop = FALSE]
-  # WIP: RTMB::pgamma has no AD log-tail interface. Retain the original
-  # calculation for Gamma/gengamma, with an explicit notice at fit setup.
-  if (family %in% c("Gamma", "gengamma")) {
-    selected <- 0
-    below <- 0
-    for (k in seq_along(lsas$cuts)) {
-      cdf <- rtmb_lsas_cdf(lsas$cuts[[k]], s, family)
-      selected <- selected + pi[, k] * (cdf - below)
-      below <- cdf
-    }
-    return(log(selected + pi[, ncol(pi)] * (1 - below)))
+  frac <- lsas$frac[lsas$unit_i[i], , drop = FALSE]
+  edges <- c(-Inf, lsas$breaks[-c(1L, length(lsas$breaks))], Inf)
+  centre <- s$mu
+  if (family == "lognormal") {
+    edges <- log(pmax(edges, 0)) # bins at or below zero have no mass
+    centre <- log(s$mu) - s$phi^2 / 2
   }
-  edges <- c(-Inf, lsas$cuts, Inf)
   selected <- rep(-Inf, length(i))
-  initialized <- rep(FALSE, length(i))
-  for (k in seq_len(ncol(pi))) {
-    rows <- which(pi[, k] > 0)
-    if (!length(rows)) next
-    # Positive families have no mass at or below zero.
-    if (family != "gaussian" && edges[k + 1L] <= 0) next
-    state <- lapply(s, rtmb_pick, i = rows)
-    term <- log(pi[rows, k]) +
-      rtmb_lsas_log_interval(edges[k], edges[k + 1L], state, family)
-    old <- initialized[rows]
-    selected[rows[!old]] <- term[!old]
-    if (any(old)) {
-      selected[rows[old]] <- RTMB::logspace_add(selected[rows[old]], term[old])
-    }
-    initialized[rows] <- TRUE
+  for (k in seq_len(ncol(frac))) {
+    rows <- which(frac[, k] > 0)
+    if (!length(rows) || edges[k + 1L] == -Inf) next
+    log_p <- rtmb_lsas_log_interval(edges[k], edges[k + 1L],
+      rtmb_pick(centre, rows), rtmb_pick(s$phi, rows))
+    selected[rows] <- RTMB::logspace_add(selected[rows], log(frac[rows, k]) + log_p)
   }
   selected
 }
 
-# Choose the tail before subtracting, so a rounded-to-one CDF does not erase
-# a small bin probability. AD branching avoids evaluating an unused
-# logspace_sub(0, 0) branch.
-rtmb_lsas_log_interval <- function(lower, upper, s, family) {
-  if (is.infinite(lower) || (family != "gaussian" && lower <= 0)) {
-    if (is.infinite(upper)) return(0 * s$mu)
-    return(rtmb_lsas_cdf(upper, s, family, log.p = TRUE))
-  }
-  if (is.infinite(upper)) {
-    return(rtmb_lsas_cdf(lower, s, family, lower.tail = FALSE, log.p = TRUE))
-  }
-  lo <- rtmb_lsas_cdf(lower, s, family, log.p = TRUE)
-  hi <- rtmb_lsas_cdf(upper, s, family, log.p = TRUE)
-  slo <- rtmb_lsas_cdf(lower, s, family, lower.tail = FALSE, log.p = TRUE)
-  shi <- rtmb_lsas_cdf(upper, s, family, lower.tail = FALSE, log.p = TRUE)
-  RTMB::Vectorize(function(lo, hi, slo, shi) {
-    "if" <- RTMB::ADoverload("if")
-    if (hi < log(0.5)) RTMB::logspace_sub(hi, lo)
-    else RTMB::logspace_sub(slo, shi)
-  })(lo, hi, slo, shi)
-}
-
-# CDF at length `q`, parameterized as in `rtmb_obs_families`. Gaussian and
-# lognormal tails are evaluated directly; Gamma/gengamma remain provisional.
-rtmb_lsas_cdf <- function(q, s, family, lower.tail = TRUE, log.p = FALSE) {
-  if (family != "gaussian" && q <= 0) {
-    p <- if (lower.tail) 0 else 1
-    return(rep(if (log.p) log(p) else p, length(s$mu)))
-  }
-  p <- switch(family,
-    gaussian = return(RTMB::pnorm((q - s$mu) / s$phi,
-      lower.tail = lower.tail, log.p = log.p)),
-    lognormal = return(RTMB::pnorm((log(q) - log(s$mu) + s$phi^2 / 2) / s$phi,
-      lower.tail = lower.tail, log.p = log.p)),
-    # WIP: these ordinary CDFs are used only by the provisional path above.
-    Gamma = RTMB::pgamma(q, shape = s$phi, scale = s$mu / s$phi),
-    gengamma = {
-      k <- s$Q^-2
-      p <- RTMB::pgamma(k * exp(rtmb_gengamma_qw(q, s$mu, s$phi, s$Q)), shape = k)
-      0.5 + sign(s$Q) * (p - 0.5)
-    })
-  if (!lower.tail) p <- 1 - p
-  if (log.p) log(p) else p
+# Log probability that a normal variable with mean `centre` and SD `sd` falls
+# between data edges `lower` and `upper`, either of which can be infinite.
+# A finite interval's probability is symmetric in its standardized centre, so
+# reflecting it into the lower tail keeps the difference of log CDFs accurate
+# far into either tail without branching on parameters.
+rtmb_lsas_log_interval <- function(lower, upper, centre, sd) {
+  if (is.infinite(lower) && is.infinite(upper)) return(0 * centre)
+  if (is.infinite(lower)) return(RTMB::pnorm((upper - centre) / sd, log.p = TRUE))
+  if (is.infinite(upper)) return(RTMB::pnorm((centre - lower) / sd, log.p = TRUE))
+  mid <- abs((lower + upper) / 2 - centre) / sd
+  half_width <- (upper - lower) / (2 * sd)
+  RTMB::logspace_sub(RTMB::pnorm(half_width - mid, log.p = TRUE),
+    RTMB::pnorm(-half_width - mid, log.p = TRUE))
 }
 
 .check_lsas_diagnostics <- function(object, caller) {

@@ -168,8 +168,8 @@ NULL
 #'   [censored_betabinomial()]). For left censoring (e.g., fewer than 5), use a
 #'   response of 0 and the largest possible count as the bound (e.g., 4).
 #' @param length_stratified Optional length-stratified age sampling design from
-#'   [lsas()]. Conditions each fish's length on it having been selected for
-#'   ageing. RTMB backend only.
+#'   [length_strata()]. Conditions each fish's length on it having been
+#'   selected for ageing. RTMB backend only.
 #' @param extra_time Optional extra time slices (e.g., years) to include for
 #'   interpolation or forecasting with the predict function. See the Details
 #'   section below.
