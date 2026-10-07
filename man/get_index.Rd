@@ -108,7 +108,8 @@ non-spatial uses of \code{area} as an integration multiplier.}
 \item{derived_link}{Optional override for the inverse link used when
 calculating derived quantities such as the index. By default, the fitted
 family link is used. Currently supported for non-delta \code{binomial()},
-\code{betabinomial()}, and \code{censored_betabinomial()} models fit with
+\code{censored_binomial()}, \code{betabinomial()}, and \code{censored_betabinomial()}
+models fit with
 \code{link = "cloglog"}.}
 
 \item{predict_args}{A named list of less commonly used arguments to pass to

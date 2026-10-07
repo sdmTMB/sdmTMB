@@ -70,6 +70,16 @@ rtmb_obs_families <- list(
     }
   ),
 
+  # Binomial with counts censored to [y, upr]; `upr` Inf means `size`.
+  censored_binomial = list(
+    logit_mu = TRUE,
+    logpdf = function(y, mu, s) rtmb_dcensbinom(y, mu, s),
+    mean = function(mu, s) RTMB::plogis(mu) * s$size,
+    simulate = function(mu, s) {
+      stats::rbinom(length(mu), s$size, stats::plogis(mu))
+    }
+  ),
+
   poisson = list(
     logpdf = function(y, mu, s) RTMB::dpois(y, mu, log = TRUE),
     simulate = function(mu, s) stats::rpois(length(mu), mu),
@@ -532,58 +542,81 @@ rtmb_lbetabinom <- function(k, a, b, n) {
     lgamma(b)
 }
 
-# log of the beta-binomial PMF summed over counts k0, ..., k0 + len - 1
-# (len >= 1), with successive terms from the PMF ratio p(k + 1) / p(k). Term
-# `j` of every run longer than `j` is added at once, so the loop runs over run
-# lengths rather than rows.
-rtmb_betabinom_logsum <- function(k0, len, a, b, n) {
+# log of a count PMF summed over counts k0, ..., k0 + len - 1 (len >= 1) for
+# rows `i` of the parameter vectors in `d`, with successive terms from the
+# PMF ratio p(k + 1) / p(k): `d$lpmf(k, i)` is the log PMF and
+# `d$lratio(k, i)` the log ratio. Term `j` of every run longer than `j` is
+# added at once, so the loop runs over run lengths rather than rows.
+rtmb_count_logsum <- function(i, k0, len, d) {
   "[<-" <- RTMB::ADoverload("[<-")
-  term <- rtmb_lbetabinom(k0, a, b, n)
+  term <- d$lpmf(k0, i)
   out <- term
   for (j in seq_len(max(len, 1) - 1)) {
-    i <- which(len > j)
-    k <- k0[i] + j - 1
-    term[i] <- term[i] + log(k + a[i]) - log(n[i] - k - 1 + b[i]) +
-      log(n[i] - k) - log(k + 1)
-    out[i] <- RTMB::logspace_add(out[i], term[i])
+    r <- which(len > j)
+    term[r] <- term[r] + d$lratio(k0[r] + j - 1, i[r])
+    out[r] <- RTMB::logspace_add(out[r], term[r])
   }
   out
 }
 
-# log P(y <= Y <= upr) for a beta-binomial Y, with `upr` NA meaning `size` and
-# `upr == y` an exact count. Rows with `cens_direct == 0` sum whichever side
-# has fewer terms: the interval, or its complement as log(1 - P(outside)).
-# The side is chosen from the data, so the tape is fixed. The complement loses
-# accuracy when the interval probability is small, so after fitting,
-# check_censored_betabinomial() switches any row that disagrees with the
-# direct sum over the interval to `cens_direct = 1`. The PMF is summed rather
-# than using 1 - F(y - 1), which cancels badly.
-rtmb_dcensbetabinom <- function(y, s) {
+# log P(y <= Y <= upr) for a count Y on 0, ..., n with log PMF and ratio
+# `d` (see rtmb_count_logsum()), with `upr` NA meaning `n` and `upr == y` an
+# exact count. Rows with `cens_direct == 0` sum whichever side has fewer
+# terms: the interval, or its complement as log(1 - P(outside)). The side is
+# chosen from the data, so the tape is fixed. The complement loses accuracy
+# when the interval probability is small, so after fitting,
+# check_censored_betabinomial() switches any row that disagrees with the direct sum
+# over the interval to `cens_direct = 1`. The PMF is summed rather than using
+# 1 - F(y - 1), which cancels badly.
+rtmb_dcenscount <- function(y, n, upr, cens_direct, d) {
   "[<-" <- RTMB::ADoverload("[<-")
-  shape <- rtmb_betabinom_shapes(s)
-  a <- shape$a
-  b <- shape$b
-  n <- s$size
-  upr <- ifelse(is.finite(s$upr), s$upr, n) # whole numbers (normalized in R)
+  upr <- ifelse(is.finite(upr), upr, n) # whole numbers (normalized in R)
   full <- y == 0 & upr >= n # the whole support, set to 0 below
   n_low <- y # counts 0, ..., y - 1
   n_high <- n - upr # counts upr + 1, ..., n
-  comp <- !full & s$cens_direct == 0 & n_low + n_high < upr - y + 1
-  out <- rtmb_betabinom_logsum(y, ifelse(full | comp, 1, upr - y + 1), a, b, n)
+  comp <- !full & cens_direct == 0 & n_low + n_high < upr - y + 1
+  out <- rtmb_count_logsum(seq_along(y), y,
+    ifelse(full | comp, 1, upr - y + 1), d)
   if (any(comp)) {
     lo <- which(comp & n_low > 0)
     hi <- which(comp & n_high > 0)
     both <- n_low[hi] > 0
     outside <- out
-    outside[lo] <- rtmb_betabinom_logsum(rep(0, length(lo)), n_low[lo],
-      a[lo], b[lo], n[lo])
-    high <- rtmb_betabinom_logsum(upr[hi] + 1, n_high[hi], a[hi], b[hi], n[hi])
+    outside[lo] <- rtmb_count_logsum(lo, rep(0, length(lo)), n_low[lo], d)
+    high <- rtmb_count_logsum(hi, upr[hi] + 1, n_high[hi], d)
     outside[hi[!both]] <- high[!both]
     outside[hi[both]] <- RTMB::logspace_add(outside[hi[both]], high[both])
     out[comp] <- RTMB::logspace_sub(0 * outside[comp], outside[comp])
   }
   out[full] <- 0
   out
+}
+
+rtmb_dcensbetabinom <- function(y, s) {
+  shape <- rtmb_betabinom_shapes(s)
+  a <- shape$a
+  b <- shape$b
+  n <- s$size
+  rtmb_dcenscount(y, n, s$upr, s$cens_direct, list(
+    lpmf = function(k, i) rtmb_lbetabinom(k, a[i], b[i], n[i]),
+    lratio = function(k, i) {
+      log(k + a[i]) - log(n[i] - k - 1 + b[i]) + log(n[i] - k) - log(k + 1)
+    }
+  ))
+}
+
+# Binomial with `logit_p` the logit of the success probability, always summed
+# over the interval: binomial tails are thin enough that the complement can
+# round to 1 away from the estimate (e.g., in the inner optimization), giving
+# log(0) before any precision check. RTMB's pbeta() isn't an option either,
+# since its higher derivatives (needed by the Laplace approximation) aren't
+# finite.
+rtmb_dcensbinom <- function(y, logit_p, s) {
+  n <- s$size
+  rtmb_dcenscount(y, n, s$upr, 1, list(
+    lpmf = function(k, i) RTMB::dbinom_robust(k, n[i], logit_p[i], log = TRUE),
+    lratio = function(k, i) log(n[i] - k) - log(k + 1) + logit_p[i]
+  ))
 }
 
 # Ordered beta logit-scale cutpoints from the `psi` parameter

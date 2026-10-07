@@ -481,6 +481,79 @@ test_that("Censored beta-binomial family works", {
   expect_error(censored_betabinomial(link = "log"), regexp = "not available")
 })
 
+test_that("Censored binomial family works", {
+  set.seed(1)
+  n <- 200L
+  d <- data.frame(year = factor(rep(1:2, each = n / 2)),
+    hooks = sample(c(50, 100), n, replace = TRUE))
+  p <- 1 - exp(-exp(c(-2.5, -2)[d$year]))
+  d$y <- rbinom(n, d$hooks, p)
+  censored <- seq_len(n) %% 3 == 0
+  upr <- ifelse(censored, Inf, d$y)
+
+  m_binom <- sdmTMB(y / hooks ~ 0 + year, data = d, weights = d$hooks,
+    spatial = "off", family = binomial(link = "cloglog"))
+  m_exact <- sdmTMB(y ~ 0 + year, data = d, weights = d$hooks, spatial = "off",
+    family = censored_binomial(link = "cloglog"),
+    censored_upper = d$y)
+  expect_equal(m_exact$model$par, m_binom$model$par, tolerance = 1e-6)
+  expect_equal(c(logLik(m_exact)), c(logLik(m_binom)), tolerance = 1e-8)
+  expect_equal(m_exact$tmb_data$family_code[1, 1],
+    unname(.valid_family["censored_binomial"]))
+
+  m_cens <- sdmTMB(y ~ 0 + year, data = d, weights = d$hooks, spatial = "off",
+    family = censored_binomial(link = "cloglog"),
+    censored_upper = upr)
+  expect_equal(m_cens$tmb_data$upr, ifelse(censored, d$hooks, d$y))
+  expect_true(m_cens$sd_report$pdHess)
+  expect_true(all(coef(m_cens) > coef(m_binom)))
+  expect_false("phi" %in% tidy(m_cens, "ran_pars")$term)
+  p_cens <- predict(m_cens, type = "response")
+  expect_equal(p_cens$est, 1 - exp(-exp(coef(m_cens)[as.integer(d$year)])),
+    ignore_attr = TRUE)
+  set.seed(1)
+  r <- residuals(m_cens, type = "mle-eb")
+  expect_true(all(is.finite(r)))
+  s <- simulate(m_cens, nsim = 2)
+  expect_true(all(s <= d$hooks))
+
+  # the index from `derived_link = "log"` sums the per-hook rate exp(eta)
+  nd <- data.frame(year = factor(1:2))
+  ind <- get_index(m_cens, newdata = nd, derived_link = "log",
+    bias_correct = FALSE)
+  expect_equal(ind$est, sum(exp(coef(m_cens))), tolerance = 1e-6)
+
+  # censored zeros up to the number of hooks contribute nothing
+  d0 <- d
+  d0$y[censored] <- 0
+  m0 <- sdmTMB(y ~ 0 + year, data = d0, weights = d0$hooks, spatial = "off",
+    family = censored_binomial(link = "cloglog"),
+    censored_upper = upr, do_fit = FALSE)
+  m0_binom <- sdmTMB(y / hooks ~ 0 + year, data = d0[!censored, ],
+    weights = d0$hooks[!censored], spatial = "off",
+    family = binomial(link = "cloglog"), do_fit = FALSE)
+  par <- c(-2, -1.5)
+  expect_equal(m0$tmb_obj$fn(par), m0_binom$tmb_obj$fn(par))
+
+  expect_error(sdmTMB(y ~ 0 + year, data = d, weights = d$hooks,
+    spatial = "off", family = censored_binomial(),
+    censored_upper = d$hooks + 1),
+    regexp = "number of trials")
+  expect_error(sdmTMB(y ~ 0 + year, data = d, weights = d$hooks,
+    spatial = "off", family = censored_binomial(),
+    censored_upper = d$y),
+    NA)
+  expect_error(sdmTMB(y ~ 0 + year, data = d, weights = d$hooks,
+    spatial = "off", family = censored_binomial(),
+    censored_upper = upr, control = sdmTMBcontrol(backend = "tmb")),
+    regexp = "backend")
+  expect_error(censored_binomial(link = "log"), regexp = "not available")
+  lk <- "cloglog"
+  expect_identical(censored_binomial(link = lk)$link, "cloglog")
+  expect_identical(censored_binomial(link = cloglog)$link, "cloglog")
+  expect_identical(censored_binomial()$family, "censored_binomial")
+})
+
 test_that("Censored Poisson upper limit function works", {
   dat <- structure(
     list(

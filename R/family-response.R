@@ -72,6 +72,10 @@
     y_i, size, weights, single & family_name == "binomial",
     "Binomial", allow_counts = FALSE
   )
+  out <- .process_binomial_like_rows(
+    out$y_i, out$size, out$weights, single & family_name == "censored_binomial",
+    "Censored binomial", allow_counts = TRUE, weighted_binary_counts = TRUE
+  )
   .process_binomial_like_rows(
     out$y_i, out$size, out$weights,
     single & family_name %in% c("betabinomial", "censored_betabinomial"),
@@ -79,29 +83,30 @@
   )
 }
 
-# Censored beta-binomial counts, trials, and bounds on the count scale, as
+# Censored binomial and beta-binomial counts, trials, and bounds on the count scale, as
 # exact integers that both backends can use directly. Values within
 # floating-point error of an integer (e.g., proportions times trials) are
 # snapped to it. Otherwise counts and trials must be integers. A bound `U`
 # can be any real number and means the integer count `floor(U)`; `NA`
 # (right-censored) means the number of trials, the largest possible count.
 # Returns `upr` as NULL if there are no such rows.
-.normalize_censored_betabinomial <- function(y_i, size, family_spec, upr = NULL) {
+.normalize_censored_trials <- function(y_i, size, family_spec, upr = NULL) {
   row_family <- .family_spec_response_family_id(family_spec, y_i)
   component1 <- family_spec$components[family_spec$components$component == 1L, ]
   family_name <- component1$family_name[match(row_family, component1$family_id)]
   single <- family_spec$families$combine_kind[row_family] == "single"
-  rows <- single & family_name == "censored_betabinomial" & !is.na(y_i)
+  rows <- single & !is.na(y_i) &
+    family_name %in% c("censored_binomial", "censored_betabinomial")
   if (is.null(upr) || !any(rows)) return(list(y_i = y_i, size = size, upr = NULL))
   snap <- function(x) ifelse(.is_whole_number(x), round(x), x)
   y_i[rows] <- snap(y_i[rows])
   size[rows] <- snap(size[rows])
   if (any(!is.finite(size[rows]) | size[rows] != round(size[rows]))) {
-    cli_abort("Censored beta-binomial rows must have whole-number trial sizes.")
+    cli_abort("Censored (beta-)binomial rows must have whole-number trial sizes.")
   }
   if (any(y_i[rows] != round(y_i[rows]))) {
     cli_abort(paste(
-      "Censored beta-binomial rows must have whole-number counts",
+      "Censored (beta-)binomial rows must have whole-number counts",
       "(e.g., proportions times `weights` must be whole numbers)."
     ))
   }
@@ -111,7 +116,7 @@
   if (any(upr[rows] < y_i[rows] | upr[rows] > size[rows])) {
     cli_abort(paste(
       "`censored_upper` must be between the observed count and the",
-      "number of trials (from `weights`) for censored beta-binomial rows.",
+      "number of trials (from `weights`) for censored (beta-)binomial rows.",
       "Non-integer bounds are rounded down to the largest possible count."
     ))
   }
@@ -158,7 +163,8 @@
 .prepare_family_response <- function(y_i, weights, family_spec, upr = NULL) {
   component1 <- .family_spec_component_value(family_spec, 1L, 1L, "family_name")
   ordinary_binomial_like <- family_spec$n_f == 1L && family_spec$n_m == 1L &&
-    component1 %in% c("binomial", "betabinomial", "censored_betabinomial")
+    component1 %in% c("binomial", "censored_binomial", "betabinomial",
+      "censored_betabinomial")
   if (ordinary_binomial_like && (is.character(y_i) || is.factor(y_i))) {
     y_i <- factor(y_i)
     if (nlevels(y_i) > 2L) cli_abort("More than 2 levels detected for response")
@@ -172,7 +178,7 @@
       weights, family_spec)
   }
   .family_spec_validate_response(processed$y_i, family_spec, upr)
-  censored <- .normalize_censored_betabinomial(processed$y_i, processed$size,
+  censored <- .normalize_censored_trials(processed$y_i, processed$size,
     family_spec, upr)
   processed[names(censored)] <- censored
   processed$response <- .family_spec_build_response(processed$y_i, family_spec)

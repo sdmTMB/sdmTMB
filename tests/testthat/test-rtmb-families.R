@@ -271,6 +271,49 @@ test_that("censored beta-binomial log probabilities match a direct sum", {
   expect_lt(max(abs(shorter - expected)[ok]), 1e-8)
 })
 
+# Includes probabilities far below 1e-300 that a direct sum on the natural
+# scale would underflow.
+test_that("censored binomial log probabilities match a direct sum", {
+  cases <- expand.grid(n = c(1, 10, 140, 450), L = c(0, 1, 5, 140, 300),
+    p = c(0.001, 0.02, 0.5, 0.95))
+  cases <- cases[cases$L <= cases$n, ]
+  cases$U <- ifelse(seq_len(nrow(cases)) %% 2 == 0, NA,
+    pmin(cases$n, cases$L + seq_len(nrow(cases)) %% 7))
+  expected <- with(cases, mapply(function(L, U, n, p) {
+    l <- stats::dbinom(L:(if (is.na(U)) n else U), n, p, log = TRUE)
+    max(l) + log(sum(exp(l - max(l))))
+  }, L, U, n, p))
+  out <- rtmb_dcensbinom(cases$L, qlogis(cases$p),
+    list(size = cases$n, upr = cases$U))
+  expect_equal(out, expected, tolerance = 1e-10)
+})
+
+# The Laplace gradient needs third derivatives of the censored terms. The
+# first row is a right-censored count far above what the model expects, whose
+# complement P(Y < y) rounds to 1.
+test_that("censored binomial observation-level random effects are consistent", {
+  skip_if_not_installed("numDeriv")
+  set.seed(3)
+  n <- 80L
+  d <- data.frame(z = rnorm(n), hooks = 450, obs = factor(seq_len(n)))
+  p <- 1 - exp(-exp(-4 + 0.4 * d$z + rnorm(n, 0, 0.5)))
+  d$y <- rbinom(n, d$hooks, p)
+  type <- seq_len(n) %% 3
+  upr <- ifelse(type == 0, Inf, ifelse(type == 1, d$y, pmin(d$y + 3, d$hooks)))
+  d$y[1] <- 150
+  upr[1] <- Inf
+  fit <- sdmTMB(y ~ z + (1 | obs), data = d, weights = d$hooks,
+    spatial = "off", family = censored_binomial(link = "cloglog"),
+    censored_upper = upr)
+  expect_identical(fit$model$convergence, 0L)
+  expect_true(fit$sd_report$pdHess)
+  obj <- fit$tmb_obj
+  for (par in list(obj$par, obj$par + c(0.3, -0.2, 0.4))) {
+    expect_equal(as.vector(obj$gr(par)), numDeriv::grad(obj$fn, par),
+      tolerance = 1e-6)
+  }
+})
+
 test_that("censored beta-binomial likelihood and gradient are correct", {
   skip_if_not_installed("numDeriv")
   set.seed(81)

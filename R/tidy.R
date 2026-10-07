@@ -178,7 +178,8 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   est <- subset_pars(est, model)
   se <- subset_pars(se, model)
 
-  if (!multi_family && x$family$family[[model]] %in% c("binomial", "poisson")) {
+  if (!multi_family && x$family$family[[model]] %in%
+    c("binomial", "censored_binomial", "poisson")) {
     se$ln_phi <- NULL
     est$ln_phi <- NULL
     se$phi <- NULL

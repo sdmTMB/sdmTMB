@@ -659,17 +659,21 @@ betabinomial <- function(link = "logit") {
 }
 
 #' @details
-#' `censored_poisson()` and `censored_betabinomial()` treat some counts as
+#' `censored_poisson()`, `censored_binomial()`, and `censored_betabinomial()`
+#' treat some counts as
 #' censored, e.g., to account for hook competition in longline surveys
 #' (Watson et al. 2023). Bounds are given with `sdmTMB(censored_upper = ...)`:
 #' a value equal to the observed count is uncensored, a larger value gives an
 #' interval-censored count between the observed count and that value, and `Inf`
-#' gives a right-censored count. For `censored_betabinomial()`, the number of trials
+#' gives a right-censored count. For `censored_binomial()` and
+#' `censored_betabinomial()`, the number of trials
 #' (e.g., hooks) is supplied via `weights` and is the largest possible count,
 #' so `Inf` means censoring between the observed count and the number of trials.
 #' Counts and numbers of trials must be whole numbers, and a non-integer bound
 #' means the largest count it allows (e.g., 2.5 means 2).
-#' `censored_betabinomial()` needs the RTMB backend (the default). It sums the
+#' `censored_binomial()` and `censored_betabinomial()` need the RTMB backend
+#' (the default). `censored_binomial()` sums the probabilities of the counts in
+#' each interval. `censored_betabinomial()` sums the
 #' probabilities of the counts inside or outside each interval, whichever is
 #' shorter. After
 #' fitting, it checks the precision of each row at the estimate and refits with
@@ -697,6 +701,25 @@ censored_betabinomial <- function(link = "logit") {
   x <- betabinomial(link = linktemp)
   x$family <- "censored_betabinomial"
   x
+}
+
+#' @export
+#' @examples
+#' censored_binomial(link = "cloglog")
+#' @rdname families
+censored_binomial <- function(link = "logit") {
+  linktemp <- substitute(link)
+  if (!is.character(linktemp))
+    linktemp <- deparse(linktemp)
+  # a bare link name, otherwise the value of `link` (e.g., a variable)
+  okLinks <- c("logit", "cloglog")
+  if (!linktemp %in% okLinks) linktemp <- link
+  if (!linktemp %in% okLinks) {
+    cli_abort("Link {.val {linktemp}} not available for the censored_binomial family; available links are {.val {okLinks}}.")
+  }
+  x <- c(list(family = "censored_binomial", link = linktemp),
+    stats::make.link(linktemp))
+  add_to_family(x)
 }
 
 

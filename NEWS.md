@@ -56,6 +56,13 @@
   fitting (`sdmTMBcontrol(censored_method = "direct")` forces the direct sum).
   See the updated hook competition article.
 
+* Add `censored_binomial()` for censored binomial counts. It works like
+  `censored_betabinomial()` (RTMB backend, number of trials via `weights`).
+  With `link = "cloglog"` and an observation-level random intercept, it is a
+  Poisson-lognormal model of the per-hook catch rate with at most one fish
+  per hook, so `get_index(derived_link = "log")` is proportional to the mean
+  catch rate.
+
 * Censoring bounds for `censored_poisson()` and `censored_betabinomial()` are
   now supplied with the `censored_upper` argument of `sdmTMB()`, which also
   accepts a column name in `data`. `sdmTMBcontrol(censored_upper = )` is now

@@ -102,6 +102,15 @@ qres_censored_betabinomial <- function(object, y, mu, .n = NULL) {
   stats::qnorm(u)
 }
 
+qres_censored_binomial <- function(object, y, mu, .n = NULL) {
+  upr <- object$tmb_data$upr
+  upr <- ifelse(is.finite(upr), upr, .n)
+  a <- stats::pbinom(y - 1, .n, mu)
+  b <- stats::pbinom(upr, .n, mu)
+  u <- stats::runif(n = length(y), min = pmin(a, b), max = pmax(a, b))
+  stats::qnorm(u)
+}
+
 qres_nbinom2 <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
@@ -537,6 +546,7 @@ residuals.sdmTMB <- function(object,
     res_func <- switch(fam,
       gaussian = qres_gaussian,
       binomial = qres_binomial,
+      censored_binomial = qres_censored_binomial,
       betabinomial = qres_betabinomial,
       censored_betabinomial = qres_censored_betabinomial,
       tweedie  = qres_tweedie,

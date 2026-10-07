@@ -27,6 +27,7 @@
 \alias{delta_poisson_link_lognormal}
 \alias{betabinomial}
 \alias{censored_betabinomial}
+\alias{censored_binomial}
 \alias{delta_beta}
 \title{Additional families}
 \usage{
@@ -84,6 +85,8 @@ delta_poisson_link_lognormal(link1 = "log", link2 = "log")
 betabinomial(link = "logit")
 
 censored_betabinomial(link = "logit")
+
+censored_binomial(link = "logit")
 
 delta_beta(link1 = "logit", link2 = "logit")
 }
@@ -153,17 +156,21 @@ linearly with the mean (Hilbe 2011).
 For \code{student()}, the degrees of freedom parameter is estimated by default (\code{df = NULL}).
 You can fix it at a specific value by providing a number > 1 (e.g., \code{df = 3}).
 
-\code{censored_poisson()} and \code{censored_betabinomial()} treat some counts as
+\code{censored_poisson()}, \code{censored_binomial()}, and \code{censored_betabinomial()}
+treat some counts as
 censored, e.g., to account for hook competition in longline surveys
 (Watson et al. 2023). Bounds are given with \code{sdmTMB(censored_upper = ...)}:
 a value equal to the observed count is uncensored, a larger value gives an
 interval-censored count between the observed count and that value, and \code{Inf}
-gives a right-censored count. For \code{censored_betabinomial()}, the number of trials
+gives a right-censored count. For \code{censored_binomial()} and
+\code{censored_betabinomial()}, the number of trials
 (e.g., hooks) is supplied via \code{weights} and is the largest possible count,
 so \code{Inf} means censoring between the observed count and the number of trials.
 Counts and numbers of trials must be whole numbers, and a non-integer bound
 means the largest count it allows (e.g., 2.5 means 2).
-\code{censored_betabinomial()} needs the RTMB backend (the default). It sums the
+\code{censored_binomial()} and \code{censored_betabinomial()} need the RTMB backend
+(the default). \code{censored_binomial()} sums the probabilities of the counts in
+each interval. \code{censored_betabinomial()} sums the
 probabilities of the counts inside or outside each interval, whichever is
 shorter. After
 fitting, it checks the precision of each row at the estimate and refits with
@@ -197,6 +204,7 @@ delta_truncated_nbinom2()
 delta_truncated_nbinom1()
 betabinomial(link = "logit")
 censored_betabinomial(link = "cloglog")
+censored_binomial(link = "cloglog")
 delta_beta()
 }
 \references{

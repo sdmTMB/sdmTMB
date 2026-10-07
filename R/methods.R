@@ -571,7 +571,7 @@ sigma.sdmTMB <- function(object, ...) {
   }
 
   # Poisson, binomial don't have dispersion, return 1 (as in glmmTMB)
-  if (family_name %in% c("poisson", "binomial")) {
+  if (family_name %in% c("poisson", "binomial", "censored_binomial")) {
     return(1)
   }
 

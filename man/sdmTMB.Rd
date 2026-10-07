@@ -68,6 +68,7 @@ downstream (e.g., \code{\link[=get_index]{get_index()}} or \code{\link[=get_cog]
 \code{\link[sdmTMB:families]{nbinom1()}},
 \code{\link[sdmTMB:families]{truncated_nbinom1()}},
 \code{\link[sdmTMB:families]{censored_poisson()}},
+\code{\link[sdmTMB:families]{censored_binomial()}},
 \code{\link[sdmTMB:families]{censored_betabinomial()}},
 \code{\link[sdmTMB:families]{gamma_mix()}},
 \code{\link[sdmTMB:families]{lognormal()}},
@@ -199,12 +200,13 @@ models, where it also enters the occurrence-probability calculation.
 Usually a log transformed variable.}
 
 \item{censored_upper}{Upper bounds for censored families
-(\code{\link[=censored_poisson]{censored_poisson()}} and \code{\link[=censored_betabinomial]{censored_betabinomial()}}): a numeric vector
+(\code{\link[=censored_poisson]{censored_poisson()}}, \code{\link[=censored_binomial]{censored_binomial()}}, and
+\code{\link[=censored_betabinomial]{censored_betabinomial()}}): a numeric vector
 \emph{or} a character value naming a column in \code{data}. Each observation is
 treated as a count between the response and this bound: a value equal to
 the response is uncensored, a larger value is interval-censored, and \code{Inf}
-is right-censored (up to the number of trials for
-\code{\link[=censored_betabinomial]{censored_betabinomial()}}). For left censoring (e.g., fewer than 5), use a
+is right-censored (up to the number of trials for \code{\link[=censored_binomial]{censored_binomial()}}
+and \code{\link[=censored_betabinomial]{censored_betabinomial()}}). For left censoring (e.g., fewer than 5), use a
 response of 0 and the largest possible count as the bound (e.g., 4).}
 
 \item{extra_time}{Optional extra time slices (e.g., years) to include for

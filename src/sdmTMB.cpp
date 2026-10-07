@@ -25,7 +25,8 @@ enum valid_family {
   gengamma_family = 16,
   betabinomial_family = 17,
   ordbeta_family = 18,
-  censored_betabinomial_family = 19 // RTMB only
+  censored_betabinomial_family = 19, // RTMB only
+  censored_binomial_family = 20 // RTMB only
 };
 
 enum valid_link {

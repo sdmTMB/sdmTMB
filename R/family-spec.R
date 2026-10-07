@@ -52,7 +52,7 @@
 .family_registry <- local({
   registry <- data.frame(
     family_name = names(.valid_family),
-    uses_phi = !names(.valid_family) %in% c("binomial", "poisson", "censored_poisson"),
+    uses_phi = !names(.valid_family) %in% c("binomial", "censored_binomial", "poisson", "censored_poisson"),
     auxiliary = NA_character_,
     # Allowed as a single-component (LP1-only) family in multi-family mode:
     multi_family_single = FALSE,

@@ -42,6 +42,7 @@ NULL
 #'   \code{\link[sdmTMB:families]{nbinom1()}},
 #'   \code{\link[sdmTMB:families]{truncated_nbinom1()}},
 #'   \code{\link[sdmTMB:families]{censored_poisson()}},
+#'   \code{\link[sdmTMB:families]{censored_binomial()}},
 #'   \code{\link[sdmTMB:families]{censored_betabinomial()}},
 #'   \code{\link[sdmTMB:families]{gamma_mix()}},
 #'   \code{\link[sdmTMB:families]{lognormal()}},
@@ -160,12 +161,13 @@ NULL
 #'   models, where it also enters the occurrence-probability calculation.
 #'   Usually a log transformed variable.
 #' @param censored_upper Upper bounds for censored families
-#'   ([censored_poisson()] and [censored_betabinomial()]): a numeric vector
+#'   ([censored_poisson()], [censored_binomial()], and
+#'   [censored_betabinomial()]): a numeric vector
 #'   *or* a character value naming a column in `data`. Each observation is
 #'   treated as a count between the response and this bound: a value equal to
 #'   the response is uncensored, a larger value is interval-censored, and `Inf`
-#'   is right-censored (up to the number of trials for
-#'   [censored_betabinomial()]). For left censoring (e.g., fewer than 5), use a
+#'   is right-censored (up to the number of trials for [censored_binomial()]
+#'   and [censored_betabinomial()]). For left censoring (e.g., fewer than 5), use a
 #'   response of 0 and the largest possible count as the bound (e.g., 4).
 #' @param extra_time Optional extra time slices (e.g., years) to include for
 #'   interpolation or forecasting with the predict function. See the Details
@@ -1013,11 +1015,12 @@ sdmTMB <- function(
   # FIXME parallel setup here?
 
   uses_censored_bb <- "censored_betabinomial" %in% family_spec$components$family_name
-  if (uses_censored_bb && backend != "rtmb") {
-    cli_abort("`censored_betabinomial()` needs `sdmTMBcontrol(backend = \"rtmb\")`.")
+  uses_censored_binom <- "censored_binomial" %in% family_spec$components$family_name
+  if ((uses_censored_bb || uses_censored_binom) && backend != "rtmb") {
+    cli_abort("`censored_binomial()` and `censored_betabinomial()` need `sdmTMBcontrol(backend = \"rtmb\")`.")
   }
   uses_censored <- any(family_spec$components$family_name %in%
-    c("censored_poisson", "censored_betabinomial"))
+    c("censored_poisson", "censored_binomial", "censored_betabinomial"))
   if (uses_censored) {
     if ("lwr" %in% names(experimental) || "upr" %in% names(experimental)) {
       cli_abort("Detected `lwr` or `upr` in `experimental`. `lwr` is no longer needed and `upr` is now specified with `sdmTMB(censored_upper = ...)`.")
