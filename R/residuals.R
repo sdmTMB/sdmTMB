@@ -111,6 +111,23 @@ qres_censored_binomial <- function(object, y, mu, .n = NULL) {
   stats::qnorm(u)
 }
 
+# Censored counts are uniform over the CDF across their interval [y, upr].
+qres_censored_nb <- function(object, y, mu, size) {
+  upr <- floor(object$tmb_data$upr)
+  a <- stats::pnbinom(y - 1, size = size, mu = mu)
+  b <- stats::pnbinom(upr, size = size, mu = mu)
+  u <- stats::runif(n = length(y), min = pmin(a, b), max = pmax(a, b))
+  stats::qnorm(u)
+}
+
+qres_censored_nbinom1 <- function(object, y, mu, ...) {
+  qres_censored_nb(object, y, mu, mu / exp(get_pars(object)[["ln_phi"]]))
+}
+
+qres_censored_nbinom2 <- function(object, y, mu, ...) {
+  qres_censored_nb(object, y, mu, exp(get_pars(object)[["ln_phi"]]))
+}
+
 qres_nbinom2 <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
@@ -555,6 +572,8 @@ residuals.sdmTMB <- function(object,
       Gamma    = qres_gamma,
       nbinom2  = qres_nbinom2,
       nbinom1  = qres_nbinom1,
+      censored_nbinom2 = qres_censored_nbinom2,
+      censored_nbinom1 = qres_censored_nbinom1,
       truncated_nbinom2  = qres_truncated_nbinom2,
       truncated_nbinom1  = qres_truncated_nbinom1,
       poisson  = qres_pois,

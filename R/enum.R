@@ -21,7 +21,9 @@
   betabinomial = 17,
   ordbeta = 18,
   censored_betabinomial = 19,
-  censored_binomial = 20
+  censored_binomial = 20,
+  censored_nbinom1 = 21,
+  censored_nbinom2 = 22
 )
 .valid_link <- c(
   identity = 0,

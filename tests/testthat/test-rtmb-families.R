@@ -642,3 +642,42 @@ test_that("RTMB truncated NB draws are finite and match conditional moments", {
     list(phi = 1))
   expect_equal(mean(y), 1 / log(2), tolerance = 0.03)
 })
+
+# Right-censored rows include counts far above the mean, whose complement
+# P(Y < y) rounds to 1, and far below it, whose upper tail is close to 1.
+test_that("censored negative binomial likelihood and gradient are correct", {
+  skip_if_not_installed("numDeriv")
+  set.seed(4)
+  n <- 60L
+  d <- data.frame(z = rnorm(n))
+  d$y <- rnbinom(n, mu = exp(1 + 0.5 * d$z), size = 2)
+  type <- seq_len(n) %% 3
+  upr <- ifelse(type == 0, Inf, ifelse(type == 1, d$y, d$y + 3.5))
+  d$y[1:2] <- c(300, 0)
+  upr[1:2] <- c(Inf, 4)
+  d$y[3] <- 1
+  for (fam in c("nbinom1", "nbinom2")) {
+    fit <- sdmTMB(y ~ z, data = d, spatial = "off", do_fit = FALSE,
+      family = get(paste0("censored_", fam))(), censored_upper = upr)
+    nll <- function(par) {
+      mu <- exp(par[[1L]] + par[[2L]] * d$z)
+      size <- if (fam == "nbinom1") mu / exp(par[[3L]]) else exp(par[[3L]])
+      size <- rep_len(size, n)
+      lp <- vapply(seq_len(n), function(i) {
+        if (is.infinite(upr[i])) {
+          return(stats::pnbinom(d$y[i] - 1, size = size[i], mu = mu[i],
+            lower.tail = FALSE, log.p = TRUE))
+        }
+        log(sum(stats::dnbinom(d$y[i]:floor(upr[i]), size = size[i],
+          mu = mu[i])))
+      }, numeric(1))
+      -sum(lp)
+    }
+    obj <- fit$tmb_obj
+    for (par in list(c(1, 0.4, 0.5), c(-1, -0.3, 2), c(3, 0.2, -1))) {
+      expect_equal(obj$fn(par), nll(par), tolerance = 1e-8, info = fam)
+      expect_equal(as.vector(obj$gr(par)), numDeriv::grad(nll, par),
+        tolerance = 1e-6, info = fam)
+    }
+  }
+})

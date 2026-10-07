@@ -278,6 +278,16 @@ rtmb_obs_families$truncated_nbinom2 <- rtmb_truncated_nb(
   log_nzprob = function(mu, phi) {
     RTMB::logspace_sub(0, -phi * RTMB::logspace_add(0, log(mu) - log(phi)))
   })
+rtmb_obs_families$censored_nbinom1 <- list(
+  logpdf = function(y, mu, s) rtmb_dcensnb(y, mu, log(mu) + s$ln_phi, s$upr),
+  simulate = rtmb_obs_families$nbinom1$simulate
+)
+rtmb_obs_families$censored_nbinom2 <- list(
+  logpdf = function(y, mu, s) {
+    rtmb_dcensnb(y, mu, 2 * log(mu) - s$ln_phi, s$upr)
+  },
+  simulate = rtmb_obs_families$nbinom2$simulate
+)
 rtmb_obs_families$gamma_mix <- rtmb_mixture(rtmb_obs_families$Gamma)
 rtmb_obs_families$lognormal_mix <- rtmb_mixture(rtmb_obs_families$lognormal)
 rtmb_obs_families$nbinom2_mix <- rtmb_mixture(rtmb_obs_families$nbinom2)
@@ -617,6 +627,55 @@ rtmb_dcensbinom <- function(y, logit_p, s) {
     lpmf = function(k, i) RTMB::dbinom_robust(k, n[i], logit_p[i], log = TRUE),
     lratio = function(k, i) log(n[i] - k) - log(k + 1) + logit_p[i]
   ))
+}
+
+# Negative binomial counts censored to [y, upr] with mean `mu` and
+# log(Var - mu) `log_vmm`; `upr` Inf is right-censored and a non-integer
+# bound means the largest count it allows. Bounded intervals are summed
+# directly. A right-censored tail blends two sums: the complement
+# 1 - P(Y < y), exact unless the tail is below about 1e-12 (e.g., counts far
+# above the mean in the inner optimization), and the direct sum over
+# y, ..., y + len - 1, accurate when the tail is that small (terms decay
+# quickly above y). RTMB's pbeta() isn't an option, since its higher
+# derivatives (needed by the Laplace approximation) aren't finite.
+rtmb_dcensnb <- function(y, mu, log_vmm, upr) {
+  "[<-" <- RTMB::ADoverload("[<-")
+  log_mu <- log(mu)
+  out <- RTMB::dnbinom_robust(y, log_mu, log_vmm, log = TRUE)
+  upr <- floor(upr)
+  cens <- which(upr != y)
+  if (!length(cens)) return(out)
+  log_var <- RTMB::logspace_add(log_mu[cens], log_vmm[cens])
+  log_p <- log_mu[cens] - log_var
+  log_1mp <- log_vmm[cens] - log_var
+  r <- exp(2 * log_mu[cens] - log_vmm[cens]) # size
+  d <- list(
+    lpmf = function(k, i) {
+      lgamma(k + r[i]) - lgamma(r[i]) - lgamma(k + 1) + r[i] * log_p[i] +
+        k * log_1mp[i]
+    },
+    lratio = function(k, i) log(k + r[i]) - log(k + 1) + log_1mp[i]
+  )
+  y <- y[cens]
+  upr <- upr[cens]
+  val <- 0 * log_p # right-censored zeros stay 0
+  bounded <- which(is.finite(upr))
+  if (length(bounded)) {
+    val[bounded] <- rtmb_count_logsum(bounded, y[bounded],
+      upr[bounded] - y[bounded] + 1, d)
+  }
+  tail <- which(!is.finite(upr) & y > 0)
+  if (length(tail)) {
+    k <- y[tail]
+    below <- rtmb_count_logsum(tail, 0 * k, k, d)
+    below <- -sqrt(below^2 + 1e-24) # keeps the complement <= log(1e-12)
+    comp <- RTMB::logspace_sub(0 * below, below)
+    direct <- rtmb_count_logsum(tail, k, pmax(200, 2 * k), d)
+    w <- RTMB::plogis(2 * (comp + 18))
+    val[tail] <- w * comp + (1 - w) * direct
+  }
+  out[cens] <- val
+  out
 }
 
 # Ordered beta logit-scale cutpoints from the `psi` parameter

@@ -63,6 +63,11 @@
   per hook, so `get_index(derived_link = "log")` is proportional to the mean
   catch rate.
 
+* Add `censored_nbinom1()` and `censored_nbinom2()` for censored negative
+  binomial counts (RTMB backend). They use `sdmTMB(censored_upper = ...)` like
+  `censored_poisson()`, with no upper limit on the count, e.g., for catch
+  without hook competition with an offset of log hooks.
+
 * Censoring bounds for `censored_poisson()` and `censored_betabinomial()` are
   now supplied with the `censored_upper` argument of `sdmTMB()`, which also
   accepts a column name in `data`. `sdmTMBcontrol(censored_upper = )` is now

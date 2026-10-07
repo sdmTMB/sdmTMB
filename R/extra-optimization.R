@@ -84,8 +84,9 @@ fit_first_phase <- function(tmb_data, tmb_params, tmb_map, profile, backend,
                             suppress_warnings = FALSE) {
   tmb_data$no_spatial <- 1L
   tmb_data$include_spatial <- integer(ncol(tmb_data$component_active)) # per component
-  uncensored <- c(censored_poisson = "poisson",
-    censored_binomial = "binomial", censored_betabinomial = "betabinomial")
+  uncensored <- c(censored_poisson = "poisson", censored_nbinom1 = "nbinom1",
+    censored_nbinom2 = "nbinom2", censored_binomial = "binomial",
+    censored_betabinomial = "betabinomial")
   for (f in names(uncensored)) {
     censored <- tmb_data$component_active == 1L &
       tmb_data$family_code == .valid_family[[f]]

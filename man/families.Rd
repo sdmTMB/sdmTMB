@@ -28,6 +28,8 @@
 \alias{betabinomial}
 \alias{censored_betabinomial}
 \alias{censored_binomial}
+\alias{censored_nbinom1}
+\alias{censored_nbinom2}
 \alias{delta_beta}
 \title{Additional families}
 \usage{
@@ -87,6 +89,10 @@ betabinomial(link = "logit")
 censored_betabinomial(link = "logit")
 
 censored_binomial(link = "logit")
+
+censored_nbinom1(link = "log")
+
+censored_nbinom2(link = "log")
 
 delta_beta(link1 = "logit", link2 = "logit")
 }
@@ -156,8 +162,8 @@ linearly with the mean (Hilbe 2011).
 For \code{student()}, the degrees of freedom parameter is estimated by default (\code{df = NULL}).
 You can fix it at a specific value by providing a number > 1 (e.g., \code{df = 3}).
 
-\code{censored_poisson()}, \code{censored_binomial()}, and \code{censored_betabinomial()}
-treat some counts as
+\code{censored_poisson()}, \code{censored_nbinom1()}, \code{censored_nbinom2()},
+\code{censored_binomial()}, and \code{censored_betabinomial()} treat some counts as
 censored, e.g., to account for hook competition in longline surveys
 (Watson et al. 2023). Bounds are given with \code{sdmTMB(censored_upper = ...)}:
 a value equal to the observed count is uncensored, a larger value gives an
@@ -168,8 +174,13 @@ gives a right-censored count. For \code{censored_binomial()} and
 so \code{Inf} means censoring between the observed count and the number of trials.
 Counts and numbers of trials must be whole numbers, and a non-integer bound
 means the largest count it allows (e.g., 2.5 means 2).
-\code{censored_binomial()} and \code{censored_betabinomial()} need the RTMB backend
-(the default). \code{censored_binomial()} sums the probabilities of the counts in
+\code{censored_nbinom1()}, \code{censored_nbinom2()}, \code{censored_binomial()}, and
+\code{censored_betabinomial()} need the RTMB backend (the default).
+\code{censored_nbinom1()} and \code{censored_nbinom2()} have no upper limit on the
+count (e.g., catch without competition for hooks; use an offset of log
+hooks). Their right-censored probabilities combine \eqn{1 - P(Y < y)} and a
+sum of the probabilities of counts from \eqn{y} upward, each where it is
+accurate. \code{censored_binomial()} sums the probabilities of the counts in
 each interval. \code{censored_betabinomial()} sums the
 probabilities of the counts inside or outside each interval, whichever is
 shorter. After
@@ -205,6 +216,8 @@ delta_truncated_nbinom1()
 betabinomial(link = "logit")
 censored_betabinomial(link = "cloglog")
 censored_binomial(link = "cloglog")
+censored_nbinom1(link = "log")
+censored_nbinom2(link = "log")
 delta_beta()
 }
 \references{

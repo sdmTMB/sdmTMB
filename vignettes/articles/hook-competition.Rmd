@@ -54,7 +54,7 @@ A censored zero has a likelihood of exactly 1, so it contributes no information.
 
 @watson2023 used simulations to show that this approach recovers relative abundance trends better than raw CPUE or instantaneous catch rate corrections.
 This censored Poisson approach is available in sdmTMB through the `censored_poisson()` family.
-We also show an instantaneous catch rate correction for comparison, and censored binomial and beta-binomial models, which limit each count to the number of hooks.
+We also show an instantaneous catch rate correction for comparison, censored negative binomial models, and censored binomial and beta-binomial models, which limit each count to the number of hooks.
 
 # The data
 
@@ -220,6 +220,37 @@ fit_icr <- update(fit_pois, offset = log(d$hook_count * icr))
 
 Unlike censoring, the ICR applies this model of competition to every set, including sets with little bait removal.
 
+## Censored negative binomial models
+
+Instead of an observation-level random intercept, a negative binomial accounts for overdispersion with a dispersion parameter $\phi$.
+A negative binomial count is a Poisson count whose rate is gamma distributed, so each set's per-hook catch rate is now gamma instead of lognormal.
+The `censored_nbinom2()` and `censored_nbinom1()` families differ in how the variance grows with the mean $\mu$:
+
+- NB2: $\operatorname{Var}(c) = \mu + \mu^2 / \phi$. The gamma catch rate has a constant coefficient of variation, like the lognormal catch rate of the Poisson-lognormal model.
+- NB1: $\operatorname{Var}(c) = \mu (1 + \phi)$. The coefficient of variation of the gamma catch rate decreases as the mean increases.
+
+Like the censored Poisson, these have no upper limit on the count, and they use the same `censored_upper` vector:
+
+```{r fit-nb}
+fit_nb2_cens <- sdmTMB(
+  catch_count ~ 0 + fyear + poly(log_depth, 2),
+  offset = log(d$hook_count),
+  data = d,
+  mesh = mesh,
+  family = censored_nbinom2(),
+  censored_upper = upr,
+  time = "year",
+  spatial = "on",
+  spatiotemporal = "off"
+)
+fit_nb1_cens <- update(fit_nb2_cens, family = censored_nbinom1())
+sanity(fit_nb2_cens)
+sanity(fit_nb1_cens)
+```
+
+Each set's per-hook catch rate has mean $\exp(\eta)$, so with an offset of 0 (one hook), the index is the sum of the mean per-hook catch rate over the grid.
+No observation-level random intercepts need to be left out, and no other adjustment is needed.
+
 # Comparing indices
 
 We'll predict over the survey grid `hbll_s_grid` and calculate an index for each model.
@@ -276,6 +307,21 @@ For example, 2011 had the highest proportion of saturated sets, and its index is
 2014 had very few saturated sets, and its index is lower relative to the other years.
 Here, the upper bound mostly has a modest effect, pulling some years (e.g., 2022) partway back towards the Poisson estimates by limiting how large the censored counts can be.
 The ICR index moves in the same direction as the censored indices, but generally by less.
+
+The censored negative binomial indices also move in the same direction:
+
+```{r index-nb}
+ind_nb <- rbind(
+  get_ind(fit_nb2_cens, "Censored NB2"),
+  get_ind(fit_nb1_cens, "Censored NB1")
+)
+ind_nb <- scale_index(ind_nb)
+plot_index(rbind(ind_nb, ind[ind$model == "Censored Poisson", ]))
+```
+
+The NB2 index is close to the censored Poisson-lognormal index, since both assume the same relative variability in catch rate at any mean.
+The NB1 index changes less between years.
+We'll see below that it's very similar to the censored beta-binomial index, and the two models fit about equally well.
 
 # Limiting counts to the number of hooks
 
@@ -334,8 +380,6 @@ $$
 \Pr(c \mid \bar{p}, \phi) = \Pr(c \le Y \le n), \quad Y \sim \operatorname{BetaBinomial}(n, \bar{p}, \phi).
 $$
 
-For these data and this family, the model converges with a standard spatiotemporal field. So, we'll add that back here:
-
 ```{r fit-bb}
 fit_bb <- sdmTMB(
   catch_count ~ 0 + fyear + poly(log_depth, 2),
@@ -345,7 +389,7 @@ fit_bb <- sdmTMB(
   family = betabinomial(link = "cloglog"),
   time = "year",
   spatial = "on",
-  spatiotemporal = "iid"
+  spatiotemporal = "off"
 )
 fit_bb_cens <- update(
   fit_bb,
@@ -380,18 +424,19 @@ ind_binom <- rbind(
   get_ind(fit_bb_cens, "Censored beta-binomial", derived_link = "log")
 )
 ind_binom <- scale_index(ind_binom)
-plot_index(rbind(ind_binom, ind[ind$model == "Censored Poisson", ]))
+plot_index(rbind(ind_binom, ind_nb[ind_nb$model == "Censored NB1", ],
+  ind[ind$model == "Censored Poisson", ]))
 ```
 
 The censored binomial index is very close to the censored Poisson index.
 With catch probabilities this low, a limit of one fish per hook rarely matters, and the two models account for overdispersion in the same way.
-The censored beta-binomial moves the index in the same direction as the other censored models, e.g., up in 2011 and down in 2014, but by less here.
-It accounts for overdispersion differently and includes a spatiotemporal random field, so differences in its index and uncertainty aren't only due to the upper limit on the count.
+The censored beta-binomial moves the index in the same direction as the other censored models, e.g., up in 2011 and down in 2014, but by less here, and is very close to the censored NB1 index.
+It accounts for overdispersion differently, so differences in its index and uncertainty aren't only due to the upper limit on the count.
 
 The censored likelihoods are probabilities of the same intervals of counts, so their marginal AIC values are comparable (comparisons with the uncensored models, the ICR model, or the bounded censored Poisson are not, because they treat the observations differently):
 
 ```{r aic}
-AIC(fit_cens, fit_binom_cens, fit_bb_cens)
+AIC(fit_cens, fit_nb2_cens, fit_nb1_cens, fit_binom_cens, fit_bb_cens)
 ```
 
 We can compare how well simulated data from each model reflect the properties of the observed data:
@@ -402,11 +447,15 @@ s_bb <- simulate(fit_bb_cens, nsim = 300, type = "mle-mvn")
 s_binom <- simulate(fit_binom_cens, nsim = 300, type = "mle-mvn")
 s_pois_bounded <- simulate(fit_cens_bounded, nsim = 300, type = "mle-mvn")
 s_pois <- simulate(fit_cens, nsim = 300, type = "mle-mvn")
+s_nb1 <- simulate(fit_nb1_cens, nsim = 300, type = "mle-mvn")
+s_nb2 <- simulate(fit_nb2_cens, nsim = 300, type = "mle-mvn")
 
 dharma_residuals(s_bb, object = fit_bb_cens)
 dharma_residuals(s_binom, object = fit_binom_cens)
 dharma_residuals(s_pois_bounded, object = fit_cens_bounded)
 dharma_residuals(s_pois, object = fit_cens)
+dharma_residuals(s_nb1, object = fit_nb1_cens)
+dharma_residuals(s_nb2, object = fit_nb1_cens)
 ```
 
 Note how these families have different implications for the maximum number of fish:
@@ -416,6 +465,8 @@ max(s_bb) # can't exceed the number of hooks
 max(s_binom) # can't exceed the number of hooks
 max(s_pois_bounded) # not limited: `censored_upper` only affects the likelihood
 max(s_pois) # not limited
+max(s_nb1) # not limited
+max(s_nb2) # not limited; very high
 ```
 
 # Summary
@@ -423,7 +474,7 @@ max(s_pois) # not limited
 - Calculate the proportion of baits removed for each set.
 - Choose a breakdown point $p^*$, e.g., by plotting a smoother of catch against bait removal.
 - Build a `censored_upper` vector: the observed count for uncensored sets and `Inf` (or an upper bound) for sets at or above $p^*$.
-- Fit with `family = censored_poisson()` and `censored_upper = ...`, ideally with an observation-level random intercept to account for overdispersion.
+- Fit with `family = censored_poisson()` and `censored_upper = ...`, ideally with an observation-level random intercept to account for overdispersion, or with `family = censored_nbinom2()` or `censored_nbinom1()`.
 - To limit each count to the number of hooks, fit with `family = censored_binomial(link = "cloglog")`, the number of hooks as `weights`, and an observation-level random intercept, or with `family = censored_betabinomial(link = "cloglog")`.
 - For binomial and beta-binomial models, calculate the index with `derived_link = "log"` so it sums the per-hook catch rate rather than the catch probability.
 

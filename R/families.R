@@ -659,8 +659,8 @@ betabinomial <- function(link = "logit") {
 }
 
 #' @details
-#' `censored_poisson()`, `censored_binomial()`, and `censored_betabinomial()`
-#' treat some counts as
+#' `censored_poisson()`, `censored_nbinom1()`, `censored_nbinom2()`,
+#' `censored_binomial()`, and `censored_betabinomial()` treat some counts as
 #' censored, e.g., to account for hook competition in longline surveys
 #' (Watson et al. 2023). Bounds are given with `sdmTMB(censored_upper = ...)`:
 #' a value equal to the observed count is uncensored, a larger value gives an
@@ -671,8 +671,13 @@ betabinomial <- function(link = "logit") {
 #' so `Inf` means censoring between the observed count and the number of trials.
 #' Counts and numbers of trials must be whole numbers, and a non-integer bound
 #' means the largest count it allows (e.g., 2.5 means 2).
-#' `censored_binomial()` and `censored_betabinomial()` need the RTMB backend
-#' (the default). `censored_binomial()` sums the probabilities of the counts in
+#' `censored_nbinom1()`, `censored_nbinom2()`, `censored_binomial()`, and
+#' `censored_betabinomial()` need the RTMB backend (the default).
+#' `censored_nbinom1()` and `censored_nbinom2()` have no upper limit on the
+#' count (e.g., catch without competition for hooks; use an offset of log
+#' hooks). Their right-censored probabilities combine \eqn{1 - P(Y < y)} and a
+#' sum of the probabilities of counts from \eqn{y} upward, each where it is
+#' accurate. `censored_binomial()` sums the probabilities of the counts in
 #' each interval. `censored_betabinomial()` sums the
 #' probabilities of the counts inside or outside each interval, whichever is
 #' shorter. After
@@ -722,6 +727,32 @@ censored_binomial <- function(link = "logit") {
   add_to_family(x)
 }
 
+
+#' @export
+#' @examples
+#' censored_nbinom1(link = "log")
+#' @rdname families
+censored_nbinom1 <- function(link = "log") {
+  linktemp <- substitute(link)
+  if (!is.character(linktemp))
+    linktemp <- deparse(linktemp)
+  x <- nbinom1(link = linktemp)
+  x$family <- "censored_nbinom1"
+  x
+}
+
+#' @export
+#' @examples
+#' censored_nbinom2(link = "log")
+#' @rdname families
+censored_nbinom2 <- function(link = "log") {
+  linktemp <- substitute(link)
+  if (!is.character(linktemp))
+    linktemp <- deparse(linktemp)
+  x <- nbinom2(link = linktemp)
+  x$family <- "censored_nbinom2"
+  x
+}
 
 #' @export
 #' @examples

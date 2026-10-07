@@ -554,6 +554,46 @@ test_that("Censored binomial family works", {
   expect_identical(censored_binomial()$family, "censored_binomial")
 })
 
+test_that("Censored negative binomial families work", {
+  set.seed(2)
+  n <- 200L
+  d <- data.frame(year = factor(rep(1:2, each = n / 2)),
+    hooks = sample(c(50, 100), n, replace = TRUE))
+  d$y <- rnbinom(n, mu = d$hooks * exp(c(-3, -2.5)[d$year]), size = 2)
+  censored <- seq_len(n) %% 3 == 0
+  upr <- ifelse(censored, Inf, d$y)
+  for (fam in c("nbinom1", "nbinom2")) {
+    m_nb <- sdmTMB(y ~ 0 + year, offset = log(d$hooks), data = d,
+      spatial = "off", family = get(fam)())
+    m_exact <- sdmTMB(y ~ 0 + year, offset = log(d$hooks), data = d,
+      spatial = "off", family = get(paste0("censored_", fam))(),
+      censored_upper = d$y)
+    expect_equal(m_exact$model$par, m_nb$model$par, tolerance = 1e-6)
+    expect_equal(c(logLik(m_exact)), c(logLik(m_nb)), tolerance = 1e-8)
+    m_cens <- update(m_exact, censored_upper = upr)
+    expect_identical(m_cens$model$convergence, 0L)
+    expect_true(m_cens$sd_report$pdHess)
+    expect_true(all(coef(m_cens) > coef(m_nb)))
+    expect_true("phi" %in% tidy(m_cens, "ran_pars")$term)
+    expect_equal(sigma(m_cens), exp(m_cens$model$par[["ln_phi"]]))
+    set.seed(1)
+    expect_true(all(is.finite(residuals(m_cens, type = "mle-eb"))))
+    expect_equal(dim(simulate(m_cens, nsim = 2)), c(n, 2L))
+  }
+  expect_identical(censored_nbinom2()$family, "censored_nbinom2")
+  expect_identical(censored_nbinom1(link = log)$link, "log")
+  expect_error(sdmTMB(y ~ 0 + year, data = d, spatial = "off",
+    family = censored_nbinom2(), censored_upper = d$y - 1),
+    regexp = "censored_upper")
+  expect_error(sdmTMB(y ~ 0 + year, data = transform(d, y = y + 0.5),
+    spatial = "off", family = censored_nbinom2(), censored_upper = rep(Inf, n)),
+    regexp = "whole-number")
+  expect_error(sdmTMB(y ~ 0 + year, data = d, spatial = "off",
+    family = censored_nbinom1(), censored_upper = upr,
+    control = sdmTMBcontrol(backend = "tmb")),
+    regexp = "backend")
+})
+
 test_that("Censored Poisson upper limit function works", {
   dat <- structure(
     list(

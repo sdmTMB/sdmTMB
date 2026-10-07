@@ -140,9 +140,14 @@
   if (any(y_i[single & link_name == "log"] < 0, na.rm = TRUE)) {
     cli_abort("`link = 'log'` but the response data include values < 0.")
   }
-  censored <- single & family_name == "censored_poisson"
+  censored <- single & family_name %in%
+    c("censored_poisson", "censored_nbinom1", "censored_nbinom2")
   if (!is.null(upr) && any(y_i[censored] > upr[censored], na.rm = TRUE)) {
-    cli_abort("Observed values must be <= `censored_upper` for censored Poisson rows.")
+    cli_abort("Observed values must be <= `censored_upper` for censored Poisson and negative binomial rows.")
+  }
+  censored_nb <- single & family_name %in% c("censored_nbinom1", "censored_nbinom2")
+  if (any(y_i[censored_nb] != round(y_i[censored_nb]), na.rm = TRUE)) {
+    cli_abort("Censored negative binomial rows must have whole-number counts.")
   }
   invisible(NULL)
 }
