@@ -681,3 +681,90 @@ test_that("censored negative binomial likelihood and gradient are correct", {
     }
   }
 })
+
+test_that("censored NB probabilities handle rare positives and the Poisson limit", {
+  g <- expand.grid(y = c(0, 1, 2, 30, 100), mu = c(0.01, 1, 10),
+    size = c(1e-12, 1e-9, 1, 1e6, 1e10))
+  log_vmm <- with(g, 2 * log(mu) - log(size))
+  expected <- with(g, stats::pnbinom(y - 1, size = size, mu = mu,
+    lower.tail = FALSE, log.p = TRUE))
+  actual <- rtmb_dcensnb(g$y, g$mu, log_vmm, rep(Inf, nrow(g)))
+  expect_lt(max(abs(actual - expected)), 1e-8)
+  expected <- vapply(seq_len(nrow(g)), function(i) {
+    lp <- stats::dnbinom(g$y[i] + 0:3, size = g$size[i], mu = g$mu[i],
+      log = TRUE)
+    max(lp) + log(sum(exp(lp - max(lp))))
+  }, numeric(1))
+  expect_equal(rtmb_dcensnb(g$y, g$mu, log_vmm, g$y + 3.5), expected,
+    tolerance = 1e-9)
+
+  # Exercise the transition between the conditional complement and direct
+  # sum, including heavy tails for which a fixed unconditional tail cutoff
+  # would incorrectly select the truncated direct sum.
+  g <- expand.grid(y = c(2, 30, 100), size = c(1e-9, 1, 1e10),
+    tail = c(1e-4, 1e-3, 1e-2))
+  g$mu <- mapply(function(y, size, tail) {
+    exp(stats::uniroot(function(log_mu) {
+      mu <- exp(log_mu)
+      stats::pnbinom(y - 1, size = size, mu = mu,
+        lower.tail = FALSE, log.p = TRUE) -
+        log(-expm1(-size * log1p(mu / size))) - log(tail)
+    }, c(-60, log(2 * y)))$root)
+  }, g$y, g$size, g$tail)
+  expected <- with(g, stats::pnbinom(y - 1, size = size, mu = mu,
+    lower.tail = FALSE, log.p = TRUE))
+  actual <- rtmb_dcensnb(g$y, g$mu, 2 * log(g$mu) - log(g$size),
+    rep(Inf, nrow(g)))
+  expect_lt(max(abs(actual - expected)), 1e-8)
+})
+
+test_that("censored NB derivatives remain accurate at extreme dispersions", {
+  skip_if_not_installed("numDeriv")
+  for (fam in c("nbinom1", "nbinom2")) {
+    obs <- rtmb_obs_family(paste0("censored_", fam))
+    obj <- RTMB::MakeADFun(function(p) {
+      -obs$logpdf(30, exp(p[1]), list(ln_phi = p[2], upr = Inf))
+    }, c(log(10), 0), silent = TRUE)
+    reference <- function(p) {
+      size <- if (fam == "nbinom1") exp(p[1] - p[2]) else exp(p[2])
+      -stats::pnbinom(29, size = size, mu = exp(p[1]),
+        lower.tail = FALSE, log.p = TRUE)
+    }
+    for (size in c(1e-9, 1, 1e6, 1e10)) {
+      p <- c(log(10), if (fam == "nbinom1") log(10 / size) else log(size))
+      expect_equal(obj$fn(p), reference(p), tolerance = 1e-9, info = fam)
+      expect_equal(as.vector(obj$gr(p)), numDeriv::grad(reference, p),
+        tolerance = 1e-7, info = fam)
+      expect_equal(obj$he(p), numDeriv::hessian(reference, p,
+        method.args = list(eps = 1e-2)),
+        tolerance = 1e-6, info = fam)
+    }
+  }
+})
+
+# A Laplace gradient exercises third derivatives of the censored likelihood.
+test_that("censored NB random-effect models have consistent gradients", {
+  skip_if_not_installed("numDeriv")
+  set.seed(3)
+  n <- 60L
+  d <- data.frame(g = factor(rep(1:10, each = 6)), z = rnorm(n))
+  mu <- exp(0.5 + 0.4 * d$z + rnorm(10, 0, 0.5)[d$g])
+  d$y <- rnbinom(n, mu = mu, size = 2)
+  type <- seq_len(n) %% 3
+  upr <- ifelse(type == 0, Inf, ifelse(type == 1, d$y, d$y + 3))
+  d$y[1] <- 60
+  upr[1] <- Inf
+  for (fam in list(censored_nbinom1(), censored_nbinom2())) {
+    fit <- sdmTMB(y ~ z + (1 | g), data = d, spatial = "off",
+      family = fam, censored_upper = upr)
+    expect_true(fit$sd_report$pdHess, label = fam$family)
+    obj <- fit$tmb_obj
+    for (p in list(obj$par, fit$model$par)) {
+      expect_true(is.finite(obj$fn(p)), label = fam$family)
+      # Absolute: the gradient is ~0 at the optimum, and numDeriv has ~1e-5
+      # noise from the inner optimization.
+      expect_lt(max(abs(obj$gr(p) - numDeriv::grad(obj$fn, p))), 1e-4,
+        label = fam$family)
+    }
+  }
+})

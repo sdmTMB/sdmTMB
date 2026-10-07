@@ -563,8 +563,9 @@ In practice, we would examine the models further, e.g., with DHARMa residuals ag
 - Build a `censored_upper` vector: the observed count for uncensored sets and `Inf` (or an upper bound) for sets at or above $p^*$.
 - Fit with `family = censored_poisson()` and `censored_upper = ...`, ideally with an observation-level random intercept to account for overdispersion, or with `family = censored_nbinom2()` or `censored_nbinom1()`.
 - To limit each count to the number of hooks, fit with `family = censored_binomial(link = "cloglog")`, the number of hooks as `weights`, and an observation-level random intercept, or with `family = censored_betabinomial(link = "cloglog")`.
-- For binomial and beta-binomial models, calculate the index with `derived_link = "log"` so it sums the per-hook catch rate rather than the catch probability.
+- For binomial and beta-binomial models, fit with the `cloglog` link and calculate the index with `derived_link = "log"` so it sums the per-hook catch rate rather than the catch probability.
+- For the beta-binomial, check that the mean per-hook catch rate, $\psi(\phi) - \psi((1 - \bar{p})\phi)$, is close to a constant multiple of $\exp(\eta)$ across years, as above. Otherwise, the relative index from `derived_link = "log"` may not track the mean catch rate.
 
-See @watson2023 for the full method, simulation tests, and an application to 11 species.
+See @watson2023 for the full method (with the censored Poisson in a non-spatial model), simulation tests, and an application to 11 species.
 
 # References

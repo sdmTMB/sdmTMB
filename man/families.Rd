@@ -178,10 +178,10 @@ means the largest count it allows (e.g., 2.5 means 2).
 \code{censored_betabinomial()} need the RTMB backend (the default).
 \code{censored_nbinom1()} and \code{censored_nbinom2()} have no upper limit on the
 count (e.g., catch without competition for hooks; use an offset of log
-hooks). Their right-censored probabilities combine \eqn{1 - P(Y < y)} and a
-sum of the probabilities of counts from \eqn{y} upward, each where it is
-accurate. \code{censored_binomial()} sums the probabilities of the counts in
-each interval. \code{censored_betabinomial()} sums the
+hooks). Their right-censored probabilities use a complement conditional on
+a positive count, or a sum of the probabilities from \eqn{y} upward, each
+where it is accurate. \code{censored_binomial()} sums the probabilities of the
+counts in each interval. \code{censored_betabinomial()} sums the
 probabilities of the counts inside or outside each interval, whichever is
 shorter. After
 fitting, it checks the precision of each row at the estimate and refits with

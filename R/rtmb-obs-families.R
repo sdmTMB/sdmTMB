@@ -632,12 +632,11 @@ rtmb_dcensbinom <- function(y, logit_p, s) {
 # Negative binomial counts censored to [y, upr] with mean `mu` and
 # log(Var - mu) `log_vmm`; `upr` Inf is right-censored and a non-integer
 # bound means the largest count it allows. Bounded intervals are summed
-# directly. A right-censored tail blends two sums: the complement
-# 1 - P(Y < y), exact unless the tail is below about 1e-12 (e.g., counts far
-# above the mean in the inner optimization), and the direct sum over
-# y, ..., y + len - 1, accurate when the tail is that small (terms decay
-# quickly above y). RTMB's pbeta() isn't an option, since its higher
-# derivatives (needed by the Laplace approximation) aren't finite.
+# directly. Right tails use P(Y > 0) * P(Y >= y | Y > 0): conditioning keeps
+# the complement accurate when positives are rare but have a heavy tail.
+# For small conditional tails, blend into a direct upper-tail sum instead.
+# RTMB's pbeta() isn't an option: its higher derivatives (needed by the
+# Laplace approximation) aren't finite.
 rtmb_dcensnb <- function(y, mu, log_vmm, upr) {
   "[<-" <- RTMB::ADoverload("[<-")
   log_mu <- log(mu)
@@ -645,16 +644,24 @@ rtmb_dcensnb <- function(y, mu, log_vmm, upr) {
   upr <- floor(upr)
   cens <- which(upr != y)
   if (!length(cens)) return(out)
-  log_var <- RTMB::logspace_add(log_mu[cens], log_vmm[cens])
-  log_p <- log_mu[cens] - log_var
-  log_1mp <- log_vmm[cens] - log_var
-  r <- exp(2 * log_mu[cens] - log_vmm[cens]) # size
+  log_mu <- log_mu[cens]
+  log_p <- -RTMB::logspace_add(0, log_vmm[cens] - log_mu)
+  r <- exp(2 * log_mu - log_vmm[cens]) # size
+  log_p0 <- r * log_p
+  # Starting PMFs and ratios avoid differences of lgamma() or nearly equal
+  # logs. Those lose both values and derivatives as size -> Inf (Poisson).
   d <- list(
     lpmf = function(k, i) {
-      lgamma(k + r[i]) - lgamma(r[i]) - lgamma(k + 1) + r[i] * log_p[i] +
-        k * log_1mp[i]
+      lp <- log_p0[i] + k * (log_mu[i] + log_p[i]) - lgamma(k + 1)
+      for (j in seq_len(max(k, 1) - 1)) {
+        use <- which(k > j)
+        lp[use] <- lp[use] + log1p(j / r[i[use]])
+      }
+      lp
     },
-    lratio = function(k, i) log(k + r[i]) - log(k + 1) + log_1mp[i]
+    lratio = function(k, i) {
+      log_mu[i] + log_p[i] + log1p(k / r[i]) - log(k + 1)
+    }
   )
   y <- y[cens]
   upr <- upr[cens]
@@ -664,15 +671,22 @@ rtmb_dcensnb <- function(y, mu, log_vmm, upr) {
     val[bounded] <- rtmb_count_logsum(bounded, y[bounded],
       upr[bounded] - y[bounded] + 1, d)
   }
-  tail <- which(!is.finite(upr) & y > 0)
+  log_positive <- RTMB::logspace_sub(0 * log_p0, log_p0)
+  one <- which(!is.finite(upr) & y == 1)
+  val[one] <- log_positive[one]
+  tail <- which(!is.finite(upr) & y > 1)
   if (length(tail)) {
     k <- y[tail]
-    below <- rtmb_count_logsum(tail, 0 * k, k, d)
-    below <- -sqrt(below^2 + 1e-24) # keeps the complement <= log(1e-12)
+    below <- rtmb_count_logsum(tail, 0 * k + 1, k - 1, d) - log_positive[tail]
+    # Keep the unused complement finite after rounding of the lower sum.
+    # A steep blend makes this floor negligible when the direct sum is used.
+    below <- -sqrt(below^2 + 1e-32)
     comp <- RTMB::logspace_sub(0 * below, below)
-    direct <- rtmb_count_logsum(tail, k, pmax(200, 2 * k), d)
-    w <- RTMB::plogis(2 * (comp + 18))
-    val[tail] <- w * comp + (1 - w) * direct
+    # Switch before complement cancellation matters. Extend the direct sum
+    # well past y to cover its tail throughout the smooth transition at 1e-3.
+    direct <- rtmb_count_logsum(tail, k, pmax(200, 4 * k), d)
+    w <- RTMB::plogis(6 * (comp - log(1e-3)))
+    val[tail] <- w * (log_positive[tail] + comp) + (1 - w) * direct
   }
   out[cens] <- val
   out
