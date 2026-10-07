@@ -549,6 +549,13 @@ max(s_nb1) # not limited
 max(s_nb2) # not limited; very high
 ```
 
+Taken together, it probably makes sense here to select either the censored beta-binomial or the censored NB1 model.
+They have nearly the same AIC, which is the lowest of the models tested, and their QQ plots look better than those of most other families.
+The NB2 has a reasonable QQ plot, but its AIC is considerably higher and it can simulate far more fish than there are hooks.
+These results won't hold for all datasets.
+If the variance grew closer to quadratically with the mean, the Poisson-lognormal, binomial-lognormal, or NB2 models might represent the data better.
+In practice, we would examine the models further, e.g., with DHARMa residuals against covariates and other posterior predictive checks.
+
 # Summary
 
 - Calculate the proportion of baits removed for each set.
