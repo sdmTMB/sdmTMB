@@ -162,14 +162,14 @@ fit_pois <- sdmTMB(
 Now the censored version.
 We only need to change the family and pass `censored_upper`:
 
-```{r fit-cens}
-fit_cens <- update(
+```{r fit-pois-cens}
+fit_pois_cens <- update(
   fit_pois,
   family = censored_poisson(),
   censored_upper = upr
 )
-sanity(fit_cens)
-fit_cens
+sanity(fit_pois_cens)
+fit_pois_cens
 ```
 
 ## Adding an upper bound
@@ -186,7 +186,7 @@ upr_bounded <- get_censored_upper(
   n_hooks = d$hook_count,
   pstar = pstar
 )
-fit_cens_bounded <- update(
+fit_pois_cens_bounded <- update(
   fit_pois,
   family = censored_poisson(),
   censored_upper = upr_bounded
@@ -274,8 +274,8 @@ get_ind <- function(fit, label, ...) {
 }
 ind <- rbind(
   get_ind(fit_pois, "Poisson"),
-  get_ind(fit_cens, "Censored Poisson"),
-  get_ind(fit_cens_bounded, "Censored Poisson (upper bound)"),
+  get_ind(fit_pois_cens, "Censored Poisson"),
+  get_ind(fit_pois_cens_bounded, "Censored Poisson (upper bound)"),
   get_ind(fit_icr, "ICR Poisson")
 )
 ```
@@ -436,7 +436,7 @@ It accounts for overdispersion differently, so differences in its index and unce
 The censored likelihoods are probabilities of the same intervals of counts, so their marginal AIC values are comparable (comparisons with the uncensored models, the ICR model, or the bounded censored Poisson are not, because they treat the observations differently):
 
 ```{r aic}
-AIC(fit_cens, fit_nb2_cens, fit_nb1_cens, fit_binom_cens, fit_bb_cens)
+AIC(fit_pois_cens, fit_nb2_cens, fit_nb1_cens, fit_binom_cens, fit_bb_cens)
 ```
 
 We can compare how well simulated data from each model reflect the properties of the observed data:
@@ -445,17 +445,17 @@ We can compare how well simulated data from each model reflect the properties of
 set.seed(1)
 s_bb <- simulate(fit_bb_cens, nsim = 300, type = "mle-mvn")
 s_binom <- simulate(fit_binom_cens, nsim = 300, type = "mle-mvn")
-s_pois_bounded <- simulate(fit_cens_bounded, nsim = 300, type = "mle-mvn")
-s_pois <- simulate(fit_cens, nsim = 300, type = "mle-mvn")
+s_pois_bounded <- simulate(fit_pois_cens_bounded, nsim = 300, type = "mle-mvn")
+s_pois <- simulate(fit_pois_cens, nsim = 300, type = "mle-mvn")
 s_nb1 <- simulate(fit_nb1_cens, nsim = 300, type = "mle-mvn")
 s_nb2 <- simulate(fit_nb2_cens, nsim = 300, type = "mle-mvn")
 
 dharma_residuals(s_bb, object = fit_bb_cens)
 dharma_residuals(s_binom, object = fit_binom_cens)
-dharma_residuals(s_pois_bounded, object = fit_cens_bounded)
-dharma_residuals(s_pois, object = fit_cens)
+dharma_residuals(s_pois_bounded, object = fit_pois_cens_bounded)
+dharma_residuals(s_pois, object = fit_pois_cens)
 dharma_residuals(s_nb1, object = fit_nb1_cens)
-dharma_residuals(s_nb2, object = fit_nb1_cens)
+dharma_residuals(s_nb2, object = fit_nb2_cens)
 ```
 
 Note how these families have different implications for the maximum number of fish:
