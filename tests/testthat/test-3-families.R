@@ -569,6 +569,8 @@ test_that("Censored negative binomial families work", {
   }
   expect_identical(censored_nbinom2()$family, "censored_nbinom2")
   expect_identical(censored_nbinom1(link = log)$link, "log")
+  l <- "log"
+  expect_identical(censored_nbinom2(link = l)$link, "log")
   expect_error(sdmTMB(y ~ 0 + year, data = d, spatial = "off",
     family = censored_nbinom2(), censored_upper = d$y - 1),
     regexp = "censored_upper")

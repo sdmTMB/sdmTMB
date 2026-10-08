@@ -221,6 +221,35 @@ for (f in c("Gamma", "lognormal")) {
   fam[[paste0("y_deltapl_", f, "_off")]] <- delta_pl(f, offset = fam$off)
 }
 
+# Censored NB: right-censored at 4 (upper bound Inf), otherwise exact. Drawn
+# after the fixtures above so their draws are unchanged.
+mu <- inv_link(eta_for("log", fam$x), "log")
+for (f in c("nbinom2", "nbinom1")) {
+  cnb <- r_family(f, mu, pars[[f]])
+  fam[[col(paste0("censored_", f), "log")]] <- pmin(cnb, 4L)
+  fam[[paste0("upr_censored_", f)]] <- ifelse(cnb >= 4L, Inf, cnb)
+}
+
+# Censored (beta-)binomial: catch out of `hooks`, censored when fewer than 3
+# hooks are left (upper bound Inf, capped at `hooks`), otherwise exact.
+fam$hooks <- 20L
+censor_hooks <- function(y) ifelse(y >= fam$hooks - 2L, Inf, y)
+for (l in c("logit", "cloglog")) {
+  p <- inv_link(eta_for(l, fam$x) + 0.5, l)
+  y <- stats::rbinom(n, fam$hooks, p)
+  fam[[col("censored_binomial", l)]] <- y
+  fam[[paste0("upr_censored_binomial_", l)]] <- censor_hooks(y)
+  pb <- stats::rbeta(n, p * 10, (1 - p) * 10)
+  y <- stats::rbinom(n, fam$hooks, pb)
+  fam[[col("censored_betabinomial", l)]] <- y
+  fam[[paste0("upr_censored_betabinomial_", l)]] <- censor_hooks(y)
+}
+# Per-hook Poisson-lognormal catch rate with at most one fish per hook.
+eta <- eta_for("cloglog", fam$x) + 0.5 + stats::rnorm(n, 0, 0.5)
+y <- stats::rbinom(n, fam$hooks, inv_link(eta, "cloglog"))
+fam$y_censored_binomial_cloglog_re <- y
+fam$upr_censored_binomial_cloglog_re <- censor_hooks(y)
+
 write_fixture(fam, "family.csv")
 write_fixture(data.frame(
   x = seq(-1, 1, length.out = 41),

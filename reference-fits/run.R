@@ -10,8 +10,8 @@
 # `validate` fits with standard errors, runs sanity(), and reports timing and
 # TMB vs RTMB agreement without writing anything.
 # `record` is `validate` for both backends; if every case passes, it writes
-# the TMB values to ref/reference.csv (with --filter, only those cases are
-# replaced). See README.md.
+# the TMB values (RTMB values for RTMB-only cases) to ref/reference.csv (with
+# --filter, only those cases are replaced). See README.md.
 
 args <- commandArgs(trailingOnly = TRUE)
 mode <- if (length(args)) args[[1L]] else ""
@@ -42,6 +42,12 @@ options(cli.num_colors = 1L, lifecycle_verbosity = "quiet")
 source(file.path(rf_dir, "cases.R"), local = TRUE)
 if (!is.null(filter)) cases <- cases[grepl(filter, names(cases))]
 if (!length(cases)) stop("No cases match the filter.", call. = FALSE)
+
+# Cases that run on `backend` (e.g., RTMB-only families skip TMB).
+backend_cases <- function(backend) {
+  names(cases)[vapply(cases, function(x) backend %in% x$backends, logical(1))]
+}
+backends <- Filter(function(b) length(backend_cases(b)), backends)
 
 # Tolerances --------------------------------------------------------------------
 
@@ -146,10 +152,11 @@ run_case <- function(name, backend, getsd) {
 }
 
 run_all <- function(backend, getsd) {
-  cat(sprintf("Fitting %d cases with %s...\n", length(cases), backend))
-  out <- parallel::mclapply(names(cases), run_case, backend = backend,
+  nms <- backend_cases(backend)
+  cat(sprintf("Fitting %d cases with %s...\n", length(nms), backend))
+  out <- parallel::mclapply(nms, run_case, backend = backend,
     getsd = getsd, mc.cores = cores, mc.preschedule = FALSE)
-  names(out) <- names(cases)
+  names(out) <- nms
   out
 }
 
@@ -257,7 +264,7 @@ if (mode == "check") {
     errors <- Filter(function(r) !is.na(r$error), results)
     for (nm in names(errors)) cat(sprintf("ERROR %s: %s\n", nm, errors[[nm]]$error))
     flag_slow_timings(results, b)
-    cmp <- compare_long(ref, to_long(results))
+    cmp <- compare_long(ref[ref$case %in% names(results), ], to_long(results))
     out_file <- file.path(rf_dir, paste0("check-", b, ".csv"))
     utils::write.csv(cmp, out_file, row.names = FALSE)
     ok <- print_failures(cmp, paste(b, "vs reference")) && ok
@@ -270,7 +277,8 @@ results <- lapply(stats::setNames(backends, backends), run_all, getsd = TRUE)
 ok <- TRUE
 for (b in backends) ok <- report_status(results[[b]], b) && ok
 if (length(backends) == 2L) {
-  cmp <- compare_long(to_long(results$tmb), to_long(results$rtmb))
+  both <- intersect(names(results$tmb), names(results$rtmb))
+  cmp <- compare_long(to_long(results$tmb[both]), to_long(results$rtmb[both]))
   ok <- print_failures(cmp, "RTMB vs TMB") && ok
   cat("\nLargest TMB vs RTMB relative differences by metric type:\n")
   cmp$type <- sub("_(est|est1|est2)_(mean|sd)$", "", cmp$metric)
@@ -282,7 +290,9 @@ if (mode == "record") {
     cat("\nNot recording: fix the failures above first.\n")
     quit(status = 1L)
   }
-  new <- to_long(results$tmb)
+  # TMB values, plus RTMB values for RTMB-only cases.
+  rtmb_only <- setdiff(names(results$rtmb), names(results$tmb))
+  new <- rbind(to_long(results$tmb), to_long(results$rtmb[rtmb_only]))
   for (b in backends) {
     new <- rbind(new, data.frame(case = names(results[[b]]),
       metric = paste0("seconds_", b),

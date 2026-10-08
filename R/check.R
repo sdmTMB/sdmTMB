@@ -260,7 +260,9 @@ sanity <- function(object, big_sd_log10 = 2, gradient_thresh = 0.001, silent = F
   }
 
   range_ok <- TRUE
-  if (!is_areal_fit(object) && "xy_cols" %in% names(object$spde)) {
+  # non-spatial fits have placeholder `xy_cols` that aren't in the data
+  xy <- object$spde$xy_cols
+  if (!is_areal_fit(object) && length(xy) && all(xy %in% names(object$data))) {
     r1 <- diff(range(object$data[[object$spde$xy_cols[1]]]))
     r2 <- diff(range(object$data[[object$spde$xy_cols[2]]]))
     r <- max(r1, r2)

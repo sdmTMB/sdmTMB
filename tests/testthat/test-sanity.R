@@ -50,3 +50,11 @@ test_that("sanity() runs", {
   x <- try(stop())
   expect_false(sanity(x))
 })
+
+test_that("sanity() doesn't warn for non-spatial fits without a mesh", {
+  skip_on_cran()
+  fit <- sdmTMB(present ~ depth_scaled, data = pcod_2011, spatial = "off",
+    family = binomial())
+  expect_no_warning(s <- sanity(fit, silent = TRUE))
+  expect_true(s$range_ok)
+})

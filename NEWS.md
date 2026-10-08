@@ -259,6 +259,9 @@
 
 ## Bug fixes: prediction, indices, and other
 
+* `sanity()` no longer warns ("no non-missing arguments to min") for
+  non-spatial models fit without a mesh.
+
 * `get_cog()` now errors informatively for areal (SAR/CAR) models instead of
   returning a centre of gravity of zero.
 

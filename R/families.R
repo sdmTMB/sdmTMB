@@ -741,6 +741,8 @@ censored_nbinom1 <- function(link = "log") {
   linktemp <- substitute(link)
   if (!is.character(linktemp))
     linktemp <- deparse(linktemp)
+  # a bare link name, otherwise the value of `link` (e.g., a variable)
+  if (linktemp != "log") linktemp <- link
   x <- nbinom1(link = linktemp)
   x$family <- "censored_nbinom1"
   x
@@ -755,6 +757,8 @@ censored_nbinom2 <- function(link = "log") {
   linktemp <- substitute(link)
   if (!is.character(linktemp))
     linktemp <- deparse(linktemp)
+  # a bare link name, otherwise the value of `link` (e.g., a variable)
+  if (linktemp != "log") linktemp <- link
   x <- nbinom2(link = linktemp)
   x$family <- "censored_nbinom2"
   x
