@@ -138,9 +138,8 @@ be supplied as a single value or a vector the same length as \code{sigma_V}.}
 
 \item{nonlocal_formula}{An optional one-sided formula describing
 covariate-diffusion terms to pass to \code{\link[=sdmTMB]{sdmTMB()}}. Supported wrappers are
-\code{diffusion()} and \code{time_lag()}. Same-covariate wrappers select one joint
-operator and coefficient. See \code{\link[=sdmTMB]{sdmTMB()}} for the \code{time_lag()} \code{start}
-argument.}
+\code{\link[=diffusion]{diffusion()}} and \code{\link[=time_lag]{time_lag()}}. Same-covariate wrappers select one joint
+operator and coefficient.}
 
 \item{lags_kappaS}{Spatial diffusion scale for \code{diffusion()} terms.
 Must be positive and finite. Supply a single value or

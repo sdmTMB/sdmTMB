@@ -640,6 +640,7 @@ rtmb_dcensbinom <- function(y, logit_p, s) {
 rtmb_dcensnb <- function(y, mu, log_vmm, upr) {
   "[<-" <- RTMB::ADoverload("[<-")
   log_mu <- log(mu)
+  # default non-censored density:
   out <- RTMB::dnbinom_robust(y, log_mu, log_vmm, log = TRUE)
   upr <- floor(upr)
   cens <- which(upr != y)
@@ -665,26 +666,30 @@ rtmb_dcensnb <- function(y, mu, log_vmm, upr) {
   )
   y <- y[cens]
   upr <- upr[cens]
-  val <- 0 * log_p # right-censored zeros stay 0
+  val <- 0 * log_p # right-censored zeros stay 0; use log_p to make AD vector type
   bounded <- which(is.finite(upr))
-  if (length(bounded)) {
+  if (length(bounded)) { # sum PMF y<=Y<=upr
     val[bounded] <- rtmb_count_logsum(bounded, y[bounded],
       upr[bounded] - y[bounded] + 1, d)
   }
+  # now do full right censored ones first for accuracy:
   log_positive <- RTMB::logspace_sub(0 * log_p0, log_p0)
   one <- which(!is.finite(upr) & y == 1)
   val[one] <- log_positive[one]
+  # now for > 1:
   tail <- which(!is.finite(upr) & y > 1)
   if (length(tail)) {
     k <- y[tail]
     below <- rtmb_count_logsum(tail, 0 * k + 1, k - 1, d) - log_positive[tail]
     # Keep the unused complement finite after rounding of the lower sum.
     # A steep blend makes this floor negligible when the direct sum is used.
-    below <- -sqrt(below^2 + 1e-32)
+    below <- -sqrt(below^2 + 1e-32) # keep below negative; a smooth version of -abs(below)
     comp <- RTMB::logspace_sub(0 * below, below)
     # Switch before complement cancellation matters. Extend the direct sum
     # well past y to cover its tail throughout the smooth transition at 1e-3.
     direct <- rtmb_count_logsum(tail, k, pmax(200, 4 * k), d)
+    # 6 sets width of transition
+    # here weight goes from about 0.0025 to 0.9975
     w <- RTMB::plogis(6 * (comp - log(1e-3)))
     val[tail] <- w * (log_positive[tail] + comp) + (1 - w) * direct
   }

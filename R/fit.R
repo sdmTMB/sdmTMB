@@ -131,15 +131,12 @@ NULL
 #'   Currently not supported for multi-family models or truncated
 #'   negative-binomial families.
 #' @param nonlocal_formula An optional one-sided formula describing distributed
-#'   lag terms with `diffusion()` or `time_lag()` wrappers.
+#'   lag terms with [diffusion()] or [time_lag()] wrappers.
 #'   Example: `~ diffusion(x) + time_lag(x)`. When both wrappers use the same
 #'   covariate, they select parts of one joint operator and produce one
 #'   transformed predictor and coefficient. Different covariates produce
-#'   separate transformed predictors and coefficients. `time_lag()` takes an
-#'   optional `start` argument for the transformed state before the first time
-#'   slice: `"stationary"` (default) assumes the covariate held at its first
-#'   slice beforehand, and `"zero"` starts from zero as in Thorson et al.
-#'   (2026), e.g. `~ time_lag(x, start = "zero")`. Note that spatial-only
+#'   separate transformed predictors and coefficients. See [time_lag()] for
+#'   its `start` argument, e.g. `~ time_lag(x, start = "zero")`. Note that spatial-only
 #'   covariates will be held constant across time slices unless the `time`
 #'   argument is specified. See the non-local covariates vignette for the
 #'   MSDK and RMSDK definitions.

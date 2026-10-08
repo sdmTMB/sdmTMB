@@ -76,6 +76,7 @@ reference:
     Core tools for model fitting, prediction, and inspection.
   contents:
   - sdmTMB
+  - nonlocal_terms
   - sanity
   - tidy.sdmTMB
   - predict.sdmTMB
