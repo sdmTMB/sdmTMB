@@ -4,22 +4,23 @@ NULL
 #' Fit a spatial or spatiotemporal GLMM with TMB
 #'
 #' Fit a spatial or spatiotemporal generalized linear mixed effects model (GLMM)
-#' with the TMB (Template Model Builder) R package. Spatial and spatiotemporal
-#' Gaussian random fields are approximated using the SPDE (stochastic partial differential
-#' equation) approach with Gaussian Markov random fields. This allows for
-#' efficient modeling of data that are correlated in space and/or time.
-#' Areal spatial/spatiotemporal models (conditional or simultaneous
-#' autoregressive models, CAR + SAR) are also possible.
-#' See the
+#' with TMB (Template Model Builder), by default through the \pkg{RTMB}
+#' package. Spatial and spatiotemporal Gaussian random fields are approximated
+#' with the SPDE (stochastic partial differential equation) approach, which
+#' represents them as Gaussian Markov random fields on a mesh. This allows for
+#' efficient modelling of data that are correlated in space and/or time. Areal
+#' spatial and spatiotemporal models (simultaneous or conditional
+#' autoregressive; SAR or CAR) are also available. See the
 #' [model description vignette](https://sdmTMB.github.io/sdmTMB/articles/model-description.html)
 #' for details.
 #'
-#' @param formula Model formula. IID random intercepts and slopes are possible using
-#'   \pkg{lme4} syntax, e.g., `+ (1 | g)` or `+ (0 + depth | g)` or `+ (1 +
-#'   depth | g)` where `g` is a column of class character or factor
-#'   representing groups. Penalized splines are possible via \pkg{mgcv} with
-#'   `s()`. Optionally a list for delta (hurdle) models.  See
-#'   examples and details below.
+#' @param formula A model formula. Random intercepts and slopes use \pkg{lme4}
+#'   syntax, e.g., `(1 | g)`, `(0 + depth | g)`, or `(1 + depth | g)`, where
+#'   `g` is a character or factor column. As in \pkg{lme4}, intercepts and
+#'   slopes within a term are correlated. Penalized smooths use \pkg{mgcv}
+#'   syntax, e.g., `s(depth)`, and threshold terms use `breakpt()` or
+#'   `logistic()`. For delta models, optionally a list of two formulas. See
+#'   Details.
 #' @param data A data frame. Rows with missing values in the response or any
 #'   variable the model uses (including `weights` and `offset`) are omitted
 #'   before fitting, as with `na.action = na.omit` in [stats::glm()]. The
@@ -34,42 +35,29 @@ NULL
 #'   `NULL` for a model with only spatial random fields; however, if the data
 #'   are actually spatiotemporal and you wish to calculate derived quantities
 #'   downstream (e.g., [get_index()] or [get_cog()]), then supply the time argument.
-#' @param family The family and link. Supports [gaussian()], [Gamma()],
-#'   [binomial()], [poisson()], \code{\link[sdmTMB:families]{Beta()}},
-#'   \code{\link[sdmTMB:families]{betabinomial()}},
-#'   \code{\link[sdmTMB:families]{nbinom2()}},
-#'   \code{\link[sdmTMB:families]{truncated_nbinom2()}},
-#'   \code{\link[sdmTMB:families]{nbinom1()}},
-#'   \code{\link[sdmTMB:families]{truncated_nbinom1()}},
-#'   \code{\link[sdmTMB:families]{censored_poisson()}},
-#'   \code{\link[sdmTMB:families]{censored_nbinom1()}},
-#'   \code{\link[sdmTMB:families]{censored_nbinom2()}},
-#'   \code{\link[sdmTMB:families]{censored_binomial()}},
-#'   \code{\link[sdmTMB:families]{censored_betabinomial()}},
-#'   \code{\link[sdmTMB:families]{gamma_mix()}},
-#'   \code{\link[sdmTMB:families]{lognormal()}},
-#'   \code{\link[sdmTMB:families]{lognormal_mix()}},
-#'   \code{\link[sdmTMB:families]{nbinom2_mix()}},
-#'   \code{\link[sdmTMB:families]{student()}},
-#'   \code{\link[sdmTMB:families]{tweedie()}}, and
-#'   \code{\link[sdmTMB:families]{gengamma()}}.
-#'   Delta/hurdle models (for data with zeros) include:
-#'   \code{\link[sdmTMB:families]{delta_beta()}},
-#'   \code{\link[sdmTMB:families]{delta_gamma()}},
-#'   \code{\link[sdmTMB:families]{delta_gamma_mix()}},
-#'   \code{\link[sdmTMB:families]{delta_gengamma()}},
-#'   \code{\link[sdmTMB:families]{delta_lognormal_mix()}},
-#'   \code{\link[sdmTMB:families]{delta_lognormal()}},
-#'   \code{\link[sdmTMB:families]{delta_truncated_nbinom1()}}, and
-#'   \code{\link[sdmTMB:families]{delta_truncated_nbinom2()}}.
-#'   See the [delta-model
-#'   vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html) for
-#'   details. For binomial family options, see 'Binomial families' in the Details
-#'   section below. Experimental multi-family models use a named list of family
-#'   objects; `distribution_column` then maps each row to an entry in that list.
-#'   See the [multi-family
+#' @param family A family object specifying the response distribution and
+#'   link. In addition to [gaussian()], [Gamma()], [binomial()], and
+#'   [poisson()], sdmTMB provides (see [Families]):
+#'   * Continuous: [student()], [lognormal()], [gengamma()]
+#'   * Proportions: [Beta()], [ordbeta()]
+#'   * Non-negative with exact zeros: [tweedie()]
+#'   * Counts: [nbinom2()], [nbinom1()], [truncated_nbinom2()],
+#'     [truncated_nbinom1()], [betabinomial()]
+#'   * Censored counts: [censored_poisson()], [censored_nbinom2()],
+#'     [censored_nbinom1()], [censored_binomial()], [censored_betabinomial()]
+#'   * Two-component mixtures: [gamma_mix()], [lognormal_mix()],
+#'     [nbinom2_mix()]
+#'   * Delta/hurdle: [delta_gamma()], [delta_lognormal()], [delta_gengamma()],
+#'     [delta_beta()], [delta_truncated_nbinom2()],
+#'     [delta_truncated_nbinom1()], [delta_gamma_mix()],
+#'     [delta_lognormal_mix()]
+#'
+#'   See 'Binomial families', 'Censored families', and 'Delta/hurdle models'
+#'   in Details. Experimental multi-family models take a named list of
+#'   families; `distribution_column` then assigns each row to one of them. See
+#'   the [multi-family
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/multi-family.html) for
-#'   supported family combinations and post-fit methods.
+#'   supported combinations.
 #' @param distribution_column For experimental multi-family models, the name of
 #'   the column in `data` mapping each row to a family in the named `family`
 #'   list. See the multi-family vignette for the supported family and method
@@ -90,24 +78,26 @@ NULL
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/model-description.html) for
 #'   mathematical details. Capitalization is ignored. `TRUE` gets converted to
 #'   `'iid'` and `FALSE` gets converted to `'off'`.
-#' @param share_range Logical: estimate a shared spatial and spatiotemporal
-#'   range parameter (`TRUE`, default) or independent range parameters
-#'   (`FALSE`). If a delta model, can be a list. E.g., `list(TRUE, FALSE)`.
-#' @param time_varying An optional one-sided formula describing covariates
-#'   that should be modelled as a time-varying process. Set the type of
-#'   process with `time_varying_type`. See the help for `time_varying_type`
-#'   for warnings about modelling the first time step. Structure shared in
-#'   delta models.
-#' @param time_varying_type Type of time-varying process to apply to
-#'   `time_varying` formula. Options: `'rw'` (random walk, default), `'rw0'`
-#'   (random walk with mean-zero prior on first time step), or `'ar1'`
-#'   (autoregressive, for coefficients that fluctuate around a mean). For `'rw0'`,
-#'   the first time step has a mean-zero prior; for `'ar1'`, the coefficients
-#'   fluctuate around zero. For `'rw'` (default), the first time step is estimated
-#'   separately—in this case,
-#'   avoid including the same covariates in both `formula` and `time_varying` to
-#'   prevent non-identifiability (use `~ 0` or `~ -1` in at least one). Structure
-#'   shared in delta models.
+#' @param share_range Logical: estimate a single range parameter shared by the
+#'   spatial and spatiotemporal fields (`TRUE`, default) or separate range
+#'   parameters (`FALSE`)? For delta models, can be a list, e.g.,
+#'   `list(TRUE, FALSE)`. Applies to SPDE models only.
+#' @param time_varying An optional one-sided formula of coefficients that vary
+#'   through time following the process set by `time_varying_type`. Whether
+#'   the same covariates should also appear in `formula` depends on that type.
+#'   Shared by both components of a delta model.
+#' @param time_varying_type The process for `time_varying` coefficients:
+#'   * `'rw'` (default): a random walk with the first value estimated freely.
+#'     Do not also include these covariates in `formula`, or the model is not
+#'     identifiable; e.g., with `time_varying = ~ 1`, use `formula = y ~ 0 +
+#'     ...`.
+#'   * `'rw0'`: a random walk whose first value has a mean-zero normal prior.
+#'   * `'ar1'`: a stationary first-order autoregressive process with mean
+#'     zero.
+#'
+#'   For `'rw0'` and `'ar1'`, include the same covariates in `formula`; the
+#'   time-varying process then describes deviations from that average effect.
+#'   Shared by both components of a delta model.
 #' @param spatial_varying An optional one-sided formula of coefficients that
 #'   should vary in space as random fields. Allows the effect of a covariate to
 #'   differ spatially. You likely want to include the same variable as a fixed
@@ -120,27 +110,26 @@ NULL
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/spatial-trend-models.html).
 #'   Predictors should usually be centered to have mean zero and standard deviation
 #'   approximately 1. **The spatial intercept is controlled by the `spatial`
-#'   argument**; set `spatial = 'on'` or `'off'` to include or exclude it. For
-#'   factor predictors, if `spatial_varying` excludes the intercept (`~ 0` or `~
-#'   -1`), set `spatial = 'off'` to match. Structure is shared in delta
-#'   models.
-#' @param dispformula A one-sided formula describing predictors for the
-#'   observation model dispersion parameter. Defaults to `~ 1`, which estimates
-#'   a single dispersion parameter. For families without an estimable
-#'   dispersion parameter (e.g., binomial or Poisson), this is ignored.
-#'   Currently not supported for multi-family models or truncated
-#'   negative-binomial families.
-#' @param nonlocal_formula An optional one-sided formula describing distributed
-#'   lag terms with [diffusion()] or [time_lag()] wrappers.
-#'   Example: `~ diffusion(x) + time_lag(x)`. When both wrappers use the same
-#'   covariate, they select parts of one joint operator and produce one
-#'   transformed predictor and coefficient. Different covariates produce
-#'   separate transformed predictors and coefficients. See [time_lag()] for
-#'   its `start` argument, e.g. `~ time_lag(x, start = "zero")`. Note that spatial-only
-#'   covariates will be held constant across time slices unless the `time`
-#'   argument is specified. See the non-local covariates vignette for the
-#'   MSDK and RMSDK definitions.
-#'   See the [non-local covariates vignette](https://sdmTMB.github.io/sdmTMB/articles/nonlocal-covariates.html).
+#'   argument**; set `spatial = 'on'` or `'off'` to include or exclude it. For a
+#'   factor, `~ 0 + f` gives every level its own field, which would duplicate
+#'   the spatial intercept field, so set `spatial = 'off'` to match. Structure
+#'   is shared in delta models.
+#' @param dispformula A one-sided formula for the dispersion parameter (e.g.,
+#'   `phi`). The default, `~ 1`, estimates a single value. Ignored for
+#'   families without a dispersion parameter (e.g., binomial or Poisson). In
+#'   delta models, applies to the positive component. Not yet available for
+#'   multi-family models or truncated negative binomial families.
+#' @param nonlocal_formula An optional one-sided formula of non-local
+#'   covariate effects: [diffusion()] for an effect of conditions in the
+#'   surrounding area, and [time_lag()] for an effect of conditions in
+#'   previous time steps, e.g., `~ diffusion(x) + time_lag(x)`. Using both on
+#'   the same covariate gives one combined effect that spreads over both space
+#'   and time; different covariates give separate effects. See [time_lag()]
+#'   for how the lag starts (`start`). If `time` is `NULL`, a spatial-only
+#'   covariate is held constant across time slices. See the [non-local
+#'   covariates
+#'   vignette](https://sdmTMB.github.io/sdmTMB/articles/nonlocal-covariates.html),
+#'   which also explains the reported diffusion scales (MSDK and RMSDK).
 #' @param nonlocal_data An optional data frame supplying the
 #'   `nonlocal_formula` covariate(s) at a different resolution and/or
 #'   coverage than `data` (e.g., a finer grid, or one spanning `extra_time`
@@ -149,11 +138,11 @@ NULL
 #'   (`time_lag()` terms, or `diffusion()` terms with `time` specified). In
 #'   that case, it must cover every fitted (+ `extra_time`) time slice.
 #'   Defaults to `NULL`, in which case `data` is used.
-#' @param weights A numeric vector representing optional likelihood weights for
-#'   the conditional model. Implemented as in \pkg{glmmTMB}: weights do not have
-#'   to sum to one and are not internally modified. Can also be used for trials
-#'   with the binomial family; the `weights` argument needs to be a vector and not
-#'   a name of the variable in the data frame. See the Details section below.
+#' @param weights An optional numeric vector (not a column name) of weights on
+#'   each observation's contribution to the likelihood. As in \pkg{glmmTMB},
+#'   weights need not sum to one and are not rescaled. For binomial-type
+#'   families with a proportion response, `weights` gives the number of trials
+#'   instead; see 'Binomial families' in Details.
 #' @param offset A numeric vector representing the model offset *or* a character
 #'   value representing the column name of the offset. In delta/hurdle models,
 #'   this applies only to the positive component except for Poisson-link delta
@@ -181,8 +170,8 @@ NULL
 #' @param silent Silent or include optimization details? Helpful to set to
 #'   `FALSE` for models that take a while to fit.
 #' @param anisotropy Logical: allow for anisotropy (spatial correlation that is
-#'   directionally dependent)? See [plot_anisotropy()].
-#'   Must be shared across delta models.
+#'   directionally dependent)? See [plot_anisotropy()]. Applies to SPDE models
+#'   only and is shared by both components of a delta model.
 #' @param control Optimization control options via [sdmTMBcontrol()].
 #' @param priors Optional penalties/priors via [sdmTMBpriors()]. Must currently
 #'   be shared across delta models.
@@ -224,16 +213,19 @@ NULL
 #' @return
 #' An object (list) of class `sdmTMB`. Useful elements include:
 #'
-#' * `sd_report`: output from [TMB::sdreport()]
-#' * `gradients`: marginal log likelihood gradients with respect to each fixed effect
 #' * `model`: output from [stats::nlminb()]
-#' * `data`: the fitted data
-#' * `spde`: the object that was supplied to the `mesh` argument
-#' * `family`: the family object, which includes the inverse link function as `family$linkinv()`
-#' * `tmb_params`: The parameters list passed to [TMB::MakeADFun()]
-#' * `tmb_map`: The 'map' list passed to [TMB::MakeADFun()]
-#' * `tmb_data`: The data list passed to [TMB::MakeADFun()]
-#' * `tmb_obj`: The TMB object created by [TMB::MakeADFun()]
+#' * `sd_report`: output from [TMB::sdreport()] or [RTMB::sdreport()]
+#' * `gradients`: gradients of the marginal log likelihood with respect to
+#'   each fixed effect
+#' * `data`: the data used in fitting (rows with missing values removed)
+#' * `spde`: the object supplied to `mesh`
+#' * `family`: the family object, including the inverse link function
+#'   `family$linkinv()`
+#' * `backend`: `"rtmb"` or `"tmb"`; see [sdmTMBcontrol()]
+#' * `tmb_obj`: the objective function object from [TMB::MakeADFun()] or
+#'   [RTMB::MakeADFun()]
+#' * `tmb_data`, `tmb_params`, `tmb_map`: the data, parameter, and map lists
+#'   passed to `MakeADFun()`
 #'
 #' @details
 #'
@@ -285,8 +277,9 @@ NULL
 #' 0.5 or 0.95. See the
 #' [threshold vignette](https://sdmTMB.github.io/sdmTMB/articles/threshold-models.html).
 #'
-#' Note that only a single threshold covariate can be included and the same covariate
-#' is included in both components for the delta families.
+#' Note that only a single threshold covariate can be included. For delta
+#' families, the threshold applies to both components, and threshold terms are
+#' not available if `formula` is a list.
 #'
 #' **Extra time: forecasting or interpolating**
 #'
@@ -322,23 +315,21 @@ NULL
 #' **Delta/hurdle models**
 #'
 #' Delta models (also known as hurdle models) can be fit as two separate models
-#' or at the same time by using an appropriate delta family. E.g.:
-#'   \code{\link[sdmTMB:families]{delta_gamma()}},
-#'   \code{\link[sdmTMB:families]{delta_beta()}},
-#'   \code{\link[sdmTMB:families]{delta_gengamma()}},
-#'   \code{\link[sdmTMB:families]{delta_lognormal()}},
-#'   \code{\link[sdmTMB:families]{delta_truncated_nbinom1()}}, and
-#'   \code{\link[sdmTMB:families]{delta_truncated_nbinom2()}}.
+#' or at the same time by using an appropriate delta family (see the list under
+#' `family`). Delta families with `type = "poisson-link"` use a Poisson-link
+#' parameterization instead of a classic hurdle model; see the [Poisson-link
+#' vignette](https://sdmTMB.github.io/sdmTMB/articles/poisson-link.html).
 #' If fit with a delta family, by default the formula, spatial, and spatiotemporal
 #' components are shared. Some elements can be specified independently for the two models
 #' using a list format. These include `formula`, `spatial`, `spatiotemporal`,
 #' and `share_range`. The first element of the list is for the binomial component
 #' and the second element is for the positive component (e.g., Gamma).
 #' Other elements must be shared for now (e.g., spatially varying coefficients,
-#' time-varying coefficients). Furthermore, there are currently limitations if
-#' specifying two formulas as a list: smoothers must be identical between the
-#' two formulas, and threshold effects must be specified through a single
-#' formula that is shared across the two models.
+#' time-varying coefficients), and `dispformula` applies to the positive
+#' component only. Furthermore, there are currently limitations if
+#' specifying two formulas as a list: smoothers and random effect terms must
+#' be identical between the two formulas, and threshold effects must be
+#' specified through a single formula that is shared across the two models.
 #'
 #' The main advantage of specifying such models using a delta family (compared
 #' to fitting two separate models) is (1) coding simplicity and (2) calculation
@@ -347,6 +338,23 @@ NULL
 #' parameters can be shared across the models.
 #'
 #' See the [delta-model vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html).
+#'
+#' **Censored families**
+#'
+#' Censored families treat some observations as known only to lie within a
+#' range, e.g., catch counts on longlines where competition for hooks hides
+#' the true number caught. Supply the bounds with `censored_upper`. All but
+#' [censored_poisson()] need the RTMB backend (the default). See [Families]
+#' and the [hook competition
+#' vignette](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html).
+#'
+#' **Areal models**
+#'
+#' For data on areal units (e.g., grid cells or management areas) rather than
+#' point locations, build a domain with [make_areal_domain()], pass it to
+#' `mesh`, and set `spatial_model = "sar"` or `"car"`. `share_range` and
+#' `anisotropy` do not apply. See the [areal model
+#' vignette](https://sdmTMB.github.io/sdmTMB/articles/areal-sar-car-spde.html).
 #'
 #' **Index standardization**
 #'
@@ -375,7 +383,7 @@ NULL
 #' velocities:*
 #'
 #' English, P., E.J. Ward, C.N. Rooper, R.E. Forrest, L.A. Rogers, K.L. Hunter,
-#' A.M. Edwards, B.M. Connors, S.C. Anderson. 2021. Contrasting climate velocity
+#' A.M. Edwards, B.M. Connors, S.C. Anderson. 2022. Contrasting climate velocity
 #' impacts in warm and cool locations show that effects of marine warming are
 #' worse in already warmer temperate waters. Fish and Fisheries. 23(1) 239-255.
 #' \doi{10.1111/faf.12613}.
@@ -398,12 +406,14 @@ NULL
 #'
 #' *Application to fish body condition:*
 #'
-#' Lindmark, M., S.C. Anderson, M. Gogina, M. Casini. Evaluating drivers of
-#' spatiotemporal individual condition of a bottom-associated marine fish.
-#' bioRxiv 2022.04.19.488709. \doi{10.1101/2022.04.19.488709}.
+#' Lindmark, M., S.C. Anderson, M. Gogina, M. Casini. 2023. Evaluating drivers
+#' of spatiotemporal variability in individual condition of a bottom-associated
+#' marine fish, Atlantic cod (*Gadus morhua*). ICES Journal of Marine Science.
+#' 80(5): 1539--1550.
 #'
 #' *Non-local covariates:*
-#' Lindmark, M., Anderson, S.C., and Thorson, J.T. 2025. Estimating scale-dependent
+#'
+#' Lindmark, M., Anderson, S.C., and Thorson, J.T. 2026. Estimating scale-dependent
 #' covariate responses using two-dimensional diffusion derived from the stochastic
 #' partial differential equation method. Methods in Ecology and Evolution 17: 
 #' 207–218. \doi{10.1111/2041-210X.70177}.
@@ -549,7 +559,7 @@ NULL
 #' )
 #' fit
 #'
-#' # Which, matches glm():
+#' # Which matches glm():
 #' fit_glm <- glm(
 #'   present ~ poly(log(depth)),
 #'   data = pcod_2011,
@@ -604,7 +614,7 @@ NULL
 #' )
 #' fit
 #'
-#' # IID random slopes and intercepts (implicit) by year:
+#' # Correlated random intercepts and slopes by year:
 #' fit <- sdmTMB(
 #'   density ~ (depth | fyear), #<
 #'   data = pcod_2011, mesh = mesh,
