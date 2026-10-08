@@ -85,7 +85,7 @@
 #'   catch when the offset is log area swept).
 #' @param mcmc_samples A matrix of posterior samples from a model passed to
 #'   \pkg{tmbstan} (see `bayesian` in [sdmTMB()]), as returned by
-#'   `extract_mcmc()` in the
+#'   `sdmTMBextra::extract_mcmc()` in the
 #'   \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra} package. If
 #'   supplied, returns a matrix of posterior draws in the same form as with
 #'   `nsim`. If `nsim` is also supplied, the last `nsim` samples are used. See

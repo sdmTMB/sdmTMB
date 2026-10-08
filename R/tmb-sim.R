@@ -49,9 +49,6 @@
 #' @param fixed_re A list of optional random effects to fix at specified
 #'   (e.g., previously estimated) values. `NULL` values indicate that the
 #'   corresponding random effects should be simulated.
-#' @param previous_fit (**Deprecated**; please use [simulate.sdmTMB()]).
-#'   An optional previous [sdmTMB()] fit to pull parameter values.
-#'   Will be overridden by any non-`NULL` parameter arguments supplied directly.
 #' @param seed Seed number. The TMB and RTMB backends (see the `backend`
 #'   argument of [sdmTMBcontrol()], passed via `control`) draw random numbers
 #'   differently, so the same seed gives different simulated values with each.
@@ -135,7 +132,6 @@ simulate_new <- function(formula,
                          df = NULL,
                          threshold_coefs = NULL,
                          fixed_re = list(omega_s = NULL, epsilon_st = NULL, zeta_s = NULL),
-                         previous_fit = NULL,
                          seed = sample.int(1e6, 1),
                          time_varying = NULL,
                          time_varying_type = c("rw", "rw0", "ar1"),
@@ -146,9 +142,6 @@ simulate_new <- function(formula,
                          lags_rhoT = NULL,
                          ...) {
 
-  if (!is.null(previous_fit)) stop("`previous_fit` is deprecated. See `simulate.sdmTMB()`", call. = FALSE)
-  if (!is.null(previous_fit)) mesh <- previous_fit$spde
-  if (!is.null(previous_fit)) data <- previous_fit$data
   # if (!missing(seed)) {
   #   msg <- c("The `seed` argument may be deprecated in the future.",
   #     "We recommend instead setting the seed manually with `set.seed()` prior to calling `sdmTMB_simulate()`.",
@@ -190,60 +183,55 @@ simulate_new <- function(formula,
   if (!is.null(sigma_V)) sigma_V <- as.numeric(sigma_V)
   if (!is.null(rho_time)) rho_time <- as.numeric(rho_time)
 
-  if (is.null(previous_fit)) {
-    assert_that(is(mesh, "sdmTMBmesh"))
-    assert_that(!is.null(range), !is.null(sigma_O) || !is.null(sigma_E), !is.null(B))
-    if (!family$family %in% c("binomial", "poisson")) {
-      assert_that(!is.null(phi))
-    }
-
-    response <- get_response(formula)
-    if (length(response) == 0L) {
-      formula <- as.formula(paste("sdmTMB_response_", paste(as.character(formula), collapse = "")))
-      data[["sdmTMB_response_"]] <- 0.1 # fake! does nothing but lets sdmTMB parse the formula
-      if (family$family %in% c("binomial", "poisson", "nbinom2", "nbinom1", "truncated_nbinom2", "truncated_nbinom1")) {
-        data[["sdmTMB_response_"]] <- 1
-      }
-    }
-
-    .sim_re <- list(
-      omega = TRUE, epsilon = TRUE, zeta = TRUE,
-      IID = TRUE, RW = TRUE, smooth = TRUE
-    )
-    if (!is.null(fixed_re$omega_s)) {
-      .sim_re$omega <- FALSE
-    }
-    if (!is.null(fixed_re$epsilon_st)) {
-      .sim_re$epsilon <- FALSE
-    }
-    if (!is.null(fixed_re$zeta_s)) {
-      .sim_re$zeta <- FALSE
-    }
-    .sim_re <- as.integer(unlist(.sim_re))
-
-    # get tmb_data structure; parsed model matrices etc.:
-    fit_args <- c(
-      list(
-        formula = formula,
-        data = data,
-        mesh = mesh,
-        time = time,
-        family = family,
-        do_fit = FALSE,
-        share_range = length(range) == 1L,
-        time_varying = time_varying,
-        time_varying_type = time_varying_type,
-        nonlocal_formula = nonlocal_formula
-      ),
-      dots
-    )
-
-    fit <- do.call(sdmTMB, fit_args)
-    params <- fit$tmb_params
-  } else {
-    fit <- previous_fit
-    params <- fit$tmb_obj$env$parList()
+  assert_that(is(mesh, "sdmTMBmesh"))
+  assert_that(!is.null(range), !is.null(sigma_O) || !is.null(sigma_E), !is.null(B))
+  if (!family$family %in% c("binomial", "poisson")) {
+    assert_that(!is.null(phi))
   }
+
+  response <- get_response(formula)
+  if (length(response) == 0L) {
+    formula <- as.formula(paste("sdmTMB_response_", paste(as.character(formula), collapse = "")))
+    data[["sdmTMB_response_"]] <- 0.1 # fake! does nothing but lets sdmTMB parse the formula
+    if (family$family %in% c("binomial", "poisson", "nbinom2", "nbinom1", "truncated_nbinom2", "truncated_nbinom1")) {
+      data[["sdmTMB_response_"]] <- 1
+    }
+  }
+
+  .sim_re <- list(
+    omega = TRUE, epsilon = TRUE, zeta = TRUE,
+    IID = TRUE, RW = TRUE, smooth = TRUE
+  )
+  if (!is.null(fixed_re$omega_s)) {
+    .sim_re$omega <- FALSE
+  }
+  if (!is.null(fixed_re$epsilon_st)) {
+    .sim_re$epsilon <- FALSE
+  }
+  if (!is.null(fixed_re$zeta_s)) {
+    .sim_re$zeta <- FALSE
+  }
+  .sim_re <- as.integer(unlist(.sim_re))
+
+  # get tmb_data structure; parsed model matrices etc.:
+  fit_args <- c(
+    list(
+      formula = formula,
+      data = data,
+      mesh = mesh,
+      time = time,
+      family = family,
+      do_fit = FALSE,
+      share_range = length(range) == 1L,
+      time_varying = time_varying,
+      time_varying_type = time_varying_type,
+      nonlocal_formula = nonlocal_formula
+    ),
+    dots
+  )
+
+  fit <- do.call(sdmTMB, fit_args)
+  params <- fit$tmb_params
   tmb_data <- fit$tmb_data
   tmb_data$sim_re <- as.integer(.sim_re)
   # tmb_data$sim_re <- c(1L, 0L, 0L, 0L, 0L, 0L)
@@ -320,37 +308,24 @@ simulate_new <- function(formula,
     params$b_threshold <- threshold_coefs
   }
 
-  if (!is.null(previous_fit)) {
-    range <- fit$tmb_obj$report()$range
-  }
-
-  if (is.null(previous_fit)) {
-    if (is.null(sigma_O)) sigma_O <- 0
-    if (is.null(sigma_Z)) sigma_Z <- matrix(0, nrow = 0L, ncol = 0L) # DELTA FIXME
-    if (is.null(sigma_E)) sigma_E <- 0
-  }
+  if (is.null(sigma_O)) sigma_O <- 0
+  if (is.null(sigma_Z)) sigma_Z <- matrix(0, nrow = 0L, ncol = 0L) # DELTA FIXME
+  if (is.null(sigma_E)) sigma_E <- 0
 
   if (length(range) == 1L) range <- rep(range, 2)
 
   kappa <- sqrt(8) / range
   params$ln_kappa <- matrix(log(kappa), ncol = 1L) # TODO DELTA
 
-  if (!is.null(sigma_O) || is.null(previous_fit)) {
-    tau_O <- 1 / (sqrt(4 * pi) * kappa[1] * sigma_O)
-    params$ln_tau_O <- log(tau_O)
-  }
-  if (!is.null(sigma_Z) || is.null(previous_fit)) {
-    tau_Z <- 1 / (sqrt(4 * pi) * kappa[1] * sigma_Z)
-    params$ln_tau_Z <- matrix(log(tau_Z), nrow = nrow(sigma_Z), ncol = 1L) # DELTA FIXME
-  }
-  if (!is.null(sigma_E) || is.null(previous_fit)) {
-    tau_E <- 1 / (sqrt(4 * pi) * kappa[2] * sigma_E)
-    params$ln_tau_E <- log(tau_E)
-  }
+  tau_O <- 1 / (sqrt(4 * pi) * kappa[1] * sigma_O)
+  params$ln_tau_O <- log(tau_O)
+  tau_Z <- 1 / (sqrt(4 * pi) * kappa[1] * sigma_Z)
+  params$ln_tau_Z <- matrix(log(tau_Z), nrow = nrow(sigma_Z), ncol = 1L) # DELTA FIXME
+  tau_E <- 1 / (sqrt(4 * pi) * kappa[2] * sigma_E)
+  params$ln_tau_E <- log(tau_E)
 
   n_tv <- if (!is.null(fit$tmb_data$X_rw_ik)) ncol(fit$tmb_data$X_rw_ik) else 0L
-  has_time_varying <- !is.null(time_varying) ||
-    (!is.null(previous_fit) && !is.null(previous_fit$time_varying))
+  has_time_varying <- !is.null(time_varying)
 
   if (has_time_varying && n_tv == 0L) {
     cli::cli_abort("Internal error: expected time-varying design matrix.")
@@ -529,8 +504,8 @@ sdmTMB_simulate <- simulate_new
 #' @param model If a delta/hurdle model, which model to simulate from?
 #'   `NA` = combined, `1` = first model, `2` = second model.
 #' @param newdata Optional new data frame from which to simulate.
-#' @param mcmc_samples An optional matrix of MCMC samples. See `extract_mcmc()`
-#'   in the \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra}
+#' @param mcmc_samples An optional matrix of MCMC samples. See
+#'   `sdmTMBextra::extract_mcmc()` in the \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra}
 #'   package.
 #' @param return_tmb_report Return the \pkg{TMB} report from `simulate()`? This
 #'   lets you parse out whatever elements you want from the simulation.

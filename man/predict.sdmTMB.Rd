@@ -111,7 +111,7 @@ catch when the offset is log area swept).}
 
 \item{mcmc_samples}{A matrix of posterior samples from a model passed to
 \pkg{tmbstan} (see \code{bayesian} in \code{\link[=sdmTMB]{sdmTMB()}}), as returned by
-\code{extract_mcmc()} in the
+\code{sdmTMBextra::extract_mcmc()} in the
 \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra} package. If
 supplied, returns a matrix of posterior draws in the same form as with
 \code{nsim}. If \code{nsim} is also supplied, the last \code{nsim} samples are used. See

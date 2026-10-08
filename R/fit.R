@@ -190,7 +190,7 @@ NULL
 #' @importFrom mgcv s t2
 #' @importFrom stats gaussian model.frame model.matrix as.formula
 #' @importFrom stats model.response terms model.offset
-#' @importFrom lifecycle deprecated is_present deprecate_warn deprecate_stop
+#' @importFrom lifecycle deprecated is_present deprecate_warn
 #'
 #' @return
 #' An object (list) of class `sdmTMB`. Useful elements include:
@@ -679,7 +679,7 @@ sdmTMB <- function(
   if (!inherits(dispformula, "formula") || length(dispformula) != 2L) {
     cli_abort("`dispformula` must be a one-sided formula such as `~ 1`.")
   }
-  censored_upper <- .censored_upper_arg(censored_upper, control, data)
+  censored_upper <- .censored_upper_arg(censored_upper, data)
   # Omit rows with missing values in any variable the model uses, as with
   # `na.action = na.omit` in glm(). Doing this before anything is built from
   # `data` keeps the stored data, mesh rows, and post-fit methods aligned.
@@ -1024,9 +1024,6 @@ sdmTMB <- function(
     c("censored_poisson", "censored_nbinom1", "censored_nbinom2",
       "censored_binomial", "censored_betabinomial"))
   if (uses_censored) {
-    if ("lwr" %in% names(experimental) || "upr" %in% names(experimental)) {
-      cli_abort("Detected `lwr` or `upr` in `experimental`. `lwr` is no longer needed and `upr` is now specified with `sdmTMB(censored_upper = ...)`.")
-    }
     if (is.null(upr)) cli_abort("`censored_upper` must be supplied to use a censored family.")
   }
   if (is.null(upr)) upr <- Inf

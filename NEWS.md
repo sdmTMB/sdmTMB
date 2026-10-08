@@ -6,6 +6,11 @@
   `delta_poisson_link_lognormal()`. Use `delta_gamma(type = "poisson-link")` or
   `delta_lognormal(type = "poisson-link")`.
 
+* Removed the defunct `extract_mcmc()` and `add_barrier_mesh()` stubs; use the
+  versions in sdmTMBextra. Also removed the defunct `previous_fit` argument of
+  `sdmTMB_simulate()` (use `simulate.sdmTMB()`) and the error for the old
+  `experimental = list(lwr, upr)` censoring syntax.
+
 * `sdmTMB_cv()` now scores held-out data with a predictive density integrated
   over the approximate posterior of the random effects
   (`predictive = "mle-mvn"`) instead of at their estimated values
@@ -83,8 +88,8 @@
 
 * Censoring bounds for `censored_poisson()` and `censored_betabinomial()` are
   now supplied with the `censored_upper` argument of `sdmTMB()`, which also
-  accepts a column name in `data`. `sdmTMBcontrol(censored_upper = )` is now
-  an error. This also fixes `sdmTMB_cv()` misaligning the bounds with the
+  accepts a column name in `data`. The `censored_upper` argument of
+  `sdmTMBcontrol()` has been removed. This also fixes `sdmTMB_cv()` misaligning the bounds with the
   data when folds were assigned randomly with a `time` column.
 
 * Use `Inf` instead of `NA` in `censored_upper` for no upper bound. `NA` is

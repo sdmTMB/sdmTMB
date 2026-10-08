@@ -57,8 +57,6 @@
 #'   implement lower and upper bounds, so you must set `newton_loops = 0` if
 #'   setting limits.
 #' @param upper An optional named list of upper bounds within the optimization.
-#' @param censored_upper `r lifecycle::badge("deprecated")` Use the
-#'   `censored_upper` argument of [sdmTMB()] instead.
 #' @param censored_method How [censored_betabinomial()] sums the likelihood.
 #'   `"auto"` (default) sums the interval or its
 #'   complement, whichever has fewer terms, and checks the precision at the
@@ -149,7 +147,6 @@ sdmTMBcontrol <- function(
   map = NULL,
   lower = NULL,
   upper = NULL,
-  censored_upper = deprecated(),
   censored_method = c("auto", "direct"),
   multiphase = TRUE,
   profile = FALSE,
@@ -208,10 +205,6 @@ sdmTMBcontrol <- function(
     collapse_ar1_threshold > 0,
     collapse_ar1_threshold < 0.5
   )
-  if (is_present(censored_upper)) {
-    deprecate_stop("1.1.0.9025", "sdmTMBcontrol(censored_upper = )",
-      "sdmTMB(censored_upper = )")
-  }
   sar_weight_style <- match.arg(sar_weight_style)
   censored_method <- match.arg(censored_method)
   backend <- match.arg(backend, c("tmb", "rtmb"))

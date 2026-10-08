@@ -30,7 +30,6 @@ S3method(tidy,sdmTMB_cv)
 S3method(update,sdmTMB)
 S3method(vcov,sdmTMB)
 export(Beta)
-export(add_barrier_mesh)
 export(add_utm_columns)
 export(betabinomial)
 export(cAIC)
@@ -51,7 +50,6 @@ export(delta_truncated_nbinom1)
 export(delta_truncated_nbinom2)
 export(dharma_residuals)
 export(diffusion)
-export(extract_mcmc)
 export(gamma_cv)
 export(gamma_mix)
 export(gather_sims)
@@ -125,7 +123,6 @@ importFrom(cli,
 importFrom(generics,tidy)
 importFrom(graphics,points)
 importFrom(lifecycle,
-  deprecate_stop,
   deprecate_warn,
   deprecated,
   is_present

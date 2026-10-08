@@ -16,7 +16,6 @@ sdmTMBcontrol(
   map = NULL,
   lower = NULL,
   upper = NULL,
-  censored_upper = deprecated(),
   censored_method = c("auto", "direct"),
   multiphase = TRUE,
   profile = FALSE,
@@ -85,9 +84,6 @@ implement lower and upper bounds, so you must set \code{newton_loops = 0} if
 setting limits.}
 
 \item{upper}{An optional named list of upper bounds within the optimization.}
-
-\item{censored_upper}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} Use the
-\code{censored_upper} argument of \code{\link[=sdmTMB]{sdmTMB()}} instead.}
 
 \item{censored_method}{How \code{\link[=censored_betabinomial]{censored_betabinomial()}} sums the likelihood.
 \code{"auto"} (default) sums the interval or its

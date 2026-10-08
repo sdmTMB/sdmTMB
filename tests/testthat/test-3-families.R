@@ -323,15 +323,6 @@ test_that("Censored Poisson fits", {
   lwr <- ifelse(y >= U_1, U_1, y)
   upr <- ifelse(y >= U_1, Inf, y)
 
-  # old:
-  expect_error(m_right_cens_pois <- sdmTMB(
-    data = sim_dat, formula = observed ~ 1,
-    family = censored_poisson(link = "log"),
-    experimental = list(lwr = lwr, upr = upr),
-    spatial = "off"
-  ), regexp = "upr")
-
-  # new:
   m_right_cens_pois <- sdmTMB(
     data = sim_dat, formula = observed ~ 1,
     family = censored_poisson(link = "log"),
@@ -390,10 +381,6 @@ test_that("censored_upper accepts a column name", {
   m <- fit(censored_upper = d$upr)
   m_col <- fit(censored_upper = "upr")
   expect_equal(m_col$model$par, m$model$par)
-  expect_error(sdmTMBcontrol(censored_upper = d$upr), class = "defunctError")
-  control <- sdmTMBcontrol()
-  control$censored_upper <- d$upr # e.g., a fit from an older version
-  expect_error(fit(control = control), regexp = "instead of")
   expect_error(fit(censored_upper = "nope"), regexp = "column")
   # NA is deprecated and treated as Inf
   rlang::local_options(rlib_warning_verbosity = "verbose")

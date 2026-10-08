@@ -67,7 +67,6 @@ reference:
   - get_crs
   - make_areal_domain
   - make_mesh
-  - add_barrier_mesh
 
 - title: 'Fitting and predicting'
   desc: |

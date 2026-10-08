@@ -191,11 +191,7 @@
 }
 
 # Resolve `sdmTMB(censored_upper = )`: a vector or a column name in `data`.
-.censored_upper_arg <- function(censored_upper, control, data) {
-  # e.g., the control list of a fit made with an older version
-  if (!is.null(control$censored_upper)) {
-    cli_abort("Supply `censored_upper` to `sdmTMB()` instead of `sdmTMBcontrol()`.")
-  }
+.censored_upper_arg <- function(censored_upper, data) {
   if (is.null(censored_upper)) return(NULL)
   if (is.character(censored_upper)) {
     if (length(censored_upper) != 1L || !censored_upper %in% names(data)) {
