@@ -57,8 +57,6 @@ reference:
   - wcvi_grid
   - ohio_df
   - get_pars
-  - delta_poisson_link_gamma
-  - delta_poisson_link_lognormal
 
 - title: 'Mesh construction'
   desc: |

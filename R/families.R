@@ -648,32 +648,6 @@ delta_truncated_nbinom1 <- function(link1 = "logit", link2 = "log") {
     clean_name = "delta_truncated_nbinom1(link1 = 'logit', link2 = 'log')"), class = "family")
 }
 
-#' @rdname families
-#' @order 28
-#' @export
-#' @keywords internal
-#' @details
-#' `delta_poisson_link_gamma()` and `delta_poisson_link_lognormal()` have been
-#' deprecated in favour of `delta_gamma(type = "poisson-link")` and
-#' `delta_lognormal(type = "poisson-link")`.
-delta_poisson_link_gamma <- function(link1 = "log", link2 = "log") {
-  assert_that(link1 == "log")
-  assert_that(link2 == "log")
-  lifecycle::deprecate_stop("1.0.0.9019", "delta_poisson_link_gamma()", "delta_gamma(type)")
-  delta_gamma(link1 = "logit", link2 = "log", type = "poisson-link")
-}
-
-#' @rdname families
-#' @order 29
-#' @export
-#' @keywords internal
-delta_poisson_link_lognormal <- function(link1 = "log", link2 = "log") {
-  assert_that(link1 == "log")
-  assert_that(link2 == "log")
-  lifecycle::deprecate_stop("1.0.0.9019", "delta_poisson_link_lognormal()", "delta_lognormal(type)")
-  delta_lognormal(link1 = "logit", link2 = "log", type = "poisson-link")
-}
-
 #' @export
 #' @examples
 #' betabinomial(link = "logit")
@@ -701,32 +675,18 @@ betabinomial <- function(link = "logit") {
 }
 
 #' @details
-#' `censored_poisson()`, `censored_nbinom1()`, `censored_nbinom2()`,
-#' `censored_binomial()`, and `censored_betabinomial()` treat some counts as
-#' censored, e.g., to account for hook competition in longline surveys
-#' (Watson et al. 2023). Bounds are given with `sdmTMB(censored_upper = ...)`:
-#' a value equal to the observed count is uncensored, a larger value gives an
-#' interval-censored count between the observed count and that value, and `Inf`
-#' gives a right-censored count. For `censored_binomial()` and
-#' `censored_betabinomial()`, the number of trials
-#' (e.g., hooks) is supplied via `weights` and is the largest possible count,
-#' so `Inf` means censoring between the observed count and the number of trials.
-#' Counts and numbers of trials must be whole numbers, and a non-integer bound
-#' means the largest count it allows (e.g., 2.5 means 2).
-#' `censored_nbinom1()`, `censored_nbinom2()`, `censored_binomial()`, and
-#' `censored_betabinomial()` need the RTMB backend (the default).
-#' `censored_nbinom1()` and `censored_nbinom2()` have no upper limit on the
-#' count (e.g., catch without competition for hooks; use an offset of log
-#' hooks). Their right-censored probabilities use a complement conditional on
-#' a positive count, or a sum of the probabilities from \eqn{y} upward, each
-#' where it is accurate. `censored_binomial()` sums the probabilities of the
-#' counts in each interval. `censored_betabinomial()` sums the
-#' probabilities of the counts inside or outside each interval, whichever is
-#' shorter. After
-#' fitting, it checks the precision of each row at the estimate and refits with
-#' the direct sum over the interval for any row that fails;
-#' `sdmTMBcontrol(censored_method = "direct")` always uses the direct sum.
-#' See the
+#' The `censored_*()` families treat some counts as known only to lie within a
+#' range, e.g., to account for hook competition in longline surveys (Watson et
+#' al. 2023). Supply the bounds with `sdmTMB(censored_upper = ...)`.
+#'
+#' * `censored_poisson()`, `censored_nbinom1()`, and `censored_nbinom2()` have
+#'   no upper limit on the count; use an offset of log hooks for effort.
+#' * `censored_binomial()` and `censored_betabinomial()` take the number of
+#'   trials (e.g., hooks) via `weights`, which caps the count.
+#'
+#' All but `censored_poisson()` need the RTMB backend (the default). See
+#' `censored_method` in [sdmTMBcontrol()] for how `censored_betabinomial()`
+#' computes its likelihood, and the
 #' [hook competition article](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html).
 #' @export
 #' @examples

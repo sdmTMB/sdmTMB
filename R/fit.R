@@ -4,7 +4,7 @@ NULL
 #' Fit a spatial or spatiotemporal GLMM with TMB
 #'
 #' Fit a spatial or spatiotemporal generalized linear mixed effects model (GLMM)
-#' with TMB (Template Model Builder), by default through the \pkg{RTMB}
+#' with \pkg{TMB} (Template Model Builder), by default through the \pkg{RTMB}
 #' package. Spatial and spatiotemporal Gaussian random fields are approximated
 #' with the SPDE (stochastic partial differential equation) approach, which
 #' represents them as Gaussian Markov random fields on a mesh. This allows for
@@ -41,7 +41,7 @@ NULL
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/multi-family.html) for
 #'   supported combinations.
 #' @param spatial Estimate spatial random fields? Options are `'on'` / `'off'`
-#'   or equivalently `TRUE` / `FALSE`. Optionally, a list for delta models, 
+#'   or equivalently `TRUE` / `FALSE`. Optionally, a list for delta models,
 #'   e.g. `list('on', 'off')`.
 #' @param spatiotemporal Estimate the spatiotemporal random fields as `'iid'`
 #'   (independent and identically distributed; default), stationary `'ar1'`
@@ -85,15 +85,14 @@ NULL
 #'   families without a dispersion parameter (e.g., binomial or Poisson). In
 #'   delta models, applies to the positive component. Not yet available for
 #'   multi-family models or truncated negative binomial families.
-#' @param censored_upper Upper bounds for censored families
-#'   ([censored_poisson()], [censored_nbinom1()], [censored_nbinom2()],
-#'   [censored_binomial()], and [censored_betabinomial()]): a numeric vector
-#'   *or* a character value naming a column in `data`. Each observation is
-#'   treated as a count between the response and this bound: a value equal to
-#'   the response is uncensored, a larger value is interval-censored, and `Inf`
-#'   is right-censored (up to the number of trials for [censored_binomial()]
-#'   and [censored_betabinomial()]). For left censoring (e.g., fewer than 5), use a
-#'   response of 0 and the largest possible count as the bound (e.g., 4).
+#' @param censored_upper Upper bounds for the censored families (see
+#'   [Families]): a numeric vector or the name of a column in `data`. Each
+#'   response is a count between its observed value and this bound. A bound
+#'   equal to the response is uncensored, a larger bound is interval-censored,
+#'   and `Inf` is right-censored (capped at the number of trials for
+#'   [censored_binomial()] and [censored_betabinomial()]). Non-integer bounds
+#'   are rounded down. For left censoring (e.g., fewer than 5), use a response
+#'   of 0 and a bound of 4.
 #' @param distribution_column For experimental multi-family models, the name of
 #'   the column in `data` mapping each row to a family in the named `family`
 #'   list. See the multi-family vignette for the supported family and method
@@ -398,11 +397,11 @@ NULL
 #'
 #' Lindmark, M., Anderson, S.C., and Thorson, J.T. 2026. Estimating scale-dependent
 #' covariate responses using two-dimensional diffusion derived from the stochastic
-#' partial differential equation method. Methods in Ecology and Evolution 17: 
+#' partial differential equation method. Methods in Ecology and Evolution 17:
 #' 207–218. \doi{10.1111/2041-210X.70177}.
 #'
-#' Thorson, J.T., Anderson, S.C., and Lindmark, M. 2026. 
-#' Temperature carryover effect revealed for marine fishes using spatio-temporal 
+#' Thorson, J.T., Anderson, S.C., and Lindmark, M. 2026.
+#' Temperature carryover effect revealed for marine fishes using spatio-temporal
 #' distributed lag models. EcoEvoRxiv. \doi{10.32942/X2W95P}.
 #'
 #' *Several sections of the original TMB model code were adapted from the

@@ -2,6 +2,10 @@
 
 ## Breaking changes
 
+* Removed the defunct `delta_poisson_link_gamma()` and
+  `delta_poisson_link_lognormal()`. Use `delta_gamma(type = "poisson-link")` or
+  `delta_lognormal(type = "poisson-link")`.
+
 * `sdmTMB_cv()` now scores held-out data with a predictive density integrated
   over the approximate posterior of the random effects
   (`predictive = "mle-mvn"`) instead of at their estimated values

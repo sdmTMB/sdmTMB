@@ -29,8 +29,6 @@
 \alias{delta_truncated_nbinom1}
 \alias{delta_gamma_mix}
 \alias{delta_lognormal_mix}
-\alias{delta_poisson_link_gamma}
-\alias{delta_poisson_link_lognormal}
 \title{Additional families}
 \usage{
 student(link = "identity", df = NULL)
@@ -91,10 +89,6 @@ delta_lognormal_mix(
   type = c("standard", "poisson-link"),
   p_extreme = NULL
 )
-
-delta_poisson_link_gamma(link1 = "log", link2 = "log")
-
-delta_poisson_link_lognormal(link1 = "log", link2 = "log")
 }
 \arguments{
 \item{link}{Link.}
@@ -164,32 +158,19 @@ variance grows quadratically with the mean (Hilbe 2011).
 The \code{nbinom1} negative binomial parameterization lets the variance grow
 linearly with the mean (Hilbe 2011).
 
-\code{censored_poisson()}, \code{censored_nbinom1()}, \code{censored_nbinom2()},
-\code{censored_binomial()}, and \code{censored_betabinomial()} treat some counts as
-censored, e.g., to account for hook competition in longline surveys
-(Watson et al. 2023). Bounds are given with \code{sdmTMB(censored_upper = ...)}:
-a value equal to the observed count is uncensored, a larger value gives an
-interval-censored count between the observed count and that value, and \code{Inf}
-gives a right-censored count. For \code{censored_binomial()} and
-\code{censored_betabinomial()}, the number of trials
-(e.g., hooks) is supplied via \code{weights} and is the largest possible count,
-so \code{Inf} means censoring between the observed count and the number of trials.
-Counts and numbers of trials must be whole numbers, and a non-integer bound
-means the largest count it allows (e.g., 2.5 means 2).
-\code{censored_nbinom1()}, \code{censored_nbinom2()}, \code{censored_binomial()}, and
-\code{censored_betabinomial()} need the RTMB backend (the default).
-\code{censored_nbinom1()} and \code{censored_nbinom2()} have no upper limit on the
-count (e.g., catch without competition for hooks; use an offset of log
-hooks). Their right-censored probabilities use a complement conditional on
-a positive count, or a sum of the probabilities from \eqn{y} upward, each
-where it is accurate. \code{censored_binomial()} sums the probabilities of the
-counts in each interval. \code{censored_betabinomial()} sums the
-probabilities of the counts inside or outside each interval, whichever is
-shorter. After
-fitting, it checks the precision of each row at the estimate and refits with
-the direct sum over the interval for any row that fails;
-\code{sdmTMBcontrol(censored_method = "direct")} always uses the direct sum.
-See the
+The \verb{censored_*()} families treat some counts as known only to lie within a
+range, e.g., to account for hook competition in longline surveys (Watson et
+al. 2023). Supply the bounds with \code{sdmTMB(censored_upper = ...)}.
+\itemize{
+\item \code{censored_poisson()}, \code{censored_nbinom1()}, and \code{censored_nbinom2()} have
+no upper limit on the count; use an offset of log hooks for effort.
+\item \code{censored_binomial()} and \code{censored_betabinomial()} take the number of
+trials (e.g., hooks) via \code{weights}, which caps the count.
+}
+
+All but \code{censored_poisson()} need the RTMB backend (the default). See
+\code{censored_method} in \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}} for how \code{censored_betabinomial()}
+computes its likelihood, and the
 \href{https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html}{hook competition article}.
 
 The families ending in \verb{_mix()} are 2-component mixtures where each
@@ -204,10 +185,6 @@ in as a proportion for these families.
 The default first-component link (\code{link1}) for delta models of
 \code{type = "standard"} is \code{"logit"}. For \code{type = "poisson-link"}, the
 default \code{link1} is \code{"log"}.
-
-\code{delta_poisson_link_gamma()} and \code{delta_poisson_link_lognormal()} have been
-deprecated in favour of \code{delta_gamma(type = "poisson-link")} and
-\code{delta_lognormal(type = "poisson-link")}.
 }
 \examples{
 student(link = "identity") # estimate df
@@ -284,4 +261,3 @@ biomass sampling data, and a computationally efficient alternative. Canadian
 Journal of Fisheries and Aquatic Sciences, 75(9), 1369-1382.
 \doi{10.1139/cjfas-2017-0266}
 }
-\keyword{internal}

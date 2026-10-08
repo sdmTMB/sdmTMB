@@ -124,15 +124,14 @@ families without a dispersion parameter (e.g., binomial or Poisson). In
 delta models, applies to the positive component. Not yet available for
 multi-family models or truncated negative binomial families.}
 
-\item{censored_upper}{Upper bounds for censored families
-(\code{\link[=censored_poisson]{censored_poisson()}}, \code{\link[=censored_nbinom1]{censored_nbinom1()}}, \code{\link[=censored_nbinom2]{censored_nbinom2()}},
-\code{\link[=censored_binomial]{censored_binomial()}}, and \code{\link[=censored_betabinomial]{censored_betabinomial()}}): a numeric vector
-\emph{or} a character value naming a column in \code{data}. Each observation is
-treated as a count between the response and this bound: a value equal to
-the response is uncensored, a larger value is interval-censored, and \code{Inf}
-is right-censored (up to the number of trials for \code{\link[=censored_binomial]{censored_binomial()}}
-and \code{\link[=censored_betabinomial]{censored_betabinomial()}}). For left censoring (e.g., fewer than 5), use a
-response of 0 and the largest possible count as the bound (e.g., 4).}
+\item{censored_upper}{Upper bounds for the censored families (see
+\link{Families}): a numeric vector or the name of a column in \code{data}. Each
+response is a count between its observed value and this bound. A bound
+equal to the response is uncensored, a larger bound is interval-censored,
+and \code{Inf} is right-censored (capped at the number of trials for
+\code{\link[=censored_binomial]{censored_binomial()}} and \code{\link[=censored_betabinomial]{censored_betabinomial()}}). Non-integer bounds
+are rounded down. For left censoring (e.g., fewer than 5), use a response
+of 0 and a bound of 4.}
 
 \item{distribution_column}{For experimental multi-family models, the name of
 the column in \code{data} mapping each row to a family in the named \code{family}
@@ -262,7 +261,7 @@ passed to \code{MakeADFun()}
 }
 \description{
 Fit a spatial or spatiotemporal generalized linear mixed effects model (GLMM)
-with TMB (Template Model Builder), by default through the \pkg{RTMB}
+with \pkg{TMB} (Template Model Builder), by default through the \pkg{RTMB}
 package. Spatial and spatiotemporal Gaussian random fields are approximated
 with the SPDE (stochastic partial differential equation) approach, which
 represents them as Gaussian Markov random fields on a mesh. This allows for
