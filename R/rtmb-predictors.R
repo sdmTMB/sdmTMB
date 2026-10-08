@@ -170,12 +170,13 @@ rtmb_derived_indices <- function(par, theta, prepared, projected) {
   if (prepared$n_m > 1L) {
     mu <- projected$combined$response
   } else {
-    mu <- rep(0, nrow(projected$eta))
+    eta <- if (prepared$pop_pred) projected$fe else projected$eta
+    mu <- rep(0, nrow(eta))
     for (f in unique(rows$family_id)) {
       family <- prepared$families[[f]]
       family$link[[1L]] <- prepared$index$link
       i <- which(rows$family_id == f)
-      mu[i] <- rtmb_component_mean(projected$eta[i, 1L], family, 1L, theta)
+      mu[i] <- rtmb_component_mean(eta[i, 1L], family, 1L, theta)
       # Prototype: for cloglog (censored) betabinomial, the mean per-hook
       # catch rate E(-log(1 - p)) = digamma(phi) - digamma(phi * (1 - pbar))
       # instead of exp(eta). It matched an R-side check and works with bias

@@ -1960,7 +1960,8 @@ Type objective_function<Type>::operator()()
           component1.link_code = link_pred;
           resolved_family_component_t<Type> component2;
           mu_combined(i) = combined_response_value(
-            proj_eta(i,0), Type(0.0), component1, component2
+            pop_pred ? proj_fe(i,0) : proj_eta(i,0), Type(0.0),
+            component1, component2
           );
         }
 

@@ -54,7 +54,9 @@ response-scale uncertainty.}
 includes them. \code{NA} or \code{~ 0} excludes them for population-level
 predictions, so that \code{est} equals \code{est_non_rf}; the random field columns
 are then omitted. Often used with \code{se_fit = TRUE} to plot covariate
-effects. IID random effects are set separately with \code{re_form_iid}.}
+effects. IID random effects are set separately with \code{re_form_iid}.
+Both also apply to derived quantities such as \code{\link[=get_index]{get_index()}} when passed
+through its \code{predict_args}.}
 
 \item{re_form_iid}{Include the IID random intercepts and slopes (e.g.,
 \code{(1 | g)} in \code{formula})? \code{NULL} (default) includes them. \code{NA} or \code{~ 0}

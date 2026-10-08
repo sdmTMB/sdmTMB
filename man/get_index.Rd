@@ -113,7 +113,9 @@ models fit with
 \code{link = "cloglog"}.}
 
 \item{predict_args}{A named list of less commonly used arguments to pass to
-\code{\link[=predict.sdmTMB]{predict.sdmTMB()}}. \code{newdata} and \code{offset} should be supplied directly.}
+\code{\link[=predict.sdmTMB]{predict.sdmTMB()}}. \code{newdata} and \code{offset} should be supplied directly.
+For example, \code{list(re_form = NA)} calculates the derived quantity with
+the spatial and spatiotemporal random fields set to zero.}
 
 \item{...}{Passed to \code{\link[TMB:sdreport]{TMB::sdreport()}}.}
 

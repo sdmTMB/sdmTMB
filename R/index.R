@@ -29,6 +29,8 @@
 #'   `link = "cloglog"`.
 #' @param predict_args A named list of less commonly used arguments to pass to
 #'   [predict.sdmTMB()]. `newdata` and `offset` should be supplied directly.
+#'   For example, `list(re_form = NA)` calculates the derived quantity with
+#'   the spatial and spatiotemporal random fields set to zero.
 #' @param ... Passed to [TMB::sdreport()].
 #'
 #' @details

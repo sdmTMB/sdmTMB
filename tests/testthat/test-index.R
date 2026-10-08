@@ -481,3 +481,20 @@ test_that("get_eao() weights by area", {
     expect_equal(eao$est, unname(expected), label = backend)
   }
 })
+
+test_that("get_index() honours re_form for single and delta models", {
+  skip_on_cran()
+  nd <- index_grid()
+  for (backend in c("tmb", "rtmb")) {
+    for (family in list(tweedie(), delta_gamma())) {
+      m <- sdmTMB(density ~ 0 + as.factor(year), data = pcod_2011,
+        mesh = pcod_mesh_2011, time = "year", spatiotemporal = "off",
+        family = family, control = sdmTMBcontrol(backend = backend))
+      ind <- get_index(m, newdata = nd, bias_correct = FALSE,
+        predict_args = list(re_form = NA))
+      p <- predict(m, newdata = nd, re_form = NA, type = "response")
+      expect_equal(ind$est, as.numeric(tapply(p$est, p$year, sum)),
+        label = paste(backend, family$family[[1]]))
+    }
+  }
+})

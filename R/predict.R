@@ -36,6 +36,8 @@
 #'   predictions, so that `est` equals `est_non_rf`; the random field columns
 #'   are then omitted. Often used with `se_fit = TRUE` to plot covariate
 #'   effects. IID random effects are set separately with `re_form_iid`.
+#'   Both also apply to derived quantities such as [get_index()] when passed
+#'   through its `predict_args`.
 #' @param re_form_iid Include the IID random intercepts and slopes (e.g.,
 #'   `(1 | g)` in `formula`)? `NULL` (default) includes them. `NA` or `~ 0`
 #'   sets them all to zero. Excluding only some of them is not yet supported.

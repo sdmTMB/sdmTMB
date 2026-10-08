@@ -236,6 +236,11 @@
 
 ## Bug fixes: prediction, indices, and other
 
+* `get_index()`, `get_cog()`, and `get_eao()` now honour
+  `predict_args = list(re_form = NA)` for single-component models.
+  Previously the random fields were always included unless the model was a
+  delta model.
+
 * `predict.sdmTMB()` without `newdata` now returns the same values as
   `predict(fit, newdata = fit$data, offset = fit$offset)`. Previously,
   `est_non_rf` left out smoothers and the offset, `est_rf` left out spatially
