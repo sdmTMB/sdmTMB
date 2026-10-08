@@ -6,7 +6,7 @@
   `delta_poisson_link_lognormal()`. Use `delta_gamma(type = "poisson-link")` or
   `delta_lognormal(type = "poisson-link")`.
 
-* Removed the defunct `extract_mcmc()` and `add_barrier_mesh()` stubs; use the
+* Removed the defunct `extract_mcmc()` and `add_barrier_mesh()` functions; use the
   versions in sdmTMBextra. Also removed the defunct `previous_fit` argument of
   `sdmTMB_simulate()` (use `simulate.sdmTMB()`) and the error for the old
   `experimental = list(lwr, upr)` censoring syntax.
