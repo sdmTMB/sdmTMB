@@ -29,21 +29,69 @@
 
 * The arguments of `sdmTMB()` after `family` are reordered into groups:
   random fields, observation model, other model terms, estimation, and
-  deprecated arguments. Code that passes arguments after `time` by position
+  deprecated arguments. Code that passes arguments after `family` by position
   must name them.
+
+* Censoring bounds for `censored_poisson()` and `censored_betabinomial()` are
+  now supplied with the `censored_upper` argument of `sdmTMB()`, which also
+  accepts a column name in `data`. The `censored_upper` argument of
+  `sdmTMBcontrol()` has been removed. Use `Inf` instead of `NA` for no upper
+  bound; `NA` is deprecated and is treated as `Inf` with a warning.
+  `get_censored_upper()` now caps the bounds at the number of hooks. This also
+  fixes `sdmTMB_cv()` misaligning the bounds with the data when folds were
+  assigned randomly with a `time` column.
+
+* `predict.sdmTMB()` now errors for `type = "response"` with `se_fit = TRUE`
+  (previously a warning, with link-scale output) and with a `sims_var` other
+  than `"est"`. Use `type = "link"` for standard errors or `nsim` for
+  response-scale uncertainty. `sims_var` accepts only `"est"`, `"omega_s"`,
+  `"zeta_s"`, `"epsilon_st"`, `"est_rf"`, and `"est_non_rf"`; use
+  `return_tmb_report = TRUE` with `nsim` for other reported variables.
+
+* `diffusion(x) + time_lag(x)` in `nonlocal_formula` now fits one stationary
+  joint space--time distributed-lag operator with one coefficient. Temporal
+  persistence is constrained to be non-negative. The temporal parameter is
+  estimated as `log_kappaT_nl` (equal to `logit(rhoT)`) rather than
+  `kappaT_nl_raw`, `sdmTMB_simulate()` requires `0 < lags_rhoT < 1`, and the
+  derived summaries are named `MSDK` and `RMSDK` rather than `MSD` and `RMSD`.
+
+* `time_lag()` now starts from a stationary state by default (the covariate is
+  assumed to have held at its first time slice); use `start = "zero"` for the
+  previous behaviour, which matches Thorson et al. (2026).
+
+* `spatial_varying` now respects its own model matrix, and the `(Intercept)`
+  column is dropped only when `spatial = "on"`. For
+  `spatial = "off", spatial_varying = ~ 1 + factor`, the model now fits a
+  genuine intercept field plus `K - 1` deviation fields instead of omitting the
+  reference field, with a one-time warning. The `svc-factor-models` article
+  clarifies how `spatial`, `spatial_varying`, and the intercept of the
+  `spatial_varying` design matrix interact.
+
+* For `truncated_nbinom1()` and `truncated_nbinom2()`, `phi` now comes from
+  each fit's own parameters rather than the family object, so calling
+  `family$linkinv()` directly for these families requires `phi`.
+
+* The experimental `epsilon_model` and `epsilon_predictor` options are removed
+  and now error. File an issue if you're interested in using this functionality
+  and we can consider adding it back.
 
 ## New features
 
-* *RTMB is now the default backend.* The model code is written in R (via RTMB)
-  with about 50% fewer lines, and gives the same results as the TMB backend in
-  all our tests. The TMB backend is retained for now but will eventually be
-  dropped. To keep using the TMB backend, set
-  `control = sdmTMBcontrol(backend = "tmb")` per fit or
-  `options(sdmTMB.backend = "tmb")` per session. The move uncovered several bugs,
-  which are fixed as listed below. The move also allowed for optimization of
-  the model. Resulting speedups on an example model with the built-in `pcod`
-  dataset: fitting (1.25x), predicting (2.6x), get_index(bias_correct = FALSE)
-  (12.5x), get_index(bias_correct = TRUE) (2.1x), simulate(nsim = 500) (2.3x).
+* **RTMB is now the default backend.** The model code is written in R (via
+  RTMB) with about 50% fewer lines, and gives the same results as the TMB
+  backend in all our tests, although simulated values differ between backends
+  for the same seed. The TMB backend is retained for now but will eventually be
+  dropped. To keep using it, set `control = sdmTMBcontrol(backend = "tmb")` per
+  fit or `options(sdmTMB.backend = "tmb")` per session. The move uncovered
+  several bugs, which are fixed as listed below, and allowed for optimization
+  of the model. Speedups relative to sdmTMB 1.1.0 on an example model with the
+  built-in `pcod` dataset:
+  * fitting: 1.2x
+  * `predict()`: 13.5x
+  * `get_index(bias_correct = FALSE)`: 10.4x
+  * `get_index(bias_correct = TRUE)`: 1.5x
+  * `simulate(nsim = 400)`: 1.9x
+  * `project(nsim = 400)` (30-year AR1 projection): 9.3x
 
 * Add custom priors for the RTMB backend:
   `sdmTMBpriors(custom = function(par, theta) ...)` adds arbitrary log
@@ -68,11 +116,12 @@
 * Add `censored_betabinomial()` for censored beta-binomial counts, e.g., to
   account for hook competition in hook-and-line surveys with the number of
   hooks as the number of trials. It uses `sdmTMB(censored_upper = ...)` like
-  `censored_poisson()`, with `Inf` meaning censoring between the observed count and the number of trials. It
-  needs the RTMB backend. The likelihood sums the shorter of each interval and
-  its complement, with a precision check and fallback to the direct sum after
-  fitting (`sdmTMBcontrol(censored_method = "direct")` forces the direct sum).
-  See the updated hook competition article.
+  `censored_poisson()`, with `Inf` meaning censoring between the observed
+  count and the number of trials. It needs the RTMB backend. The likelihood
+  sums the shorter of each interval and its complement, with a precision check
+  and fallback to the direct sum after fitting
+  (`sdmTMBcontrol(censored_method = "direct")` forces the direct sum). See the
+  new article "Accounting for hook competition with censored count models".
 
 * Add `censored_binomial()` for censored binomial counts. It works like
   `censored_betabinomial()` (RTMB backend, number of trials via `weights`).
@@ -85,16 +134,6 @@
   binomial counts (RTMB backend). They use `sdmTMB(censored_upper = ...)` like
   `censored_poisson()`, with no upper limit on the count, e.g., for catch
   without hook competition with an offset of log hooks.
-
-* Censoring bounds for `censored_poisson()` and `censored_betabinomial()` are
-  now supplied with the `censored_upper` argument of `sdmTMB()`, which also
-  accepts a column name in `data`. The `censored_upper` argument of
-  `sdmTMBcontrol()` has been removed. This also fixes `sdmTMB_cv()` misaligning the bounds with the
-  data when folds were assigned randomly with a `time` column.
-
-* Use `Inf` instead of `NA` in `censored_upper` for no upper bound. `NA` is
-  deprecated and is treated as `Inf` with a warning. `get_censored_upper()`
-  now caps the bounds at the number of hooks.
 
 * Add the `dispformula` argument to `sdmTMB()` for modelling the observation
   dispersion parameter with fixed-effect predictors. It is not supported for
@@ -127,11 +166,9 @@
   latent state uncertainty, and future process variation, and a `future_re`
   argument for including (the default), zeroing, or fixing future
   spatiotemporal and time-varying effects. Projections are faster when
-  `newdata` repeats spatial locations across time. With the RTMB backend,
-  projections are also about 1.75x faster than with the TMB backend (e.g., an
-  AR1 spatiotemporal model projected 30 years over a 130,000-row grid), and
-  `project()` now keeps only the simulated values it returns, which more than
-  halves peak memory use with many simulations.
+  `newdata` repeats spatial locations across time, and `project()` now keeps
+  only the simulated values it returns, which more than halves peak memory use
+  with many simulations.
 
 * `sdmTMB_cv(lfo = TRUE)` now supports delta/hurdle families.
 
@@ -148,28 +185,6 @@
   degenerate over-smoothed fits. Override the bounds with `lower` or `upper` in
   `sdmTMBcontrol()`.
 
-* `diffusion(x) + time_lag(x)` in `nonlocal_formula` now fits one stationary
-  joint space--time distributed-lag operator with one coefficient. Temporal
-  persistence is constrained to be non-negative. The temporal parameter is
-  estimated as `log_kappaT_nl` (equal to `logit(rhoT)`) rather than
-  `kappaT_nl_raw`, `sdmTMB_simulate()` requires `0 < lags_rhoT < 1`, and the
-  derived summaries are named `MSDK` and `RMSDK` rather than `MSD` and `RMSD`.
-
-* `time_lag()` now starts from a stationary state by default (the covariate is
-  assumed to have held at its first time slice); use `start = "zero"` for the
-  previous behaviour, which matches Thorson et al. (2026).
-
-* `get_cog()` now errors informatively for areal (SAR/CAR) models instead of
-  returning a centre of gravity of zero.
-
-* The `svc-factor-models` article clarifies how `spatial`, `spatial_varying`,
-  and the intercept of the `spatial_varying` design matrix interact.
-  `spatial_varying` now respects its own model matrix, and the `(Intercept)`
-  column is dropped only when `spatial = "on"`. For
-  `spatial = "off", spatial_varying = ~ 1 + factor`, the model now fits a
-  genuine intercept field plus `K - 1` deviation fields instead of omitting the
-  reference field, with a one-time warning.
-
 ## Bug fixes: statistical and likelihood
 
 * Rows with missing values in the response or any variable the model uses
@@ -182,8 +197,7 @@
   the rows used.
 
 * `sdmTMB_simulate()` now errors if `sigma_E` has more than one value, which
-  previously silently simulated a constant SD. The TMB and RTMB backends give
-  different simulated values for the same seed.
+  previously silently simulated a constant SD.
 
 * `truncated_nbinom1()` and `truncated_nbinom2()` now error on a response of
   zero in non-delta models instead of reporting convergence with an infinite
@@ -245,6 +259,9 @@
 
 ## Bug fixes: prediction, indices, and other
 
+* `get_cog()` now errors informatively for areal (SAR/CAR) models instead of
+  returning a centre of gravity of zero.
+
 * The `type` column returned by `get_eao()` is now `"eao"` instead of the
   misspelled `"eoa"`.
 
@@ -283,9 +300,7 @@
   delta models with a nonzero offset.
 
 * Fix `type = "response"` predictions for `truncated_nbinom1()` and
-  `truncated_nbinom2()`, which used the starting value of `phi`. `phi` now
-  comes from each fit's own parameters rather than the family object, so
-  calling `family$linkinv()` directly for these families requires `phi`.
+  `truncated_nbinom2()`, which used the starting value of `phi`.
 
 * Fix `residuals(type = "response")` for `truncated_nbinom1()` and
   `truncated_nbinom2()`, which subtracted the untruncated mean.
@@ -297,7 +312,7 @@
   `get_index()` now honours `area`, and `get_eao()`, `get_weighted_average()`,
   and `get_cog()` no longer error (#549).
 
-* Fix `sdmTMBcontrol(suppress_nlminb_warnings = TRUE)`, which previously had 
+* Fix `sdmTMBcontrol(suppress_nlminb_warnings = TRUE)`, which previously had
   no effect.
 
 * The "Maximum final gradient" convergence warning now considers the absolute
@@ -334,21 +349,12 @@
 * A `mesh` that does not match `nrow(data)` now errors when `nonlocal_formula`
   is used, even with spatial and spatiotemporal fields off.
 
-* `predict.sdmTMB()` now errors for `type = "response"` with `se_fit = TRUE`
-  (previously a warning, with link-scale output) and with a `sims_var` other
-  than `"est"`. Use `type = "link"` for standard errors or `nsim` for
-  response-scale uncertainty. `sims_var` accepts only `"est"`, `"omega_s"`,
-  `"zeta_s"`, `"epsilon_st"`, `"est_rf"`, and `"est_non_rf"`; use
-  `return_tmb_report = TRUE` with `nsim` for other reported variables.
-
 ## Other improvements and changes
 
-* Speed up the RTMB backend, `get_index()` and related functions (including
-  bias correction), `simulate.sdmTMB()` with `type = "mle-mvn"`, `cAIC()`, and
-  `sdmTMB_cv()`. For example, `cAIC()` takes 0.68 s instead of 41 s on a model
-  with about 5,800 random effects, and `predict()` is about 3x faster than the
-  previous TMB backend on a large grid. `sdmTMB_cv()` with `save_models = TRUE`
-  also returns smaller objects. Fitting speed is also improved by ~10%.
+* Beyond the RTMB speedups above, speed up `simulate.sdmTMB()` with
+  `type = "mle-mvn"`, `cAIC()`, and `sdmTMB_cv()`. For example, `cAIC()` takes
+  0.68 s instead of 41 s on a model with about 5,800 random effects.
+  `sdmTMB_cv()` with `save_models = TRUE` also returns smaller objects.
 
 * `collapse_threshold` in `sdmTMBcontrol()` is deprecated in favour of
   `collapse_spatial_variance_threshold`.
@@ -360,13 +366,9 @@
   soft-deprecated; fit the model and pass `newdata` to the index functions
   instead.
 
-* The experimental `epsilon_model` and `epsilon_predictor` options are removed
-  and now error. File an issue if you're interested in using this functionality
-  and we can consider adding it back.
-
 * Make sdmTMB compatible with visreg 3.0.0.
 
-* Add articles, including a censored Poisson hook competition article.
+* Revise the model description vignette and many articles.
 
 # sdmTMB 1.1.0
 
