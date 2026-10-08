@@ -14,6 +14,15 @@
   field uncertainty at finer mesh resolutions and it's particularly important
   for comparing across mesh resolutions.
 
+* `predict(allow_new_levels = FALSE)` now gives an error for new levels of a
+  random effect grouping factor, as in lme4 and glmmTMB. Previously it gave
+  the same warning as the default (`NULL`).
+
+* The arguments of `sdmTMB()` after `family` are reordered into groups:
+  random fields, observation model, other model terms, estimation, and
+  deprecated arguments. Code that passes arguments after `time` by position
+  must name them.
+
 ## New features
 
 * *RTMB is now the default backend.* The model code is written in R (via RTMB)
@@ -326,6 +335,10 @@
 
 * `predict(..., return_tmb_object = TRUE)` is soft-deprecated for index
   calculations; pass `newdata` to the index functions instead.
+
+* `sdmTMB(do_index = TRUE)` (and its `predict_args` and `index_args`) is
+  soft-deprecated; fit the model and pass `newdata` to the index functions
+  instead.
 
 * The experimental `epsilon_model` and `epsilon_predictor` options are removed
   and now error. File an issue if you're interested in using this functionality

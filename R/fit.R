@@ -27,41 +27,19 @@ NULL
 #'   rows used are stored in the returned object as `data`.
 #' @param mesh An object from [make_mesh()] for `spatial_model = "spde"` or
 #'   from [make_areal_domain()] for `"sar"` or `"car"`.
-#' @param spatial_model Spatial process model. `"spde"` uses the default
-#'   continuous-space SPDE approximation. `"sar"` and `"car"` use areal spatial
-#'   autoregressive models with an areal domain supplied to `mesh`.
-#'   Capitalization is ignored.
 #' @param time An optional time column name (as character). Can be left as
 #'   `NULL` for a model with only spatial random fields; however, if the data
 #'   are actually spatiotemporal and you wish to calculate derived quantities
 #'   downstream (e.g., [get_index()] or [get_cog()]), then supply the time argument.
 #' @param family A family object specifying the response distribution and
-#'   link. In addition to [gaussian()], [Gamma()], [binomial()], and
-#'   [poisson()], sdmTMB provides (see [Families]):
-#'   * Continuous: [student()], [lognormal()], [gengamma()]
-#'   * Proportions: [Beta()], [ordbeta()]
-#'   * Non-negative with exact zeros: [tweedie()]
-#'   * Counts: [nbinom2()], [nbinom1()], [truncated_nbinom2()],
-#'     [truncated_nbinom1()], [betabinomial()]
-#'   * Censored counts: [censored_poisson()], [censored_nbinom2()],
-#'     [censored_nbinom1()], [censored_binomial()], [censored_betabinomial()]
-#'   * Two-component mixtures: [gamma_mix()], [lognormal_mix()],
-#'     [nbinom2_mix()]
-#'   * Delta/hurdle: [delta_gamma()], [delta_lognormal()], [delta_gengamma()],
-#'     [delta_beta()], [delta_truncated_nbinom2()],
-#'     [delta_truncated_nbinom1()], [delta_gamma_mix()],
-#'     [delta_lognormal_mix()]
-#'
-#'   See 'Binomial families', 'Censored families', and 'Delta/hurdle models'
-#'   in Details. Experimental multi-family models take a named list of
+#'   link: [gaussian()], [Gamma()], [binomial()], [poisson()], or one of the
+#'   additional families listed in [Families] (e.g., [tweedie()],
+#'   [nbinom2()], [delta_gamma()]). See 'Binomial families', 'Censored
+#'   families', and 'Delta/hurdle models' in Details. Experimental multi-family models take a named list of
 #'   families; `distribution_column` then assigns each row to one of them. See
 #'   the [multi-family
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/multi-family.html) for
 #'   supported combinations.
-#' @param distribution_column For experimental multi-family models, the name of
-#'   the column in `data` mapping each row to a family in the named `family`
-#'   list. See the multi-family vignette for the supported family and method
-#'   combinations.
 #' @param spatial Estimate spatial random fields? Options are `'on'` / `'off'`
 #'   or equivalently `TRUE` / `FALSE`. Optionally, a list for delta models, 
 #'   e.g. `list('on', 'off')`.
@@ -78,26 +56,48 @@ NULL
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/model-description.html) for
 #'   mathematical details. Capitalization is ignored. `TRUE` gets converted to
 #'   `'iid'` and `FALSE` gets converted to `'off'`.
+#' @param extra_time Optional extra time slices (e.g., years) to include for
+#'   interpolation or forecasting with the predict function. See the Details
+#'   section below.
+#' @param spatial_model Spatial process model. `"spde"` uses the default
+#'   continuous-space SPDE approximation. `"sar"` and `"car"` use areal spatial
+#'   autoregressive models with an areal domain supplied to `mesh`.
+#'   Capitalization is ignored.
 #' @param share_range Logical: estimate a single range parameter shared by the
 #'   spatial and spatiotemporal fields (`TRUE`, default) or separate range
 #'   parameters (`FALSE`)? For delta models, can be a list, e.g.,
 #'   `list(TRUE, FALSE)`. Applies to SPDE models only.
-#' @param time_varying An optional one-sided formula of coefficients that vary
-#'   through time following the process set by `time_varying_type`. Whether
-#'   the same covariates should also appear in `formula` depends on that type.
-#'   Shared by both components of a delta model.
-#' @param time_varying_type The process for `time_varying` coefficients:
-#'   * `'rw'` (default): a random walk with the first value estimated freely.
-#'     Do not also include these covariates in `formula`, or the model is not
-#'     identifiable; e.g., with `time_varying = ~ 1`, use `formula = y ~ 0 +
-#'     ...`.
-#'   * `'rw0'`: a random walk whose first value has a mean-zero normal prior.
-#'   * `'ar1'`: a stationary first-order autoregressive process with mean
-#'     zero.
-#'
-#'   For `'rw0'` and `'ar1'`, include the same covariates in `formula`; the
-#'   time-varying process then describes deviations from that average effect.
-#'   Shared by both components of a delta model.
+#' @param anisotropy Logical: allow for anisotropy (spatial correlation that is
+#'   directionally dependent)? See [plot_anisotropy()]. Applies to SPDE models
+#'   only and is shared by both components of a delta model.
+#' @param offset A numeric vector representing the model offset *or* a character
+#'   value representing the column name of the offset. In delta/hurdle models,
+#'   this applies only to the positive component except for Poisson-link delta
+#'   models, where it also enters the occurrence-probability calculation.
+#'   Usually a log transformed variable.
+#' @param weights An optional numeric vector (not a column name) of weights on
+#'   each observation's contribution to the likelihood. As in \pkg{glmmTMB},
+#'   weights need not sum to one and are not rescaled. For binomial-type
+#'   families with a proportion response, `weights` gives the number of trials
+#'   instead; see 'Binomial families' in Details.
+#' @param dispformula A one-sided formula for the dispersion parameter (e.g.,
+#'   `phi`). The default, `~ 1`, estimates a single value. Ignored for
+#'   families without a dispersion parameter (e.g., binomial or Poisson). In
+#'   delta models, applies to the positive component. Not yet available for
+#'   multi-family models or truncated negative binomial families.
+#' @param censored_upper Upper bounds for censored families
+#'   ([censored_poisson()], [censored_nbinom1()], [censored_nbinom2()],
+#'   [censored_binomial()], and [censored_betabinomial()]): a numeric vector
+#'   *or* a character value naming a column in `data`. Each observation is
+#'   treated as a count between the response and this bound: a value equal to
+#'   the response is uncensored, a larger value is interval-censored, and `Inf`
+#'   is right-censored (up to the number of trials for [censored_binomial()]
+#'   and [censored_betabinomial()]). For left censoring (e.g., fewer than 5), use a
+#'   response of 0 and the largest possible count as the bound (e.g., 4).
+#' @param distribution_column For experimental multi-family models, the name of
+#'   the column in `data` mapping each row to a family in the named `family`
+#'   list. See the multi-family vignette for the supported family and method
+#'   combinations.
 #' @param spatial_varying An optional one-sided formula of coefficients that
 #'   should vary in space as random fields. Allows the effect of a covariate to
 #'   differ spatially. You likely want to include the same variable as a fixed
@@ -114,11 +114,22 @@ NULL
 #'   factor, `~ 0 + f` gives every level its own field, which would duplicate
 #'   the spatial intercept field, so set `spatial = 'off'` to match. Structure
 #'   is shared in delta models.
-#' @param dispformula A one-sided formula for the dispersion parameter (e.g.,
-#'   `phi`). The default, `~ 1`, estimates a single value. Ignored for
-#'   families without a dispersion parameter (e.g., binomial or Poisson). In
-#'   delta models, applies to the positive component. Not yet available for
-#'   multi-family models or truncated negative binomial families.
+#' @param time_varying An optional one-sided formula of coefficients that vary
+#'   through time following the process set by `time_varying_type`. Whether
+#'   the same covariates should also appear in `formula` depends on that type.
+#'   Shared by both components of a delta model.
+#' @param time_varying_type The process for `time_varying` coefficients:
+#'   * `'rw'` (default): a random walk with the first value estimated freely.
+#'     Do not also include these covariates in `formula`, or the model is not
+#'     identifiable; e.g., with `time_varying = ~ 1`, use `formula = y ~ 0 +
+#'     ...`.
+#'   * `'rw0'`: a random walk whose first value has a mean-zero normal prior.
+#'   * `'ar1'`: a stationary first-order autoregressive process with mean
+#'     zero.
+#'
+#'   For `'rw0'` and `'ar1'`, include the same covariates in `formula`; the
+#'   time-varying process then describes deviations from that average effect.
+#'   Shared by both components of a delta model.
 #' @param nonlocal_formula An optional one-sided formula of non-local
 #'   covariate effects: [diffusion()] for an effect of conditions in the
 #'   surrounding area, and [time_lag()] for an effect of conditions in
@@ -138,28 +149,9 @@ NULL
 #'   (`time_lag()` terms, or `diffusion()` terms with `time` specified). In
 #'   that case, it must cover every fitted (+ `extra_time`) time slice.
 #'   Defaults to `NULL`, in which case `data` is used.
-#' @param weights An optional numeric vector (not a column name) of weights on
-#'   each observation's contribution to the likelihood. As in \pkg{glmmTMB},
-#'   weights need not sum to one and are not rescaled. For binomial-type
-#'   families with a proportion response, `weights` gives the number of trials
-#'   instead; see 'Binomial families' in Details.
-#' @param offset A numeric vector representing the model offset *or* a character
-#'   value representing the column name of the offset. In delta/hurdle models,
-#'   this applies only to the positive component except for Poisson-link delta
-#'   models, where it also enters the occurrence-probability calculation.
-#'   Usually a log transformed variable.
-#' @param censored_upper Upper bounds for censored families
-#'   ([censored_poisson()], [censored_nbinom1()], [censored_nbinom2()],
-#'   [censored_binomial()], and [censored_betabinomial()]): a numeric vector
-#'   *or* a character value naming a column in `data`. Each observation is
-#'   treated as a count between the response and this bound: a value equal to
-#'   the response is uncensored, a larger value is interval-censored, and `Inf`
-#'   is right-censored (up to the number of trials for [censored_binomial()]
-#'   and [censored_betabinomial()]). For left censoring (e.g., fewer than 5), use a
-#'   response of 0 and the largest possible count as the bound (e.g., 4).
-#' @param extra_time Optional extra time slices (e.g., years) to include for
-#'   interpolation or forecasting with the predict function. See the Details
-#'   section below.
+#' @param knots Optional named list containing knot values to be used for basis
+#'   construction of smoothing terms. See [mgcv::gam()] and [mgcv::gamm()].
+#'   E.g., `s(x, bs = 'cc', k = 4), knots = list(x = c(1, 2, 3, 4))`
 #' @param reml Logical: use REML (restricted maximum likelihood) estimation
 #'   rather than maximum likelihood? REML accounts for uncertainty in estimating
 #'   fixed effects and can reduce bias in variance parameter estimates, but
@@ -167,40 +159,31 @@ NULL
 #'   different fixed effects. Use `TRUE` if your focus is on random effect
 #'   variance parameters; use `FALSE` (default) if comparing models with different
 #'   fixed effects or performing index standardization.
-#' @param silent Silent or include optimization details? Helpful to set to
-#'   `FALSE` for models that take a while to fit.
-#' @param anisotropy Logical: allow for anisotropy (spatial correlation that is
-#'   directionally dependent)? See [plot_anisotropy()]. Applies to SPDE models
-#'   only and is shared by both components of a delta model.
-#' @param control Optimization control options via [sdmTMBcontrol()].
 #' @param priors Optional penalties/priors via [sdmTMBpriors()]. Must currently
 #'   be shared across delta models.
-#' @param knots Optional named list containing knot values to be used for basis
-#'   construction of smoothing terms. See [mgcv::gam()] and [mgcv::gamm()].
-#'   E.g., `s(x, bs = 'cc', k = 4), knots = list(x = c(1, 2, 3, 4))`
+#' @param bayesian Logical indicating if the model will be passed to
+#'   \pkg{tmbstan}. If `TRUE`, Jacobian adjustments are applied to account for
+#'   parameter transformations when priors are applied.
+#' @param control Optimization control options via [sdmTMBcontrol()].
 #' @param previous_fit A previously fitted sdmTMB model to initialize the
 #'   optimization with. Can greatly speed up fitting. Note that the model must
 #'   be set up *exactly* the same way. However, the data and `weights` arguments
 #'   can change, which can be useful for cross-validation.
+#' @param silent Silent or include optimization details? Helpful to set to
+#'   `FALSE` for models that take a while to fit.
 #' @param do_fit Fit the model (`TRUE`) or return the processed data without
 #'   fitting (`FALSE`)?
-#' @param do_index Do index standardization calculations while fitting? Saves
-#'   memory and time when working with large datasets or projection grids since
-#'   the TMB object doesn't have to be rebuilt with [predict.sdmTMB()] and
-#'   [get_index()]. If `TRUE`, then `predict_args` must have a `newdata` element
-#'   supplied and `area` can be supplied to `index_args`.
-#'   Most users can ignore this option. The fitted object can be passed directly
-#'   to [get_index()].
-#' @param predict_args A list of arguments to pass to [predict.sdmTMB()] **if**
-#'   `do_index = TRUE`. Most users can ignore this option.
-#' @param index_args A list of arguments to pass to [get_index()] **if**
-#'   `do_index = TRUE`. Currently, `area` and `derived_link` are supported.
-#'   Bias correction can be done when calling [get_index()] on the resulting
-#'   fitted object.
-#'   Most users can ignore this option.
-#' @param bayesian Logical indicating if the model will be passed to
-#'   \pkg{tmbstan}. If `TRUE`, Jacobian adjustments are applied to account for
-#'   parameter transformations when priors are applied.
+#' @param do_index `r lifecycle::badge("deprecated")` Do index
+#'   standardization calculations while fitting? Instead, fit the model and
+#'   then pass the fitted model and `newdata` directly to [get_index()],
+#'   [get_cog()], [get_eao()], or [get_weighted_average()]. If `TRUE`, then
+#'   `predict_args` must have a `newdata` element supplied and `area` can be
+#'   supplied to `index_args`.
+#' @param predict_args `r lifecycle::badge("deprecated")` A list of arguments
+#'   to pass to [predict.sdmTMB()] **if** `do_index = TRUE`.
+#' @param index_args `r lifecycle::badge("deprecated")` A list of arguments to
+#'   pass to [get_index()] **if** `do_index = TRUE`. Currently, `area` and
+#'   `derived_link` are supported.
 #' @param experimental A named list for esoteric or in-development options. Here
 #'   be dragons.
 #' @importFrom methods as is
@@ -659,29 +642,29 @@ sdmTMB <- function(
     mesh,
     time = NULL,
     family = gaussian(link = "identity"),
-    distribution_column = NULL,
     spatial = c("on", "off"),
     spatiotemporal = c("iid", "ar1", "rw", "off"),
+    extra_time = NULL,
     spatial_model = c("spde", "sar", "car"),
     share_range = TRUE,
+    anisotropy = FALSE,
+    offset = NULL,
+    weights = NULL,
+    dispformula = ~ 1,
+    censored_upper = NULL,
+    distribution_column = NULL,
+    spatial_varying = NULL,
     time_varying = NULL,
     time_varying_type = c("rw", "rw0", "ar1"),
-    spatial_varying = NULL,
-    dispformula = ~ 1,
     nonlocal_formula = NULL,
     nonlocal_data = NULL,
-    weights = NULL,
-    offset = NULL,
-    censored_upper = NULL,
-    extra_time = NULL,
-    reml = FALSE,
-    silent = TRUE,
-    anisotropy = FALSE,
-    control = sdmTMBcontrol(),
-    priors = sdmTMBpriors(),
     knots = NULL,
+    reml = FALSE,
+    priors = sdmTMBpriors(),
     bayesian = FALSE,
+    control = sdmTMBcontrol(),
     previous_fit = NULL,
+    silent = TRUE,
     do_fit = TRUE,
     do_index = FALSE,
     predict_args = NULL,
@@ -765,6 +748,16 @@ sdmTMB <- function(
   }
   if (do_index && .family_spec_is_multi_family(family_spec)) {
     cli_abort("`do_index = TRUE` is not yet supported for multi-family models.")
+  }
+  if (isTRUE(do_index)) {
+    lifecycle::deprecate_soft(
+      "1.2.0",
+      "sdmTMB(do_index = )",
+      details = paste(
+        "Fit the model and then pass it with `newdata` directly to `get_index()`,",
+        "`get_cog()`, `get_eao()`, or `get_weighted_average()`."
+      )
+    )
   }
 
   if (inherits(formula, "formula")) {

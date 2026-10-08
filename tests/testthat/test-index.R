@@ -204,7 +204,7 @@ test_that("get_index() can override the derived response link for cloglog binomi
   expect_equal(idx_log, idx_split)
 
   do_index_fit <- function(index_args) {
-    sdmTMB(
+    lifecycle::expect_deprecated(fit <- sdmTMB(
       prop ~ 0 + as.factor(time),
       data = d,
       family = binomial(link = "cloglog"),
@@ -215,7 +215,8 @@ test_that("get_index() can override the derived response link for cloglog binomi
       do_index = TRUE,
       predict_args = list(newdata = nd),
       index_args = index_args
-    )
+    ), "do_index")
+    fit
   }
   m_do_index <- do_index_fit(list(area = n_trials, derived_link = "log"))
   expect_equal(get_index(m_do_index, bias_correct = FALSE)$est, idx_log$est)
@@ -421,7 +422,7 @@ test_that("index functions work directly on do_index = TRUE fits", {
 
   pcod_spde <- make_mesh(pcod, c("X", "Y"), n_knots = 50, type = "kmeans")
   nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  m <- sdmTMB(
+  lifecycle::expect_deprecated(m <- sdmTMB(
     data = pcod,
     formula = density ~ 0 + as.factor(year),
     spatiotemporal = "off", # speed
@@ -430,7 +431,7 @@ test_that("index functions work directly on do_index = TRUE fits", {
     do_index = TRUE,
     predict_args = list(newdata = nd),
     index_args = list(area = 1)
-  )
+  ), "do_index")
 
   # precomputed fast path still used when nothing is overridden:
   ind <- get_index(m, bias_correct = FALSE)

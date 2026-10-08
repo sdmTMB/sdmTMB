@@ -10,29 +10,29 @@ sdmTMB(
   mesh,
   time = NULL,
   family = gaussian(link = "identity"),
-  distribution_column = NULL,
   spatial = c("on", "off"),
   spatiotemporal = c("iid", "ar1", "rw", "off"),
+  extra_time = NULL,
   spatial_model = c("spde", "sar", "car"),
   share_range = TRUE,
+  anisotropy = FALSE,
+  offset = NULL,
+  weights = NULL,
+  dispformula = ~1,
+  censored_upper = NULL,
+  distribution_column = NULL,
+  spatial_varying = NULL,
   time_varying = NULL,
   time_varying_type = c("rw", "rw0", "ar1"),
-  spatial_varying = NULL,
-  dispformula = ~1,
   nonlocal_formula = NULL,
   nonlocal_data = NULL,
-  weights = NULL,
-  offset = NULL,
-  censored_upper = NULL,
-  extra_time = NULL,
-  reml = FALSE,
-  silent = TRUE,
-  anisotropy = FALSE,
-  control = sdmTMBcontrol(),
-  priors = sdmTMBpriors(),
   knots = NULL,
+  reml = FALSE,
+  priors = sdmTMBpriors(),
   bayesian = FALSE,
+  control = sdmTMBcontrol(),
   previous_fit = NULL,
+  silent = TRUE,
   do_fit = TRUE,
   do_index = FALSE,
   predict_args = NULL,
@@ -63,34 +63,13 @@ are actually spatiotemporal and you wish to calculate derived quantities
 downstream (e.g., \code{\link[=get_index]{get_index()}} or \code{\link[=get_cog]{get_cog()}}), then supply the time argument.}
 
 \item{family}{A family object specifying the response distribution and
-link. In addition to \code{\link[=gaussian]{gaussian()}}, \code{\link[=Gamma]{Gamma()}}, \code{\link[=binomial]{binomial()}}, and
-\code{\link[=poisson]{poisson()}}, sdmTMB provides (see \link{Families}):
-\itemize{
-\item Continuous: \code{\link[=student]{student()}}, \code{\link[=lognormal]{lognormal()}}, \code{\link[=gengamma]{gengamma()}}
-\item Proportions: \code{\link[=Beta]{Beta()}}, \code{\link[=ordbeta]{ordbeta()}}
-\item Non-negative with exact zeros: \code{\link[=tweedie]{tweedie()}}
-\item Counts: \code{\link[=nbinom2]{nbinom2()}}, \code{\link[=nbinom1]{nbinom1()}}, \code{\link[=truncated_nbinom2]{truncated_nbinom2()}},
-\code{\link[=truncated_nbinom1]{truncated_nbinom1()}}, \code{\link[=betabinomial]{betabinomial()}}
-\item Censored counts: \code{\link[=censored_poisson]{censored_poisson()}}, \code{\link[=censored_nbinom2]{censored_nbinom2()}},
-\code{\link[=censored_nbinom1]{censored_nbinom1()}}, \code{\link[=censored_binomial]{censored_binomial()}}, \code{\link[=censored_betabinomial]{censored_betabinomial()}}
-\item Two-component mixtures: \code{\link[=gamma_mix]{gamma_mix()}}, \code{\link[=lognormal_mix]{lognormal_mix()}},
-\code{\link[=nbinom2_mix]{nbinom2_mix()}}
-\item Delta/hurdle: \code{\link[=delta_gamma]{delta_gamma()}}, \code{\link[=delta_lognormal]{delta_lognormal()}}, \code{\link[=delta_gengamma]{delta_gengamma()}},
-\code{\link[=delta_beta]{delta_beta()}}, \code{\link[=delta_truncated_nbinom2]{delta_truncated_nbinom2()}},
-\code{\link[=delta_truncated_nbinom1]{delta_truncated_nbinom1()}}, \code{\link[=delta_gamma_mix]{delta_gamma_mix()}},
-\code{\link[=delta_lognormal_mix]{delta_lognormal_mix()}}
-}
-
-See 'Binomial families', 'Censored families', and 'Delta/hurdle models'
-in Details. Experimental multi-family models take a named list of
+link: \code{\link[=gaussian]{gaussian()}}, \code{\link[=Gamma]{Gamma()}}, \code{\link[=binomial]{binomial()}}, \code{\link[=poisson]{poisson()}}, or one of the
+additional families listed in \link{Families} (e.g., \code{\link[=tweedie]{tweedie()}},
+\code{\link[=nbinom2]{nbinom2()}}, \code{\link[=delta_gamma]{delta_gamma()}}). See 'Binomial families', 'Censored
+families', and 'Delta/hurdle models' in Details. Experimental multi-family models take a named list of
 families; \code{distribution_column} then assigns each row to one of them. See
 the \href{https://sdmTMB.github.io/sdmTMB/articles/multi-family.html}{multi-family vignette} for
 supported combinations.}
-
-\item{distribution_column}{For experimental multi-family models, the name of
-the column in \code{data} mapping each row to a family in the named \code{family}
-list. See the multi-family vignette for the supported family and method
-combinations.}
 
 \item{spatial}{Estimate spatial random fields? Options are \code{'on'} / \code{'off'}
 or equivalently \code{TRUE} / \code{FALSE}. Optionally, a list for delta models,
@@ -109,6 +88,10 @@ consider switching to \code{'rw'}. See the \href{https://sdmTMB.github.io/sdmTMB
 mathematical details. Capitalization is ignored. \code{TRUE} gets converted to
 \code{'iid'} and \code{FALSE} gets converted to \code{'off'}.}
 
+\item{extra_time}{Optional extra time slices (e.g., years) to include for
+interpolation or forecasting with the predict function. See the Details
+section below.}
+
 \item{spatial_model}{Spatial process model. \code{"spde"} uses the default
 continuous-space SPDE approximation. \code{"sar"} and \code{"car"} use areal spatial
 autoregressive models with an areal domain supplied to \code{mesh}.
@@ -118,6 +101,59 @@ Capitalization is ignored.}
 spatial and spatiotemporal fields (\code{TRUE}, default) or separate range
 parameters (\code{FALSE})? For delta models, can be a list, e.g.,
 \code{list(TRUE, FALSE)}. Applies to SPDE models only.}
+
+\item{anisotropy}{Logical: allow for anisotropy (spatial correlation that is
+directionally dependent)? See \code{\link[=plot_anisotropy]{plot_anisotropy()}}. Applies to SPDE models
+only and is shared by both components of a delta model.}
+
+\item{offset}{A numeric vector representing the model offset \emph{or} a character
+value representing the column name of the offset. In delta/hurdle models,
+this applies only to the positive component except for Poisson-link delta
+models, where it also enters the occurrence-probability calculation.
+Usually a log transformed variable.}
+
+\item{weights}{An optional numeric vector (not a column name) of weights on
+each observation's contribution to the likelihood. As in \pkg{glmmTMB},
+weights need not sum to one and are not rescaled. For binomial-type
+families with a proportion response, \code{weights} gives the number of trials
+instead; see 'Binomial families' in Details.}
+
+\item{dispformula}{A one-sided formula for the dispersion parameter (e.g.,
+\code{phi}). The default, \code{~ 1}, estimates a single value. Ignored for
+families without a dispersion parameter (e.g., binomial or Poisson). In
+delta models, applies to the positive component. Not yet available for
+multi-family models or truncated negative binomial families.}
+
+\item{censored_upper}{Upper bounds for censored families
+(\code{\link[=censored_poisson]{censored_poisson()}}, \code{\link[=censored_nbinom1]{censored_nbinom1()}}, \code{\link[=censored_nbinom2]{censored_nbinom2()}},
+\code{\link[=censored_binomial]{censored_binomial()}}, and \code{\link[=censored_betabinomial]{censored_betabinomial()}}): a numeric vector
+\emph{or} a character value naming a column in \code{data}. Each observation is
+treated as a count between the response and this bound: a value equal to
+the response is uncensored, a larger value is interval-censored, and \code{Inf}
+is right-censored (up to the number of trials for \code{\link[=censored_binomial]{censored_binomial()}}
+and \code{\link[=censored_betabinomial]{censored_betabinomial()}}). For left censoring (e.g., fewer than 5), use a
+response of 0 and the largest possible count as the bound (e.g., 4).}
+
+\item{distribution_column}{For experimental multi-family models, the name of
+the column in \code{data} mapping each row to a family in the named \code{family}
+list. See the multi-family vignette for the supported family and method
+combinations.}
+
+\item{spatial_varying}{An optional one-sided formula of coefficients that
+should vary in space as random fields. Allows the effect of a covariate to
+differ spatially. You likely want to include the same variable as a fixed
+effect in \code{formula} to estimate the average effect—the spatial field then
+represents deviations from that average. For example,
+use \code{formula = y ~ depth} and \code{spatial_varying = ~ 0 + depth} to model an
+average depth effect plus spatially varying deviations. If a (scaled) time
+column is used, this creates a local-time-trend model. See
+\doi{10.1111/ecog.05176} and the \href{https://sdmTMB.github.io/sdmTMB/articles/spatial-trend-models.html}{spatial trends vignette}.
+Predictors should usually be centered to have mean zero and standard deviation
+approximately 1. \strong{The spatial intercept is controlled by the \code{spatial}
+argument}; set \code{spatial = 'on'} or \code{'off'} to include or exclude it. For a
+factor, \code{~ 0 + f} gives every level its own field, which would duplicate
+the spatial intercept field, so set \code{spatial = 'off'} to match. Structure
+is shared in delta models.}
 
 \item{time_varying}{An optional one-sided formula of coefficients that vary
 through time following the process set by \code{time_varying_type}. Whether
@@ -138,28 +174,6 @@ For \code{'rw0'} and \code{'ar1'}, include the same covariates in \code{formula}
 time-varying process then describes deviations from that average effect.
 Shared by both components of a delta model.}
 
-\item{spatial_varying}{An optional one-sided formula of coefficients that
-should vary in space as random fields. Allows the effect of a covariate to
-differ spatially. You likely want to include the same variable as a fixed
-effect in \code{formula} to estimate the average effect—the spatial field then
-represents deviations from that average. For example,
-use \code{formula = y ~ depth} and \code{spatial_varying = ~ 0 + depth} to model an
-average depth effect plus spatially varying deviations. If a (scaled) time
-column is used, this creates a local-time-trend model. See
-\doi{10.1111/ecog.05176} and the \href{https://sdmTMB.github.io/sdmTMB/articles/spatial-trend-models.html}{spatial trends vignette}.
-Predictors should usually be centered to have mean zero and standard deviation
-approximately 1. \strong{The spatial intercept is controlled by the \code{spatial}
-argument}; set \code{spatial = 'on'} or \code{'off'} to include or exclude it. For a
-factor, \code{~ 0 + f} gives every level its own field, which would duplicate
-the spatial intercept field, so set \code{spatial = 'off'} to match. Structure
-is shared in delta models.}
-
-\item{dispformula}{A one-sided formula for the dispersion parameter (e.g.,
-\code{phi}). The default, \code{~ 1}, estimates a single value. Ignored for
-families without a dispersion parameter (e.g., binomial or Poisson). In
-delta models, applies to the positive component. Not yet available for
-multi-family models or truncated negative binomial families.}
-
 \item{nonlocal_formula}{An optional one-sided formula of non-local
 covariate effects: \code{\link[=diffusion]{diffusion()}} for an effect of conditions in the
 surrounding area, and \code{\link[=time_lag]{time_lag()}} for an effect of conditions in
@@ -179,31 +193,9 @@ columns, and the \code{time} column if \code{nonlocal_formula} is time-indexed
 that case, it must cover every fitted (+ \code{extra_time}) time slice.
 Defaults to \code{NULL}, in which case \code{data} is used.}
 
-\item{weights}{An optional numeric vector (not a column name) of weights on
-each observation's contribution to the likelihood. As in \pkg{glmmTMB},
-weights need not sum to one and are not rescaled. For binomial-type
-families with a proportion response, \code{weights} gives the number of trials
-instead; see 'Binomial families' in Details.}
-
-\item{offset}{A numeric vector representing the model offset \emph{or} a character
-value representing the column name of the offset. In delta/hurdle models,
-this applies only to the positive component except for Poisson-link delta
-models, where it also enters the occurrence-probability calculation.
-Usually a log transformed variable.}
-
-\item{censored_upper}{Upper bounds for censored families
-(\code{\link[=censored_poisson]{censored_poisson()}}, \code{\link[=censored_nbinom1]{censored_nbinom1()}}, \code{\link[=censored_nbinom2]{censored_nbinom2()}},
-\code{\link[=censored_binomial]{censored_binomial()}}, and \code{\link[=censored_betabinomial]{censored_betabinomial()}}): a numeric vector
-\emph{or} a character value naming a column in \code{data}. Each observation is
-treated as a count between the response and this bound: a value equal to
-the response is uncensored, a larger value is interval-censored, and \code{Inf}
-is right-censored (up to the number of trials for \code{\link[=censored_binomial]{censored_binomial()}}
-and \code{\link[=censored_betabinomial]{censored_betabinomial()}}). For left censoring (e.g., fewer than 5), use a
-response of 0 and the largest possible count as the bound (e.g., 4).}
-
-\item{extra_time}{Optional extra time slices (e.g., years) to include for
-interpolation or forecasting with the predict function. See the Details
-section below.}
+\item{knots}{Optional named list containing knot values to be used for basis
+construction of smoothing terms. See \code{\link[mgcv:gam]{mgcv::gam()}} and \code{\link[mgcv:gamm]{mgcv::gamm()}}.
+E.g., \verb{s(x, bs = 'cc', k = 4), knots = list(x = c(1, 2, 3, 4))}}
 
 \item{reml}{Logical: use REML (restricted maximum likelihood) estimation
 rather than maximum likelihood? REML accounts for uncertainty in estimating
@@ -213,50 +205,39 @@ different fixed effects. Use \code{TRUE} if your focus is on random effect
 variance parameters; use \code{FALSE} (default) if comparing models with different
 fixed effects or performing index standardization.}
 
-\item{silent}{Silent or include optimization details? Helpful to set to
-\code{FALSE} for models that take a while to fit.}
-
-\item{anisotropy}{Logical: allow for anisotropy (spatial correlation that is
-directionally dependent)? See \code{\link[=plot_anisotropy]{plot_anisotropy()}}. Applies to SPDE models
-only and is shared by both components of a delta model.}
-
-\item{control}{Optimization control options via \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}}.}
-
 \item{priors}{Optional penalties/priors via \code{\link[=sdmTMBpriors]{sdmTMBpriors()}}. Must currently
 be shared across delta models.}
-
-\item{knots}{Optional named list containing knot values to be used for basis
-construction of smoothing terms. See \code{\link[mgcv:gam]{mgcv::gam()}} and \code{\link[mgcv:gamm]{mgcv::gamm()}}.
-E.g., \verb{s(x, bs = 'cc', k = 4), knots = list(x = c(1, 2, 3, 4))}}
 
 \item{bayesian}{Logical indicating if the model will be passed to
 \pkg{tmbstan}. If \code{TRUE}, Jacobian adjustments are applied to account for
 parameter transformations when priors are applied.}
+
+\item{control}{Optimization control options via \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}}.}
 
 \item{previous_fit}{A previously fitted sdmTMB model to initialize the
 optimization with. Can greatly speed up fitting. Note that the model must
 be set up \emph{exactly} the same way. However, the data and \code{weights} arguments
 can change, which can be useful for cross-validation.}
 
+\item{silent}{Silent or include optimization details? Helpful to set to
+\code{FALSE} for models that take a while to fit.}
+
 \item{do_fit}{Fit the model (\code{TRUE}) or return the processed data without
 fitting (\code{FALSE})?}
 
-\item{do_index}{Do index standardization calculations while fitting? Saves
-memory and time when working with large datasets or projection grids since
-the TMB object doesn't have to be rebuilt with \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} and
-\code{\link[=get_index]{get_index()}}. If \code{TRUE}, then \code{predict_args} must have a \code{newdata} element
-supplied and \code{area} can be supplied to \code{index_args}.
-Most users can ignore this option. The fitted object can be passed directly
-to \code{\link[=get_index]{get_index()}}.}
+\item{do_index}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} Do index
+standardization calculations while fitting? Instead, fit the model and
+then pass the fitted model and \code{newdata} directly to \code{\link[=get_index]{get_index()}},
+\code{\link[=get_cog]{get_cog()}}, \code{\link[=get_eao]{get_eao()}}, or \code{\link[=get_weighted_average]{get_weighted_average()}}. If \code{TRUE}, then
+\code{predict_args} must have a \code{newdata} element supplied and \code{area} can be
+supplied to \code{index_args}.}
 
-\item{predict_args}{A list of arguments to pass to \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} \strong{if}
-\code{do_index = TRUE}. Most users can ignore this option.}
+\item{predict_args}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} A list of arguments
+to pass to \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} \strong{if} \code{do_index = TRUE}.}
 
-\item{index_args}{A list of arguments to pass to \code{\link[=get_index]{get_index()}} \strong{if}
-\code{do_index = TRUE}. Currently, \code{area} and \code{derived_link} are supported.
-Bias correction can be done when calling \code{\link[=get_index]{get_index()}} on the resulting
-fitted object.
-Most users can ignore this option.}
+\item{index_args}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} A list of arguments to
+pass to \code{\link[=get_index]{get_index()}} \strong{if} \code{do_index = TRUE}. Currently, \code{area} and
+\code{derived_link} are supported.}
 
 \item{experimental}{A named list for esoteric or in-development options. Here
 be dragons.}

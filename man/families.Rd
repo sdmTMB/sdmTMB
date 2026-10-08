@@ -119,7 +119,26 @@ A list with elements common to standard R family objects including \code{family}
 elements \code{delta} (logical) and \code{type} (standard vs. Poisson-link).
 }
 \description{
-Additional families compatible with \code{\link[=sdmTMB]{sdmTMB()}}.
+Additional families compatible with \code{\link[=sdmTMB]{sdmTMB()}}. In addition to
+\code{\link[=gaussian]{gaussian()}}, \code{\link[=Gamma]{Gamma()}}, \code{\link[=binomial]{binomial()}}, and \code{\link[=poisson]{poisson()}}, sdmTMB provides:
+\itemize{
+\item Continuous: \code{\link[=student]{student()}}, \code{\link[=lognormal]{lognormal()}}, \code{\link[=gengamma]{gengamma()}}
+\item Proportions: \code{\link[=Beta]{Beta()}}, \code{\link[=ordbeta]{ordbeta()}}
+\item Non-negative with exact zeros: \code{\link[=tweedie]{tweedie()}}
+\item Counts: \code{\link[=nbinom2]{nbinom2()}}, \code{\link[=nbinom1]{nbinom1()}}, \code{\link[=truncated_nbinom2]{truncated_nbinom2()}},
+\code{\link[=truncated_nbinom1]{truncated_nbinom1()}}, \code{\link[=betabinomial]{betabinomial()}}
+\item Censored counts: \code{\link[=censored_poisson]{censored_poisson()}}, \code{\link[=censored_nbinom2]{censored_nbinom2()}},
+\code{\link[=censored_nbinom1]{censored_nbinom1()}}, \code{\link[=censored_binomial]{censored_binomial()}}, \code{\link[=censored_betabinomial]{censored_betabinomial()}}
+\item Two-component mixtures: \code{\link[=gamma_mix]{gamma_mix()}}, \code{\link[=lognormal_mix]{lognormal_mix()}},
+\code{\link[=nbinom2_mix]{nbinom2_mix()}}
+\item Delta/hurdle: \code{\link[=delta_gamma]{delta_gamma()}}, \code{\link[=delta_lognormal]{delta_lognormal()}}, \code{\link[=delta_gengamma]{delta_gengamma()}},
+\code{\link[=delta_beta]{delta_beta()}}, \code{\link[=delta_truncated_nbinom2]{delta_truncated_nbinom2()}},
+\code{\link[=delta_truncated_nbinom1]{delta_truncated_nbinom1()}}, \code{\link[=delta_gamma_mix]{delta_gamma_mix()}},
+\code{\link[=delta_lognormal_mix]{delta_lognormal_mix()}}
+}
+
+See 'Binomial families', 'Censored families', and 'Delta/hurdle models' in
+the Details of \code{\link[=sdmTMB]{sdmTMB()}}.
 }
 \details{
 For \code{student()}, the degrees of freedom parameter is estimated by default (\code{df = NULL}).

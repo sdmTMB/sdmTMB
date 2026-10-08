@@ -4,141 +4,146 @@
 
 #' Predict from an sdmTMB model
 #'
-#' Make predictions from an \pkg{sdmTMB} model. Predictions can be made on the
-#' original data or on new data.
+#' Make predictions from a model fitted with [sdmTMB()], either for the fitted
+#' data or for new data (e.g., a prediction grid). At new locations, the random
+#' fields are interpolated from their estimated values at the mesh vertices.
+#' Besides the overall prediction (`est`), the output separates the linear
+#' predictor into the contribution of the spatial and spatiotemporal random
+#' fields and everything else (see Value).
 #'
 #' @param object A model fitted with [sdmTMB()].
-#' @param newdata A data frame to make predictions on. It should contain the
-#'   same predictor columns as the fitted data and, for spatiotemporal models,
-#'   a time column with the same name as in the fitted data.
-#' @param type Should predictions be returned in link space (default) or
-#'   response space? Standard errors (`se_fit = TRUE`) are only available in
-#'   link space.
-#' @param se_fit Should standard errors on predictions be calculated? Warning:
-#'   can be slow for large datasets or high-resolution projections when random
-#'   fields are included. For faster uncertainty estimation, either use
-#'   `re_form = NA` to exclude random fields or use the `nsim` argument to
-#'   simulate from the joint precision matrix. Requires `type = "link"`; for
-#'   response-scale uncertainty, use `nsim`.
+#' @param newdata A data frame to predict on. If `NULL` (default), predictions
+#'   are for the fitted data. Must contain the columns used in the model
+#'   formulas (including `spatial_varying` and `time_varying`), the coordinate
+#'   columns used to build `mesh`, and, for spatiotemporal models, the `time`
+#'   column. Time values must be among those in the fitted data or
+#'   `extra_time`. Factor levels must have been seen in fitting, except for
+#'   random effect grouping factors (see `allow_new_levels`).
+#' @param type The scale of `est`: `"link"` (default; the linear predictor) or
+#'   `"response"` (the expected value of the response). For delta models,
+#'   `"response"` gives the expected value combining both components. Only
+#'   `est`, `est1`, and `est2` depend on `type`; the other columns are always on
+#'   the link scale. Standard errors (`se_fit`) require `"link"`.
+#' @param se_fit Logical: calculate standard errors of `est` on the link scale
+#'   (returned as `est_se`)? These account for uncertainty in both fixed and
+#'   random effects but can be slow for many rows when random fields are
+#'   included. For faster uncertainty, exclude the random fields with
+#'   `re_form = NA` or summarize draws from `nsim`. Use `nsim` for
+#'   response-scale uncertainty.
+#' @param re_form Include the spatial and spatiotemporal random fields
+#'   (including spatially varying coefficient fields)? `NULL` (default)
+#'   includes them. `NA` or `~ 0` excludes them for population-level
+#'   predictions, so that `est` equals `est_non_rf`; the random field columns
+#'   are then omitted. Often used with `se_fit = TRUE` to plot covariate
+#'   effects. IID random effects are set separately with `re_form_iid`.
+#' @param re_form_iid Include the IID random intercepts and slopes (e.g.,
+#'   `(1 | g)` in `formula`)? `NULL` (default) includes them. `NA` or `~ 0`
+#'   sets them all to zero. Excluding only some of them is not yet supported.
+#' @param allow_new_levels Allow levels of random effect grouping factors in
+#'   `newdata` that were not seen in fitting? Rows with a new level get a
+#'   random effect value of zero (a population-level prediction). `TRUE`
+#'   allows them silently, `FALSE` gives an error (as with `allow.new.levels`
+#'   in \pkg{lme4} and \pkg{glmmTMB}), and `NULL` (default) allows them with a
+#'   warning. Not relevant if `re_form_iid` excludes the random effects.
+#'   Grouping columns in `newdata` must be factors.
+#' @param nsim Number of draws. If `> 0`, returns a matrix of draws instead of
+#'   a data frame (see Value). Each draw takes the fixed and random effects
+#'   from their approximate joint (multivariate normal) distribution and
+#'   computes `est` (or `sims_var`). Summarize across draws (e.g.,
+#'   `apply(x, 1, sd)` or quantiles) for uncertainty on any scale, or carry
+#'   the draws through to derived quantities. Usually much faster than
+#'   `se_fit = TRUE` for models with random fields.
+#' @param sims_var Which quantity to return when `nsim > 0`: `"est"`
+#'   (default; on the scale set by `type`) or one of the link-scale columns
+#'   `"est_non_rf"`, `"est_rf"`, `"omega_s"`, `"zeta_s"`, or `"epsilon_st"`
+#'   (see Value). The model must include the term. For delta models, these
+#'   come from the component set by `model` (default: the first). With more
+#'   than one spatially varying coefficient, `"zeta_s"` returns a list of
+#'   matrices, one per coefficient. For other quantities, use
+#'   `return_tmb_report = TRUE`.
+#' @param sample_fe Logical. When `nsim > 0`, draw the fixed effects and other
+#'   estimated parameters along with the random effects (`TRUE`, default)? If
+#'   `FALSE`, these are held at their estimates and only the random effects
+#'   (random fields, IID random effects, time-varying coefficients, and smoother
+#'   coefficients) are drawn, conditional on those estimates. This ignores
+#'   parameter uncertainty and so typically gives narrower intervals. Fixed
+#'   effects are held at their estimates even with REML. See also the same
+#'   argument in [project()].
+#' @param model For delta models, what `est` (and `est_se` or the draws from
+#'   `nsim` or `mcmc_samples`) refers to: `NA` (default) combines both
+#'   components, `1` gives the first (binary) component, and `2` the second
+#'   (positive) component. The data frame output always also includes each
+#'   component as `est1` and `est2`. Ignored for other models. See the
+#'   [delta-model
+#'   vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html).
+#' @param offset A numeric vector of offset values, one per row of `newdata`
+#'   (not a column name). If `NULL` (default), predictions for the fitted data
+#'   use the fitted offset, and predictions with `newdata` use an offset of 0,
+#'   i.e., predictions per unit of the offset (e.g., density rather than
+#'   catch when the offset is log area swept).
+#' @param mcmc_samples A matrix of posterior samples from a model passed to
+#'   \pkg{tmbstan} (see `bayesian` in [sdmTMB()]), as returned by
+#'   `extract_mcmc()` in the
+#'   \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra} package. If
+#'   supplied, returns a matrix of posterior draws in the same form as with
+#'   `nsim`. If `nsim` is also supplied, the last `nsim` samples are used. See
+#'   the \href{https://sdmTMB.github.io/sdmTMB/articles/bayesian.html}{Bayesian
+#'   vignette}.
+#' @param nonlocal_newdata An optional data frame of the `nonlocal_formula`
+#'   covariates to predict with instead of those used in fitting (e.g., for a
+#'   scenario with different conditions). Same requirements as `nonlocal_data`
+#'   in [sdmTMB()]. The rows of `newdata` (or the fitted data) still set where
+#'   and when predictions are made; this argument only supplies the covariate
+#'   values that are diffused or lagged. If `NULL` (default), the covariates
+#'   from `nonlocal_data` in [sdmTMB()] are reused if supplied (so `newdata`
+#'   need not contain those columns); otherwise they come from `newdata`.
 #' @param return_tmb_object `r lifecycle::badge("deprecated")` Logical. If
 #'   `TRUE`, include the TMB object in a list-format output. Instead, pass the
 #'   fitted model and `newdata` directly to [get_index()] or [get_cog()].
-#' @param re_form `NULL` to include all spatial/spatiotemporal random fields in
-#'   predictions. `~0` or `NA` for population-level predictions (predictions
-#'   excluding spatial/spatiotemporal random fields). Often used with
-#'   `se_fit = TRUE` to visualize marginal effects. Does not affect
-#'   [get_index()] calculations.
-#' @param re_form_iid `NULL` to include all IID random intercepts/slopes in the
-#'   predictions. `~0` or `NA` for population-level predictions. No other
-#'   options (e.g., some but not all random intercepts) are not yet implemented.
-#'   Only affects predictions with `newdata`. This *does* affect [get_index()].
-#' @param allow_new_levels Logical or `NULL`. Similar to \pkg{glmmTMB}'s
-#'   `allow.new.levels`.
-#'   Allows predictions for previously unobserved levels in random effect
-#'   grouping variables. If `NULL` (default), new levels are allowed when
-#'   `re_form_iid = NA` or `re_form_iid = ~0` and a warning is issued
-#'   otherwise. If `TRUE`, new levels are explicitly allowed. If `FALSE`, a
-#'   warning is issued if new levels are found. New levels are always treated
-#'   as population-level predictions for the IID random effects
-#'   (i.e., random effect value = 0).
-#' @param nsim If `> 0`, simulate from the joint precision matrix with `nsim`
-#'   draws. Returns a matrix with one row per prediction location and one column
-#'   per draw. By default, each column represents one draw of the linear predictor
-#'   in link space; use `type = "response"` for response-space draws. Simulating
-#'   from the joint precision matrix accounts for uncertainty in both fixed and
-#'   random effects. Use this to derive uncertainty on predictions (e.g.,
-#'   `apply(x, 1, sd)`) or propagate uncertainty to derived quantities. This is
-#'   the fastest way to characterize spatial uncertainty with sdmTMB.
-#' @param sample_fe Logical. When `nsim > 0`, sample uncertainty in the fixed
-#'   effects and other estimated parameters? If `FALSE`, these are held at
-#'   their estimated values and only the random effects (random fields, IID
-#'   random effects, time-varying coefficients, and smoother coefficients) are
-#'   drawn from their distribution conditional on the estimated parameters
-#'   (similar to `obj$MC()` in \pkg{TMB}). Fixed effects are held at their
-#'   estimates even with REML. See also the same argument in [project()].
-#' @param sims_var Experimental: Which TMB reported variable from the model
-#'   should be extracted from the joint precision matrix simulation draws?
-#'   Defaults to link-space predictions. Other options are `"omega_s"`,
-#'   `"zeta_s"`, `"epsilon_st"`, `"est_rf"`, and `"est_non_rf"` (as described
-#'   below); the model must include the term. Options other than `"est"` are
-#'   returned in link space and cannot be combined with `type = "response"`.
-#'   For other reported variables, use `return_tmb_report = TRUE`.
-#' @param mcmc_samples See `extract_mcmc()` in the
-#'   \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra} package for
-#'   more details and the
-#'   \href{https://sdmTMB.github.io/sdmTMB/articles/bayesian.html}{Bayesian vignette}.
-#'   If specified, the predict function will return a matrix of a similar form
-#'   as if `nsim > 0` but representing Bayesian posterior samples from the Stan
-#'   model.
-#' @param nonlocal_newdata An optional data frame overriding the
-#'   `nonlocal_formula` covariate field used for prediction (e.g., for a
-#'   counterfactual/scenario surface), with the same requirements as
-#'   `nonlocal_data` in [sdmTMB()]. `newdata`'s x/y and time columns
-#'   always determine *where* predictions are projected to; this argument only
-#'   controls where the underlying diffused covariate values come from.
-#'   Defaults to `NULL`: if a grid was supplied at fit time, the fitted field
-#'   is reused as-is (so `newdata` need not contain the diffusion covariate
-#'   columns); otherwise the field is rebuilt from `newdata`'s own covariate
-#'   columns, as before. Also applies when `newdata = NULL`, in which case
-#'   predictions are projected onto the fitted data.
-#' @param model Which component to predict from delta/hurdle models when `nsim >
-#'   0` or `mcmc_samples` is supplied. `NA` (default) returns the combined
-#'   prediction from both components; `1` returns the binomial component only; `2`
-#'   returns the positive component only. Predictions are on the link or response
-#'   scale depending on `type`. For regular predictions (without simulation),
-#'   both components are returned. See the [delta-model
-#'   vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html).
-#' @param offset A numeric vector of optional offset values, one per row of
-#'   `newdata`. If `NULL` (default), predictions on the fitted data (`newdata =
-#'   NULL`) use the offset from the fitted model and predictions with `newdata`
-#'   use an offset of 0.
-#' @param return_tmb_report Logical: return the output from the TMB
-#'   report? For regular prediction, this is all the reported variables
-#'   at the MLE parameter values. For `nsim > 0` or when `mcmc_samples`
-#'   is supplied, this is a list with one element per sample; each element
-#'   contains the report output for that sample. With `newdata = NULL`, this
-#'   is the fitted model's report unless another argument requires projecting
-#'   onto the fitted data, in which case it is the projection report.
-#' @param return_tmb_data Logical: return formatted data for TMB? Used
-#'   internally. With `newdata = NULL`, the fitted data are prepared as
-#'   prediction data (with the fitted offset unless `offset` is supplied).
+#' @param return_tmb_report Logical: return the TMB report (a list of all
+#'   reported quantities at the estimated parameters) instead of a data frame?
+#'   With `nsim > 0` or `mcmc_samples`, a list with one report per draw.
+#'   Mainly for developers.
+#' @param return_tmb_data Logical: return the data list passed to TMB instead
+#'   of predicting? Used internally.
 #' @param ... Unused.
 #'
 #' @return
-#' If `return_tmb_object = FALSE` (and `nsim = 0` and `mcmc_samples = NULL`):
+#' By default, `newdata` (or the fitted data) with these columns added:
 #'
-#' A data frame:
-#' * `est`: Estimate in link or response space, depending on `type`
-#' * `est_non_rf`: Estimate from everything except spatial/spatiotemporal random fields (fixed effects, random intercepts, time-varying effects, etc.)
-#' * `est_rf`: Estimate from all random fields combined
-#' * `omega_s`: Spatial random field (models consistent spatial patterns)
-#' * `zeta_s`: Spatially varying coefficient field (models how effects vary across space)
-#' * `epsilon_st`: Spatiotemporal random field (models spatial patterns that vary over time)
-#' * `nl_*`: Nonlocal transformed covariate values (one column per
-#'   nonlocal term; available when `nonlocal_formula` terms were fitted)
+#' * `est`: The prediction on the scale set by `type`.
+#' * `est_se`: The standard error of `est` on the link scale, if
+#'   `se_fit = TRUE`.
+#' * `est_non_rf`: The linear predictor excluding the spatial and
+#'   spatiotemporal random fields: fixed effects, smoothers, IID random
+#'   effects, time-varying coefficients, and the offset.
+#' * `est_rf`: The sum of all random field terms, including spatially varying
+#'   coefficient fields multiplied by their covariates. On the link scale,
+#'   `est_non_rf + est_rf` equals `est`.
+#' * `omega_s`: The spatial random field.
+#' * `zeta_s_<x>`: The spatially varying coefficient field for covariate `<x>`
+#'   in `spatial_varying`: the local deviation from the average coefficient,
+#'   not multiplied by the covariate.
+#' * `epsilon_st`: The spatiotemporal random field.
+#' * `nl_*`: The transformed covariate values for each `nonlocal_formula`
+#'   term.
 #'
-#' Delta/hurdle models return component-specific columns with `1` and `2`
-#' suffixes for the binomial and positive components, respectively (e.g.,
-#' `est1`, `est2`, `omega_s1`, `omega_s2`). With `type = "response"`,
-#' `est` is the combined response-scale prediction.
+#' Columns for terms not in the model are left out, as are the random field
+#' columns with `re_form = NA`.
 #'
-#' If `return_tmb_object = TRUE` (and `nsim = 0` and `mcmc_samples = NULL`):
+#' Delta models instead return each column (other than `est` and `est_se`)
+#' per component, with suffixes `1` and `2` for the first and second
+#' components (e.g., `est1`, `est2`, `omega_s1`, `omega_s2`). The identity
+#' above then holds within each component, and `est` combines the components
+#' (or gives one of them; see `model`).
 #'
-#' A list:
-#' * `data`: The data frame described above
-#' * `report`: The TMB report on parameter values
-#' * `obj`: The TMB object returned from the prediction run
-#' * `fit_obj`: The original TMB model object
+#' If `nsim > 0` or `mcmc_samples` is supplied: a matrix with one row per row
+#' of `newdata` (or the fitted data) and one column per draw. Row names are
+#' the time values.
 #'
-#' In this case, you likely only need the `data` element as an end user.
-#' The other elements are included for other functions.
-#'
-#' If `nsim > 0` or `mcmc_samples` is not `NULL`:
-#'
-#' A matrix:
-#'
-#' * Columns represent samples
-#' * Rows represent predictions, with one row per row of `newdata`
+#' If `return_tmb_object = TRUE` (deprecated): a list with elements `data`
+#' (the data frame above), `report` (the TMB report), `obj` (the TMB object
+#' from the prediction), and `fit_obj` (the fitted model).
 #'
 #' @export
 #'
@@ -183,7 +188,7 @@
 #'   ggtitle("Prediction (fixed effects + all random effects)")
 #'
 #' plot_map(predictions, exp(est_non_rf)) +
-#'   ggtitle("Prediction (fixed effects and any time-varying effects)") +
+#'   ggtitle("Prediction without random fields (fixed effects only here)") +
 #'   scale_fill_viridis_c(trans = "sqrt")
 #'
 #' plot_map(predictions, est_rf) +
@@ -280,7 +285,7 @@
 #'   scale_fill_gradient2()
 #'
 #' plot_map(p, exp(est_non_rf)) +
-#'   ggtitle("Prediction (fixed effects only)") +
+#'   ggtitle("Prediction without random fields (fixed effects only here)") +
 #'   scale_fill_viridis_c(trans = "sqrt")
 #'
 #' plot_map(p, exp(est)) +
@@ -583,8 +588,9 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
   # from glmmTMB:
   pop_pred <- (!is.null(re_form) && ((re_form == ~0) || identical(re_form, NA)))
   pop_pred_iid <- (!is.null(re_form_iid) && ((re_form_iid == ~0) || identical(re_form_iid, NA)))
-  if (is.null(allow_new_levels)) {
-    allow_new_levels <- pop_pred_iid
+  if (!is.null(allow_new_levels) && !isTRUE(allow_new_levels) &&
+    !isFALSE(allow_new_levels)) {
+    cli_abort("`allow_new_levels` must be `NULL`, `TRUE`, or `FALSE`.")
   }
   exclude_RE <- if (pop_pred_iid) 1L else object$tmb_data$exclude_RE
 

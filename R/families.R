@@ -373,7 +373,26 @@ truncated_nbinom1 <- function(link = "log") {
 
 #' Additional families
 #'
-#' Additional families compatible with [sdmTMB()].
+#' @description
+#' Additional families compatible with [sdmTMB()]. In addition to
+#' [gaussian()], [Gamma()], [binomial()], and [poisson()], sdmTMB provides:
+#'
+#' * Continuous: [student()], [lognormal()], [gengamma()]
+#' * Proportions: [Beta()], [ordbeta()]
+#' * Non-negative with exact zeros: [tweedie()]
+#' * Counts: [nbinom2()], [nbinom1()], [truncated_nbinom2()],
+#'   [truncated_nbinom1()], [betabinomial()]
+#' * Censored counts: [censored_poisson()], [censored_nbinom2()],
+#'   [censored_nbinom1()], [censored_binomial()], [censored_betabinomial()]
+#' * Two-component mixtures: [gamma_mix()], [lognormal_mix()],
+#'   [nbinom2_mix()]
+#' * Delta/hurdle: [delta_gamma()], [delta_lognormal()], [delta_gengamma()],
+#'   [delta_beta()], [delta_truncated_nbinom2()],
+#'   [delta_truncated_nbinom1()], [delta_gamma_mix()],
+#'   [delta_lognormal_mix()]
+#'
+#' See 'Binomial families', 'Censored families', and 'Delta/hurdle models' in
+#' the Details of [sdmTMB()].
 #'
 #' @param link Link.
 #' @param df Student-t degrees of freedom parameter. Can be `NULL` to estimate (default)
