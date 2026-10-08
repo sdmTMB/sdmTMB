@@ -292,6 +292,7 @@ test_that("censored binomial log probabilities match a direct sum", {
 # first row is a right-censored count far above what the model expects, whose
 # complement P(Y < y) rounds to 1.
 test_that("censored binomial observation-level random effects are consistent", {
+  local_rtmb_backend()
   skip_if_not_installed("numDeriv")
   set.seed(3)
   n <- 80L
@@ -315,6 +316,7 @@ test_that("censored binomial observation-level random effects are consistent", {
 })
 
 test_that("censored beta-binomial likelihood and gradient are correct", {
+  local_rtmb_backend()
   skip_if_not_installed("numDeriv")
   set.seed(81)
   n <- 30L
@@ -346,6 +348,7 @@ test_that("censored beta-binomial likelihood and gradient are correct", {
 })
 
 test_that("censored beta-binomial bounds are whole counts", {
+  local_rtmb_backend()
   d <- data.frame(y = c(2, 3, 1, 4, 0, 5, 6), n = c(10, 10, 10, 10, 10, 10, 6))
   # U = 2.5 contains only Y = 2; values within rounding error of an integer
   # are that integer; others are rounded down; Inf and U = n are full support
@@ -379,6 +382,7 @@ test_that("censored beta-binomial bounds are whole counts", {
 })
 
 test_that("censored beta-binomial responses must be whole counts", {
+  local_rtmb_backend()
   d <- data.frame(y = c(0.2, 0.3, 0.1, 0.4), n = 10)
   cens_bb <- function(data, upr = rep(Inf, nrow(data)), weights = data$n,
     formula = y ~ 1) {
@@ -424,6 +428,7 @@ test_that("censored_betabinomial() accepts links like betabinomial()", {
 
 # The Laplace gradient needs third derivatives of the censored terms.
 test_that("censored beta-binomial random-effect models are consistent", {
+  local_rtmb_backend()
   skip_if_not_installed("numDeriv")
   set.seed(3)
   n <- 60L
@@ -456,6 +461,7 @@ test_that("censored beta-binomial random-effect models are consistent", {
 })
 
 test_that("censored beta-binomial fits sum the shorter side with a precision check", {
+  local_rtmb_backend()
   set.seed(4)
   n <- 100L
   d <- data.frame(z = rnorm(n), hooks = 300)
@@ -501,6 +507,7 @@ test_that("censored beta-binomial fits sum the shorter side with a precision che
 })
 
 test_that("censored beta-binomial held-out CV rows use the direct sum", {
+  local_rtmb_backend()
   set.seed(5)
   n <- 60L
   d <- data.frame(z = rnorm(n), hooks = 100, X = runif(n), Y = runif(n))
@@ -646,6 +653,7 @@ test_that("RTMB truncated NB draws are finite and match conditional moments", {
 # Right-censored rows include counts far above the mean, whose complement
 # P(Y < y) rounds to 1, and far below it, whose upper tail is close to 1.
 test_that("censored negative binomial likelihood and gradient are correct", {
+  local_rtmb_backend()
   skip_if_not_installed("numDeriv")
   set.seed(4)
   n <- 60L
@@ -744,6 +752,7 @@ test_that("censored NB derivatives remain accurate at extreme dispersions", {
 
 # A Laplace gradient exercises third derivatives of the censored likelihood.
 test_that("censored NB random-effect models have consistent gradients", {
+  local_rtmb_backend()
   skip_if_not_installed("numDeriv")
   set.seed(3)
   n <- 60L

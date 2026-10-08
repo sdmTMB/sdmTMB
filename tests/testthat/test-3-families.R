@@ -404,6 +404,7 @@ test_that("censored_upper accepts a column name", {
 })
 
 test_that("Censored beta-binomial family works", {
+  local_rtmb_backend()
   set.seed(1)
   n <- 200L
   d <- data.frame(year = factor(rep(1:2, each = n / 2)),
@@ -469,6 +470,7 @@ test_that("Censored beta-binomial family works", {
 })
 
 test_that("Censored binomial family works", {
+  local_rtmb_backend()
   set.seed(1)
   n <- 200L
   d <- data.frame(year = factor(rep(1:2, each = n / 2)),
@@ -542,6 +544,7 @@ test_that("Censored binomial family works", {
 })
 
 test_that("Censored negative binomial families work", {
+  local_rtmb_backend()
   set.seed(2)
   n <- 200L
   d <- data.frame(year = factor(rep(1:2, each = n / 2)),

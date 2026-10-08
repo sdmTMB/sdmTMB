@@ -326,9 +326,10 @@ test_that("Deviance includes weights, NB1 holds phi fixed, and signs are kept", 
       expect_equal(devresid_at(fit, p)[, 1]^2, rep(0.1193202, 2),
         tolerance = 1e-6, label = backend)
 
-      # Near the Poisson limit (phi ~ 1e-8), the deviance is the Poisson one
-      fit <- sdmTMB(y ~ 1, data = data.frame(y = c(1, 1, 1, 3)),
-        family = nbinom1(), spatial = "off", control = ctl)
+      # Near the Poisson limit (phi ~ 1e-8), the deviance is the Poisson one.
+      # phi is on its boundary, so the Hessian can be singular on some platforms.
+      fit <- suppressWarnings(sdmTMB(y ~ 1, data = data.frame(y = c(1, 1, 1, 3)),
+        family = nbinom1(), spatial = "off", control = ctl))
       fit_pois <- sdmTMB(y ~ 1, data = data.frame(y = c(1, 1, 1, 3)),
         family = poisson(), spatial = "off", control = ctl)
       expect_equal(deviance(fit), deviance(fit_pois), tolerance = 1e-4,
