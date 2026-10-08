@@ -21,29 +21,9 @@ add_to_family <- function(x) {
   x
 }
 
-#' Additional families
-#'
-#' Additional families compatible with [sdmTMB()].
-#'
-#' @param link Link.
 #' @export
 #' @rdname families
-#' @name Families
-#'
-#' @return
-#' A list with elements common to standard R family objects including `family`,
-#' `link`, `linkfun`, and `linkinv`. Delta/hurdle model families also have
-#' elements `delta` (logical) and `type` (standard vs. Poisson-link).
-#'
-#' @details
-#' The default first-component link (`link1`) for delta models of
-#' `type = "standard"` is `"logit"`. For `type = "poisson-link"`, the
-#' default `link1` is `"log"`.
-#'
-#' `delta_poisson_link_gamma()` and `delta_poisson_link_lognormal()` have been
-#' deprecated in favour of `delta_gamma(type = "poisson-link")` and
-#' `delta_lognormal(type = "poisson-link")`.
-#'
+#' @order 4
 #' @examples
 #' Beta(link = "logit")
 Beta <- function(link = "logit") {
@@ -63,6 +43,7 @@ Beta <- function(link = "logit") {
 
 #' @export
 #' @rdname families
+#' @order 5
 #' @details
 #' The `ordbeta()` family implements the ordered-beta regression of Kubinec
 #' (2023) for continuous responses on the closed unit interval `[0, 1]` with
@@ -105,6 +86,7 @@ ordbeta <- function(link = "logit") {
 
 #' @export
 #' @rdname families
+#' @order 2
 #' @examples
 #' lognormal(link = "log")
 lognormal <- function(link = "log") {
@@ -124,6 +106,7 @@ lognormal <- function(link = "log") {
 
 #' @export
 #' @rdname families
+#' @order 3
 #' @examples
 #' gengamma(link = "log")
 #' @details
@@ -184,6 +167,7 @@ gengamma <- function(link = "log") {
 #'   this is estimated. If specified, must be a proportion between 0 and 1.
 #' @export
 #' @rdname families
+#' @order 17
 #' @examples
 #' gamma_mix(link = "log")
 gamma_mix <- function(link = "log", p_extreme = NULL) {
@@ -212,6 +196,7 @@ gamma_mix <- function(link = "log", p_extreme = NULL) {
 #'   this is estimated. If specified, must be a proportion between 0 and 1.
 #' @export
 #' @rdname families
+#' @order 18
 #' @examples
 #' lognormal_mix(link = "log")
 lognormal_mix <- function(link = "log", p_extreme = NULL) {
@@ -239,6 +224,7 @@ lognormal_mix <- function(link = "log", p_extreme = NULL) {
 #'   this is estimated. If specified, must be a proportion between 0 and 1.
 #' @export
 #' @rdname families
+#' @order 19
 #' @examples
 #' nbinom2_mix(link = "log")
 nbinom2_mix <- function(link = "log", p_extreme = NULL) {
@@ -274,6 +260,7 @@ nbinom2_mix <- function(link = "log", p_extreme = NULL) {
 #' @examples
 #' nbinom2(link = "log")
 #' @rdname families
+#' @order 7
 nbinom2 <- function(link = "log") {
   linktemp <- substitute(link)
   if (!is.character(linktemp))
@@ -300,6 +287,7 @@ nbinom2 <- function(link = "log") {
 #' @examples
 #' nbinom1(link = "log")
 #' @rdname families
+#' @order 8
 nbinom1 <- function(link = "log") {
   linktemp <- substitute(link)
   if (!is.character(linktemp))
@@ -329,6 +317,7 @@ nbinom1 <- function(link = "log") {
 #' @examples
 #' truncated_nbinom2(link = "log")
 #' @rdname families
+#' @order 9
 truncated_nbinom2 <- function(link = "log") {
   linktemp <- substitute(link)
   if (!is.character(linktemp))
@@ -359,6 +348,7 @@ log1mexp <- function(x) ifelse(x <= log(2), log(-expm1(-x)), log1p(-exp(-x)))
 #' @examples
 #' truncated_nbinom1(link = "log")
 #' @rdname families
+#' @order 10
 truncated_nbinom1 <- function(link = "log") {
   linktemp <- substitute(link)
   if (!is.character(linktemp))
@@ -381,6 +371,11 @@ truncated_nbinom1 <- function(link = "log") {
     linkinv = linkinv), class = "family")
 }
 
+#' Additional families
+#'
+#' Additional families compatible with [sdmTMB()].
+#'
+#' @param link Link.
 #' @param df Student-t degrees of freedom parameter. Can be `NULL` to estimate (default)
 #'   or a numeric value > 1 to fix at a specific value.
 #' @export
@@ -388,6 +383,14 @@ truncated_nbinom1 <- function(link = "log") {
 #' For `student()`, the degrees of freedom parameter is estimated by default (`df = NULL`).
 #' You can fix it at a specific value by providing a number > 1 (e.g., `df = 3`).
 #' @rdname families
+#' @order 1
+#' @name Families
+#'
+#' @return
+#' A list with elements common to standard R family objects including `family`,
+#' `link`, `linkfun`, and `linkinv`. Delta/hurdle model families also have
+#' elements `delta` (logical) and `type` (standard vs. Poisson-link).
+#'
 #' @examples
 #' student(link = "identity") # estimate df
 #' student(link = "identity", df = 3) # fix df at 3
@@ -418,6 +421,7 @@ student <- function(link = "identity", df = NULL) {
 #' @examples
 #' tweedie(link = "log")
 #' @rdname families
+#' @order 6
 tweedie <- function(link = "log") {
   linktemp <- substitute(link)
   if (!is.character(linktemp))
@@ -438,6 +442,7 @@ tweedie <- function(link = "log") {
 #' @examples
 #' censored_poisson(link = "log")
 #' @rdname families
+#' @order 12
 censored_poisson <- function(link = "log") {
   linktemp <- substitute(link)
   if (!is.character(linktemp))
@@ -461,9 +466,14 @@ censored_poisson <- function(link = "log") {
 #'   model. `"poisson-link"` for a Poisson-link delta model (Thorson 2018).
 #' @export
 #' @importFrom stats Gamma binomial
+#' @details
+#' The default first-component link (`link1`) for delta models of
+#' `type = "standard"` is `"logit"`. For `type = "poisson-link"`, the
+#' default `link1` is `"log"`.
 #' @examples
 #' delta_gamma()
 #' @rdname families
+#' @order 20
 #' @references
 #' *Poisson-link delta families*:
 #'
@@ -500,6 +510,7 @@ delta_gamma <- function(link1,
 #' @examples
 #' delta_gamma_mix()
 #' @rdname families
+#' @order 26
 delta_gamma_mix <- function(link1 = "logit", link2 = "log", p_extreme = NULL) {
   f1 <- binomial(link = link1)
   f2 <- gamma_mix(link = link2)
@@ -513,6 +524,7 @@ delta_gamma_mix <- function(link1 = "logit", link2 = "log", p_extreme = NULL) {
 #' @examples
 #' delta_gengamma()
 #' @rdname families
+#' @order 22
 delta_gengamma <- function(link1,
   link2 = "log", type = c("standard", "poisson-link")) {
   type <- match.arg(type)
@@ -539,6 +551,7 @@ delta_gengamma <- function(link1,
 #' @examples
 #' delta_lognormal()
 #' @rdname families
+#' @order 21
 delta_lognormal <- function(link1,
   link2 = "log", type = c("standard", "poisson-link")) {
   type <- match.arg(type)
@@ -567,6 +580,7 @@ delta_lognormal <- function(link1,
 #' @examples
 #' delta_lognormal_mix()
 #' @rdname families
+#' @order 27
 delta_lognormal_mix <- function(link1, link2 = "log", type = c("standard", "poisson-link"), p_extreme = NULL) {
   type <- match.arg(type)
   if (missing(link1)) link1 <- if (type == "standard") "logit" else "log"
@@ -593,6 +607,7 @@ delta_lognormal_mix <- function(link1, link2 = "log", type = c("standard", "pois
 #' @examples
 #' delta_truncated_nbinom2()
 #' @rdname families
+#' @order 24
 delta_truncated_nbinom2 <- function(link1 = "logit", link2 = "log") {
   f1 <- binomial(link = link1)
   f2 <- truncated_nbinom2(link = link2)
@@ -605,6 +620,7 @@ delta_truncated_nbinom2 <- function(link1 = "logit", link2 = "log") {
 #' @examples
 #' delta_truncated_nbinom1()
 #' @rdname families
+#' @order 25
 delta_truncated_nbinom1 <- function(link1 = "logit", link2 = "log") {
   f1 <- binomial(link = link1)
   f2 <- truncated_nbinom1(link = link2)
@@ -614,8 +630,13 @@ delta_truncated_nbinom1 <- function(link1 = "logit", link2 = "log") {
 }
 
 #' @rdname families
+#' @order 28
 #' @export
 #' @keywords internal
+#' @details
+#' `delta_poisson_link_gamma()` and `delta_poisson_link_lognormal()` have been
+#' deprecated in favour of `delta_gamma(type = "poisson-link")` and
+#' `delta_lognormal(type = "poisson-link")`.
 delta_poisson_link_gamma <- function(link1 = "log", link2 = "log") {
   assert_that(link1 == "log")
   assert_that(link2 == "log")
@@ -624,6 +645,7 @@ delta_poisson_link_gamma <- function(link1 = "log", link2 = "log") {
 }
 
 #' @rdname families
+#' @order 29
 #' @export
 #' @keywords internal
 delta_poisson_link_lognormal <- function(link1 = "log", link2 = "log") {
@@ -637,6 +659,7 @@ delta_poisson_link_lognormal <- function(link1 = "log", link2 = "log") {
 #' @examples
 #' betabinomial(link = "logit")
 #' @rdname families
+#' @order 11
 betabinomial <- function(link = "logit") {
   linktemp <- substitute(link)
   if (!is.character(linktemp))
@@ -690,6 +713,7 @@ betabinomial <- function(link = "logit") {
 #' @examples
 #' censored_betabinomial(link = "cloglog")
 #' @rdname families
+#' @order 16
 #' @references
 #' *Censored families*:
 #'
@@ -712,6 +736,7 @@ censored_betabinomial <- function(link = "logit") {
 #' @examples
 #' censored_binomial(link = "cloglog")
 #' @rdname families
+#' @order 15
 censored_binomial <- function(link = "logit") {
   linktemp <- substitute(link)
   if (!is.character(linktemp))
@@ -732,6 +757,7 @@ censored_binomial <- function(link = "logit") {
 #' @examples
 #' censored_nbinom1(link = "log")
 #' @rdname families
+#' @order 14
 censored_nbinom1 <- function(link = "log") {
   linktemp <- substitute(link)
   if (!is.character(linktemp))
@@ -745,6 +771,7 @@ censored_nbinom1 <- function(link = "log") {
 #' @examples
 #' censored_nbinom2(link = "log")
 #' @rdname families
+#' @order 13
 censored_nbinom2 <- function(link = "log") {
   linktemp <- substitute(link)
   if (!is.character(linktemp))
@@ -758,6 +785,7 @@ censored_nbinom2 <- function(link = "log") {
 #' @examples
 #' delta_beta()
 #' @rdname families
+#' @order 23
 delta_beta <- function(link1 = "logit", link2 = "logit") {
   f1 <- binomial(link = link1)
   f2 <- Beta(link = link2)

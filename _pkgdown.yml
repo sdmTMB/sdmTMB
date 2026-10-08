@@ -98,23 +98,32 @@ reference:
   desc: |
     Additional families beyond the standard R families.
   contents:
-  - Beta
+  - student
   - lognormal
+  - gengamma
+  - Beta
+  - ordbeta
+  - tweedie
   - nbinom2
   - nbinom1
-  - student
-  - tweedie
-  - censored_poisson
-  - get_censored_upper
-  - truncated_nbinom1
   - truncated_nbinom2
-  - delta_gamma
-  - delta_lognormal
-  - delta_truncated_nbinom1
-  - delta_truncated_nbinom2
+  - truncated_nbinom1
+  - betabinomial
+  - censored_poisson
+  - censored_nbinom2
+  - censored_nbinom1
+  - censored_binomial
+  - censored_betabinomial
+  - get_censored_upper
   - gamma_mix
   - lognormal_mix
   - nbinom2_mix
+  - delta_gamma
+  - delta_lognormal
+  - delta_gengamma
+  - delta_beta
+  - delta_truncated_nbinom2
+  - delta_truncated_nbinom1
   - delta_gamma_mix
   - delta_lognormal_mix
 
