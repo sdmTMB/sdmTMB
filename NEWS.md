@@ -236,6 +236,12 @@
 
 ## Bug fixes: prediction, indices, and other
 
+* The `type` column returned by `get_eao()` is now `"eao"` instead of the
+  misspelled `"eoa"`.
+
+* The `silent` argument of `get_index()`, `get_cog()`, `get_eao()`, and
+  `get_weighted_average()` was ignored and now controls TMB's output.
+
 * `get_index()`, `get_cog()`, and `get_eao()` now honour
   `predict_args = list(re_form = NA)` for single-component models.
   Previously the random fields were always included unless the model was a
