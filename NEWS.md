@@ -93,6 +93,15 @@
   * `simulate(nsim = 400)`: 1.9x
   * `project(nsim = 400)` (30-year AR1 projection): 9.3x
 
+* `simulate.sdmTMB()` gains a `simulate_re` argument to choose which random
+  effects are simulated as new (any of `"spatial"`, `"spatiotemporal"`,
+  `"spatial_varying"`, `"group_re"`, `"time_varying"`). Random
+  effects not named are held at their empirical Bayes estimates
+  (`type = "mle-eb"`) or at an approximate posterior draw
+  (`type = "mle-mvn"`). For example, `simulate_re = "spatiotemporal"` with
+  `type = "mle-mvn"` holds the spatial fields at one posterior draw while
+  simulating new spatiotemporal fields.
+
 * Add custom priors for the RTMB backend:
   `sdmTMBpriors(custom = function(par, theta) ...)` adds arbitrary log
   densities on raw (`par`) or natural-scale (`theta`) parameters, including
@@ -186,6 +195,9 @@
   `sdmTMBcontrol()`.
 
 ## Bug fixes: statistical and likelihood
+
+* Simulating new correlated random intercepts and slopes, e.g., `(1 + x | g)`,
+  with `simulate(re_form = ~0)` on the TMB backend no longer gives an error.
 
 * Rows with missing values in the response or any variable the model uses
   (including `weights` and `offset`) are now omitted before fitting, as with

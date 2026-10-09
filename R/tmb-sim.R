@@ -498,6 +498,18 @@ sdmTMB_simulate <- simulate_new
 #'   effects (this only simulates observation error). `~0` or `NA` to simulate
 #'   new random effects (smoothers, which internally are random effects, will
 #'   not be simulated as new).
+#' @param simulate_re Optional character vector naming the random effects to
+#'   simulate as new, instead of `re_form`. Any of `"spatial"`,
+#'   `"spatiotemporal"`, `"spatial_varying"`, and `"time_varying"` (matching
+#'   the corresponding [sdmTMB()] arguments) and `"group_re"` (random
+#'   intercepts and slopes from formula terms such as `(1 + x | g)`). Random
+#'   effects not named are held at their values in the parameter vector: the
+#'   empirical Bayes estimates with `type = "mle-eb"` or the approximate
+#'   posterior draw with `type = "mle-mvn"`. For example,
+#'   `simulate_re = "spatiotemporal"` with `type = "mle-mvn"` and
+#'   `mle_mvn_samples = "single"` keeps the spatial fields at one posterior
+#'   draw shared across all `nsim` while drawing new spatiotemporal fields for
+#'   each simulation. `NULL` (the default) uses `re_form` instead.
 #' @param mle_mvn_samples Applies if `type = "mle-mvn"`. If `"single"`, take
 #'   a single MVN draw from the random effects. If `"multiple"`, take an MVN
 #'   draw from the random effects for each of the `nsim`.
@@ -561,6 +573,7 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
                             model = c(NA, 1, 2),
                             newdata = NULL,
                             re_form = NULL,
+                            simulate_re = NULL,
                             mle_mvn_samples = c("single", "multiple"),
                             mcmc_samples = NULL,
                             return_tmb_report = FALSE,
@@ -585,8 +598,26 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
 
   # re_form stuff
   conditional_re <- !(!is.null(re_form) && ((re_form == ~0) || identical(re_form, NA)))
+  # order of tmb_data$sim_re; smoothers (6th) are never simulated as new
+  sim_re_names <- c("spatial", "spatiotemporal", "spatial_varying",
+    "group_re", "time_varying")
+  if (!is.null(simulate_re)) {
+    if (!is.null(re_form)) {
+      cli_abort("Supply only one of `re_form` and `simulate_re`.")
+    }
+    bad <- setdiff(simulate_re, sim_re_names)
+    if (length(bad)) {
+      cli_abort(c(
+        "Unknown `simulate_re` value{?s}: {.val {bad}}.",
+        "i" = "Use any of {.val {sim_re_names}}."
+      ))
+    }
+  }
   tmb_dat <- object$tmb_data
-  if (conditional_re) {
+  if (!is.null(simulate_re)) {
+    stopifnot(length(object$tmb_data$sim_re) == 6L) # in case this gets changed
+    tmb_dat$sim_re <- c(as.integer(sim_re_names %in% simulate_re), 0L)
+  } else if (conditional_re) {
     tmb_dat$sim_re <- rep(0L, length(object$tmb_data$sim_re)) # don't simulate any REs
   } else {
     stopifnot(length(object$tmb_data$sim_re) == 6L) # in case this gets changed

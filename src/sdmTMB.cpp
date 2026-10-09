@@ -949,7 +949,14 @@ Type objective_function<Type>::operator()()
           if (n > 1) {
             // multivariate densities from from namespace 'density' return the negative log likelihood. So code should be:
             jnll += VECSCALE(UNSTRUCTURED_CORR(unconstrained_params),sds)(b_re_vec);
-            if (sim_re(3)) error("Simulation not implemented for random slopes/intercepts yet");
+            if (sim_re(3)) SIMULATE {
+              VECSCALE(UNSTRUCTURED_CORR(unconstrained_params),sds).simulate(b_re_vec);
+              jj = 0;
+              for (int this_level = re_b_df(levels,0); this_level <= re_b_df(levels,1); this_level++) {
+                re_b_pars(this_level,m) = b_re_vec(jj);
+                jj = jj + 1;
+              }
+            }
           }
       } // end for levels
     } // end for g
