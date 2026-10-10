@@ -356,8 +356,9 @@ print_range <- function(x, m = 1L, digits = 2L) {
     return(NULL)
   }
   # E.g., `spatial = "off"` with SVCs that all have their own ranges
-  fields_on <- attr(x$range_groups, "on")
-  if (!is.null(fields_on) && !any(fields_on[1:2, m])) {
+  f <- range_fields(x)
+  kappa <- kappa_groups(f)
+  if (is.na(kappa[1L, m])) {
     return(NULL)
   }
   b <- tidy(x, effects = "ran_pars", model = m, silent = TRUE)
@@ -367,14 +368,16 @@ print_range <- function(x, m = 1L, digits = 2L) {
   }
 
   range <- mround(range, digits)
+  in_m <- f$component == m
   range_text <- if (x$tmb_data$share_range[m]) {
-    paste0("Mat\u00e9rn range: ", range[1], range_sharing_note(x, 1:2, m), "\n")
+    paste0("Mat\u00e9rn range: ", range[1],
+      range_sharing_note(f, kappa[1L, m], in_m & f$type != "svc"), "\n")
   } else {
     paste0(
       "Mat\u00e9rn range (spatial): ", range[1],
-      range_sharing_note(x, 1L, m), "\n",
+      range_sharing_note(f, kappa[1L, m], in_m & f$type == "spatial"), "\n",
       "Mat\u00e9rn range (spatiotemporal): ", range[2],
-      range_sharing_note(x, 2L, m), "\n"
+      range_sharing_note(f, kappa[2L, m], in_m & f$type == "spatiotemporal"), "\n"
     )
   }
 
@@ -389,44 +392,35 @@ print_range <- function(x, m = 1L, digits = 2L) {
   range_text
 }
 
-# " (shared with ...)" naming the other fields that are on and share the range
-# of `ln_kappa` rows `rows` of component `m`, or "" if none. SVCs using their
-# component's spatial range are the default and aren't named.
-range_sharing_note <- function(x, rows, m) {
-  labels <- x$range_groups
-  if (is.null(labels) || is.na(labels[rows[1L], m])) return("")
-  label <- labels[rows[1L], m]
-  same <- attr(labels, "on") & !is.na(labels) & labels == label
-  same[rows, m] <- FALSE
-  if (nrow(labels) > 2L) {
-    svc <- -(1:2)
-    spatial <- labels[rep(1L, nrow(labels) - 2L), , drop = FALSE]
-    default <- !is.na(spatial) & !is.na(labels[svc, , drop = FALSE]) &
-      labels[svc, , drop = FALSE] == spatial
-    same[svc, ] <- same[svc, , drop = FALSE] & !default
-  }
+# " (shared with ...)" naming the other fields whose range is in `group`, or
+# "" if none. `line` flags the fields of `range_fields()` printed on this
+# line. SVCs on their component's spatial range are the default and aren't
+# named.
+range_sharing_note <- function(f, group, line) {
+  if (is.na(group)) return("")
+  same <- f$range_used & f$group %in% group & !line &
+    !(f$type == "svc" & f$kappa_row == 1L)
   if (!any(same)) return("")
-  who <- vapply(seq_len(ncol(labels)), function(k) {
-    fields <- paste(rownames(labels)[same[, k]], collapse = " and ")
-    if (!nzchar(fields) || k == m) fields else paste("model", k, fields)
-  }, character(1L))
-  paste0(" (shared with ", paste(who[nzchar(who)], collapse = "; "), ")")
+  m <- f$component[line][1L]
+  who <- vapply(split(f$field[same], f$component[same]), paste,
+    character(1L), collapse = " and ")
+  k <- as.integer(names(who))
+  who <- ifelse(k == m, who, paste("model", k, who))
+  paste0(" (shared with ", paste(who, collapse = "; "), ")")
 }
 
 # Range line for each SVC of component `m` with a range other than its
 # component's spatial range; "" for the others.
 print_svc_ranges <- function(x, m = 1L, report, digits = 2L) {
-  labels <- x$range_groups
-  out <- character(length(x$spatial_varying))
-  if (is.null(labels) || nrow(labels) <= 2L || is_areal_fit(x)) return(out)
-  for (z in seq_along(out)) {
-    r <- 2L + z
-    if (!attr(labels, "on")[r, m] ||
-        isTRUE(labels[r, m] == labels[1L, m])) next
-    out[z] <- paste0("Mat\u00e9rn range (", x$spatial_varying[z], "): ",
-      mround(report$range_Z[z, m], digits), range_sharing_note(x, r, m), "\n")
-  }
-  out
+  f <- range_fields(x)
+  svc <- which(f$type == "svc" & f$component == m)
+  vapply(seq_along(svc), function(z) {
+    i <- svc[z]
+    if (f$kappa_row[i] == 1L) return("")
+    paste0("Mat\u00e9rn range (", f$field[i], "): ",
+      mround(report$range_Z[z, m], digits),
+      range_sharing_note(f, f$group[i], seq_len(nrow(f)) == i), "\n")
+  }, character(1L))
 }
 
 print_anisotropy <- function(x, m = 1L, digits = 1L, return_dat = FALSE) {

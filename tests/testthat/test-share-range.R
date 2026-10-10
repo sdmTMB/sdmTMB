@@ -1,4 +1,4 @@
-kappa_map <- function(...) get_kappa_map(range_group_labels(...))
+kappa_map <- function(...) get_kappa_map(kappa_groups(resolve_range_fields(...)))
 
 test_that("get_kappa_map() works with share_range", {
   x <- kappa_map(
@@ -512,8 +512,7 @@ test_that("PC Matern priors with different range parts in a range group warn", {
 
 test_that("Generated range labels can't collide with user labels", {
   map <- function(g) {
-    get_kappa_map(range_group_labels(2L, c("on", "on"), c("off", "off"),
-      c(TRUE, TRUE), g))
+    kappa_map(2L, c("on", "on"), c("off", "off"), c(TRUE, TRUE), g)
   }
   expect_identical(map(list(c(spatial = "x"), NULL)),
     map(list(c(spatial = ".spatial2"), NULL)))
@@ -522,4 +521,13 @@ test_that("Generated range labels can't collide with user labels", {
   expect_identical(map(list(c(spatial = "x"), NULL)),
     map(list(c(spatial = "default:spatial2"), NULL)))
   expect_identical(nlevels(map(list(c(spatial = ".spatial2"), NULL))), 2L)
+})
+
+test_that("range_fields() asks to refit fits saved before range groups", {
+  skip_on_cran()
+  mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
+  fit <- sdmTMB(density ~ 1, data = pcod_2011, mesh = mesh, do_fit = FALSE)
+  expect_s3_class(range_fields(fit), "data.frame")
+  fit$range_fields <- NULL
+  expect_error(range_fields(fit), "refit")
 })

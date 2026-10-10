@@ -292,8 +292,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
   # SVC ranges, one per SVC, only if some SVC in this component has a range
   # other than the spatial one
-  svc_kappa_row <- x$tmb_data$svc_kappa_row
-  if (!is_areal && !is.null(svc_kappa_row) && any(svc_kappa_row[, model] != 0L)) {
+  ranges <- range_fields(x)
+  svc <- ranges$type == "svc" & ranges$component == model
+  if (any(ranges$kappa_row[svc] != 1L)) {
     log_name <- c(log_name, "log_range_Z")
     name <- c(name, "range_Z")
   }
@@ -498,8 +499,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
 
   if (all(!x$tmb_data$include_spatial) && all(x$tmb_data$spatial_only)) out_re$range <- NULL
   # E.g., `spatial = "off"` with SVCs that all have their own ranges
-  fields_on <- attr(x$range_groups, "on")
-  if (!is.null(fields_on) && !any(fields_on[1:2, model])) out_re$range <- NULL
+  if (is.na(kappa_groups(ranges)[1L, model])) out_re$range <- NULL
   if (is_areal) out_re$range <- NULL
 
   out_re <- do.call("rbind", out_re)

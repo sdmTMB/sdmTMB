@@ -1134,16 +1134,16 @@ sdmTMB <- function(
   }
   n_z <- ncol(z_i)
 
-  range_labels <- range_group_labels(n_m, spatial, spatiotemporal, share_range,
-    range_groups, svc = colnames(z_i),
+  range_fields <- resolve_range_fields(n_m, spatial, spatiotemporal,
+    share_range, range_groups, svc = colnames(z_i),
     omit_spatial_intercept = omit_spatial_intercept)
-  if (nrow(range_labels) > 2L && backend == "tmb") {
+  kappa_layout <- kappa_groups(range_fields)
+  if (nrow(kappa_layout) > 2L && backend == "tmb") {
     cli_abort(c("Separate ranges for spatially varying coefficients require the RTMB backend.",
       "i" = "Use `control = sdmTMBcontrol(backend = \"rtmb\")`."))
   }
-  share_range <- is.na(range_labels[1L, ]) | range_labels[1L, ] == range_labels[2L, ]
-  prior_flags <- matern_prior_flags(priors, range_labels, spatial,
-    spatiotemporal, omit_spatial_intercept, colnames(z_i))
+  share_range <- is.na(kappa_layout[1L, ]) | kappa_layout[1L, ] == kappa_layout[2L, ]
+  prior_flags <- matern_prior_flags(range_fields, priors)
   if (n_z > 0L && has_pc_prior(priors$matern_svc) && backend == "tmb") {
     cli_abort(c("The `matern_svc` prior requires the RTMB backend.",
       "i" = "Use `control = sdmTMBcontrol(backend = \"rtmb\")`."))
@@ -1497,7 +1497,8 @@ sdmTMB <- function(
     share_range = as.integer(if (length(share_range) == 1L) rep(share_range, 2L) else share_range),
     sigma_prior = prior_flags$sigma_prior * 1L,
     range_prior = prior_flags$range_prior * 1L,
-    svc_kappa_row = svc_kappa_rows(range_labels, n_z),
+    # zero-based `ln_kappa` row of each SVC (coefficient by component)
+    svc_kappa_row = matrix(range_fields$kappa_row[range_fields$type == "svc"] - 1L, n_z, n_m),
     include_spatial = as.integer(include_spatial), # changed later
     omit_spatial_intercept = as.integer(omit_spatial_intercept),
     proj_mesh = if (is_areal) dummy_sparse_1x1() else Matrix::Matrix(c(0, 0, 2:0), 3, 5), # dummy
@@ -1565,7 +1566,7 @@ sdmTMB <- function(
     ln_tau_O = rep(0, n_m),
     ln_tau_Z = matrix(0, n_z, n_m),
     ln_tau_E = rep(0, n_m),
-    ln_kappa = matrix(0, nrow(range_labels), n_m),
+    ln_kappa = matrix(0, nrow(kappa_layout), n_m),
     log_kappaS_nl = .nonlocal_log_kappaS_start(spde$loc_xy, nonlocal_n_covariates),
     log_kappaT_nl = numeric(nonlocal_n_covariates),
     # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
@@ -1695,7 +1696,7 @@ sdmTMB <- function(
 
   if (!is.null(previous_fit)) tmb_map <- previous_fit$tmb_map
 
-  tmb_map$ln_kappa <- get_kappa_map(range_labels)
+  tmb_map$ln_kappa <- get_kappa_map(kappa_layout)
   if (is_areal) {
     tmb_map$ln_kappa <- factor(rep(NA_integer_, length(tmb_params$ln_kappa)))
     areal_field_active <- any(spatial == "on" & !omit_spatial_intercept) ||
@@ -1742,9 +1743,9 @@ sdmTMB <- function(
   }
 
   if ("ln_kappa" %in% names(start) && (!is.matrix(tmb_params[["ln_kappa"]]) ||
-      nrow(tmb_params[["ln_kappa"]]) != nrow(range_labels))) {
+      nrow(tmb_params[["ln_kappa"]]) != nrow(kappa_layout))) {
     cli_abort(c(
-      paste0("Note that `ln_kappa` must be a matrix of nrow ", nrow(range_labels),
+      paste0("Note that `ln_kappa` must be a matrix of nrow ", nrow(kappa_layout),
         " and ncol models (regular=1, delta=2)."),
       "Rows are the spatial and spatiotemporal ranges, followed by one row per spatially varying coefficient if any has its own range in `range_groups`.",
       "It should be the same value in each row if `share_range = TRUE`."
@@ -1869,8 +1870,7 @@ sdmTMB <- function(
       tmb_random = tmb_random,
       backend = backend,
       spatial_varying = spatial_varying,
-      # Resolved range-group labels by `ln_kappa` row and component
-      range_groups = range_labels,
+      range_fields = range_fields,
       nonlocal_formula = nonlocal_formula,
       nonlocal_formula_parsed = nonlocal_formula_parsed,
       nonlocal_parsed = nonlocal_parsed,

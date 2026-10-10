@@ -1,64 +1,65 @@
-test_that("range_group_labels adds SVC rows only when needed", {
-  labels <- function(g, svc = c("a", "b"), spatial = "on",
+test_that("resolve_range_fields() adds SVC rows only when needed", {
+  fields <- function(g, svc = c("a", "b"), spatial = "on",
                      spatiotemporal = "iid", omit = FALSE, n_m = 1L) {
-    range_group_labels(n_m, rep_len(spatial, n_m), rep_len(spatiotemporal, n_m),
-      rep(TRUE, n_m), g, svc = svc, omit_spatial_intercept = omit)
+    resolve_range_fields(n_m, rep_len(spatial, n_m),
+      rep_len(spatiotemporal, n_m), rep(TRUE, n_m), g, svc = svc,
+      omit_spatial_intercept = omit)
   }
+  map <- function(f) get_kappa_map(kappa_groups(f))
+  svc_rows <- function(f) f$kappa_row[f$type == "svc"]
   # Unnamed SVCs use the spatial range: no extra rows
-  x <- labels(NULL)
-  expect_identical(dim(x), c(2L, 1L))
-  expect_identical(svc_kappa_rows(x, 2L), matrix(0L, 2L, 1L))
-  x <- labels(c(spatial = "s", a = "s"))
-  expect_identical(nrow(x), 2L)
+  x <- fields(NULL)
+  expect_identical(dim(kappa_groups(x)), c(2L, 1L))
+  expect_identical(svc_rows(x), c(1L, 1L))
+  expect_identical(nrow(kappa_groups(fields(c(spatial = "s", a = "s")))), 2L)
   # User labels never match generated defaults
-  x <- labels(c(a = ".spatial1"))
-  expect_identical(nrow(x), 4L)
-  x <- labels(c(a = "default:spatial1"))
-  expect_identical(nrow(x), 4L)
+  expect_identical(nrow(kappa_groups(fields(c(a = ".spatial1")))), 4L)
+  expect_identical(nrow(kappa_groups(fields(c(a = "default:spatial1")))), 4L)
 
   # An SVC with its own range
-  x <- labels(c(a = "z"))
-  expect_identical(rownames(x), c("spatial", "spatiotemporal", "a", "b"))
-  expect_identical(get_kappa_map(x), factor(c(1, 1, 2, 1)))
-  expect_identical(svc_kappa_rows(x, 2L), matrix(c(2L, 0L), 2L))
+  x <- fields(c(a = "z"))
+  expect_identical(x$field, c("spatial", "spatiotemporal", "a", "b"))
+  expect_identical(x$label, c(NA, NA, "z", NA))
+  expect_identical(map(x), factor(c(1, 1, 2, 1)))
+  expect_identical(svc_rows(x), c(3L, 1L))
 
-  # Two SVCs sharing a range use the first row with that label
-  x <- labels(c(a = "z", b = "z"))
-  expect_identical(get_kappa_map(x), factor(c(1, 1, 2, 2)))
-  expect_identical(svc_kappa_rows(x, 2L), matrix(c(2L, 2L), 2L))
+  # Two SVCs sharing a range use the first row with that range
+  x <- fields(c(a = "z", b = "z"))
+  expect_identical(map(x), factor(c(1, 1, 2, 2)))
+  expect_identical(svc_rows(x), c(3L, 3L))
 
   # An SVC sharing the spatiotemporal range
-  x <- labels(c(spatial = "s", spatiotemporal = "st", a = "st"))
-  expect_identical(get_kappa_map(x), factor(c(1, 2, 2, 1)))
-  expect_identical(svc_kappa_rows(x, 2L), matrix(c(1L, 0L), 2L))
+  x <- fields(c(spatial = "s", spatiotemporal = "st", a = "st"))
+  expect_identical(map(x), factor(c(1, 2, 2, 1)))
+  expect_identical(svc_rows(x), c(2L, 1L))
 
   # An SVC sharing the other component's spatial range
-  x <- labels(list(c(spatial = "s1"), c(spatial = "s2", a = "s1")), n_m = 2L)
-  expect_identical(get_kappa_map(x),
-    factor(c(1, 1, 1, 1, 2, 2, 1, 2)))
-  expect_identical(svc_kappa_rows(x, 2L), matrix(c(0L, 0L, 2L, 0L), 2L))
+  x <- fields(list(c(spatial = "s1"), c(spatial = "s2", a = "s1")), n_m = 2L)
+  expect_identical(map(x), factor(c(1, 1, 1, 1, 2, 2, 1, 2)))
+  expect_identical(svc_rows(x), c(1L, 1L, 3L, 1L))
 
-  # spatial = "off" with SVCs: the spatial row is on only if an SVC uses it
-  x <- labels(NULL, spatiotemporal = "off", omit = TRUE)
-  expect_identical(attr(x, "on")[, 1], c(spatial = TRUE, spatiotemporal = FALSE))
-  x <- labels(c(a = "z", b = "z"), spatiotemporal = "off", omit = TRUE)
-  expect_identical(get_kappa_map(x), factor(c(NA, NA, 1, 1)))
-  expect_identical(svc_kappa_rows(x, 2L), matrix(c(2L, 2L), 2L))
-  x <- labels(c(a = "z", b = "z"), omit = TRUE)
-  expect_identical(attr(x, "on")[1:2, 1],
-    c(spatial = FALSE, spatiotemporal = TRUE))
-  expect_identical(get_kappa_map(x), factor(c(1, 1, 2, 2)))
+  # spatial = "off" with SVCs: the spatial range is used only if an SVC uses it
+  x <- fields(NULL, spatiotemporal = "off", omit = TRUE)
+  expect_identical(x$active[1:2], c(FALSE, FALSE))
+  expect_identical(x$range_used[1:2], c(TRUE, FALSE))
+  x <- fields(c(a = "z", b = "z"), spatiotemporal = "off", omit = TRUE)
+  expect_identical(map(x), factor(c(NA, NA, 1, 1)))
+  expect_identical(svc_rows(x), c(3L, 3L))
+  x <- fields(c(a = "z", b = "z"), omit = TRUE)
+  expect_identical(x$range_used[1:2], c(FALSE, TRUE))
+  expect_identical(map(x), factor(c(1, 1, 2, 2)))
 
   # SVC fields enter every component, even where the spatial field is off,
   # so that component's spatial range is kept for the SVC that uses it
-  x <- labels(list(c(a = "z"), c(a = "z")), spatial = c("on", "off"), n_m = 2L)
-  expect_identical(x[, 2L], c(spatial = "default:spatial2",
-    spatiotemporal = "default:spatial2", a = "user:z", b = "default:spatial2"))
-  expect_identical(attr(x, "on")[1L, 2L], c(spatial = TRUE))
-  expect_identical(svc_kappa_rows(x, 2L), matrix(c(2L, 0L, 2L, 0L), 2L))
+  x <- fields(list(c(a = "z"), c(a = "z")), spatial = c("on", "off"), n_m = 2L)
+  m2 <- x[x$component == 2L, ]
+  expect_identical(m2$active, c(FALSE, TRUE, TRUE, TRUE))
+  expect_identical(m2$range_used, c(TRUE, TRUE, TRUE, TRUE))
+  expect_identical(m2$group[c(1, 2, 4)], rep(m2$group[1], 3L))
+  expect_identical(svc_rows(x), c(3L, 1L, 3L, 1L))
 
-  expect_error(labels(c(foo = "z")), "Valid names")
-  expect_error(labels(c(a = "z"), svc = c("spatial", "a")), "named `spatial`")
+  expect_error(fields(c(foo = "z")), "Valid names")
+  expect_error(fields(c(a = "z"), svc = c("spatial", "a")), "named `spatial`")
 })
 
 svc_range_build <- function(..., data = pcod_2011, mesh = NULL) {
@@ -197,9 +198,7 @@ test_that("tidy() and print() show SVC ranges and shared ranges", {
     range_groups = c(spatial = "s", spatiotemporal = "st",
       depth_scaled = "st", depth_scaled2 = "z"),
     control = sdmTMBcontrol(backend = "rtmb"))
-  expect_identical(fit$range_groups[, 1],
-    c(spatial = "user:s", spatiotemporal = "user:st", depth_scaled = "user:st",
-      depth_scaled2 = "user:z"))
+  expect_identical(fit$range_fields$group, c(1L, 2L, 2L, 3L))
   b <- tidy(fit, "ran_pars")
   r <- fit$tmb_obj$report()
   expect_equal(b$estimate[b$term == "range"], r$range[, 1])
@@ -240,10 +239,8 @@ test_that("print() notes ranges shared across delta components", {
   out <- capture.output(print(fit))
   expect_length(grep("range: [0-9.]+ \\(shared with model 2 spatial\\)$", out), 1L)
   expect_length(grep("range: [0-9.]+ \\(shared with model 1 spatial\\)$", out), 1L)
-  expect_identical(fit$range_groups, structure(
-    matrix("user:a", 2L, 2L, dimnames = list(c("spatial", "spatiotemporal"), NULL)),
-    on = matrix(c(TRUE, FALSE), 2L, 2L,
-      dimnames = list(c("spatial", "spatiotemporal"), NULL))))
+  expect_identical(fit$range_fields$active, c(TRUE, FALSE, TRUE, FALSE))
+  expect_identical(fit$range_fields$group, rep(1L, 4L))
 })
 
 test_that("matern_svc PC priors apply to SVC fields once per range group", {
