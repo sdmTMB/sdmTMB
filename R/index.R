@@ -346,7 +346,7 @@ chunk_time <- function(x, chunks) {
 #'   but is usually slower.
 #' @export
 get_index_split <- function(
-    obj, newdata, bias_correct = FALSE, nsplit = 1,
+    obj, newdata, bias_correct = TRUE, nsplit = 1,
     level = 0.95, area = 1, offset = NULL, silent = FALSE, predict_args = list(),
     derived_link = NULL, ...) {
   if (!inherits(obj, "sdmTMB")) {

@@ -23,6 +23,9 @@
   field uncertainty at finer mesh resolutions and it's particularly important
   for comparing across mesh resolutions.
 
+* `get_index_split()` now defaults to `bias_correct = TRUE`, matching
+  `get_index()`.
+
 * `predict(allow_new_levels = FALSE)` now gives an error for new levels of a
   random effect grouping factor, as in lme4 and glmmTMB. Previously it gave
   the same warning as the default (`NULL`).

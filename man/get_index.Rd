@@ -25,7 +25,7 @@ get_index(
 get_index_split(
   obj,
   newdata,
-  bias_correct = FALSE,
+  bias_correct = TRUE,
   nsplit = 1,
   level = 0.95,
   area = 1,
