@@ -114,4 +114,5 @@ The coefficient's range appears as `range_Z`, in the same order as the `sigma_Z`
 ## Priors
 
 PC Matérn priors (see `?sdmTMBpriors`) put a prior on each range once, however many fields share it.
+If fields sharing a range have PC priors with different range parts (`range_gt` or `range_prob`), only the first applies and sdmTMB warns; give them matching range settings or estimate separate ranges.
 Spatially varying coefficient fields can get their own PC prior with `sdmTMBpriors(matern_svc = pc_matern(...))`.

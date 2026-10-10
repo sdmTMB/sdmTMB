@@ -559,7 +559,8 @@ replicate_df <- function(dat, time_name, time_values) {
 # Range-group label for each `ln_kappa` entry (row 1 spatial, row 2
 # spatiotemporal, then, if any spatially varying coefficient in `svc` has its
 # own label, one row per coefficient; one column per component). Entries with
-# the same label share a range. Unnamed fields get a spatial range per
+# the same label share a range. User labels are prefixed with "user:" and
+# generated defaults with "default:". Unnamed fields get a spatial range per
 # component, shared with the spatiotemporal field if `share_range`; unnamed
 # coefficients use their component's spatial range. A field that is off takes
 # the other field's label, and both are NA if both are off. The spatial field
@@ -588,10 +589,14 @@ range_group_labels <- function(n_m, spatial, spatiotemporal, share_range,
       cli_abort(c("Each element of `range_groups` must be a character vector named by field.",
         "i" = "Valid names: {.val {valid}}."))
     }
-    label <- function(name, default) if (name %in% names(g)) g[[name]] else default
-    s <- label("spatial", paste0(".spatial", m))
+    # User labels and generated defaults get distinct prefixes so that a user
+    # label can't match a default by accident
+    label <- function(name, default) {
+      if (name %in% names(g)) paste0("user:", g[[name]]) else default
+    }
+    s <- label("spatial", paste0("default:spatial", m))
     st <- label("spatiotemporal",
-      if (share_range[m]) s else paste0(".spatiotemporal", m))
+      if (share_range[m]) s else paste0("default:spatiotemporal", m))
     z <- vapply(svc, label, character(1L), default = s, USE.NAMES = FALSE)
     # Coefficient fields enter every component, so a component's spatial
     # range is needed if its spatial field or any coefficient uses it
@@ -640,7 +645,8 @@ has_pc_prior <- function(prior) !is.null(prior) && !anyNA(prior[1:2])
 # spatial range make the spatial row count for the range unless `matern_svc`
 # is set.
 matern_prior_flags <- function(priors, labels, spatial, spatiotemporal,
-                               omit_spatial_intercept, n_z) {
+                               omit_spatial_intercept, svc_names) {
+  n_z <- length(svc_names)
   n_m <- ncol(labels)
   has_svc_prior <- has_pc_prior(priors$matern_svc)
   has_prior <- c(has_pc_prior(priors$matern_s), has_pc_prior(priors$matern_st),
@@ -660,7 +666,38 @@ matern_prior_flags <- function(priors, labels, spatial, spatiotemporal,
   range_prior <- eligible
   range_prior[1:2, ] <- first[seq_len(2L * n_m)]
   range_prior[-(1:2), ] <- first[-seq_len(2L * n_m)]
+  check_range_prior_conflicts(priors, prior_labels, svc_names)
   list(sigma_prior = sigma_prior, range_prior = range_prior & eligible)
+}
+
+# Warn if fields sharing a range have PC Matern priors with different range
+# parts (`range_gt`, `range_prob`), since only the first is applied. Different
+# sigma parts aren't a conflict. `prior_labels` has the range label of each
+# field that contributes a range prior (NA otherwise).
+check_range_prior_conflicts <- function(priors, prior_labels, svc_names) {
+  n_z <- length(svc_names)
+  prior_names <- c("matern_s", "matern_st", rep("matern_svc", n_z))
+  field_names <- c("spatial", "spatiotemporal", svc_names)
+  idx <- which(!is.na(prior_labels), arr.ind = TRUE)
+  # Order in which `matern_prior_flags()` picks the first prior
+  idx <- idx[order(idx[, 1L] > 2L, idx[, 2L], idx[, 1L]), , drop = FALSE]
+  labels <- prior_labels[idx]
+  for (label in unique(labels)) {
+    i <- idx[labels == label, , drop = FALSE]
+    specs <- vapply(prior_names[i[, 1L]], function(x) {
+      paste(priors[[x]][c(1L, 3L)], collapse = "/")
+    }, character(1L))
+    if (length(unique(specs)) == 1L) next
+    fields <- paste0(field_names[i[, 1L]], " (`", prior_names[i[, 1L]], "`)")
+    if (ncol(prior_labels) > 1L) fields <- paste0("model ", i[, 2L], " ", fields)
+    cli_warn(c(
+      "Fields sharing a Mat\u00e9rn range have PC priors with different range parts (`range_gt`, `range_prob`).",
+      "i" = "Fields: {fields}.",
+      "i" = "Only the range part from {fields[1]} is applied.",
+      "i" = "Use matching range settings or estimate separate ranges (`share_range` or `range_groups`)."
+    ))
+  }
+  invisible()
 }
 
 # `ln_kappa` map factor from `range_group_labels()`

@@ -22,6 +22,13 @@
 #' * `.iteration`: the sample ID
 #' * columns for each parameter with a sample per row
 #'
+#' Spatially varying coefficient SDs are returned as `sigma_Z`. If any
+#' coefficient has its own Matérn range (see `range_groups` in [sdmTMB()]),
+#' their ranges are returned as `range_Z`, and `range` is omitted if there are
+#' no spatial or spatiotemporal fields. With several coefficients, these names
+#' are suffixed with the coefficient name, e.g., `sigma_Z_depth_scaled`.
+#' Ranges that are fixed (mapped off) are not returned.
+#'
 #' @examples
 #' m <- sdmTMB(density ~ depth_scaled,
 #'   data = pcod_2011, mesh = pcod_mesh_2011, family = tweedie())
@@ -68,21 +75,31 @@ spread_sims <- function(object, nsim = 200) {
   is_areal <- is_areal_fit(object)
   is_car <- is_car_fit(object)
   has_ln_kappa <- "ln_kappa" %in% names(out)
-  kappa_cols <- which(names(out) == "ln_kappa")
-  # Draws of the entry in row `r` of the `ln_kappa` matrix (entries that share
-  # a range share one parameter)
-  ln_kappa <- function(r) {
-    k <- if (is.null(object$tmb_map$ln_kappa)) r else
-      as.integer(object$tmb_map$ln_kappa)[r]
-    if (is.na(k)) NA_real_ else out[[kappa_cols[k]]]
+  par_list <- object$tmb_obj$env$parList()
+  # Draws of entry `r` of parameter `par`: entries tied by the map share one
+  # column, and entries mapped off take their fixed value
+  draws <- function(par, r) {
+    cols <- which(names(out) == par)
+    k <- if (is.null(object$tmb_map[[par]])) r else
+      as.integer(object$tmb_map[[par]])[r]
+    if (is.na(k)) rep(as.vector(par_list[[par]])[r], n_sims) else out[[cols[k]]]
   }
-  svc_row <- if (length(object$tmb_data$svc_kappa_row)) {
-    object$tmb_data$svc_kappa_row[1L, 1L] + 1L
-  } else {
-    1L
+  # Areal fields have no range: their SD is exp(-ln_tau)
+  use_kappa <- !is_areal && !is.null(par_list$ln_kappa)
+  ln_kappa <- function(r) if (use_kappa) draws("ln_kappa", r)
+  kappa_estimated <- function(r) {
+    has_ln_kappa && (is.null(object$tmb_map$ln_kappa) ||
+      !is.na(object$tmb_map$ln_kappa[r]))
   }
+  matern_sd <- function(ln_tau, ln_kappa) {
+    if (!use_kappa) return(exp(-ln_tau))
+    1 / sqrt(4 * pi * exp(2 * ln_tau + 2 * ln_kappa))
+  }
+  fields_on <- attr(object$range_groups, "on")
 
-  if (has_ln_kappa && !is_areal) {
+  # Without spatial and spatiotemporal fields (only SVCs), there's no `range`
+  if (has_ln_kappa && !is_areal && kappa_estimated(1L) &&
+      (is.null(fields_on) || any(fields_on[1:2, 1L]))) {
     out$range <- sqrt(8) / exp(ln_kappa(1L))
   }
   if ("ln_phi" %in% names(out)) {
@@ -102,36 +119,44 @@ spread_sims <- function(object, nsim = 200) {
     }
   }
   if ("ln_tau_O" %in% names(out)) {
-    if (is_areal || !has_ln_kappa) {
-      out$sigma_O <- exp(-out$ln_tau_O)
-    } else {
-      out$sigma_O <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_O + 2 * ln_kappa(1L)))
-    }
+    out$sigma_O <- matern_sd(out$ln_tau_O, ln_kappa(1L))
   }
   if ("ln_tau_E" %in% names(out)) {
-    if (is_areal || !has_ln_kappa) {
-      out$sigma_E <- exp(-out$ln_tau_E)
-    } else {
-      out$sigma_E <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_E + 2 * ln_kappa(2L)))
-    }
+    out$sigma_E <- matern_sd(out$ln_tau_E, ln_kappa(2L))
   }
+  sims_z <- list()
   if ("ln_tau_Z" %in% names(out)) {
-    if (is_areal || !has_ln_kappa) {
-      out$sigma_Z <- exp(-out$ln_tau_Z)
-    } else {
-      out$sigma_Z <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_Z + 2 * ln_kappa(svc_row)))
+    # One SD per SVC and, if any SVC has its own range, one estimated range
+    # per SVC (as in `tidy()`): named `sigma_Z` and `range_Z` for a single SVC
+    # and suffixed with the coefficient name (e.g., `sigma_Z_depth_scaled`)
+    # for several
+    svc <- object$spatial_varying
+    n_z <- nrow(par_list$ln_tau_Z)
+    if (length(svc) != n_z) svc <- seq_len(n_z)
+    suffix <- if (n_z > 1L) paste0("_", svc) else ""
+    svc_row <- object$tmb_data$svc_kappa_row
+    if (is.null(svc_row)) svc_row <- matrix(0L, n_z, 1L)
+    svc_ranges <- use_kappa && any(svc_row[, 1L] != 0L)
+    for (z in seq_len(n_z)) {
+      sims_z[[paste0("sigma_Z", suffix[z])]] <-
+        matern_sd(draws("ln_tau_Z", z), ln_kappa(svc_row[z, 1L] + 1L))
+    }
+    for (z in seq_len(n_z)) {
+      r <- svc_row[z, 1L] + 1L
+      if (svc_ranges && kappa_estimated(r)) {
+        sims_z[[paste0("range_Z", suffix[z])]] <- sqrt(8) / exp(ln_kappa(r))
+      }
     }
   }
   if ("ln_tau_O_trend" %in% names(out)) {
-    if (is_areal || !has_ln_kappa) {
-      out$sigma_O_trend <- exp(-out$ln_tau_O_trend)
-    } else {
-      out$sigma_O_trend <- 1 / sqrt(4 * pi * exp(2 * out$ln_tau_O_trend + 2 * ln_kappa(1L)))
-    }
+    out$sigma_O_trend <- matern_sd(out$ln_tau_O_trend, ln_kappa(1L))
   }
-  out <- out[names(out) != "ln_kappa"]
+  # Remove internal columns (duplicated names included) only after all the
+  # transformations
+  out <- out[!names(out) %in% c("ln_kappa", "ln_tau_Z")]
+  if (length(sims_z)) out <- cbind(out, as.data.frame(sims_z))
   out$ln_tau_O <- out$ln_tau_E <- out$ln_tau_O_trend <-
-    out$ln_tau_Z <- out$ar1_phi <- out$thetaf <- out$ln_phi <- out$logit_rho_sar <- NULL
+    out$ar1_phi <- out$thetaf <- out$ln_phi <- out$logit_rho_sar <- NULL
   data.frame(.iteration = seq_len(n_sims), out)
 }
 

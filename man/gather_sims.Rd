@@ -27,6 +27,13 @@ A data frame. \code{gather_sims()} returns a long-format data frame:
 \item \code{.iteration}: the sample ID
 \item columns for each parameter with a sample per row
 }
+
+Spatially varying coefficient SDs are returned as \code{sigma_Z}. If any
+coefficient has its own Matérn range (see \code{range_groups} in \code{\link[=sdmTMB]{sdmTMB()}}),
+their ranges are returned as \code{range_Z}, and \code{range} is omitted if there are
+no spatial or spatiotemporal fields. With several coefficients, these names
+are suffixed with the coefficient name, e.g., \code{sigma_Z_depth_scaled}.
+Ranges that are fixed (mapped off) are not returned.
 }
 \description{
 \code{spread_sims()} returns a wide-format data frame. \code{gather_sims()} returns a

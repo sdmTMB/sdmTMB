@@ -470,3 +470,56 @@ test_that("PC Matern priors skip fields that are off", {
       tolerance = 1e-8)
   }
 })
+
+test_that("PC Matern priors with different range parts in a range group warn", {
+  skip_on_cran()
+  mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
+  build <- function(priors, ...) {
+    sdmTMB(density ~ 1, data = pcod_2011, mesh = mesh, time = "year",
+      priors = priors, do_fit = FALSE, ...)
+  }
+  pc <- pc_matern(range_gt = 10, sigma_lt = 5)
+  pc_range <- pc_matern(range_gt = 20, sigma_lt = 5)
+  pc_prob <- pc_matern(range_gt = 10, sigma_lt = 5, range_prob = 0.1)
+  pc_sigma <- pc_matern(range_gt = 10, sigma_lt = 2, sigma_prob = 0.1)
+
+  expect_warning(build(sdmTMBpriors(matern_s = pc, matern_st = pc_range)),
+    "different range parts")
+  expect_warning(build(sdmTMBpriors(matern_s = pc, matern_st = pc_prob)),
+    "different range parts")
+  # Different sigma parts, separate ranges, or a field that's off: no conflict
+  expect_no_warning(build(sdmTMBpriors(matern_s = pc, matern_st = pc_sigma)))
+  expect_no_warning(build(sdmTMBpriors(matern_s = pc, matern_st = pc_range),
+    share_range = FALSE))
+  expect_no_warning(build(sdmTMBpriors(matern_s = pc, matern_st = pc_range),
+    spatial = "off"))
+  # Crossed delta groups: component 1 spatiotemporal with component 2 spatial
+  g <- list(c(spatial = "a", spatiotemporal = "b"),
+    c(spatial = "b", spatiotemporal = "c"))
+  expect_warning(build(sdmTMBpriors(matern_s = pc, matern_st = pc_range),
+    family = delta_gamma(), range_groups = g),
+    "model 1 spatiotemporal .*model 2 spatial")
+  # Renaming labels without changing which are equal gives the same flags
+  g2 <- list(c(spatial = ".spatial2", spatiotemporal = ".spatiotemporal1"),
+    c(spatial = ".spatiotemporal1", spatiotemporal = ".spatial1"))
+  f <- function(g) {
+    d <- suppressWarnings(build(sdmTMBpriors(matern_s = pc, matern_st = pc),
+      family = delta_gamma(), range_groups = g))
+    list(d$tmb_map$ln_kappa, d$tmb_data$range_prior, d$tmb_data$sigma_prior)
+  }
+  expect_identical(f(g), f(g2))
+})
+
+test_that("Generated range labels can't collide with user labels", {
+  map <- function(g) {
+    get_kappa_map(range_group_labels(2L, c("on", "on"), c("off", "off"),
+      c(TRUE, TRUE), g))
+  }
+  expect_identical(map(list(c(spatial = "x"), NULL)),
+    map(list(c(spatial = ".spatial2"), NULL)))
+  expect_identical(map(list(c(spatial = "x"), NULL)),
+    map(list(c(spatial = ".spatiotemporal2"), NULL)))
+  expect_identical(map(list(c(spatial = "x"), NULL)),
+    map(list(c(spatial = "default:spatial2"), NULL)))
+  expect_identical(nlevels(map(list(c(spatial = ".spatial2"), NULL))), 2L)
+})

@@ -91,7 +91,14 @@
   share a range when it's not the default.
   With PC Matérn priors, the prior's range term applies once per shared range,
   from the first field in the group that is on and has a PC prior (spatial
-  before spatiotemporal, first component before second). #490
+  before spatiotemporal, first component before second). A warning is now
+  issued if fields sharing a range have PC priors with different range parts
+  (`range_gt`, `range_prob`), including the default shared spatial and
+  spatiotemporal range with different `matern_s` and `matern_st` ranges.
+  `spread_sims()` and `gather_sims()` return a draw of `sigma_Z` for each
+  spatially varying coefficient (suffixed by coefficient name, e.g.,
+  `sigma_Z_depth_scaled`, if there are several) and their `range_Z` draws if
+  they have their own ranges. #490
 
 * Add a `matern_svc` PC Matérn prior to `sdmTMBpriors()` for spatially varying
   coefficient fields (RTMB backend only). One prior applies to every

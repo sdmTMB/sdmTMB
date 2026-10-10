@@ -8,8 +8,13 @@ test_that("range_group_labels adds SVC rows only when needed", {
   x <- labels(NULL)
   expect_identical(dim(x), c(2L, 1L))
   expect_identical(svc_kappa_rows(x, 2L), matrix(0L, 2L, 1L))
-  x <- labels(c(a = ".spatial1"))
+  x <- labels(c(spatial = "s", a = "s"))
   expect_identical(nrow(x), 2L)
+  # User labels never match generated defaults
+  x <- labels(c(a = ".spatial1"))
+  expect_identical(nrow(x), 4L)
+  x <- labels(c(a = "default:spatial1"))
+  expect_identical(nrow(x), 4L)
 
   # An SVC with its own range
   x <- labels(c(a = "z"))
@@ -47,8 +52,8 @@ test_that("range_group_labels adds SVC rows only when needed", {
   # SVC fields enter every component, even where the spatial field is off,
   # so that component's spatial range is kept for the SVC that uses it
   x <- labels(list(c(a = "z"), c(a = "z")), spatial = c("on", "off"), n_m = 2L)
-  expect_identical(x[, 2L], c(spatial = ".spatial2", spatiotemporal = ".spatial2",
-    a = "z", b = ".spatial2"))
+  expect_identical(x[, 2L], c(spatial = "default:spatial2",
+    spatiotemporal = "default:spatial2", a = "user:z", b = "default:spatial2"))
   expect_identical(attr(x, "on")[1L, 2L], c(spatial = TRUE))
   expect_identical(svc_kappa_rows(x, 2L), matrix(c(2L, 0L, 2L, 0L), 2L))
 
@@ -193,8 +198,8 @@ test_that("tidy() and print() show SVC ranges and shared ranges", {
       depth_scaled = "st", depth_scaled2 = "z"),
     control = sdmTMBcontrol(backend = "rtmb"))
   expect_identical(fit$range_groups[, 1],
-    c(spatial = "s", spatiotemporal = "st", depth_scaled = "st",
-      depth_scaled2 = "z"))
+    c(spatial = "user:s", spatiotemporal = "user:st", depth_scaled = "user:st",
+      depth_scaled2 = "user:z"))
   b <- tidy(fit, "ran_pars")
   r <- fit$tmb_obj$report()
   expect_equal(b$estimate[b$term == "range"], r$range[, 1])
@@ -236,7 +241,7 @@ test_that("print() notes ranges shared across delta components", {
   expect_length(grep("range: [0-9.]+ \\(shared with model 2 spatial\\)$", out), 1L)
   expect_length(grep("range: [0-9.]+ \\(shared with model 1 spatial\\)$", out), 1L)
   expect_identical(fit$range_groups, structure(
-    matrix("a", 2L, 2L, dimnames = list(c("spatial", "spatiotemporal"), NULL)),
+    matrix("user:a", 2L, 2L, dimnames = list(c("spatial", "spatiotemporal"), NULL)),
     on = matrix(c(TRUE, FALSE), 2L, 2L,
       dimnames = list(c("spatial", "spatiotemporal"), NULL))))
 })
@@ -275,8 +280,9 @@ test_that("matern_svc PC priors apply to SVC fields once per range group", {
   for (bayesian in c(FALSE, TRUE)) {
     nll <- vapply(list(sdmTMBpriors(matern_s = pc, matern_svc = pc_svc),
       sdmTMBpriors()), function(priors) {
-        f <- svc_range_build(mesh = mesh, priors = priors, bayesian = bayesian,
-          range_groups = c(depth_scaled2 = "z"))
+        # The spatial and depth_scaled range priors differ (warns)
+        f <- suppressWarnings(svc_range_build(mesh = mesh, priors = priors,
+          bayesian = bayesian, range_groups = c(depth_scaled2 = "z")))
         svc_range_nll(f, c(-2, -2, -2, -1))
       }, numeric(1L))
     expected <- -rtmb_pc_matern(0.5, -2, pc, stan = bayesian) -
@@ -301,4 +307,71 @@ test_that("matern_svc requires RTMB and old fits get no SVC prior", {
   f$tmb_data$sigma_prior <- f$tmb_data$sigma_prior[1:2, , drop = FALSE]
   f$tmb_data$range_prior <- f$tmb_data$range_prior[1:2, , drop = FALSE]
   expect_equal(svc_range_nll(f, c(-2, -2)), nll)
+})
+
+test_that("spread_sims() returns each SVC's SD and range draws", {
+  skip_on_cran()
+  mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
+  fit_svc <- function(...) {
+    sdmTMB(density ~ 1, data = pcod_2011, mesh = mesh, family = tweedie(),
+      control = sdmTMBcontrol(backend = "rtmb"), ...)
+  }
+  # Expected transformations of the same underlying draws
+  raw_draws <- function(fit, nsim) {
+    set.seed(1)
+    s <- rmvnorm_prec(fit$tmb_obj$env$last.par.best, fit$sd_report, nsim)
+    pn <- names(c(fit$sd_report$par.fixed, fit$sd_report$par.random))
+    s <- s[pn %in% names(fit$sd_report$par.fixed), , drop = FALSE]
+    list(ln_kappa = s[rownames(s) == "ln_kappa", , drop = FALSE],
+      ln_tau_Z = s[rownames(s) == "ln_tau_Z", , drop = FALSE])
+  }
+  sims <- function(fit, nsim = 5) {
+    set.seed(1)
+    spread_sims(fit, nsim = nsim)
+  }
+  sd_z <- function(ln_tau, ln_kappa) 1 / sqrt(4 * pi * exp(2 * ln_tau + 2 * ln_kappa))
+
+  # One SVC with its own range and no other fields
+  fit <- fit_svc(spatial_varying = ~ 0 + depth_scaled, spatial = "off",
+    range_groups = c(depth_scaled = "z"))
+  x <- sims(fit)
+  r <- raw_draws(fit, 5)
+  expect_false("range" %in% names(x))
+  expect_false(any(grepl("ln_", names(x))))
+  expect_equal(x$range_Z, sqrt(8) / exp(r$ln_kappa[1, ]), ignore_attr = TRUE)
+  expect_equal(x$sigma_Z, sd_z(r$ln_tau_Z[1, ], r$ln_kappa[1, ]),
+    ignore_attr = TRUE)
+  g <- gather_sims(fit, nsim = 5)
+  expect_setequal(unique(g$.variable), setdiff(names(x), ".iteration"))
+
+  # Two SVCs: one shares the spatial range, one has its own
+  fit <- fit_svc(spatial_varying = ~ 0 + depth_scaled + depth_scaled2,
+    range_groups = c(depth_scaled2 = "z"))
+  x <- sims(fit)
+  r <- raw_draws(fit, 5)
+  expect_false(any(grepl("ln_", names(x))))
+  expect_equal(x$range, sqrt(8) / exp(r$ln_kappa[1, ]), ignore_attr = TRUE)
+  expect_equal(x$range_Z_depth_scaled, x$range)
+  expect_equal(x$range_Z_depth_scaled2, sqrt(8) / exp(r$ln_kappa[2, ]),
+    ignore_attr = TRUE)
+  expect_equal(x$sigma_Z_depth_scaled, sd_z(r$ln_tau_Z[1, ], r$ln_kappa[1, ]),
+    ignore_attr = TRUE)
+  expect_equal(x$sigma_Z_depth_scaled2, sd_z(r$ln_tau_Z[2, ], r$ln_kappa[2, ]),
+    ignore_attr = TRUE)
+
+  # Two SVCs sharing one range
+  fit <- fit_svc(spatial_varying = ~ 0 + depth_scaled + depth_scaled2,
+    spatial = "off", range_groups = c(depth_scaled = "z", depth_scaled2 = "z"))
+  x <- sims(fit)
+  expect_false("range" %in% names(x))
+  expect_equal(x$range_Z_depth_scaled, x$range_Z_depth_scaled2)
+
+  # Default single-SVC output is unchanged
+  fit <- fit_svc(spatial_varying = ~ 0 + depth_scaled)
+  x <- sims(fit)
+  r <- raw_draws(fit, 5)
+  expect_true(all(c("range", "sigma_O", "sigma_Z") %in% names(x)))
+  expect_false(any(grepl("range_Z|ln_", names(x))))
+  expect_equal(x$sigma_Z, sd_z(r$ln_tau_Z[1, ], r$ln_kappa[1, ]),
+    ignore_attr = TRUE)
 })

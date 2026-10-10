@@ -1143,7 +1143,7 @@ sdmTMB <- function(
   }
   share_range <- is.na(range_labels[1L, ]) | range_labels[1L, ] == range_labels[2L, ]
   prior_flags <- matern_prior_flags(priors, range_labels, spatial,
-    spatiotemporal, omit_spatial_intercept, n_z)
+    spatiotemporal, omit_spatial_intercept, colnames(z_i))
   if (n_z > 0L && has_pc_prior(priors$matern_svc) && backend == "tmb") {
     cli_abort(c("The `matern_svc` prior requires the RTMB backend.",
       "i" = "Use `control = sdmTMBcontrol(backend = \"rtmb\")`."))

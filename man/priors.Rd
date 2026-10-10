@@ -51,10 +51,13 @@ include a prior on the spatial range parameter. A shared range (see
 \code{share_range} and \code{range_groups} in \code{\link[=sdmTMB]{sdmTMB()}}) gets the range part of
 the prior once, from the first field sharing it that is on and has a
 prior: spatial before spatiotemporal, and the first delta component
-before the second, then spatially varying coefficients (\code{matern_svc}). Priors are skipped for fields that are off, except
-that with only spatially varying coefficients (\code{spatial = "off"}),
-\code{matern_s} sets the prior on their shared range (unless \code{matern_svc} is
-set).}
+before the second, then spatially varying coefficients (\code{matern_svc}).
+If fields sharing a range have priors with different range parts
+(\code{range_gt} or \code{range_prob}), a warning is issued, since only the first
+is applied; different sigma parts are fine. Priors are skipped for fields
+that are off, except that with only spatially varying coefficients
+(\code{spatial = "off"}), \code{matern_s} sets the prior on their shared range
+(unless \code{matern_svc} is set).}
 
 \item{phi}{A \code{halfnormal()} prior for the dispersion parameter in the
 observation distribution.}
@@ -90,14 +93,19 @@ f(x) is maximized.}
 \item{matern_svc}{Same as \code{matern_s} but for the spatially varying
 coefficient fields (\code{spatial_varying} in \code{\link[=sdmTMB]{sdmTMB()}}). One prior applies
 to every coefficient field in every model component. The sigma part is on
-the SD of each coefficient field, which depends on the units of its
-covariate, so a single \code{sigma_lt} only makes sense if the covariates are
-on similar scales (e.g., standardized). The range part is scale-free. A
-range shared with the spatial or spatiotemporal field (the default, or
-see \code{range_groups} in \code{\link[=sdmTMB]{sdmTMB()}}) gets the range part from those fields
-first. When set, \code{matern_svc} rather than \code{matern_s} sets the range prior
-for spatially varying coefficients with \code{spatial = "off"}. Requires the
-RTMB backend.}
+the SD of each coefficient field, which is on the scale of the linear
+predictor per unit of its covariate. A single \code{sigma_lt} is therefore a
+modeling assumption that the coefficient fields have similar SDs.
+Standardizing covariates puts them on similar scales, but in a delta
+model the components are on different link scales (e.g., log-odds of
+encounter versus log positive density), so standardization alone doesn't
+make one \code{sigma_lt} suitable for both components. The range part doesn't
+depend on covariate scaling but, as for the other fields, is in the units
+of the spatial coordinates. A range shared with the spatial or
+spatiotemporal field (the default, or see \code{range_groups} in \code{\link[=sdmTMB]{sdmTMB()}})
+gets the range part from those fields first. When set, \code{matern_svc}
+rather than \code{matern_s} sets the range prior for spatially varying
+coefficients with \code{spatial = "off"}. Requires the RTMB backend.}
 
 \item{custom}{Optional function of \verb{(par, theta)} returning one or more log
 density contributions (RTMB backend only; see \strong{Custom priors} below).}
