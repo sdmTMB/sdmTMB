@@ -77,6 +77,9 @@
 
 ## New features
 
+* Added `lognormal_prior()` as an option for `sdmTMBpriors(sigma_V = ...)`
+  priors on time-varying coefficient SDs.
+
 * **RTMB is now the default backend.** The model code is written in R (via
   RTMB) with about 50% fewer lines, and gives the same results as the TMB
   backend in all our tests, although simulated values differ between backends

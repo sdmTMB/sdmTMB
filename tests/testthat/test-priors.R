@@ -281,3 +281,39 @@ test_that("Priors apply the right terms and Jacobians in both backends", {
       label = backend)
   }
 })
+
+test_that("Lognormal sigma_V priors work", {
+  expect_equal(lognormal_prior(log(0.2), 0.5), matrix(c(log(0.2), 0.5), ncol = 2L),
+    ignore_attr = TRUE)
+  expect_error(lognormal_prior(0, -1))
+  expect_error(lognormal_prior(NA, 1))
+  expect_error(sdmTMBpriors(sigma_V = normal(0, 1)))
+
+  make_obj <- function(priors, bayesian = FALSE) {
+    sdmTMB(density ~ 0, time = "year", time_varying = ~ 1 + depth_scaled,
+      data = pcod_2011, spatial = "off", spatiotemporal = "off",
+      family = tweedie(), priors = priors, bayesian = bayesian, do_fit = FALSE,
+      control = sdmTMBcontrol(multiphase = FALSE))$tmb_obj
+  }
+  sigma <- c(0.3, 0.6)
+  for (bayesian in c(FALSE, TRUE)) {
+    # vector of priors with NA = no prior on the second SD
+    objs <- lapply(list(sdmTMBpriors(),
+      sdmTMBpriors(sigma_V = lognormal_prior(c(log(0.2), NA), c(0.5, NA)))),
+      make_obj, bayesian = bayesian)
+    p <- objs[[1]]$par
+    p[names(p) == "ln_tau_V"] <- log(sigma)
+    expected <- -dlnorm(sigma[1], log(0.2), 0.5, log = TRUE)
+    if (bayesian) expected <- expected - log(sigma[1])
+    expect_equal(as.numeric(objs[[2]]$fn(p) - objs[[1]]$fn(p)), expected,
+      tolerance = 1e-6, label = paste("bayesian =", bayesian))
+  }
+  # gamma priors are unchanged
+  objs <- lapply(list(sdmTMBpriors(), sdmTMBpriors(sigma_V = gamma_cv(0.2, 0.5))),
+    make_obj)
+  p <- objs[[1]]$par
+  p[names(p) == "ln_tau_V"] <- log(sigma)
+  expect_equal(as.numeric(objs[[2]]$fn(p) - objs[[1]]$fn(p)),
+    -sum(dgamma(sigma, shape = 1 / 0.5^2, scale = 0.5^2 * 0.2, log = TRUE)),
+    tolerance = 1e-6)
+})

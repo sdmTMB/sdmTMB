@@ -1332,6 +1332,9 @@ sdmTMB <- function(
   if (nrow(priors_sigma_V) != ncol(X_rw_ik)) {
     cli_abort("sigma_V (time-varying SD) priors do not match the fitted model.")
   }
+  # third column: 0 = gamma, 1 = lognormal
+  priors_sigma_V <- cbind(priors_sigma_V,
+    as.numeric(identical(attr(priors$sigma_V, "dist"), "lognormal")))
 
   A_st <- domain$A_st
   A_spatial_index <- domain$A_spatial_index

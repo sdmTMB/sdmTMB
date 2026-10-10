@@ -59,7 +59,10 @@
 #' @param tweedie_p A `normal()` prior for the Tweedie power parameter. Note the
 #'   parameter has support `1 < tweedie_p < 2` so choose a mean appropriately.
 #' @param b `normal()` priors for the main population-level 'beta' effects.
-#' @param sigma_V `gamma_cv()` priors for any time-varying parameter SDs.
+#' @param sigma_V `gamma_cv()` or `lognormal_prior()` priors for any
+#'   time-varying parameter SDs. Supply a single prior to apply it to all
+#'   time-varying coefficients or a vector with one element per coefficient
+#'   (`NA` for no prior). In delta models, the priors apply to both components.
 #' @param threshold_breakpt_slope A `normal()` prior for the slope of the
 #'   linear (hockey stick) function.
 #' @param threshold_breakpt_cut A `normal()` prior for the cutoff of the
@@ -158,7 +161,7 @@ sdmTMBpriors <- function(
   assert_that(attr(matern_s, "dist") == "pc_matern")
   assert_that(attr(matern_st, "dist") == "pc_matern")
   assert_that(attr(phi, "dist") == "normal")
-  assert_that(attr(sigma_V, "dist") == "gamma")
+  assert_that(attr(sigma_V, "dist") %in% c("gamma", "lognormal"))
   assert_that(attr(tweedie_p, "dist") == "normal")
   assert_that(attr(b, "dist") %in% c("normal", "mvnormal"))
   assert_that(attr(threshold_breakpt_slope, "dist") == "normal")
@@ -232,6 +235,23 @@ gamma_cv <- function(location, cv) {
   # mean(x);sd(x) / mean(x)
   x <- matrix(c(1/cv^2, cv^2*location), ncol = 2L)
   `attr<-`(x, "dist", "gamma")
+}
+
+#' @export
+#' @rdname priors
+#' @param meanlog Mean of the distribution on the log scale.
+#' @param sdlog Standard deviation of the distribution on the log scale.
+#' @details
+#' `lognormal_prior()` defines a lognormal prior with the same parameterization
+#' as [stats::dlnorm()]. The median is `exp(meanlog)`.
+#' @examples
+#' lognormal_prior(log(0.2), 0.5)
+lognormal_prior <- function(meanlog, sdlog) {
+  assert_that(all(sdlog[!is.na(sdlog)] > 0))
+  assert_that(length(meanlog) == length(sdlog))
+  assert_that(sum(is.na(meanlog)) == sum(is.na(sdlog)))
+  x <- matrix(c(meanlog, sdlog), ncol = 2L)
+  `attr<-`(x, "dist", "lognormal")
 }
 
 #' @export

@@ -5,6 +5,7 @@
 \alias{normal}
 \alias{halfnormal}
 \alias{gamma_cv}
+\alias{lognormal_prior}
 \alias{mvnormal}
 \alias{pc_matern}
 \title{Prior distributions}
@@ -32,6 +33,8 @@ halfnormal(location = 0, scale = 1)
 
 gamma_cv(location, cv)
 
+lognormal_prior(meanlog, sdlog)
+
 mvnormal(location = 0, scale = diag(length(location)))
 
 pc_matern(range_gt, sigma_lt, range_prob = 0.05, sigma_prob = 0.05)
@@ -56,7 +59,10 @@ parameter has support \verb{1 < tweedie_p < 2} so choose a mean appropriately.}
 
 \item{b}{\code{normal()} priors for the main population-level 'beta' effects.}
 
-\item{sigma_V}{\code{gamma_cv()} priors for any time-varying parameter SDs.}
+\item{sigma_V}{\code{gamma_cv()} or \code{lognormal_prior()} priors for any
+time-varying parameter SDs. Supply a single prior to apply it to all
+time-varying coefficients or a vector with one element per coefficient
+(\code{NA} for no prior). In delta models, the priors apply to both components.}
 
 \item{threshold_breakpt_slope}{A \code{normal()} prior for the slope of the
 linear (hockey stick) function.}
@@ -86,6 +92,10 @@ log absolute Jacobian for \code{custom}. Only used if \code{bayesian = TRUE}. Re
 deviation(s). For \code{mvnormal()}: variance-covariance matrix.}
 
 \item{cv}{Coefficient of variation (SD/mean).}
+
+\item{meanlog}{Mean of the distribution on the log scale.}
+
+\item{sdlog}{Standard deviation of the distribution on the log scale.}
 
 \item{range_gt}{A value one expects the spatial or spatiotemporal range is
 \strong{g}reater \strong{t}han with \code{1 - range_prob} probability.}
@@ -137,6 +147,9 @@ without a PC prior and then constraining the model from there. A better
 option would be to simulate from a model with a given range and sigma to
 choose reasonable values for the system or base the prior on knowledge from a
 model fit to a similar system but with more spatial information in the data.
+
+\code{lognormal_prior()} defines a lognormal prior with the same parameterization
+as \code{\link[stats:dlnorm]{stats::dlnorm()}}. The median is \code{exp(meanlog)}.
 }
 \section{Custom priors}{
 
@@ -202,6 +215,7 @@ priors, custom terms are part of the objective, so they are included in
 normal(0, 1)
 halfnormal(0, 1)
 gamma_cv(0.5, 0.2)
+lognormal_prior(log(0.2), 0.5)
 mvnormal(c(0, 0))
 pc_matern(range_gt = 5, sigma_lt = 1)
 plot_pc_matern(range_gt = 5, sigma_lt = 1)

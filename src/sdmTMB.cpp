@@ -1603,7 +1603,13 @@ Type objective_function<Type>::operator()()
       error("sigma_V prior dimensions are incorrect");
     for (int v = 0; v < sigma_V.rows(); v++) {
       if (!sdmTMB::isNA(priors_sigma_V(v,0)) && !sdmTMB::isNA(priors_sigma_V(v,1))) {
-        jnll -= dgamma(sigma_V(v,m), priors_sigma_V(v,0), priors_sigma_V(v,1), true);
+        // column 2: 0 = gamma, 1 = lognormal (absent in older fits)
+        if (priors_sigma_V.cols() > 2 && priors_sigma_V(v,2) == Type(1)) {
+          jnll -= dnorm(ln_tau_V(v,m), priors_sigma_V(v,0), priors_sigma_V(v,1), true) -
+            ln_tau_V(v,m);
+        } else {
+          jnll -= dgamma(sigma_V(v,m), priors_sigma_V(v,0), priors_sigma_V(v,1), true);
+        }
         if (stan_flag) jnll -= log(sigma_V(v,m)); // Jacobian adjustment
       }
     }
