@@ -80,87 +80,126 @@ get_eao(
 \arguments{
 \item{obj}{A model fitted with \code{\link[=sdmTMB]{sdmTMB()}}. For backwards compatibility,
 output from \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} with \code{return_tmb_object = TRUE} is also
-accepted.}
+accepted (not for \code{get_index_split()}).}
 
-\item{newdata}{New data (e.g., a prediction grid by year) to pass to
-\code{\link[=predict.sdmTMB]{predict.sdmTMB()}}. Not used when \code{obj} is legacy prediction output.}
+\item{newdata}{A data frame of locations (and times) to combine predictions
+over, usually a grid covering the area of interest replicated for each
+time step (see \code{\link[=replicate_df]{replicate_df()}}). Same requirements as \code{newdata} in
+\code{\link[=predict.sdmTMB]{predict.sdmTMB()}}. Results are returned only for time steps in
+\code{newdata}. Required unless \code{obj} is legacy prediction output or was fitted
+with the deprecated \code{do_index = TRUE}.}
 
-\item{bias_correct}{Should bias correction be implemented via
-\code{\link[TMB:sdreport]{TMB::sdreport()}}? Bias correction accounts for the non-linear
-transformation of random effects when calculating the index. Recommended to
-be \code{TRUE} for final analyses, but can be set to \code{FALSE} for faster
-calculation while experimenting with models. See Thorson and Kristensen
-(2016) in the References.}
+\item{bias_correct}{Logical: apply bias correction? Predictions plugged in
+at the estimated random effects can be biased once transformed to the
+response scale and summed; bias correction (Thorson and Kristensen 2016)
+adjusts the estimate for this. Recommended for final results but slower,
+so it can be turned off while exploring models. The standard errors are
+not bias-corrected.}
 
-\item{level}{The confidence level.}
+\item{level}{The confidence level of the intervals.}
 
-\item{area}{Grid cell area for area weighting the index. Can be: (1) a
-numeric vector of length \code{nrow(newdata)} with area for each grid cell, (2)
-a single numeric value to apply to all grid cells, or (3) a character value
-giving the column name in \code{newdata} containing areas. See Details for
-non-spatial uses of \code{area} as an integration multiplier.}
+\item{area}{The area of each row of \code{newdata} (e.g., grid cell area),
+used to weight predictions when combining them: (1) a numeric vector with
+one value per row of \code{newdata}, (2) a single value for all rows, or (3)
+the name of a column in \code{newdata}. With the default of 1, the index is a
+sum of densities rather than an area-weighted total. See Details for
+other uses.}
 
-\item{offset}{An optional numeric offset vector with one value per row of
-\code{newdata}.}
+\item{offset}{An optional numeric vector of offset values, one per row of
+\code{newdata} (not a column name). If \code{NULL} (default), the offset is 0, so
+predictions are per unit of the offset (e.g., density rather than catch
+when the offset is log area swept).}
 
-\item{silent}{Logical. Suppress progress messages?}
+\item{silent}{Logical: suppress TMB's output while calculating? In
+\code{get_index_split()}, controls the progress bar instead.}
 
-\item{derived_link}{Optional override for the inverse link used when
-calculating derived quantities such as the index. By default, the fitted
-family link is used. Currently supported for non-delta \code{binomial()} and
-\code{betabinomial()} models fit with \code{link = "cloglog"}.}
+\item{derived_link}{Optional link whose inverse is applied to the linear
+predictor, in place of the model's own link, before combining
+predictions. Currently only available for non-delta \code{\link[=binomial]{binomial()}},
+\code{\link[=censored_binomial]{censored_binomial()}}, \code{\link[=betabinomial]{betabinomial()}}, and \code{\link[=censored_betabinomial]{censored_betabinomial()}}
+models fit with \code{link = "cloglog"}; there, \code{derived_link = "log"} sums
+expected event rates (e.g., catch per hook) instead of probabilities. See
+the \href{https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html}{hook competition vignette}.}
 
-\item{predict_args}{A named list of less commonly used arguments to pass to
-\code{\link[=predict.sdmTMB]{predict.sdmTMB()}}. \code{newdata} and \code{offset} should be supplied directly.}
+\item{predict_args}{A named list of other arguments to pass to
+\code{\link[=predict.sdmTMB]{predict.sdmTMB()}} (supply \code{newdata} and \code{offset} directly). For example,
+\code{list(re_form = NA)} calculates the quantity with the spatial and
+spatiotemporal random fields set to zero, and \code{list(re_form_iid = NA)}
+does the same for IID random effects.}
 
-\item{...}{Passed to \code{\link[TMB:sdreport]{TMB::sdreport()}}.}
+\item{...}{Passed to \code{\link[TMB:sdreport]{TMB::sdreport()}} or \code{\link[RTMB:sdreport]{RTMB::sdreport()}}.}
 
-\item{nsplit}{The number of splits to do the calculation in. For memory
-intensive operations (large grids and/or models), it can be helpful to
-do the prediction, area integration, and bias correction on subsets of
-time slices (e.g., years) instead of all at once. If \code{nsplit > 1}, this
-will usually be slower but with reduced memory use.}
+\item{nsplit}{The number of chunks of time steps to calculate the index in
+separately. For large grids or models, \code{nsplit > 1} reduces memory use
+but is usually slower.}
 
-\item{format}{Long or wide.}
+\item{format}{The shape of the output: \code{"long"} or \code{"wide"} (see
+Value).}
 
-\item{vector}{A numeric vector of the same length as the prediction data,
-containing the values to be averaged (e.g., depth, temperature).}
+\item{vector}{A numeric vector of values to average (e.g., depth or
+temperature), one per row of \code{newdata}.}
 }
 \value{
-For \code{get_index()}:
-A data frame with columns for time, estimate (area-weighted total abundance
-or biomass), lower and upper confidence intervals, log estimate, and standard
-error of the log estimate.
-
-For \code{get_cog()}:
-A data frame with columns for time, estimate (center of gravity: the
-abundance-weighted mean x and y coordinates), lower and upper confidence
-intervals, and standard error of center of gravity coordinates.
-
-For \code{get_eao()}:
-A data frame with columns for time, estimate (effective area occupied: the
-area required if the population was spread evenly at the arithmetic mean
-density), lower and upper confidence intervals, log EAO, and standard error
-of the log EAO estimates.
-
-For \code{get_weighted_average()}:
-A data frame with columns for time, estimate (weighted average of the
-provided vector, weighted by predicted density), lower and upper confidence
-intervals, and standard error of the estimates.
+A data frame with one row per time step (time column named as in the
+fitted model), a \code{type} column, and:
+\itemize{
+\item \code{get_index()} and \code{get_index_split()}: \code{est} (the index), \code{lwr} and \code{upr}
+(confidence interval), \code{log_est} (log of \code{est}), \code{se} (standard error of
+\code{log_est}), and \code{se_natural} (standard error of \code{est}).
+\item \code{get_cog()}: with \code{format = "long"} (default), two rows per time step,
+one per coordinate (\code{coord} is \code{"X"} or \code{"Y"}), with \code{est}, \code{lwr}, \code{upr},
+and \code{se} (standard error of \code{est}). With \code{format = "wide"}, one row per
+time step with these columns suffixed \verb{_x} and \verb{_y}.
+\item \code{get_eao()}: \code{est}, \code{lwr}, \code{upr}, \code{log_est}, and \code{se} (standard error of
+\code{log_est}).
+\item \code{get_weighted_average()}: \code{est}, \code{lwr}, \code{upr}, and \code{se} (standard error
+of \code{est}).
+}
 }
 \description{
-Extract a relative biomass/abundance index, center of gravity, effective
-area occupied, or weighted average
+Calculate quantities derived from a model fitted with \code{\link[=sdmTMB]{sdmTMB()}} by
+combining its predictions over a grid (\code{newdata}) for each time step, with
+standard errors and confidence intervals that account for uncertainty in
+both fixed and random effects:
 }
 \details{
-More generally, \code{area} is the multiplier used to integrate response-scale
-predictions. For binomial or beta-binomial models fit to proportions with
-\code{weights} specifying the number of trials, predictions are expected
-proportions per trial. In that case, \code{area} can be used as a standard number
-of trials (e.g., hooks per longline set) to obtain an expected-count index.
-The original fitting \code{weights} are not automatically reused for index
-standardization; supply the desired standardization multiplier through
-\code{area}.
+\itemize{
+\item \code{get_index()}: total abundance or biomass (an index).
+\item \code{get_index_split()}: the same, calculated a few time steps at a time to
+reduce memory use.
+\item \code{get_cog()}: center of gravity (the mean x and y coordinates, weighted by
+abundance).
+\item \code{get_eao()}: effective area occupied.
+\item \code{get_weighted_average()}: the mean of any variable weighted by abundance
+(e.g., the average depth or temperature occupied).
+}
+
+For each time step, predictions are converted to the response scale (for
+delta models, combining both components), multiplied by \code{area}, and
+combined. With \eqn{\mu_i} the prediction and \eqn{a_i} the area for row
+\eqn{i}:
+\itemize{
+\item Index: \eqn{\sum_i a_i \mu_i}.
+\item Weighted average: \eqn{\sum_i a_i \mu_i v_i / \sum_i a_i \mu_i}, for
+values \eqn{v_i} given by \code{vector}. Center of gravity is the weighted
+average of the x and y coordinates, in the units of the coordinates used
+to build the mesh.
+\item Effective area occupied: \eqn{(\sum_i a_i \mu_i)^2 / \sum_i a_i
+  \mu_i^2}, the area needed to hold the total if density were spread
+evenly at the abundance-weighted average density.
+}
+
+Standard errors use the delta method. Confidence intervals for the index
+and effective area occupied are calculated on the log scale, so they are
+asymmetric and always positive. Those for the center of gravity and
+weighted average are calculated on the original scale.
+
+More generally, \code{area} is any multiplier on the response-scale
+predictions. For example, binomial or beta-binomial models fit to
+proportions (with \code{weights} giving the number of trials) predict
+proportions per trial. Setting \code{area} to a standard number of trials
+(e.g., hooks per longline set) gives an index of expected counts. The
+fitting \code{weights} are not reused automatically.
 }
 \examples{
 \donttest{
@@ -187,10 +226,8 @@ ggplot(ind, aes(year, est)) + geom_line() +
   geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.4) +
   ylim(0, NA)
 
-# do that in 2 chunks
-# only necessary for very large grids to save memory
-# will be slower but save memory
-# note the first argument is the model fit object:
+# the same, calculated in 2 chunks of years;
+# slower but uses less memory for very large grids:
 ind <- get_index_split(m, newdata = nd, nsplit = 2, bias_correct = TRUE)
 
 # center of gravity:
@@ -253,5 +290,5 @@ population dynamics examples. Fisheries Research 175: 66–74.
 \doi{10.1016/j.fishres.2015.11.016}
 }
 \seealso{
-\code{\link[=get_index_sims]{get_index_sims()}}
+\code{\link[=get_index_sims]{get_index_sims()}} for derived quantities from simulation draws.
 }

@@ -52,7 +52,7 @@
 .family_registry <- local({
   registry <- data.frame(
     family_name = names(.valid_family),
-    uses_phi = !names(.valid_family) %in% c("binomial", "poisson", "censored_poisson"),
+    uses_phi = !names(.valid_family) %in% c("binomial", "censored_binomial", "poisson", "censored_poisson"),
     auxiliary = NA_character_,
     # Allowed as a single-component (LP1-only) family in multi-family mode:
     multi_family_single = FALSE,
@@ -157,7 +157,7 @@
       numeric(0)
     },
     gengamma_Q = rep(0.5, n$gengamma_Q),
-    psi = if (has_ordbeta) c(-1, 1) else numeric(0),
+    psi = if (has_ordbeta) c(-1, log(2)) else numeric(0), # cutpoints -1 and 1
     ln_phi = rep(0, n$ln_phi)
   )
 }

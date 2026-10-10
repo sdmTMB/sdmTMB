@@ -24,7 +24,11 @@ enum valid_family {
   nbinom2_mix_family = 15,
   gengamma_family = 16,
   betabinomial_family = 17,
-  ordbeta_family = 18
+  ordbeta_family = 18,
+  censored_betabinomial_family = 19, // RTMB only
+  censored_binomial_family = 20, // RTMB only
+  censored_nbinom1_family = 21, // RTMB only
+  censored_nbinom2_family = 22 // RTMB only
 };
 
 enum valid_link {
@@ -159,6 +163,8 @@ struct resolved_family_component_t {
   Type thetaf_raw;
   Type student_df;
   Type gengamma_Q;
+  Type psi_lower; // ordered beta cutpoints (logit scale)
+  Type psi_upper;
 
   resolved_family_component_t() :
     active(false),
@@ -171,7 +177,9 @@ struct resolved_family_component_t {
     tweedie_p(Type(0.0)),
     thetaf_raw(Type(0.0)),
     student_df(Type(0.0)),
-    gengamma_Q(Type(0.0)) {}
+    gengamma_Q(Type(0.0)),
+    psi_lower(Type(0.0)),
+    psi_upper(Type(0.0)) {}
 
   bool is_poisson_link_delta() const {
     return combine_kind == poisson_link_delta_combine;
@@ -191,6 +199,7 @@ struct family_resolver_t {
   const vector<Type>& thetaf_raw_by_family;
   const vector<Type>& student_df_by_family;
   const vector<Type>& gengamma_Q_by_family;
+  const vector<Type>& psi;
 
   // This returns a value object only. In particular, do not cache a resolved
   // component in static storage: this resolver is used inside PARALLEL_REGION.
@@ -210,6 +219,10 @@ struct family_resolver_t {
     out.thetaf_raw = thetaf_raw_by_family(family_i);
     out.student_df = student_df_by_family(family_i);
     out.gengamma_Q = gengamma_Q_by_family(family_i);
+    if (out.family_code == ordbeta_family) {
+      out.psi_lower = psi(0);
+      out.psi_upper = psi(0) + exp(psi(1));
+    }
     return out;
   }
 
@@ -234,6 +247,12 @@ Type resolved_component_response_mean(Type eta, const resolved_family_component_
   if (uses_truncated_mean(resolved.family_code)) {
     Type log_nzprob = calc_log_nzprob(mu, resolved.phi, resolved.family_code);
     mu /= exp(log_nzprob);
+  }
+  if (resolved.family_code == ordbeta_family) {
+    // Point masses at 0 and 1 plus the interior beta mean
+    Type p0 = invlogit(resolved.psi_lower - eta);
+    Type p1 = invlogit(eta - resolved.psi_upper);
+    mu = p1 + (Type(1) - p0 - p1) * mu;
   }
   return mu;
 }
@@ -441,7 +460,7 @@ Type objective_function<Type>::operator()()
   PARAMETER_VECTOR(thetaf);           // tweedie only
   PARAMETER_VECTOR(ln_student_df);    // student-t df (log(df - 1))
   PARAMETER_VECTOR(gengamma_Q);           // gengamma only
-  PARAMETER_VECTOR(psi);                // ordered beta cutpoints (length 2)
+  PARAMETER_VECTOR(psi);                // ordered beta: lower cutpoint, log(upper - lower)
   PARAMETER(logit_p_extreme);           // ECE / positive mixture only
   PARAMETER(log_ratio_mix);           // ECE / positive mixture only
 
@@ -559,7 +578,8 @@ Type objective_function<Type>::operator()()
     tweedie_p_by_family,
     thetaf_raw_by_family,
     student_df_by_family,
-    gengamma_Q_by_family
+    gengamma_Q_by_family,
+    psi
   };
   // Covariate diffusion
   // Transform distributed-lag parameters onto the scales used by the solvers
@@ -716,16 +736,17 @@ Type objective_function<Type>::operator()()
   bool s = true;
   if (normalize_in_r) s = false;
 
-  // Spatial (intercept) random effects:
+  // Spatial (intercept) and spatially varying coefficient random effects:
   for (int m = 0; m < n_m; m++) {
-  if (include_spatial(m)) {
     Eigen::SparseMatrix<Type> Q_temp; // Precision matrix
-    if (include_spatial(m)) {
+    if (include_spatial(m) || (spatial_covariate && !no_spatial)) {
       if (m == 0) {
         Q_temp = Q_s;
       } else {
         Q_temp = Q_s2;
       }
+    }
+    if (include_spatial(m)) {
       if (!omit_spatial_intercept) {
         Type spatial_scale = barrier ?
           sdmTMB::barrier_scaling_factor(ln_tau_O(m), ln_kappa(0,m)) :
@@ -743,27 +764,28 @@ Type objective_function<Type>::operator()()
           }
         }
       }
-      if (spatial_covariate) {
-        for (int z = 0; z < n_z; z++) {
-          Type spatial_cov_scale = barrier ?
-            sdmTMB::barrier_scaling_factor(ln_tau_Z(z,m), ln_kappa(0,m)) :
-            1. / exp(ln_tau_Z(z,m));
-          PARALLEL_REGION jnll += SCALE(GMRF(Q_temp, s), spatial_cov_scale)(zeta_s.col(m).col(z));
-          if (sim_re(2)) {
-            vector<Type> zeta_s_tmp(zeta_s.col(m).rows());
-            SIMULATE {
-              GMRF(Q_temp, s).simulate(zeta_s_tmp);
-              if (barrier) {
-                zeta_s.col(m).col(z) = zeta_s_tmp * sdmTMB::barrier_scaling_factor(ln_tau_Z(z,m), ln_kappa(0,m));
-              } else {
-                zeta_s.col(m).col(z) = zeta_s_tmp / exp(ln_tau_Z(z,m));
-              }
+    }
+    // SVC fields enter the predictor of every component, so each needs a
+    // density whether or not that component has a spatial intercept field.
+    if (spatial_covariate && !no_spatial) {
+      for (int z = 0; z < n_z; z++) {
+        Type spatial_cov_scale = barrier ?
+          sdmTMB::barrier_scaling_factor(ln_tau_Z(z,m), ln_kappa(0,m)) :
+          1. / exp(ln_tau_Z(z,m));
+        PARALLEL_REGION jnll += SCALE(GMRF(Q_temp, s), spatial_cov_scale)(zeta_s.col(m).col(z));
+        if (sim_re(2)) {
+          vector<Type> zeta_s_tmp(zeta_s.col(m).rows());
+          SIMULATE {
+            GMRF(Q_temp, s).simulate(zeta_s_tmp);
+            if (barrier) {
+              zeta_s.col(m).col(z) = zeta_s_tmp * sdmTMB::barrier_scaling_factor(ln_tau_Z(z,m), ln_kappa(0,m));
+            } else {
+              zeta_s.col(m).col(z) = zeta_s_tmp / exp(ln_tau_Z(z,m));
             }
           }
         }
       }
     }
-  }
   }
 
   // Spatiotemporal random effects:
@@ -929,15 +951,21 @@ Type objective_function<Type>::operator()()
           if (n > 1) {
             // multivariate densities from from namespace 'density' return the negative log likelihood. So code should be:
             jnll += VECSCALE(UNSTRUCTURED_CORR(unconstrained_params),sds)(b_re_vec);
-            if (sim_re(3)) error("Simulation not implemented for random slopes/intercepts yet");
+            if (sim_re(3)) SIMULATE {
+              VECSCALE(UNSTRUCTURED_CORR(unconstrained_params),sds).simulate(b_re_vec);
+              jj = 0;
+              for (int this_level = re_b_df(levels,0); this_level <= re_b_df(levels,1); this_level++) {
+                re_b_pars(this_level,m) = b_re_vec(jj);
+                jj = jj + 1;
+              }
+            }
           }
       } // end for levels
     } // end for g
   } // end for m
   REPORT(re_cov_pars);
   ADREPORT(re_cov_pars);
-  REPORT(re_b_pars);
-  ADREPORT(re_b_pars);
+  REPORT(re_b_pars); // SEs come from sdreport()'s random effects
 
   tmbutils::array<Type> sigma_V(X_rw_ik.cols(),n_m);
   // Time-varying effects (dynamic regression):
@@ -1163,14 +1191,15 @@ Type objective_function<Type>::operator()()
         Type log_one_minus_p = -exp(offset_i(i) + eta_i(i,0));
         Type log_p = logspace_sub(Type(0.0), log_one_minus_p);
         if (m == 0) {
+          // deviance residuals: positive for an encounter, negative for a zero
           if (y_i(i,0) > Type(0.0)) {
             poisson_link_m0_ll(i) = log_p; // calc ll here; more robust than dbinom_robust(logit(p))
             devresid(i,m) = sqrt(-2.0 * log_p);
-            // dev = -2 * logmu1;
           } else {
             poisson_link_m0_ll(i) = log_one_minus_p; // log(1 - p)
-            devresid(i,m) = sqrt(-2.0 * log_one_minus_p);
+            devresid(i,m) = -sqrt(-2.0 * log_one_minus_p);
           }
+          if (sdmTMB::isNA(y_i(i,0))) devresid(i,m) = Type(0.0);
           mu_i(i,0) = exp(log_p); // just for recording; not used in ll b/c robustness
         }
         if (m == 1) mu_i(i,1) = exp(offset_i(i) + eta_i(i,0) + eta_i(i,1) - log_p);
@@ -1220,11 +1249,50 @@ Type objective_function<Type>::operator()()
       for (int i = 0; i < n_i; i++) {
         resolved_family_component_t<Type> resolved = family_resolver.resolve_row_component(i, m);
         if (!resolved.active) continue;
-        if (resolved.family_code == binomial_family && !resolved.is_poisson_link_delta()) {
-          y_i(i,m) = invlogit(mu_i(i,m)) * size(i); // hardcoded invlogit b/c mu_i in logit space
-        } else {
-          y_i(i,m) = mu_i(i,m);
+        if (has_dispersion_model && (n_m == 1 || m == (n_m - 1))) {
+          resolved.ln_phi = ln_phi_i(i);
+          resolved.phi = phi_i(i);
         }
+        // response expectation
+        Type mean = mu_i(i,m);
+        switch (resolved.family_code) {
+          case binomial_family: {
+            // hardcoded invlogit b/c mu_i in logit space
+            if (!resolved.is_poisson_link_delta()) mean = invlogit(mu_i(i,m)) * size(i);
+            break;
+          }
+          case betabinomial_family: {
+            mean = mu_i(i,m) * size(i);
+            break;
+          }
+          case truncated_nbinom2_family: { // divide by Pr(y > 0)
+            lognzprob = logspace_sub(Type(0), -resolved.phi *
+              logspace_add(Type(0), log(mu_i(i,m)) - resolved.ln_phi));
+            mean = exp(log(mu_i(i,m)) - lognzprob);
+            break;
+          }
+          case truncated_nbinom1_family: {
+            lognzprob = logspace_sub(Type(0), -mu_i(i,m) / resolved.phi *
+              logspace_add(Type(0), resolved.ln_phi));
+            mean = exp(log(mu_i(i,m)) - lognzprob);
+            break;
+          }
+          case gamma_mix_family:
+          case lognormal_mix_family:
+          case nbinom2_mix_family: {
+            mean = (Type(1) - p_extreme) * mu_i(i,m) + p_extreme * mu_i_large(i);
+            break;
+          }
+          case ordbeta_family: {
+            Type p0 = invlogit(psi(0) - eta_i(i,m));
+            Type p1 = invlogit(eta_i(i,m) - (psi(0) + exp(psi(1))));
+            mean = p1 + (Type(1) - p0 - p1) * mu_i(i,m);
+            break;
+          }
+          default:
+            break;
+        }
+        y_i(i,m) = mean;
       }
     }
   }
@@ -1304,6 +1372,7 @@ Type objective_function<Type>::operator()()
           }
           case censored_poisson_family: {
             if (notNA) tmp_ll = sdmTMB::dcenspois2(y_i(i,m), mu_i(i,m), upr(i), true);
+            if (notNA) devresid(i,m) = sdmTMB::devresid_censpois(y_i(i,m), mu_i(i,m), upr(i), tmp_ll);
             if (sim_obs) SIMULATE{y_i(i,m) = rpois(mu_i(i,m));}
             break;
           }
@@ -1350,7 +1419,6 @@ Type objective_function<Type>::operator()()
               s2 = mu_i(i,m) * (Type(1)+resolved.phi);
               y_i(i,m) = rnbinom2(s1, s2);
               }
-            if (notNA) devresid(i,m) = sdmTMB::devresid_nbinom2(y_i(i,m), s1, s1 - resolved.ln_phi);
             break;
           }
           case truncated_nbinom1_family: {
@@ -1388,12 +1456,13 @@ Type objective_function<Type>::operator()()
             if (sim_obs) SIMULATE{y_i(i,m) = rbeta(s1, s2);}
             break;
           }
-          case ordbeta_family: { // Kubinec 2023; psi(0) < psi(1) on logit scale
+          case ordbeta_family: { // Kubinec 2023; cutpoints on logit scale
+            Type psi_upper = psi(0) + exp(psi(1)); // ensures psi(0) < psi_upper
             if (notNA) tmp_ll = sdmTMB::dordbeta(y_i(i,m), eta_i(i,m), mu_i(i,m),
-                                                 resolved.phi, psi(0), psi(1), true);
+                                                 resolved.phi, psi(0), psi_upper, true);
             if (sim_obs) SIMULATE {
               y_i(i,m) = sdmTMB::rordbeta(eta_i(i,m), mu_i(i,m), resolved.phi,
-                                          psi(0), psi(1));
+                                          psi(0), psi_upper);
             }
             break;
           }
@@ -1449,6 +1518,7 @@ Type objective_function<Type>::operator()()
         }
           case gengamma_family: {
             if (notNA) tmp_ll = sdmTMB::dgengamma(y_i(i,m), mu_i(i,m), resolved.phi, resolved.gengamma_Q, true);
+            if (notNA) devresid(i,m) = sdmTMB::devresid_gengamma(y_i(i,m), mu_i(i,m), resolved.phi, resolved.gengamma_Q);
             if (sim_obs) SIMULATE{y_i(i,m) = sdmTMB::rgengamma(mu_i(i,m), resolved.phi, resolved.gengamma_Q);}
             break;
           }
@@ -1456,6 +1526,7 @@ Type objective_function<Type>::operator()()
           error("Family not implemented.");
         }
         if (notNA) tmp_ll *= weights_i(i);
+        if (notNA) devresid(i,m) *= sqrt(weights_i(i)); // as in glm()
         if (notNA) jnll_obs(i) -= tmp_ll; // for cross validation
         if (notNA) jnll -= tmp_ll; // * keep
       }
@@ -1484,8 +1555,9 @@ Type objective_function<Type>::operator()()
       jnll += neg_log_dmvnorm(b_j_subset - b_mean_subset);
     }
 
-    if (!sdmTMB::isNA(priors(0)) && !sdmTMB::isNA(priors(1)) &&
-        !sdmTMB::isNA(priors(2)) && !sdmTMB::isNA(priors(3))) {
+    bool has_matern_s_prior = !sdmTMB::isNA(priors(0)) && !sdmTMB::isNA(priors(1)) &&
+        !sdmTMB::isNA(priors(2)) && !sdmTMB::isNA(priors(3));
+    if (has_matern_s_prior) {
       // std::cout << "Using spatial PC prior" << "\n";
       jnll -= sdmTMB::pc_prior_matern(
           ln_tau_O(m), ln_kappa(0,m),
@@ -1521,6 +1593,8 @@ Type objective_function<Type>::operator()()
     }
     if (!sdmTMB::isNA(priors(20)) && !sdmTMB::isNA(priors(21))) { // logistic
       jnll -= dnorm(s95(m), priors(20), priors(21), true);
+      // Jacobian: s95 = s50 + exp(b_threshold(1,m))
+      if (stan_flag && threshold_func == 2) jnll -= b_threshold(1,m);
     }
     if (!sdmTMB::isNA(priors(22)) && !sdmTMB::isNA(priors(23))) { // logistic
       jnll -= dnorm(s_max(m), priors(22), priors(23), true);
@@ -1529,7 +1603,13 @@ Type objective_function<Type>::operator()()
       error("sigma_V prior dimensions are incorrect");
     for (int v = 0; v < sigma_V.rows(); v++) {
       if (!sdmTMB::isNA(priors_sigma_V(v,0)) && !sdmTMB::isNA(priors_sigma_V(v,1))) {
-        jnll -= dgamma(sigma_V(v,m), priors_sigma_V(v,0), priors_sigma_V(v,1), true);
+        // column 2: 0 = gamma, 1 = lognormal (absent in older fits)
+        if (priors_sigma_V.cols() > 2 && priors_sigma_V(v,2) == Type(1)) {
+          jnll -= dnorm(ln_tau_V(v,m), priors_sigma_V(v,0), priors_sigma_V(v,1), true) -
+            ln_tau_V(v,m);
+        } else {
+          jnll -= dgamma(sigma_V(v,m), priors_sigma_V(v,0), priors_sigma_V(v,1), true);
+        }
         if (stan_flag) jnll -= log(sigma_V(v,m)); // Jacobian adjustment
       }
     }
@@ -1795,6 +1875,7 @@ Type objective_function<Type>::operator()()
     // for families that implement mixture models, adjust proj_eta by
     // proportion and ratio of means
     // (1 - p_extreme) * mu_i(i,m) + p_extreme * (mu(i,m) * mix_ratio);
+    // in both the full and population-level (proj_fe) predictions
     switch (positive_component.family_code) {
       case gamma_mix_family:
       case lognormal_mix_family:
@@ -1803,10 +1884,13 @@ Type objective_function<Type>::operator()()
           resolved_family_component_t<Type> resolved =
             family_resolver.resolve_family_component(proj_family_id(i), pos_model);
           if (!resolved.active) continue;
-          proj_eta(i, pos_model) = log(
-            (1. - p_extreme) * exp(proj_eta(i, pos_model)) +
-            p_extreme * exp(proj_eta(i, pos_model)) * mix_ratio
-          );
+          Type mix_scale = 1. - p_extreme + p_extreme * mix_ratio;
+          proj_eta(i, pos_model) = Link(
+            InverseLink(proj_eta(i, pos_model), resolved.link_code) * mix_scale,
+            resolved.link_code);
+          proj_fe(i, pos_model) = Link(
+            InverseLink(proj_fe(i, pos_model), resolved.link_code) * mix_scale,
+            resolved.link_code);
         }
         break;
       default:
@@ -1889,7 +1973,8 @@ Type objective_function<Type>::operator()()
           component1.link_code = link_pred;
           resolved_family_component_t<Type> component2;
           mu_combined(i) = combined_response_value(
-            proj_eta(i,0), Type(0.0), component1, component2
+            pop_pred ? proj_fe(i,0) : proj_eta(i,0), Type(0.0),
+            component1, component2
           );
         }
 
@@ -1933,22 +2018,20 @@ Type objective_function<Type>::operator()()
       }
 
       if (calc_eao) { // effective area occupied: Thorson et al. 2016 doi:10.1098/rspb.2016.1853
-        vector<Type> sum_dens(n_t);
+        // eao = total / mean_dens = sum(area * mu)^2 / sum(area * mu^2)
         vector<Type> sum_dens2(n_t);
         vector<Type> mean_dens(n_t);
         vector<Type> eao(n_t);
         vector<Type> log_eao(n_t);
-        sum_dens.setZero();
         sum_dens2.setZero();
         mean_dens.setZero();
         eao.setZero();
         for (int i = 0; i < n_p; i++) {
-          sum_dens(proj_year(i)) += mu_combined(i);
-          sum_dens2(proj_year(i)) += mu_combined(i) * mu_combined(i);
+          sum_dens2(proj_year(i)) += area_i(i) * mu_combined(i) * mu_combined(i);
         }
         for (int t = 0; t < n_t; t++) {
-          // weighted.mean(density, w = density)
-          if (sum_dens(t) != 0) mean_dens(t) = sum_dens2(t) / sum_dens(t);
+          // weighted.mean(density, w = area * density)
+          if (total(t) != 0) mean_dens(t) = sum_dens2(t) / total(t);
         }
         for (int t = 0; t < n_t; t++) {
           if (proj_time_include(t) == 0 || mean_dens(t) == 0) {
@@ -1968,7 +2051,7 @@ Type objective_function<Type>::operator()()
           for (int t = 0; t < n_t; t++) {
             if (proj_time_include(t) != 0 && mean_dens(t) != 0) {
               jnll += eps_index(t) * newton::Tag(total(t)) *
-                newton::Tag(sum_dens(t)) / newton::Tag(sum_dens2(t));
+                newton::Tag(total(t)) / newton::Tag(sum_dens2(t));
             }
           }
         }

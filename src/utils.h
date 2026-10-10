@@ -37,6 +37,8 @@ Type dgengamma( Type x,
   Type qi = pow(Q, -2);
   Type qw = Q * w;                 // 0.5*log(pow(x,2)) as trick for abs(log(x))
   Type logres = -log(sigma*x) + 0.5*log(pow(lambda,2)) * (1 - 2 * qi) + qi * (qw - exp(qw)) - lgamma(qi);
+  // The mean exists only if 1 + sigma * Q > 0; otherwise return NaN
+  logres = CppAD::CondExpGt(Type(1) + sigma * Q, Type(0), logres, Type(NAN));
 
   // return stuff
   if(give_log) return logres; else return exp(logres);
@@ -164,7 +166,7 @@ Type censpois_logprob(Type lambda, Type L, Type U) {
   return censpois_logprob(tx)[0];
 }
 
-// Right-censored (`upr` NA: count >= x), interval-censored
+// Right-censored (`upr` Inf or NA: count >= x), interval-censored
 // (x <= count <= upr), or exact (upr == x) Poisson.
 template <class Type>
 Type dcenspois2(Type x, Type lambda, Type upr, int give_log = 0) {
@@ -505,6 +507,45 @@ Type devresid_nbinom2( Type y,
   Type deviance = 2 * (logp1 - logp2);
   Type devresid = sign( y - exp(logmu) ) * pow( deviance, 0.5 );
   return devresid;
+}
+
+// Censored Poisson deviance residual, given the log likelihood `ll`. Exact
+// counts give the Poisson deviance. Otherwise P(L <= Y <= U) is maximized as
+// lambda -> Inf (U = Inf) or lambda -> 0 (L = 0), with saturated log
+// likelihood 0, or else where its derivative p(L - 1) - p(U) = 0, at
+// lambda^(U - L + 1) = U! / (L - 1)!.
+template<class Type>
+Type devresid_censpois(Type x, Type lambda, Type upr, Type ll) {
+  bool bounded = !isNA(upr) && upr < Type(R_PosInf);
+  if (bounded && upr == x) {
+    return sign(x - lambda) *
+      pow(Type(2) * (x * log((Type(1e-10) + x) / lambda) - (x - lambda)), 0.5);
+  }
+  Type log_sat = Type(0);
+  Type direction = Type(1); // saturated lambda above (1) or below (-1) the fit
+  if (bounded) {
+    direction = Type(-1);
+    if (x > 0) {
+      Type log_lambda_sat = (lgamma(upr + Type(1)) - lgamma(x)) / (upr - x + Type(1));
+      log_sat = censpois_logprob(exp(log_lambda_sat), x, upr);
+      direction = log_lambda_sat - log(lambda);
+    }
+  }
+  return sign(direction) * pow(Type(2) * (log_sat - ll), 0.5);
+}
+
+// Generalized gamma deviance residual. The density peaks in the mean where
+// qw = 0, so twice the log-likelihood ratio against the saturated model is
+// 2 * Q^-2 * (exp(qw) - 1 - qw). Scaled by the dispersion sigma^2, as for the
+// Gamma and lognormal, this equals the Gamma deviance when Q = sigma and the
+// lognormal deviance as Q -> 0.
+template<class Type>
+Type devresid_gengamma(Type x, Type mean, Type sigma, Type Q) {
+  Type k = pow(Q, -2);
+  Type log_theta = log(mean) - lgamma(k + sigma / Q) + lgamma(k);
+  Type location = log_theta + log(k) * sigma / Q;
+  Type qw = Q * (log(x) - location) / sigma;
+  return sign(qw / Q) * sigma / sqrt(Q * Q) * sqrt(Type(2) * (exp(qw) - Type(1) - qw));
 }
 
 // Beta-binomial distribution

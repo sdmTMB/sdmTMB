@@ -228,7 +228,7 @@ ranef.sdmTMB <- function(object, ...) {
 deviance.sdmTMB <- function(object, ...) {
   .check_family_capability(object, "deviance")
   implemented <- c("poisson", "Gamma", "binomial",
-    "gaussian", "lognormal", "tweedie", "nbinom1", "nbinom2")
+    "gaussian", "lognormal", "tweedie", "nbinom1", "nbinom2", "gengamma", "censored_poisson")
   if (!.object_has_two_components(object, caller = "`deviance()`")) {
     if (!object$family$family %in% implemented) {
       cli_abort("Deviance not implemented for the fitted family")
@@ -571,7 +571,8 @@ sigma.sdmTMB <- function(object, ...) {
     }
   }
 
-  if (family_name %in% c("nbinom1", "nbinom2", "tweedie")) {
+  if (family_name %in% c("nbinom1", "nbinom2", "censored_nbinom1",
+    "censored_nbinom2", "tweedie")) {
     # For negative binomial, return phi (dispersion parameter)
     tmb_obj <- object$tmb_obj
     phi_idx <- which(names(tmb_obj$env$last.par.best) == "ln_phi")
@@ -582,7 +583,7 @@ sigma.sdmTMB <- function(object, ...) {
   }
 
   # Poisson, binomial don't have dispersion, return 1 (as in glmmTMB)
-  if (family_name %in% c("poisson", "binomial")) {
+  if (family_name %in% c("poisson", "binomial", "censored_binomial")) {
     return(1)
   }
 

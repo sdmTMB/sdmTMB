@@ -204,7 +204,7 @@ test_that("get_index() can override the derived response link for cloglog binomi
   expect_equal(idx_log, idx_split)
 
   do_index_fit <- function(index_args) {
-    sdmTMB(
+    lifecycle::expect_deprecated(fit <- sdmTMB(
       prop ~ 0 + as.factor(time),
       data = d,
       family = binomial(link = "cloglog"),
@@ -215,7 +215,8 @@ test_that("get_index() can override the derived response link for cloglog binomi
       do_index = TRUE,
       predict_args = list(newdata = nd),
       index_args = index_args
-    )
+    ), "do_index")
+    fit
   }
   m_do_index <- do_index_fit(list(area = n_trials, derived_link = "log"))
   expect_equal(get_index(m_do_index, bias_correct = FALSE)$est, idx_log$est)
@@ -421,7 +422,7 @@ test_that("index functions work directly on do_index = TRUE fits", {
 
   pcod_spde <- make_mesh(pcod, c("X", "Y"), n_knots = 50, type = "kmeans")
   nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  m <- sdmTMB(
+  lifecycle::expect_deprecated(m <- sdmTMB(
     data = pcod,
     formula = density ~ 0 + as.factor(year),
     spatiotemporal = "off", # speed
@@ -430,7 +431,7 @@ test_that("index functions work directly on do_index = TRUE fits", {
     do_index = TRUE,
     predict_args = list(newdata = nd),
     index_args = list(area = 1)
-  )
+  ), "do_index")
 
   # precomputed fast path still used when nothing is overridden:
   ind <- get_index(m, bias_correct = FALSE)
@@ -460,4 +461,40 @@ test_that("index functions work directly on do_index = TRUE fits", {
   cog_wide <- get_cog(m, bias_correct = FALSE, format = "wide")
   expect_s3_class(cog_wide, "data.frame")
   expect_true(all(c("est_x", "est_y", "year") %in% names(cog_wide)))
+})
+
+test_that("get_eao() weights by area", {
+  skip_on_cran()
+  for (backend in c("tmb", "rtmb")) {
+    m <- sdmTMB(density ~ depth_scaled, data = pcod_2011, spatial = "off",
+      family = tweedie(), time = "year", mesh = pcod_mesh_2011,
+      control = sdmTMBcontrol(backend = backend))
+    nd <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
+    nd$depth_scaled <- (log(nd$depth) - mean(log(pcod_2011$depth))) /
+      sd(log(pcod_2011$depth))
+    set.seed(1)
+    nd$area <- runif(nrow(nd), 1, 5)
+    eao <- get_eao(m, newdata = nd, area = nd$area, bias_correct = FALSE)
+    p <- predict(m, newdata = nd, type = "response")
+    expected <- vapply(split(p, p$year),
+      function(x) sum(x$area * x$est)^2 / sum(x$area * x$est^2), numeric(1))
+    expect_equal(eao$est, unname(expected), label = backend)
+  }
+})
+
+test_that("get_index() honours re_form for single and delta models", {
+  skip_on_cran()
+  nd <- index_grid()
+  for (backend in c("tmb", "rtmb")) {
+    for (family in list(tweedie(), delta_gamma())) {
+      m <- sdmTMB(density ~ 0 + as.factor(year), data = pcod_2011,
+        mesh = pcod_mesh_2011, time = "year", spatiotemporal = "off",
+        family = family, control = sdmTMBcontrol(backend = backend))
+      ind <- get_index(m, newdata = nd, bias_correct = FALSE,
+        predict_args = list(re_form = NA))
+      p <- predict(m, newdata = nd, re_form = NA, type = "response")
+      expect_equal(ind$est, as.numeric(tapply(p$est, p$year, sum)),
+        label = paste(backend, family$family[[1]]))
+    }
+  }
 })

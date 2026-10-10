@@ -72,10 +72,55 @@
     y_i, size, weights, single & family_name == "binomial",
     "Binomial", allow_counts = FALSE
   )
+  out <- .process_binomial_like_rows(
+    out$y_i, out$size, out$weights, single & family_name == "censored_binomial",
+    "Censored binomial", allow_counts = TRUE, weighted_binary_counts = TRUE
+  )
   .process_binomial_like_rows(
-    out$y_i, out$size, out$weights, single & family_name == "betabinomial",
+    out$y_i, out$size, out$weights,
+    single & family_name %in% c("betabinomial", "censored_betabinomial"),
     "Betabinomial", allow_counts = TRUE, weighted_binary_counts = TRUE
   )
+}
+
+# Censored binomial and beta-binomial counts, trials, and bounds on the count scale, as
+# exact integers that both backends can use directly. Values within
+# floating-point error of an integer (e.g., proportions times trials) are
+# snapped to it. Otherwise counts and trials must be integers. A bound `U`
+# can be any real number and means the integer count `floor(U)`; `NA`
+# (right-censored) means the number of trials, the largest possible count.
+# Returns `upr` as NULL if there are no such rows.
+.normalize_censored_trials <- function(y_i, size, family_spec, upr = NULL) {
+  row_family <- .family_spec_response_family_id(family_spec, y_i)
+  component1 <- family_spec$components[family_spec$components$component == 1L, ]
+  family_name <- component1$family_name[match(row_family, component1$family_id)]
+  single <- family_spec$families$combine_kind[row_family] == "single"
+  rows <- single & !is.na(y_i) &
+    family_name %in% c("censored_binomial", "censored_betabinomial")
+  if (is.null(upr) || !any(rows)) return(list(y_i = y_i, size = size, upr = NULL))
+  snap <- function(x) ifelse(.is_whole_number(x), round(x), x)
+  y_i[rows] <- snap(y_i[rows])
+  size[rows] <- snap(size[rows])
+  if (any(!is.finite(size[rows]) | size[rows] != round(size[rows]))) {
+    cli_abort("Censored (beta-)binomial rows must have whole-number trial sizes.")
+  }
+  if (any(y_i[rows] != round(y_i[rows]))) {
+    cli_abort(paste(
+      "Censored (beta-)binomial rows must have whole-number counts",
+      "(e.g., proportions times `weights` must be whole numbers)."
+    ))
+  }
+  right <- rows & !is.finite(upr)
+  upr[right] <- size[right]
+  upr[rows] <- floor(snap(upr[rows]))
+  if (any(upr[rows] < y_i[rows] | upr[rows] > size[rows])) {
+    cli_abort(paste(
+      "`censored_upper` must be between the observed count and the",
+      "number of trials (from `weights`) for censored (beta-)binomial rows.",
+      "Non-integer bounds are rounded down to the largest possible count."
+    ))
+  }
+  list(y_i = y_i, size = size, upr = upr)
 }
 
 .family_spec_validate_response <- function(y_i, family_spec, upr = NULL) {
@@ -95,9 +140,14 @@
   if (any(y_i[single & link_name == "log"] < 0, na.rm = TRUE)) {
     cli_abort("`link = 'log'` but the response data include values < 0.")
   }
-  censored <- single & family_name == "censored_poisson"
+  censored <- single & family_name %in%
+    c("censored_poisson", "censored_nbinom1", "censored_nbinom2")
   if (!is.null(upr) && any(y_i[censored] > upr[censored], na.rm = TRUE)) {
-    cli_abort("Observed values must be <= `control$censored_upper` for censored Poisson rows.")
+    cli_abort("Observed values must be <= `censored_upper` for censored Poisson and negative binomial rows.")
+  }
+  censored_nb <- single & family_name %in% c("censored_nbinom1", "censored_nbinom2")
+  if (any(y_i[censored_nb] != round(y_i[censored_nb]), na.rm = TRUE)) {
+    cli_abort("Censored negative binomial rows must have whole-number counts.")
   }
   invisible(NULL)
 }
@@ -118,24 +168,46 @@
 .prepare_family_response <- function(y_i, weights, family_spec, upr = NULL) {
   component1 <- .family_spec_component_value(family_spec, 1L, 1L, "family_name")
   ordinary_binomial_like <- family_spec$n_f == 1L && family_spec$n_m == 1L &&
-    component1 %in% c("binomial", "betabinomial")
+    component1 %in% c("binomial", "censored_binomial", "betabinomial",
+      "censored_betabinomial")
   if (ordinary_binomial_like && (is.character(y_i) || is.factor(y_i))) {
     y_i <- factor(y_i)
     if (nlevels(y_i) > 2L) cli_abort("More than 2 levels detected for response")
     y_i <- pmin(as.numeric(y_i) - 1, 1)
-  } else if (ordinary_binomial_like && is.matrix(y_i)) {
-    if (ncol(y_i) != 2L) cli_abort("Binomial matrix responses must have two columns.")
-    size <- rowSums(y_i)
-    y_i <- y_i[, 1L]
-    .family_spec_validate_response(y_i, family_spec, upr)
-    return(list(
-      y_i = y_i, size = size, weights = weights,
-      response = .family_spec_build_response(y_i, family_spec)
-    ))
   }
-  size <- rep(1, NROW(y_i))
-  processed <- .family_spec_process_response(y_i, size, weights, family_spec)
+  if (ordinary_binomial_like && is.matrix(y_i)) {
+    if (ncol(y_i) != 2L) cli_abort("Binomial matrix responses must have two columns.")
+    processed <- list(y_i = y_i[, 1L], size = rowSums(y_i), weights = weights)
+  } else {
+    processed <- .family_spec_process_response(y_i, rep(1, NROW(y_i)),
+      weights, family_spec)
+  }
   .family_spec_validate_response(processed$y_i, family_spec, upr)
+  censored <- .normalize_censored_trials(processed$y_i, processed$size,
+    family_spec, upr)
+  processed[names(censored)] <- censored
   processed$response <- .family_spec_build_response(processed$y_i, family_spec)
   processed
+}
+
+# Resolve `sdmTMB(censored_upper = )`: a vector or a column name in `data`.
+.censored_upper_arg <- function(censored_upper, data) {
+  if (is.null(censored_upper)) return(NULL)
+  if (is.character(censored_upper)) {
+    if (length(censored_upper) != 1L || !censored_upper %in% names(data)) {
+      cli_abort("`censored_upper` must be a numeric vector or the name of a column in `data`.")
+    }
+    censored_upper <- data[[censored_upper]]
+  }
+  if (length(censored_upper) != nrow(data)) {
+    cli_abort("`censored_upper` must have one value per row of `data`.")
+  }
+  if (anyNA(censored_upper)) {
+    cli_warn(c(
+      "Using `NA` in `censored_upper` for no upper bound is deprecated.",
+      "i" = "Use `Inf` instead. `NA` is being treated as `Inf`."
+    ), .frequency = "regularly", .frequency_id = "sdmTMB_censored_upper_na")
+    censored_upper[is.na(censored_upper)] <- Inf
+  }
+  censored_upper
 }

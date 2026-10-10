@@ -38,10 +38,11 @@ rtmb_prepare <- function(data) {
     # spatiotemporal, then each SVC) and component
     sigma_prior = rtmb_prior_flags(data$sigma_prior, ncol(data$z_i)),
     range_prior = rtmb_prior_flags(data$range_prior, ncol(data$z_i)),
-    # SVC fields enter the predictor whenever present; like the C++ template,
-    # their density is only evaluated for components with a spatial field.
+    # SVC fields enter every component's predictor, so each component has an
+    # SVC density whether or not it has a spatial intercept field. (The first
+    # fitting phase turns fields off with `no_spatial`.)
     svc = svc,
-    svc_density = svc & include_spatial,
+    svc_density = svc && any_field,
     # One-based `ln_kappa` row of each SVC (coefficient by component); rows
     # beyond 2 exist only when an SVC has its own range
     svc_kappa_row = if (is.null(data$svc_kappa_row)) {
@@ -69,7 +70,9 @@ rtmb_prepare <- function(data) {
       "epsilon_st", "zeta_s", "re_b_pars", "b_rw_t", "b_smooth")),
     simulate_obs = on(data$sim_obs),
 
-    # Reports
+    # Reports. Deviance residuals are only computed on request (see
+    # rtmb_report_values()), keeping them off fitting and simulation tapes.
+    deviance = FALSE,
     rsr = on(data$do_rsr),
     pop_pred = on(data$pop_pred),
     adreport_projection = on(data$calc_se),
@@ -159,7 +162,10 @@ rtmb_row_inputs <- function(data, families, projection) {
       time = data$year_i + 1L,
       family_id = data$obs_family_id + 1L,
       y = data$y_i, size = data$size, weights = data$weights_i,
-      upr = rep_len(data$upr, nrow(data$y_i)), Xdisp = data$Xdisp_ij
+      upr = rep_len(data$upr, nrow(data$y_i)), Xdisp = data$Xdisp_ij,
+      # Censored beta-binomial rows summed directly (see rtmb_dcensbetabinom())
+      cens_direct = rep_len(if (is.null(data$cens_direct)) 1L else
+        data$cens_direct, nrow(data$y_i))
     )
   }
   out$active <- do.call(rbind, lapply(families, `[[`, "active"))[
@@ -224,7 +230,7 @@ rtmb_smooth_index <- function(data) {
 
 # Reject untranslated features before RTMB tapes an incomplete model.
 rtmb_validate <- function(data, prepared, parameters, random, ...) {
-  if (!all(names(list(...)) %in% c("intern", "inner.control"))) {
+  if (!all(names(list(...)) %in% c("intern", "inner.control", "ADreport"))) {
     cli::cli_abort("Additional MakeADFun options are not supported by the RTMB backend yet.")
   }
   # Random parameters must be translated effects. The first multiphase fit
@@ -255,6 +261,7 @@ rtmb_validate <- function(data, prepared, parameters, random, ...) {
   if (!is.null(prepared$priors$tweedie_p) && any(tweedie)) {
     cli::cli_abort("Priors not enabled for Tweedie p currently.")
   }
+  rtmb_check_custom_priors(parameters, prepared)
 }
 
 # PC Matern prior flags as a logical matrix with a row per SVC; fits saved

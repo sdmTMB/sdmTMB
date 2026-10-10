@@ -46,6 +46,51 @@
   cbind(X, lag_cols)
 }
 
+#' Non-local covariate terms
+#'
+#' Wrappers that mark covariates in the `nonlocal_formula` argument of
+#' [sdmTMB()] and [sdmTMB_simulate()]. They are not called directly.
+#' `diffusion(x)` spreads covariate `x` across space via an SPDE diffusion
+#' operator with estimated scale `kappaS_nl`. `time_lag(x)` carries `x` forward
+#' in time via \eqn{z_t = (x_t + \kappa_T z_{t-1}) / (1 + \kappa_T)} with
+#' estimated `kappaT_nl` and first-order autocorrelation
+#' \eqn{\rho_T = \kappa_T / (1 + \kappa_T)}. When both wrap the same covariate
+#' (`~ diffusion(x) + time_lag(x)`), they select one joint space-time operator
+#' with a single transformed predictor and coefficient.
+#'
+#' @param x A bare covariate name found in `data` or `nonlocal_data`.
+#' @param start The transformed state before the first time slice.
+#'   `"stationary"` (default) assumes the covariate was held at its first time
+#'   slice beforehand, so the state starts at the operator's fixed point: the
+#'   first slice itself for a time lag, or its spatial diffusion for the joint
+#'   operator. Results are then invariant to shifting the covariate by a
+#'   constant. `"zero"` starts from zero as in Thorson et al. (2026), which
+#'   shrinks early time slices toward zero (e.g., \eqn{z_1 = (1 - \rho_T) x_1}
+#'   for a time lag alone) and makes results depend on how the covariate is
+#'   centered: centering at a constant `c` is equivalent to assuming the
+#'   covariate equaled `c` before the first time slice.
+#'
+#' @return These functions error if called outside `nonlocal_formula`.
+#' @seealso [sdmTMB()], [plot_nonlocal_covariate()], and the
+#'   [non-local covariates vignette](https://sdmTMB.github.io/sdmTMB/articles/nonlocal-covariates.html).
+#' @name nonlocal_terms
+#' @examples
+#' # Pass as `nonlocal_formula` in sdmTMB(); see ?plot_nonlocal_covariate
+#' nonlocal_formula <- ~ diffusion(x) + time_lag(x, start = "zero")
+#' nonlocal_formula
+#' @export
+diffusion <- function(x) .nonlocal_term_only("diffusion")
+
+#' @rdname nonlocal_terms
+#' @export
+time_lag <- function(x, start = c("stationary", "zero")) {
+  .nonlocal_term_only("time_lag")
+}
+
+.nonlocal_term_only <- function(name) {
+  cli_abort("`{name}()` is only meaningful inside `nonlocal_formula` in `sdmTMB()`.")
+}
+
 .parse_nonlocal_formula <- function(nonlocal_formula) {
   if (is.null(nonlocal_formula)) {
     return(NULL)
@@ -86,24 +131,22 @@
       ))
     }
 
-    arg_names <- names(expr)
-    if (is.null(arg_names)) arg_names <- character(length(expr))
-    extra_args <- arg_names[-(1:2)]
-    if (length(expr) < 2L || !is.symbol(expr[[2]]) || nzchar(arg_names[[2]])) {
+    wrapper_fn <- switch(wrapper, diffusion = diffusion, time_lag = time_lag)
+    expr <- tryCatch(match.call(wrapper_fn, expr), error = function(e) {
+      cli_abort(c(
+        "Unsupported argument in `nonlocal_formula` term.",
+        "i" = "Only `time_lag()` takes an extra argument: `start`.",
+        "x" = "Problematic term: {.code {term_label}}"
+      ))
+    })
+    if (!is.symbol(expr$x)) {
       cli_abort(c(
         "Unsupported `nonlocal_formula` term structure.",
         "i" = "Use a bare variable name inside each wrapper, e.g. `diffusion(x)`.",
         "x" = "Problematic term: {.code {term_label}}"
       ))
     }
-    if (length(extra_args) && !(wrapper == "time_lag" && identical(extra_args, "start"))) {
-      cli_abort(c(
-        "Unsupported argument in `nonlocal_formula` term.",
-        "i" = "Only `time_lag()` takes an extra argument: `start`.",
-        "x" = "Problematic term: {.code {term_label}}"
-      ))
-    }
-    start <- if (length(extra_args)) expr[["start"]] else "stationary"
+    start <- if (is.null(expr$start)) "stationary" else expr$start
     if (!is.character(start) || length(start) != 1L ||
         !start %in% c("stationary", "zero")) {
       cli_abort(c(
@@ -112,7 +155,7 @@
       ))
     }
 
-    variable <- as.character(expr[[2]])
+    variable <- as.character(expr$x)
     list(component = wrapper, variable = variable, start = start)
   })
 

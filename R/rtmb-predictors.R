@@ -91,11 +91,10 @@ rtmb_as_vector <- function(out) {
 rtmb_product <- function(A, x) rtmb_as_vector(A %*% x)
 
 # Project per-time vertex values to stations, then index by station and time.
-# `values` is a list of one vector per time step.
+# `values` is a list of one vector per time step, projected in one product.
 rtmb_station_values <- function(rows, values) {
-  at_station <- do.call(cbind, lapply(values, function(v) {
-    rtmb_product(rows$A_station, v)
-  }))
+  at_station <- rows$A_station %*% do.call(cbind, values)
+  if (methods::is(at_station, "Matrix")) at_station <- as.matrix(at_station)
   at_station[rows$station_index + nrow(at_station) * (rows$time - 1L)]
 }
 
@@ -141,15 +140,23 @@ rtmb_combined_projection <- function(projected, theta, prepared) {
 }
 
 # Mixture families project the mean of both components: the positive
-# component's link-scale prediction becomes log((1 - p) mu + p mu ratio).
-rtmb_mixture_eta <- function(eta, theta, prepared) {
+# component's mean mu becomes (1 - p) mu + p mu ratio, in both the full
+# (`eta`) and population-level (`fe`) predictions.
+rtmb_mixture_projection <- function(projected, theta, prepared) {
   "[<-" <- RTMB::ADoverload("[<-")
   m <- prepared$n_m
-  i <- which(prepared$proj$active[, m])
+  rows <- prepared$proj
   p <- theta$p_extreme
-  eta[i, m] <- log((1 - p) * exp(eta[i, m]) +
-    p * exp(eta[i, m]) * theta$mix_ratio)
-  eta
+  scale <- 1 - p + p * theta$mix_ratio
+  for (f in unique(rows$family_id)) {
+    i <- which(rows$active[, m] & rows$family_id == f)
+    link <- prepared$families[[f]]$link[[m]]
+    for (x in c("fe", "eta")) {
+      projected[[x]][i, m] <- rtmb_link(
+        rtmb_inverse_link(projected[[x]][i, m], link) * scale, link)
+    }
+  }
+  projected
 }
 
 # Area-weighted totals, weighted averages, and effective area occupied (EAO)
@@ -163,12 +170,22 @@ rtmb_derived_indices <- function(par, theta, prepared, projected) {
   if (prepared$n_m > 1L) {
     mu <- projected$combined$response
   } else {
-    mu <- rep(0, nrow(projected$eta))
+    eta <- if (prepared$pop_pred) projected$fe else projected$eta
+    mu <- rep(0, nrow(eta))
     for (f in unique(rows$family_id)) {
       family <- prepared$families[[f]]
       family$link[[1L]] <- prepared$index$link
       i <- which(rows$family_id == f)
-      mu[i] <- rtmb_component_mean(projected$eta[i, 1L], family, 1L, theta)
+      mu[i] <- rtmb_component_mean(eta[i, 1L], family, 1L, theta)
+      # Prototype: for cloglog (censored) betabinomial, the mean per-hook
+      # catch rate E(-log(1 - p)) = digamma(phi) - digamma(phi * (1 - pbar))
+      # instead of exp(eta). It matched an R-side check and works with bias
+      # correction, but the bias-corrected index was about 4x slower on the
+      # hook-competition article's grid, so it isn't exposed.
+      # See the article for an R-side calculation from predict().
+      # phi <- theta$phi[[family$phi]]
+      # b <- phi * exp(-exp(projected$eta[i, 1L]))
+      # mu[i] <- rtmb_digamma(phi) - rtmb_digamma(b)
     }
   }
   n_t <- prepared$n_t
@@ -212,12 +229,11 @@ rtmb_derived_indices <- function(par, theta, prepared, projected) {
     out$weighted_avg <- weighted_avg
   }
   if (requested[["eao"]]) {
-    sum_dens <- time_sum(mu)
-    sum_dens2 <- time_sum(mu * mu)
-    has_rows <- lengths(by_time) > 0L
-    keep <- include & has_rows
+    # eao = total / mean_dens = sum(area * mu)^2 / sum(area * mu^2)
+    sum_dens2 <- time_sum(rows$area * mu * mu)
+    keep <- include & has_area
     mean_dens <- eao <- log_eao <- rep(0, n_t)
-    mean_dens[has_rows] <- sum_dens2[has_rows] / sum_dens[has_rows]
+    mean_dens[has_area] <- sum_dens2[has_area] / out$total[has_area]
     eao[keep] <- out$total[keep] / mean_dens[keep]
     log_eao[keep] <- log(eao[keep])
     out$mean_dens <- mean_dens
@@ -225,8 +241,21 @@ rtmb_derived_indices <- function(par, theta, prepared, projected) {
     out$log_eao <- log_eao
     for (t in intersect(eps_t, which(keep))) {
       out$nll <- out$nll + par$eps_index[t] *
-        tag(out$total[t]) * tag(sum_dens[t]) / tag(sum_dens2[t])
+        tag(out$total[t]) * tag(out$total[t]) / tag(sum_dens2[t])
     }
   }
   out
 }
+
+# AD-safe digamma for x > 0 (for the commented-out mean rate above) from
+# psi(x) = psi(x + 6) - sum 1 / (x + j) and the asymptotic series at x + 6
+# (relative error about 1e-12).
+# rtmb_digamma <- function(x) {
+#   shift <- 0
+#   for (j in 0:5) shift <- shift + 1 / (x + j)
+#   z <- x + 6
+#   w <- 1 / (z * z)
+#   log(z) - 0.5 / z -
+#     w * (1 / 12 - w * (1 / 120 - w * (1 / 252 - w * (1 / 240 - w / 132)))) -
+#     shift
+# }

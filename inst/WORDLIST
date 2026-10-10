@@ -93,6 +93,7 @@ Sørbye
 TMB
 TMBad
 TSS
+Thorson
 Thygesen
 Tweedie
 UBSAN
@@ -221,3 +222,13 @@ valgrind
 visreg
 warmup
 wiggliness
+Kullback
+Leibler
+Windmeijer
+RTMB
+barycentric
+longline
+nonlocal
+untruncated
+neighbour
+neighbours

@@ -37,7 +37,7 @@ test_that("RTMB rejects unsupported MakeADFun options and random parameters", {
     spatiotemporal = "off", time = "year",
     control = sdmTMBcontrol(backend = "rtmb"))
   expect_error(make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
-    fit$tmb_random, backend = "rtmb", ADreport = TRUE),
+    fit$tmb_random, backend = "rtmb", hessian = TRUE),
     "Additional MakeADFun options")
   expect_error(make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
     random = "ln_phi", backend = "rtmb"), "can't integrate over")

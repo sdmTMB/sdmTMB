@@ -1,8 +1,10 @@
 # Keep the prepared data, parameters, map, and random list as the single model
 # specification. Every caller that changes data builds a new objective.
+# `adreport` optionally names the only ADREPORTs to register (RTMB backend
+# only), so that `sdreport()` skips standard errors the caller won't use.
 make_sdmTMB_adfun <- function(data, parameters, map, random = NULL,
                               backend = "tmb", profile = NULL,
-                              silent = TRUE, ...) {
+                              silent = TRUE, adreport = NULL, ...) {
   backend <- match.arg(backend, c("tmb", "rtmb"))
   # Parameters of removed experimental epsilon models; fits saved before the
   # removal still carry them (mapped off unless the option was used).
@@ -25,12 +27,17 @@ make_sdmTMB_adfun <- function(data, parameters, map, random = NULL,
     if (nrow(parameters$ln_kappa) > 2L) {
       cli_abort("Separate ranges for spatially varying coefficients require the RTMB backend.")
     }
+    # `sdmTMB()` checks this too; this catches rebuilding the objective of a
+    # fit with custom priors (e.g., a saved one) using the TMB backend
+    if (!is.null(data$priors_custom)) {
+      cli_abort("Custom priors need `sdmTMBcontrol(backend = \"rtmb\")`.")
+    }
     obj <- TMB::MakeADFun(data = data, parameters = parameters, map = map,
       random = random, profile = profile, DLL = "sdmTMB", silent = silent, ...)
   } else {
     prepared <- rtmb_prepare(data)
     rtmb_validate(data, prepared, parameters, random, ...)
-    objective <- rtmb_make_objective(prepared)
+    objective <- rtmb_make_objective(prepared, adreport)
     obj <- RTMB::MakeADFun(objective, parameters = parameters, map = map,
       random = random, profile = profile, silent = silent, ...)
   }
@@ -40,12 +47,14 @@ make_sdmTMB_adfun <- function(data, parameters, map, random = NULL,
 
 # Fits saved before range groups lack the PC Matern prior flags; rebuild the
 # earlier rule: the sigma part for every field, the spatial range part always,
-# and the spatiotemporal range part unless its range is shared.
+# and the spatiotemporal range part unless its range is shared with a spatial
+# field that has a PC prior.
 legacy_matern_prior_flags <- function(data) {
   if (!is.null(data$range_prior)) return(data)
   n_m <- ncol(data$y_i)
+  has_matern_s <- !anyNA(data$priors[1:4])
   data$sigma_prior <- matrix(1L, 2L, n_m)
-  data$range_prior <- rbind(1L, 1L - data$share_range[seq_len(n_m)])
+  data$range_prior <- rbind(1L, 1L - (data$share_range[seq_len(n_m)] & has_matern_s))
   data
 }
 

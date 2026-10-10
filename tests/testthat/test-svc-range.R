@@ -44,11 +44,13 @@ test_that("range_group_labels adds SVC rows only when needed", {
     c(spatial = FALSE, spatiotemporal = TRUE))
   expect_identical(get_kappa_map(x), factor(c(1, 1, 2, 2)))
 
-  # SVC fields are absent where the spatial field is off
+  # SVC fields enter every component, even where the spatial field is off,
+  # so that component's spatial range is kept for the SVC that uses it
   x <- labels(list(c(a = "z"), c(a = "z")), spatial = c("on", "off"), n_m = 2L)
   expect_identical(x[, 2L], c(spatial = ".spatial2", spatiotemporal = ".spatial2",
-    a = NA, b = NA))
-  expect_identical(svc_kappa_rows(x, 2L), matrix(c(2L, 0L, 0L, 0L), 2L))
+    a = "z", b = ".spatial2"))
+  expect_identical(attr(x, "on")[1L, 2L], c(spatial = TRUE))
+  expect_identical(svc_kappa_rows(x, 2L), matrix(c(2L, 0L, 2L, 0L), 2L))
 
   expect_error(labels(c(foo = "z")), "Valid names")
   expect_error(labels(c(a = "z"), svc = c("spatial", "a")), "named `spatial`")
@@ -135,7 +137,8 @@ test_that("SVC ranges require the RTMB backend", {
   mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
   expect_error(sdmTMB(density ~ 1, data = pcod_2011, mesh = mesh,
     spatial_varying = ~ 0 + depth_scaled, family = tweedie(),
-    range_groups = c(depth_scaled = "z"), do_fit = FALSE), "RTMB backend")
+    range_groups = c(depth_scaled = "z"), do_fit = FALSE,
+    control = sdmTMBcontrol(backend = "tmb")), "RTMB backend")
   f <- svc_range_build(mesh = mesh, range_groups = c(depth_scaled = "z"))
   expect_error(make_sdmTMB_adfun(f$tmb_data, f$tmb_params, f$tmb_map,
     random = f$tmb_random), "RTMB backend")
@@ -289,7 +292,8 @@ test_that("matern_svc requires RTMB and old fits get no SVC prior", {
   pc <- pc_matern(range_gt = 10, sigma_lt = 5)
   expect_error(sdmTMB(density ~ 1, data = pcod_2011, mesh = mesh,
     spatial_varying = ~ 0 + depth_scaled, family = tweedie(),
-    priors = sdmTMBpriors(matern_svc = pc), do_fit = FALSE), "RTMB backend")
+    priors = sdmTMBpriors(matern_svc = pc), do_fit = FALSE,
+    control = sdmTMBcontrol(backend = "tmb")), "RTMB backend")
   # Data from before `matern_svc`: shorter priors vector, two flag rows
   f <- svc_range_build(mesh = mesh, priors = sdmTMBpriors(matern_s = pc))
   nll <- svc_range_nll(f, c(-2, -2))

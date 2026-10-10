@@ -1,8 +1,6 @@
 #' Prior distributions
 #'
 #' @description
-#' `r lifecycle::badge("experimental")`
-#'
 #' Optional priors/penalties on model parameters. This results in penalized
 #' likelihood within TMB or can be used as priors if the model is passed to
 #' \pkg{tmbstan} (see the Bayesian vignette).
@@ -79,7 +77,10 @@
 #' @param tweedie_p A `normal()` prior for the Tweedie power parameter. Note the
 #'   parameter has support `1 < tweedie_p < 2` so choose a mean appropriately.
 #' @param b `normal()` priors for the main population-level 'beta' effects.
-#' @param sigma_V `gamma_cv()` priors for any time-varying parameter SDs.
+#' @param sigma_V `gamma_cv()` or `lognormal_prior()` priors for any
+#'   time-varying parameter SDs. Supply a single prior to apply it to all
+#'   time-varying coefficients or a vector with one element per coefficient
+#'   (`NA` for no prior). In delta models, the priors apply to both components.
 #' @param threshold_breakpt_slope A `normal()` prior for the slope of the
 #'   linear (hockey stick) function.
 #' @param threshold_breakpt_cut A `normal()` prior for the cutoff of the
@@ -90,6 +91,68 @@
 #'   f(x) = 0.95.
 #' @param threshold_logistic_smax A `normal()` prior for the parameter at which
 #'   f(x) is maximized.
+#' @param custom Optional function of `(par, theta)` returning one or more log
+#'   density contributions (RTMB backend only; see **Custom priors** below).
+#' @param custom_log_jacobian Optional function of `(par, theta)` returning the
+#'   log absolute Jacobian for `custom`. Only used if `bayesian = TRUE`. Requires
+#'   `custom`.
+#'
+#' @section Custom priors:
+#' With the RTMB backend (the default), `custom` adds arbitrary log densities
+#' to the joint objective. The function is called as `custom(par, theta)`, where
+#' `par` is the list of raw (internal) parameters and `theta` is a list of
+#' natural-scale versions of them. See [get_prior_parameters()] for their
+#' names, shapes, and labels. It must return a numeric scalar, vector, or array
+#' of log densities (names are optional), which are summed and subtracted from the
+#' negative log likelihood. Custom terms are evaluated inside the objective,
+#' so they are included in gradients, Hessians, the Laplace approximation, and
+#' standard errors, and may involve random effects. They supplement, rather than
+#' replace, the built-in priors and random effect distributions. Use
+#' [get_prior_densities()] to see the contributions at the estimated parameters.
+#'
+#' The function must:
+#'
+#' * use operations and densities that \pkg{RTMB} can differentiate, such as
+#'   `RTMB::dnorm(x, mean, sd, log = TRUE)`; `stats::dnorm()` can't take
+#'   AD values;
+#' * return *log* densities (remember `log = TRUE`, which can't be checked);
+#' * not branch on parameter values (e.g., `if (par$b_j[1] > 0)`);
+#' * be deterministic and free of side effects;
+#' * also work on ordinary numeric inputs.
+#'
+#' Fixed hyperparameters can be defined in the function's enclosing environment.
+#' The functions are saved with the fitted model, so keep their environments
+#' small (e.g., avoid defining them inside a function holding large data).
+#'
+#' **Jacobians.** With `bayesian = FALSE`, custom priors are penalties: the
+#' optimum is the posterior mode on the scale the prior is written on, and no
+#' Jacobian is needed. With `bayesian = TRUE` (e.g., for sampling with
+#' \pkg{tmbstan}), the result of `custom_log_jacobian(par, theta)` is also
+#' added. No Jacobian adjustment is ever inferred: without
+#' `custom_log_jacobian`, a prior on a transformed parameter (e.g.,
+#' `theta$phi`) is not a valid prior density on that parameter's natural scale
+#' for sampling. For a prior on `phi = exp(ln_phi)`, the log Jacobian is
+#' `par$ln_phi`.
+#'
+#' **Matérn range and SDs.** The Matérn `range` and the field SDs (`sigma_O`,
+#' `sigma_E`) are more complex than most parameters because they depend on each
+#' other: each SD is a function of both `ln_tau_*` and `ln_kappa`. A Jacobian
+#' for one of them alone isn't well defined; it needs the joint transformation
+#' from (`ln_kappa`, `ln_tau_*`) to (`range`, `sigma_*`), whose log Jacobian is
+#' `log(range) + log(sigma_*)`. With a shared range (the default), add
+#' `log(range)` once plus `log(sigma_*)` for each field. For priors on these
+#' parameters we suggest the built-in PC priors, [pc_matern()] via the
+#' `matern_s` and `matern_st` arguments, which apply the Jacobian for you if
+#' `bayesian = TRUE`.
+#'
+#' **Limitations.** Custom terms are not evaluated in the first phase of
+#' `sdmTMBcontrol(multiphase = TRUE)`, which only finds starting values with
+#' random fields turned off. Custom priors do not define a sampler:
+#' [simulate.sdmTMB()] and other simulation methods ignore any change that
+#' custom terms make to the distribution of random effects. Held-out
+#' log likelihoods in [sdmTMB_cv()] exclude all priors. As with the built-in
+#' priors, custom terms are part of the objective, so they are included in
+#' [stats::logLik()] and [stats::AIC()].
 #'
 #' @rdname priors
 #'
@@ -110,13 +173,15 @@ sdmTMBpriors <- function(
   threshold_logistic_s50 = normal(NA, NA),
   threshold_logistic_s95 = normal(NA, NA),
   threshold_logistic_smax = normal(NA, NA),
-  matern_svc = pc_matern(range_gt = NA, sigma_lt = NA)
+  matern_svc = pc_matern(range_gt = NA, sigma_lt = NA),
+  custom = NULL,
+  custom_log_jacobian = NULL
 ) {
   assert_that(attr(matern_s, "dist") == "pc_matern")
   assert_that(attr(matern_st, "dist") == "pc_matern")
   assert_that(attr(matern_svc, "dist") == "pc_matern")
   assert_that(attr(phi, "dist") == "normal")
-  assert_that(attr(sigma_V, "dist") == "gamma")
+  assert_that(attr(sigma_V, "dist") %in% c("gamma", "lognormal"))
   assert_that(attr(tweedie_p, "dist") == "normal")
   assert_that(attr(b, "dist") %in% c("normal", "mvnormal"))
   assert_that(attr(threshold_breakpt_slope, "dist") == "normal")
@@ -124,6 +189,15 @@ sdmTMBpriors <- function(
   assert_that(attr(threshold_logistic_s50, "dist") == "normal")
   assert_that(attr(threshold_logistic_s95, "dist") == "normal")
   assert_that(attr(threshold_logistic_smax, "dist") == "normal")
+  if (!is.null(custom) && !is.function(custom)) {
+    cli_abort("`custom` must be a function of `(par, theta)` or `NULL`.")
+  }
+  if (!is.null(custom_log_jacobian)) {
+    if (!is.function(custom_log_jacobian)) {
+      cli_abort("`custom_log_jacobian` must be a function of `(par, theta)` or `NULL`.")
+    }
+    if (is.null(custom)) cli_abort("`custom_log_jacobian` requires `custom`.")
+  }
   list(
     matern_s = matern_s,
     matern_st = matern_st,
@@ -137,8 +211,10 @@ sdmTMBpriors <- function(
     threshold_logistic_s50 = threshold_logistic_s50,
     threshold_logistic_s95 = threshold_logistic_s95,
     threshold_logistic_smax = threshold_logistic_smax,
-    # last: C++ reads the other priors by position
-    matern_svc = matern_svc
+    # last numeric prior: C++ reads the others by position
+    matern_svc = matern_svc,
+    custom = custom,
+    custom_log_jacobian = custom_log_jacobian
   )
 }
 
@@ -181,6 +257,23 @@ gamma_cv <- function(location, cv) {
   # mean(x);sd(x) / mean(x)
   x <- matrix(c(1/cv^2, cv^2*location), ncol = 2L)
   `attr<-`(x, "dist", "gamma")
+}
+
+#' @export
+#' @rdname priors
+#' @param meanlog Mean of the distribution on the log scale.
+#' @param sdlog Standard deviation of the distribution on the log scale.
+#' @details
+#' `lognormal_prior()` defines a lognormal prior with the same parameterization
+#' as [stats::dlnorm()]. The median is `exp(meanlog)`.
+#' @examples
+#' lognormal_prior(log(0.2), 0.5)
+lognormal_prior <- function(meanlog, sdlog) {
+  assert_that(all(sdlog[!is.na(sdlog)] > 0))
+  assert_that(length(meanlog) == length(sdlog))
+  assert_that(sum(is.na(meanlog)) == sum(is.na(sdlog)))
+  x <- matrix(c(meanlog, sdlog), ncol = 2L)
+  `attr<-`(x, "dist", "lognormal")
 }
 
 #' @export

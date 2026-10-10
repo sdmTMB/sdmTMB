@@ -28,159 +28,164 @@
 \arguments{
 \item{object}{A model fitted with \code{\link[=sdmTMB]{sdmTMB()}}.}
 
-\item{newdata}{A data frame to make predictions on. It should contain the
-same predictor columns as the fitted data and, for spatiotemporal models,
-a time column with the same name as in the fitted data.}
+\item{newdata}{A data frame to predict on. If \code{NULL} (default), predictions
+are for the fitted data. Must contain the columns used in the model
+formulas (including \code{spatial_varying} and \code{time_varying}), the coordinate
+columns used to build \code{mesh}, and, for spatiotemporal models, the \code{time}
+column. Time values must be among those in the fitted data or
+\code{extra_time}. Factor levels must have been seen in fitting, except for
+random effect grouping factors (see \code{allow_new_levels}).}
 
-\item{type}{Should predictions be returned in link space (default) or
-response space? Standard errors (\code{se_fit = TRUE}) are only available in
-link space.}
+\item{type}{The scale of \code{est}: \code{"link"} (default; the linear predictor) or
+\code{"response"} (the expected value of the response). For delta models,
+\code{"response"} gives the expected value combining both components. Only
+\code{est}, \code{est1}, and \code{est2} depend on \code{type}; the other columns are always on
+the link scale. Standard errors (\code{se_fit}) require \code{"link"}.}
 
-\item{se_fit}{Should standard errors on predictions be calculated? Warning:
-can be slow for large datasets or high-resolution projections when random
-fields are included. For faster uncertainty estimation, either use
-\code{re_form = NA} to exclude random fields or use the \code{nsim} argument to
-simulate from the joint precision matrix. Requires \code{type = "link"}; for
-response-scale uncertainty, use \code{nsim}.}
+\item{se_fit}{Logical: calculate standard errors of \code{est} on the link scale
+(returned as \code{est_se})? These account for uncertainty in both fixed and
+random effects but can be slow for many rows when random fields are
+included. For faster uncertainty, exclude the random fields with
+\code{re_form = NA} or summarize draws from \code{nsim}. Use \code{nsim} for
+response-scale uncertainty.}
 
-\item{re_form}{\code{NULL} to include all spatial/spatiotemporal random fields in
-predictions. \code{~0} or \code{NA} for population-level predictions (predictions
-excluding spatial/spatiotemporal random fields). Often used with
-\code{se_fit = TRUE} to visualize marginal effects. Does not affect
-\code{\link[=get_index]{get_index()}} calculations.}
+\item{re_form}{Include the spatial and spatiotemporal random fields
+(including spatially varying coefficient fields)? \code{NULL} (default)
+includes them. \code{NA} or \code{~ 0} excludes them for population-level
+predictions, so that \code{est} equals \code{est_non_rf}; the random field columns
+are then omitted. Often used with \code{se_fit = TRUE} to plot covariate
+effects. IID random effects are set separately with \code{re_form_iid}.
+Both also apply to derived quantities such as \code{\link[=get_index]{get_index()}} when passed
+through its \code{predict_args}.}
 
-\item{re_form_iid}{\code{NULL} to include all IID random intercepts/slopes in the
-predictions. \code{~0} or \code{NA} for population-level predictions. No other
-options (e.g., some but not all random intercepts) are not yet implemented.
-Only affects predictions with \code{newdata}. This \emph{does} affect \code{\link[=get_index]{get_index()}}.}
+\item{re_form_iid}{Include the IID random intercepts and slopes (e.g.,
+\code{(1 | g)} in \code{formula})? \code{NULL} (default) includes them. \code{NA} or \code{~ 0}
+sets them all to zero. Excluding only some of them is not yet supported.}
 
-\item{allow_new_levels}{Logical or \code{NULL}. Similar to \pkg{glmmTMB}'s
-\code{allow.new.levels}.
-Allows predictions for previously unobserved levels in random effect
-grouping variables. If \code{NULL} (default), new levels are allowed when
-\code{re_form_iid = NA} or \code{re_form_iid = ~0} and a warning is issued
-otherwise. If \code{TRUE}, new levels are explicitly allowed. If \code{FALSE}, a
-warning is issued if new levels are found. New levels are always treated
-as population-level predictions for the IID random effects
-(i.e., random effect value = 0).}
+\item{allow_new_levels}{Allow levels of random effect grouping factors in
+\code{newdata} that were not seen in fitting? Rows with a new level get a
+random effect value of zero (a population-level prediction). \code{TRUE}
+allows them silently, \code{FALSE} gives an error (as with \code{allow.new.levels}
+in \pkg{lme4} and \pkg{glmmTMB}), and \code{NULL} (default) allows them with a
+warning. Not relevant if \code{re_form_iid} excludes the random effects.
+Grouping columns in \code{newdata} must be factors.}
 
-\item{nsim}{If \verb{> 0}, simulate from the joint precision matrix with \code{nsim}
-draws. Returns a matrix with one row per prediction location and one column
-per draw. By default, each column represents one draw of the linear predictor
-in link space; use \code{type = "response"} for response-space draws. Simulating
-from the joint precision matrix accounts for uncertainty in both fixed and
-random effects. Use this to derive uncertainty on predictions (e.g.,
-\code{apply(x, 1, sd)}) or propagate uncertainty to derived quantities. This is
-the fastest way to characterize spatial uncertainty with sdmTMB.}
+\item{nsim}{Number of draws. If \verb{> 0}, returns a matrix of draws instead of
+a data frame (see Value). Each draw takes the fixed and random effects
+from their approximate joint (multivariate normal) distribution and
+computes \code{est} (or \code{sims_var}). Summarize across draws (e.g.,
+\code{apply(x, 1, sd)} or quantiles) for uncertainty on any scale, or carry
+the draws through to derived quantities. Usually much faster than
+\code{se_fit = TRUE} for models with random fields.}
 
-\item{sims_var}{Experimental: Which TMB reported variable from the model
-should be extracted from the joint precision matrix simulation draws?
-Defaults to link-space predictions. Other options are \code{"omega_s"},
-\code{"zeta_s"}, \code{"epsilon_st"}, \code{"est_rf"}, and \code{"est_non_rf"} (as described
-below); the model must include the term. Options other than \code{"est"} are
-returned in link space and cannot be combined with \code{type = "response"}.
-For other reported variables, use \code{return_tmb_report = TRUE}.}
+\item{sims_var}{Which quantity to return when \code{nsim > 0}: \code{"est"}
+(default; on the scale set by \code{type}) or one of the link-scale columns
+\code{"est_non_rf"}, \code{"est_rf"}, \code{"omega_s"}, \code{"zeta_s"}, or \code{"epsilon_st"}
+(see Value). The model must include the term. For delta models, these
+come from the component set by \code{model} (default: the first). With more
+than one spatially varying coefficient, \code{"zeta_s"} returns a list of
+matrices, one per coefficient. For other quantities, use
+\code{return_tmb_report = TRUE}.}
 
-\item{sample_fe}{Logical. When \code{nsim > 0}, sample uncertainty in the fixed
-effects and other estimated parameters? If \code{FALSE}, these are held at
-their estimated values and only the random effects (random fields, IID
-random effects, time-varying coefficients, and smoother coefficients) are
-drawn from their distribution conditional on the estimated parameters
-(similar to \code{obj$MC()} in \pkg{TMB}). Fixed effects are held at their
-estimates even with REML. See also the same argument in \code{\link[=project]{project()}}.}
+\item{sample_fe}{Logical. When \code{nsim > 0}, draw the fixed effects and other
+estimated parameters along with the random effects (\code{TRUE}, default)? If
+\code{FALSE}, these are held at their estimates and only the random effects
+(random fields, IID random effects, time-varying coefficients, and smoother
+coefficients) are drawn, conditional on those estimates. This ignores
+parameter uncertainty and so typically gives narrower intervals. Fixed
+effects are held at their estimates even with REML. See also the same
+argument in \code{\link[=project]{project()}}.}
 
-\item{model}{Which component to predict from delta/hurdle models when \code{nsim > 0} or \code{mcmc_samples} is supplied. \code{NA} (default) returns the combined
-prediction from both components; \code{1} returns the binomial component only; \code{2}
-returns the positive component only. Predictions are on the link or response
-scale depending on \code{type}. For regular predictions (without simulation),
-both components are returned. See the \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-model vignette}.}
+\item{model}{For delta models, what \code{est} (and \code{est_se} or the draws from
+\code{nsim} or \code{mcmc_samples}) refers to: \code{NA} (default) combines both
+components, \code{1} gives the first (binary) component, and \code{2} the second
+(positive) component. The data frame output always also includes each
+component as \code{est1} and \code{est2}. Ignored for other models. See the
+\href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-model vignette}.}
 
-\item{offset}{A numeric vector of optional offset values, one per row of
-\code{newdata}. If \code{NULL} (default), predictions on the fitted data (\code{newdata = NULL}) use the offset from the fitted model and predictions with \code{newdata}
-use an offset of 0.}
+\item{offset}{A numeric vector of offset values, one per row of \code{newdata}
+(not a column name). If \code{NULL} (default), predictions for the fitted data
+use the fitted offset, and predictions with \code{newdata} use an offset of 0,
+i.e., predictions per unit of the offset (e.g., density rather than
+catch when the offset is log area swept).}
 
-\item{mcmc_samples}{See \code{extract_mcmc()} in the
-\href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra} package for
-more details and the
-\href{https://sdmTMB.github.io/sdmTMB/articles/bayesian.html}{Bayesian vignette}.
-If specified, the predict function will return a matrix of a similar form
-as if \code{nsim > 0} but representing Bayesian posterior samples from the Stan
-model.}
+\item{mcmc_samples}{A matrix of posterior samples from a model passed to
+\pkg{tmbstan} (see \code{bayesian} in \code{\link[=sdmTMB]{sdmTMB()}}), as returned by
+\code{sdmTMBextra::extract_mcmc()} in the
+\href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra} package. If
+supplied, returns a matrix of posterior draws in the same form as with
+\code{nsim}. If \code{nsim} is also supplied, the last \code{nsim} samples are used. See
+the \href{https://sdmTMB.github.io/sdmTMB/articles/bayesian.html}{Bayesian
+vignette}.}
 
-\item{nonlocal_newdata}{An optional data frame overriding the
-\code{nonlocal_formula} covariate field used for prediction (e.g., for a
-counterfactual/scenario surface), with the same requirements as
-\code{nonlocal_data} in \code{\link[=sdmTMB]{sdmTMB()}}. \code{newdata}'s x/y and time columns
-always determine \emph{where} predictions are projected to; this argument only
-controls where the underlying diffused covariate values come from.
-Defaults to \code{NULL}: if a grid was supplied at fit time, the fitted field
-is reused as-is (so \code{newdata} need not contain the diffusion covariate
-columns); otherwise the field is rebuilt from \code{newdata}'s own covariate
-columns, as before. Also applies when \code{newdata = NULL}, in which case
-predictions are projected onto the fitted data.}
+\item{nonlocal_newdata}{An optional data frame of the \code{nonlocal_formula}
+covariates to predict with instead of those used in fitting (e.g., for a
+scenario with different conditions). Same requirements as \code{nonlocal_data}
+in \code{\link[=sdmTMB]{sdmTMB()}}. The rows of \code{newdata} (or the fitted data) still set where
+and when predictions are made; this argument only supplies the covariate
+values that are diffused or lagged. If \code{NULL} (default), the covariates
+from \code{nonlocal_data} in \code{\link[=sdmTMB]{sdmTMB()}} are reused if supplied (so \code{newdata}
+need not contain those columns); otherwise they come from \code{newdata}.}
 
 \item{return_tmb_object}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} Logical. If
 \code{TRUE}, include the TMB object in a list-format output. Instead, pass the
 fitted model and \code{newdata} directly to \code{\link[=get_index]{get_index()}} or \code{\link[=get_cog]{get_cog()}}.}
 
-\item{return_tmb_report}{Logical: return the output from the TMB
-report? For regular prediction, this is all the reported variables
-at the MLE parameter values. For \code{nsim > 0} or when \code{mcmc_samples}
-is supplied, this is a list with one element per sample; each element
-contains the report output for that sample. With \code{newdata = NULL}, this
-is the fitted model's report unless another argument requires projecting
-onto the fitted data, in which case it is the projection report.}
+\item{return_tmb_report}{Logical: return the TMB report (a list of all
+reported quantities at the estimated parameters) instead of a data frame?
+With \code{nsim > 0} or \code{mcmc_samples}, a list with one report per draw.
+Mainly for developers.}
 
-\item{return_tmb_data}{Logical: return formatted data for TMB? Used
-internally. With \code{newdata = NULL}, the fitted data are prepared as
-prediction data (with the fitted offset unless \code{offset} is supplied).}
+\item{return_tmb_data}{Logical: return the data list passed to TMB instead
+of predicting? Used internally.}
 
 \item{...}{Unused.}
 }
 \value{
-If \code{return_tmb_object = FALSE} (and \code{nsim = 0} and \code{mcmc_samples = NULL}):
-
-A data frame:
+By default, \code{newdata} (or the fitted data) with these columns added:
 \itemize{
-\item \code{est}: Estimate in link or response space, depending on \code{type}
-\item \code{est_non_rf}: Estimate from everything except spatial/spatiotemporal random fields (fixed effects, random intercepts, time-varying effects, etc.)
-\item \code{est_rf}: Estimate from all random fields combined
-\item \code{omega_s}: Spatial random field (models consistent spatial patterns)
-\item \code{zeta_s}: Spatially varying coefficient field (models how effects vary across space)
-\item \code{epsilon_st}: Spatiotemporal random field (models spatial patterns that vary over time)
-\item \verb{nl_*}: Nonlocal transformed covariate values (one column per
-nonlocal term; available when \code{nonlocal_formula} terms were fitted)
+\item \code{est}: The prediction on the scale set by \code{type}.
+\item \code{est_se}: The standard error of \code{est} on the link scale, if
+\code{se_fit = TRUE}.
+\item \code{est_non_rf}: The linear predictor excluding the spatial and
+spatiotemporal random fields: fixed effects, smoothers, IID random
+effects, time-varying coefficients, and the offset.
+\item \code{est_rf}: The sum of all random field terms, including spatially varying
+coefficient fields multiplied by their covariates. On the link scale,
+\code{est_non_rf + est_rf} equals \code{est}.
+\item \code{omega_s}: The spatial random field.
+\item \verb{zeta_s_<x>}: The spatially varying coefficient field for covariate \verb{<x>}
+in \code{spatial_varying}: the local deviation from the average coefficient,
+not multiplied by the covariate.
+\item \code{epsilon_st}: The spatiotemporal random field.
+\item \verb{nl_*}: The transformed covariate values for each \code{nonlocal_formula}
+term.
 }
 
-Delta/hurdle models return component-specific columns with \code{1} and \code{2}
-suffixes for the binomial and positive components, respectively (e.g.,
-\code{est1}, \code{est2}, \code{omega_s1}, \code{omega_s2}). With \code{type = "response"},
-\code{est} is the combined response-scale prediction.
+Columns for terms not in the model are left out, as are the random field
+columns with \code{re_form = NA}.
 
-If \code{return_tmb_object = TRUE} (and \code{nsim = 0} and \code{mcmc_samples = NULL}):
+Delta models instead return each column (other than \code{est} and \code{est_se})
+per component, with suffixes \code{1} and \code{2} for the first and second
+components (e.g., \code{est1}, \code{est2}, \code{omega_s1}, \code{omega_s2}). The identity
+above then holds within each component, and \code{est} combines the components
+(or gives one of them; see \code{model}).
 
-A list:
-\itemize{
-\item \code{data}: The data frame described above
-\item \code{report}: The TMB report on parameter values
-\item \code{obj}: The TMB object returned from the prediction run
-\item \code{fit_obj}: The original TMB model object
-}
+If \code{nsim > 0} or \code{mcmc_samples} is supplied: a matrix with one row per row
+of \code{newdata} (or the fitted data) and one column per draw. Row names are
+the time values.
 
-In this case, you likely only need the \code{data} element as an end user.
-The other elements are included for other functions.
-
-If \code{nsim > 0} or \code{mcmc_samples} is not \code{NULL}:
-
-A matrix:
-\itemize{
-\item Columns represent samples
-\item Rows represent predictions, with one row per row of \code{newdata}
-}
+If \code{return_tmb_object = TRUE} (deprecated): a list with elements \code{data}
+(the data frame above), \code{report} (the TMB report), \code{obj} (the TMB object
+from the prediction), and \code{fit_obj} (the fitted model).
 }
 \description{
-Make predictions from an \pkg{sdmTMB} model. Predictions can be made on the
-original data or on new data.
+Make predictions from a model fitted with \code{\link[=sdmTMB]{sdmTMB()}}, either for the fitted
+data or for new data (e.g., a prediction grid). At new locations, the random
+fields are interpolated from their estimated values at the mesh vertices.
+Besides the overall prediction (\code{est}), the output separates the linear
+predictor into the contribution of the spatial and spatiotemporal random
+fields and everything else (see Value).
 }
 \examples{
 \dontshow{if (ggplot2_installed()) withAutoprint(\{ # examplesIf}
@@ -224,7 +229,7 @@ plot_map(predictions, exp(est)) +
   ggtitle("Prediction (fixed effects + all random effects)")
 
 plot_map(predictions, exp(est_non_rf)) +
-  ggtitle("Prediction (fixed effects and any time-varying effects)") +
+  ggtitle("Prediction without random fields (fixed effects only here)") +
   scale_fill_viridis_c(trans = "sqrt")
 
 plot_map(predictions, est_rf) +
@@ -321,7 +326,7 @@ plot_map(p, est_rf) +
   scale_fill_gradient2()
 
 plot_map(p, exp(est_non_rf)) +
-  ggtitle("Prediction (fixed effects only)") +
+  ggtitle("Prediction without random fields (fixed effects only here)") +
   scale_fill_viridis_c(trans = "sqrt")
 
 plot_map(p, exp(est)) +

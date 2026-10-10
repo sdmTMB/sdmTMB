@@ -1,24 +1,77 @@
+# RTMB implementation of the sdmTMB model ---------------------------------
+#
+# Read this first. `rtmb_evaluate()` below is the whole model, top to bottom;
+# each step lives in its own file:
+#
+#   rtmb-prepare.R       C++ data list -> `prepared` (the only reader of `data`)
+#   rtmb-objective.R     parameter transforms; wires the steps together
+#   rtmb-effects.R       random fields, random effects, smoothers: their nll
+#   rtmb-precision.R     SPDE / SAR / CAR precision matrices
+#   rtmb-predictors.R    linear predictors for fitted and projected rows
+#   rtmb-observations.R  observation loop: evaluate, simulate, or report means
+#   rtmb-obs-families.R  per-family log density, simulation, deviance residuals
+#   rtmb-priors.R        penalties and priors
+#   rtmb-report.R        REPORT / ADREPORT values, named as in the C++ template
+#
+# Conventions:
+#
+# - Only static branches. Branch on `prepared` (data and model flags), never
+#   on parameter values. The objective is taped once, and a branch on a
+#   parameter would be fixed at whatever its value was at taping time.
+#   Data-dependent cases (e.g. y == 0) use logical indexing on data, not
+#   if/else on AD values.
+# - `par` keeps the C++ parameter names and shapes, so `map`, `random`,
+#   starting values, and post-fit methods work the same with either backend.
+#   `theta` (from rtmb_transform()) holds natural-scale versions, computed
+#   once per evaluation.
+# - Matrices of rows: rows are observations (`_i`) or vertices (`_s`),
+#   columns are components (`m`: 1 for single models, 1:2 for delta models).
+#   Families are looked up per row group within a component.
+# - Densities use RTMB's `d*(..., log = TRUE)` and are negated when summed
+#   into the nll.
+# - Assigning into a vector that may hold AD values needs
+#   `"[<-" <- RTMB::ADoverload("[<-")` at the top of that function. Without
+#   it, base `[<-` can drop the AD class, which tends to surface later as a
+#   confusing error or a missing derivative.
+# - The objective also runs without a tape (plain numbers): for reports
+#   (rtmb_report_values()) and for simulate(), where `OBS()` and random
+#   parameters arrive as `simref` objects (see rtmb_value()). Code should
+#   work for both AD and plain numbers. Base R random generators are fine
+#   in simulation paths.
+#
+# Checking changes: the RTMB tests compare against the C++ template with
+# expect_rtmb_matches_tmb(); `make reference-check` compares saved reference
+# fits.
+
 # The objective as a closure over `prepared` alone, built in its own frame so
 # the AD tape doesn't also capture `data` and `parameters` from
-# make_sdmTMB_adfun()'s frame.
-rtmb_make_objective <- function(prepared) {
+# make_sdmTMB_adfun()'s frame. A non-NULL `adreport` names the only ADREPORTs
+# to register.
+rtmb_make_objective <- function(prepared, adreport = NULL) {
   force(prepared)
-  function(par) rtmb_objective(par, prepared)
+  force(adreport)
+  function(par) rtmb_objective(par, prepared, adreport)
 }
 
 # RTMB objective: the joint negative log likelihood, registering reports.
-rtmb_objective <- function(par, prepared) {
+rtmb_objective <- function(par, prepared, adreport = NULL) {
   result <- rtmb_evaluate(par, prepared)
+  adreports <- result$adreports
+  if (!is.null(adreport)) adreports <- adreports[intersect(names(adreports), adreport)]
   rtmb_register_reports(result$reports, RTMB::REPORT)
-  rtmb_register_reports(result$adreports, RTMB::ADREPORT)
+  rtmb_register_reports(adreports, RTMB::ADREPORT)
   result$jnll
 }
 
 # Reports of the RTMB model at the full parameter list `par`, evaluated with
 # plain numbers. Equivalent to `obj$report()` without building (taping) an AD
 # object, which for large prediction grids dominates time and memory.
-rtmb_report_values <- function(data, par) {
-  rtmb_evaluate(par, rtmb_prepare(data))$reports
+# `deviance = TRUE` also computes deviance residuals (`devresid`), which are
+# otherwise reported as zeros.
+rtmb_report_values <- function(data, par, deviance = FALSE) {
+  prepared <- rtmb_prepare(data)
+  prepared$deviance <- deviance
+  rtmb_evaluate(par, prepared)$reports
 }
 
 # Resolve parameters to their natural scale, evaluate latent effects, compute
@@ -39,13 +92,14 @@ rtmb_evaluate <- function(par, prepared) {
   fitted$rw <- fitted$rw * active
   fitted$epsilon <- fitted$epsilon * active
   obs <- rtmb_observations(par, theta, prepared, fitted$eta)
-  jnll <- effects$nll + sum(obs$jnll_obs) + rtmb_prior_nll(par, theta, prepared)
+  jnll <- effects$nll + sum(obs$jnll_obs) + rtmb_prior_nll(par, theta, prepared) -
+    rtmb_custom_log_density(par, theta, prepared)
   projected <- derived <- NULL
   if (!is.null(prepared$proj)) {
     projected <- rtmb_linear_predictors(par, theta, effects, prepared,
       prepared$proj)
     if (prepared$mixture) {
-      projected$eta <- rtmb_mixture_eta(projected$eta, theta, prepared)
+      projected <- rtmb_mixture_projection(projected, theta, prepared)
     }
     if (prepared$n_m > 1L) {
       projected$combined <- rtmb_combined_projection(projected, theta, prepared)
@@ -67,10 +121,17 @@ rtmb_transform <- function(par, prepared) {
   n_m <- prepared$n_m
   # Maps the real line to a correlation in (-1, 1).
   correlation <- function(x) 2 * RTMB::plogis(x) - 1
-  # Components without a spatial field report sigma_O = log_sigma_O = 0.
+  # Components without a spatial (spatiotemporal) field have
+  # sigma_O = log_sigma_O = 0 (sigma_E = log_sigma_E = 0).
   log_sigma_O <- sigma_O <- matrix(0, 1L, n_m)
+  log_sigma_E <- sigma_E <- matrix(0, 1L, n_m)
   log_sigma_Z <- sigma_Z <- matrix(0, nrow(par$ln_tau_Z), n_m)
   for (m in seq_len(n_m)) {
+    if (prepared$temporal[[m]]) {
+      log_sigma_E[1L, m] <- rtmb_log_field_sd(par$ln_tau_E[[m]],
+        par$ln_kappa[2L, m], inputs)
+      sigma_E[1L, m] <- exp(log_sigma_E[1L, m])
+    }
     ln_kappa <- par$ln_kappa[1L, m]
     if (prepared$include_spatial[[m]]) {
       log_sigma_O[1L, m] <- rtmb_log_field_sd(par$ln_tau_O[[m]], ln_kappa,
@@ -103,6 +164,8 @@ rtmb_transform <- function(par, prepared) {
     log_sigma_O = log_sigma_O,
     sigma_Z = sigma_Z,
     log_sigma_Z = log_sigma_Z,
+    sigma_E = sigma_E,
+    log_sigma_E = log_sigma_E,
     rho = correlation(par$ar1_phi),
     rho_sar = correlation(par$logit_rho_sar),
     alpha_car = RTMB::plogis(par$logit_rho_sar),
@@ -123,6 +186,7 @@ rtmb_transform <- function(par, prepared) {
     phi = exp(par$ln_phi),
     tweedie_p = RTMB::plogis(par$thetaf) + 1,
     student_df = exp(par$ln_student_df) + 1,
+    psi = if (length(par$psi)) ordbeta_cutpoints(par$psi),
     # The larger mixture component's mean is `mix_ratio` times the smaller.
     p_extreme = RTMB::plogis(par$logit_p_extreme),
     mix_ratio = exp(par$log_ratio_mix) + 1

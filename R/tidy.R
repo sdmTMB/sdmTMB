@@ -4,7 +4,8 @@
 #' @param effects A character value. One of `"fixed"` ('fixed' or main-effect
 #'   parameters), `"ran_pars"` (standard deviations, spatial range, and other
 #'   random effect and dispersion-related terms), `"ran_vals"` (individual
-#'   random intercepts or slopes, if included; behaves like `ranef()`),
+#'   random intercepts or slopes and time-varying coefficients, if included;
+#'   behaves like `ranef()`; see Details),
 #'   `"ran_vcov"` (list of variance covariance matrices for the random effects,
 #'   by model and group), or `"rsr"` (Restricted Spatial Regression fixed-effect
 #'   coefficients adjusted for spatial confounding with the random fields;
@@ -17,7 +18,8 @@
 #' @param exponentiate Whether to exponentiate the fixed-effect coefficient
 #'   estimates and confidence intervals.
 #' @param model Which model to tidy if a delta model (1 or 2). The `model` will be
-#'   ignored when effects is `"ran_vals"` (all returned in a single dataframe)
+#'   ignored when effects is `"ran_vals"` (all returned in a single data frame
+#'   with a `model` column).
 #'
 #' @param silent Omit any messages?
 #' @param ... Extra arguments (not used).
@@ -29,6 +31,13 @@
 #' Currently, `effects = "ran_pars"` also includes dispersion-related terms
 #' (e.g., `phi`) only when dispersion is scalar. With `dispformula`,
 #' use `effects = "dispersion"` to extract dispersion-model coefficients.
+#'
+#' Time-varying coefficients (from the `time_varying` argument in [sdmTMB()])
+#' are returned with `effects = "ran_vals"`, one row per coefficient and time
+#' slice, with terms named `"<coefficient>:<time>"` (e.g., `"(Intercept):2011"`).
+#' These are on the link scale. Their standard deviation (`sigma_V`) and, for
+#' `time_varying_type = "ar1"`, correlation (`rho_time`) are returned with
+#' `effects = "ran_pars"`.
 #'
 #' Spatially varying coefficient SDs are `sigma_Z` rows, one per coefficient
 #' in the order of the `spatial_varying` model matrix columns. If
@@ -70,7 +79,14 @@
 #'   family = tweedie()
 #' )
 #' tidy(fit, "ran_vals")
-
+#'
+#' # time-varying coefficients:
+#' fit <- sdmTMB(density ~ 0, time_varying = ~ 1, time = "year",
+#'   data = pcod_2011, mesh = pcod_mesh_2011, family = tweedie(),
+#'   spatiotemporal = "off"
+#' )
+#' tidy(fit, "ran_vals", conf.int = TRUE)
+#' tidy(fit, "ran_pars")
 tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov", "rsr", "dispersion"), model = 1,
                  conf.int = TRUE, conf.level = 0.95, exponentiate = FALSE,
                  silent = FALSE, ...) {
@@ -152,6 +168,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     p$sigma_E <- .subset_model(p$sigma_E)
     p$sigma_O <- .subset_model(p$sigma_O)
     p$sigma_Z <- .subset_model(p$sigma_Z)
+    p$sigma_V <- .subset_model(p$sigma_V)
     p$rho_sar <- .subset_model(p$rho_sar)
     p$alpha_car <- .subset_model(p$alpha_car)
     if (!multi_family) {
@@ -185,7 +202,8 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   est <- subset_pars(est, model)
   se <- subset_pars(se, model)
 
-  if (!multi_family && x$family$family[[model]] %in% c("binomial", "poisson")) {
+  if (!multi_family && x$family$family[[model]] %in%
+    c("binomial", "censored_binomial", "poisson")) {
     se$ln_phi <- NULL
     est$ln_phi <- NULL
     se$phi <- NULL
@@ -279,9 +297,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     log_name <- c(log_name, "log_range_Z")
     name <- c(name, "range_Z")
   }
-  if (x$tmb_data$random_walk) {
+  if (!is.null(x$time_varying)) {
     log_name <- c(log_name, "ln_tau_V")
-    name <- c(name, "tau_V")
+    name <- c(name, "sigma_V")
   }
   if (!all(est$rho_time == 0)) {
     log_name <- c(log_name, "rho_time_unscaled")
@@ -347,6 +365,10 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
             stringsAsFactors = FALSE
           )
         }
+        tv_names <- colnames(x$tmb_data$X_rw_ik)
+        if (this %in% c("sigma_V", "rho_time") && length(tv_names) > 1L) {
+          out_re[[i]]$term <- paste0(i, "[", tv_names, "]")
+        }
       }
       ii <- ii + 1
     }
@@ -364,7 +386,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
 
   if (!multi_family && "ordbeta" %in% x$family$family) {
-    cuts <- plogis(est$psi)
+    cuts <- plogis(ordbeta_cutpoints(est$psi))
     out_re$ordbeta_cutpoint_lower <- data.frame(
       term = "ordbeta_cutpoint_lower", estimate = cuts[1],
       std.error = NA_real_, conf.low = NA_real_, conf.high = NA_real_,
@@ -499,7 +521,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
 
   if (identical(est$ln_tau_E, 0)) out_re <- out_re[out_re$term != "sigma_E", ]
-  if (identical(est$ln_tau_V, 0)) out_re <- out_re[out_re$term != "sigma_V", ]
+  if (identical(est$ln_tau_V, 0)) out_re <- out_re[!startsWith(out_re$term, "sigma_V"), ]
   if (identical(est$ln_tau_O, 0)) out_re <- out_re[out_re$term != "sigma_O", ]
   if (identical(est$ln_tau_Z, 0)) out_re <- out_re[out_re$term != "sigma_Z", ]
   if (is.na(x$tmb_map$ar1_phi[model])) out_re <- out_re[out_re$term != "rho", ]
@@ -576,27 +598,20 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     tv_names <- colnames(model.matrix(x$time_varying, x$data))
     time_slices <- x$time_lu$time_from_data
     yrs <- rep(time_slices, times = length(tv_names))
+    # b_rw_t is [time, coefficient, model]; like other "ran_vals", return all models
+    n_per_model <- length(yrs)
+    n_models <- length(est$b_rw_t) / n_per_model
 
-    if (delta) {
-      out_ranef_tv <- data.frame(
-        model = model,
-        term = paste0(rep(tv_names, each = length(time_slices)), ":", yrs),
-        estimate = c(est$b_rw_t),
-        std.error = c(se$b_rw_t),
-        conf.low = c(est$b_rw_t) - crit * c(se$b_rw_t),
-        conf.high = c(est$b_rw_t) + crit * c(se$b_rw_t),
-        stringsAsFactors = FALSE
-      )
-    } else {
-      out_ranef_tv <- data.frame(
-        term = paste0(rep(tv_names, each = length(time_slices)), ":", yrs),
-        estimate = c(est$b_rw_t),
-        std.error = c(se$b_rw_t),
-        conf.low = c(est$b_rw_t) - crit * c(se$b_rw_t),
-        conf.high = c(est$b_rw_t) + crit * c(se$b_rw_t),
-        stringsAsFactors = FALSE
-      )
-    }
+    out_ranef_tv <- data.frame(
+      model = rep(seq_len(n_models), each = n_per_model),
+      term = rep(paste0(rep(tv_names, each = length(time_slices)), ":", yrs), n_models),
+      estimate = c(est$b_rw_t),
+      std.error = c(se$b_rw_t),
+      conf.low = c(est$b_rw_t) - crit * c(se$b_rw_t),
+      conf.high = c(est$b_rw_t) + crit * c(se$b_rw_t),
+      stringsAsFactors = FALSE
+    )
+    if (!delta) out_ranef_tv$model <- NULL
 
     if(is.null(out_ranef)) {
       out_ranef <- out_ranef_tv
@@ -866,12 +881,10 @@ get_re_tidy_list <- function(x, crit, model = 1, delta = FALSE) {
   re_b_df <- do.call(rbind, expanded_rows) # list to df
   rownames(re_b_df) <- NULL # reset row names
 
-  # this is all as before
-  re_indx <- grep("re_b_pars", names(x$sd_report$value), fixed = TRUE)
-  non_nas <- !is.na(x$tmb_map$re_b_pars) # parameters that don't get mapped off
-
-  re_b_df$estimate <- x$sd_report$value[re_indx][non_nas]
-  re_b_df$std.error <- x$sd_report$sd[re_indx][non_nas]
+  # estimated (unmapped) random effects, in order
+  re_indx <- names(x$sd_report$par.random) == "re_b_pars"
+  re_b_df$estimate <- unname(x$sd_report$par.random[re_indx])
+  re_b_df$std.error <- sqrt(unname(x$sd_report$diag.cov.random[re_indx]))
   re_b_df$conf.low <- re_b_df$estimate - crit * re_b_df$std.error
   re_b_df$conf.high <- re_b_df$estimate + crit * re_b_df$std.error
   re_b_df$index <- NULL

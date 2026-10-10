@@ -62,14 +62,32 @@ test_that("RTMB delta models match every TMB report and sdreport row", {
       time = "time", time_varying = ~ 0 + z, spatial = "off",
       priors = sdmTMBpriors(sigma_V = gamma_cv(0.5, 0.5))),
     svc_threshold = list(response ~ breakpt(z), family = delta_gamma(),
-      spatial_varying = ~ 0 + w)
+      spatial_varying = ~ 0 + w),
+    svc_partial = list(response ~ 1, family = delta_gamma(),
+      spatial = list("on", "off"), spatial_varying = ~ 0 + w)
   )
   for (name in names(cases)) {
     fit <- do.call(sdmTMB, c(cases[[name]],
       list(data = d, mesh = mesh, do_fit = FALSE)))
     expect_rtmb_fit_data_matches(fit, newdata, info = name,
       project = name %in% c("delta_gamma", "delta_lognormal",
-        "poisson_link", "svc_threshold"))
+        "poisson_link", "svc_threshold", "svc_partial"))
+  }
+})
+
+test_that("Delta SVC fields have a density without a spatial intercept field", {
+  d <- rtmb_delta_data()
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 15L, type = "kmeans")
+  for (backend in c("tmb", "rtmb")) {
+    fit <- sdmTMB(response ~ 1, data = d, mesh = mesh, family = delta_gamma(),
+      spatial = list("on", "off"), spatial_varying = ~ 0 + w, do_fit = FALSE,
+      control = sdmTMBcontrol(backend = backend))
+    expect_false(anyNA(fit$tmb_map$ln_kappa[3:4]))
+    obj <- fit$tmb_obj
+    par <- obj$par
+    nll <- obj$fn(par)
+    par[names(par) == "ln_tau_Z"][2L] <- 1
+    expect_false(isTRUE(all.equal(obj$fn(par), nll)), info = backend)
   }
 })
 

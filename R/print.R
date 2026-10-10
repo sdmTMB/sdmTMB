@@ -337,8 +337,9 @@ print_time_varying <- function(x, m = 1) {
 
     # append AR(1) parameters if they are estimated
     p <- tidy(x, effects = "ran_pars", model = m, silent = TRUE)
-    if(any(p$term == "rho_time")) {
-      rho_tv <- as.matrix(p[p$term=="rho_time",c("estimate","std.error")])
+    is_rho <- startsWith(p$term, "rho_time")
+    if (any(is_rho)) {
+      rho_tv <- as.matrix(p[is_rho, c("estimate", "std.error")])
       rho_tv[] <- round(rho_tv, 2L)
       colnames(rho_tv) <- colnames(mm_tv)
       row.names(rho_tv) <- paste("rho", tv_names, sep = "-")

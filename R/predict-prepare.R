@@ -241,6 +241,12 @@ predict_iid_re_matrices <- function(object, req, newdata, n_formula) {
     if (any(is_new_level)) {
       new_level_rows <- union(new_level_rows, which(is_new_level))
       if (isFALSE(req$allow_new_levels)) {
+        cli_abort(c(
+          "Found new levels in random effect grouping variable {.field {RE_names[i]}}.",
+          "i" = "Set `allow_new_levels = TRUE` to predict these rows at the population level (random effect value of 0)."
+        ))
+      }
+      if (is.null(req$allow_new_levels)) {
         cli_warn(c(
           "Found new levels in random effect grouping variable {.field {RE_names[i]}}.",
           "i" = "These rows will use population-level IID random effect predictions (`re_form_iid = NA`).",

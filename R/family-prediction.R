@@ -16,8 +16,45 @@
   rep.int(1L, nrow(data))
 }
 
+# The response mean as a function of the linear predictor: `fam$linkinv`,
+# except for families whose means also depend on fitted parameters, namely the
+# truncated negative binomials (dispersion `ln_phi`) and ordered beta
+# (cutpoints `psi`, which add the point masses at 0 and 1).
+.response_linkinv <- function(fam, ln_phi, psi = NULL) {
+  if (fam$family %in% c("truncated_nbinom1", "truncated_nbinom2")) {
+    phi <- exp(ln_phi)
+    return(function(eta) fam$linkinv(eta, phi = phi))
+  }
+  if (identical(fam$family, "ordbeta")) {
+    psi <- ordbeta_cutpoints(psi)
+    return(function(eta) {
+      p0 <- stats::plogis(psi[[1L]] - eta)
+      p1 <- stats::plogis(eta - psi[[2L]])
+      p1 + (1 - p0 - p1) * fam$linkinv(eta)
+    })
+  }
+  fam$linkinv
+}
+
+# A fitted parameter such as `ln_phi` (one per family that uses it; see
+# `param_slot$ln_phi`) or `psi`.
+.object_par <- function(object, name) {
+  if (!is.null(object$parlist)) {
+    object$parlist[[name]]
+  } else if (!is.null(object$tmb_obj)) {
+    get_pars(object)[[name]]
+  } else {
+    # `sdmTMB(do_index = TRUE)` builds the projection data before it creates
+    # the fitted objective. The initial parameter list is sufficient for this
+    # data-only prediction step, and avoids trying to call `parList()` on a
+    # not-yet-created objective (particularly for the RTMB backend).
+    object$tmb_params[[name]]
+  }
+}
+
 .family_spec_component_prediction_output <- function(x, family_spec, row_family_id,
-  type = c("link", "response"), model = NA_integer_, offset = NULL) {
+  type = c("link", "response"), model = NA_integer_, offset = NULL,
+  ln_phi = NULL, psi = NULL) {
   type <- match.arg(type)
   x <- as.matrix(x)
   n <- nrow(x)
@@ -34,12 +71,14 @@
       if (!any(rows)) next
       fam <- family_spec$family_list[[fid]]
       has_two_components <- isTRUE(fam$delta) || length(fam$family) == 2L
-      linkinv1 <- if (has_two_components) fam[[1L]]$linkinv else fam$linkinv
+      fam_ln_phi <- ln_phi[family_spec$param_slot$ln_phi[[fid]]]
+      linkinv1 <- .response_linkinv(if (has_two_components) fam[[1L]] else fam, fam_ln_phi, psi)
       est1_raw[rows] <- linkinv1(raw1[rows])
       if (has_two_components) {
         active_rows <- rows & active[, 2L]
         if (any(active_rows)) {
-          est2_raw[active_rows] <- fam[[2L]]$linkinv(raw2[active_rows])
+          linkinv2 <- .response_linkinv(fam[[2L]], fam_ln_phi, psi)
+          est2_raw[active_rows] <- linkinv2(raw2[active_rows])
         }
       }
     }

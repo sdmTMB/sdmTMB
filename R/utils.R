@@ -35,9 +35,9 @@
 #'   likelihood using the Laplace approximation? Can result in a substantial
 #'   speed boost in some cases. This used to default to `FALSE` prior to
 #'   May 2021. Currently not working for models fit with REML or random intercepts.
-#' @param backend Model backend. `"tmb"` is the default; set
-#'   `options(sdmTMB.backend = "rtmb")` to use RTMB by default. The experimental
-#'   `"rtmb"` backend currently supports all families, including delta and
+#' @param backend Model backend. `"rtmb"` is the default; set
+#'   `options(sdmTMB.backend = "tmb")` to use the C++ TMB template by default.
+#'   The `"rtmb"` backend currently supports all families, including delta and
 #'   multi-family models, with SPDE (isotropic, anisotropic, or barrier) and
 #'   areal SAR/CAR spatial and spatiotemporal fields, spatially and
 #'   time-varying coefficients, IID random effects, smoothers, threshold
@@ -57,10 +57,13 @@
 #'   implement lower and upper bounds, so you must set `newton_loops = 0` if
 #'   setting limits.
 #' @param upper An optional named list of upper bounds within the optimization.
-#' @param censored_upper An optional vector of upper bounds for
-#'   [sdmTMBcontrol()]. Values of `NA` indicate an unbounded right-censored
-#'   distribution, values greater than the observation indicate an upper bound,
-#'   and values equal to the observation indicate no censoring.
+#' @param censored_method How [censored_betabinomial()] sums the likelihood.
+#'   `"auto"` (default) sums the interval or its
+#'   complement, whichever has fewer terms, and checks the precision at the
+#'   estimate, refitting with the direct sum for any rows that fail. `"direct"`
+#'   always sums the interval, which can be much slower. The check only
+#'   applies at the estimate, so consider `"direct"` when evaluating the
+#'   likelihood far from it (e.g., MCMC sampling).
 #' @param get_joint_precision Logical. Passed to `getJointPrecision` in
 #'   [TMB::sdreport()]. Must be `TRUE` to use simulation-based methods in
 #'   [predict.sdmTMB()] or [get_index_sims()]. If not needed, setting this to
@@ -144,7 +147,7 @@ sdmTMBcontrol <- function(
   map = NULL,
   lower = NULL,
   upper = NULL,
-  censored_upper = NULL,
+  censored_method = c("auto", "direct"),
   multiphase = TRUE,
   profile = FALSE,
   get_joint_precision = TRUE,
@@ -157,7 +160,7 @@ sdmTMBcontrol <- function(
   collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
   get_rsr = FALSE,
-  backend = getOption("sdmTMB.backend", "tmb"),
+  backend = getOption("sdmTMB.backend", "rtmb"),
   ...) {
 
   assert_that(is.numeric(nlminb_loops), is.numeric(newton_loops))
@@ -203,6 +206,7 @@ sdmTMBcontrol <- function(
     collapse_ar1_threshold < 0.5
   )
   sar_weight_style <- match.arg(sar_weight_style)
+  censored_method <- match.arg(censored_method)
   backend <- match.arg(backend, c("tmb", "rtmb"))
 
   out <- named_list(
@@ -219,10 +223,11 @@ sdmTMBcontrol <- function(
     map,
     lower,
     upper,
-    censored_upper,
+    censored_method,
     multiphase,
     parallel,
     get_joint_precision,
+    suppress_nlminb_warnings,
     collapse_spatial_variance,
     collapse_spatial_variance_threshold,
     collapse_spatiotemporal_ar1,
@@ -312,9 +317,9 @@ get_convergence_diagnostics <- function(sd_report) {
           "extreme or very small eigen values detected.", call. = FALSE)
         bad_eig <- TRUE
       }
-      if (any(final_grads > 0.01))
+      if (any(abs(final_grads) > 0.01))
         warning("The model may not have converged. ",
-          "Maximum final gradient: ", max(final_grads), ".", call. = FALSE)
+          "Maximum final gradient: ", max(abs(final_grads)), ".", call. = FALSE)
     }
   }
   pdHess <- isTRUE(sd_report$pdHess)
@@ -445,6 +450,11 @@ extract_call_name <- function(call_element, max_width = 80) {
     return(deparsed)
   }
 
+  # String literals (e.g., time = "year")
+  if (is.character(call_element) && length(call_element) == 1L) {
+    return(call_element)
+  }
+
   obj_class <- class(call_element)[1]
   return(obj_class)
 }
@@ -552,9 +562,9 @@ replicate_df <- function(dat, time_name, time_values) {
 # the same label share a range. Unnamed fields get a spatial range per
 # component, shared with the spatiotemporal field if `share_range`; unnamed
 # coefficients use their component's spatial range. A field that is off takes
-# the other field's label, and both are NA if both are off. With
-# `omit_spatial_intercept`, the spatial field is on only if a coefficient uses
-# its range. Attribute `on` flags the fields that are on.
+# the other field's label, and both are NA if both are off. The spatial field
+# counts as on if a coefficient uses its range (e.g., with `spatial = "off"` or
+# `omit_spatial_intercept`). Attribute `on` flags the fields that are on.
 range_group_labels <- function(n_m, spatial, spatiotemporal, share_range,
                                range_groups = NULL, svc = character(0),
                                omit_spatial_intercept = FALSE) {
@@ -583,15 +593,15 @@ range_group_labels <- function(n_m, spatial, spatiotemporal, share_range,
     st <- label("spatiotemporal",
       if (share_range[m]) s else paste0(".spatiotemporal", m))
     z <- vapply(svc, label, character(1L), default = s, USE.NAMES = FALSE)
-    # Coefficient fields exist wherever the (internal) spatial field is on
-    z_on <- rep(spatial[m] == "on", n_z)
+    # Coefficient fields enter every component, so a component's spatial
+    # range is needed if its spatial field or any coefficient uses it
+    z_on <- rep(TRUE, n_z)
     on[, m] <- c(
-      spatial[m] == "on" && (!omit_spatial_intercept || any(z == s)),
+      (spatial[m] == "on" && !omit_spatial_intercept) || any(z == s),
       spatiotemporal[m] != "off", z_on)
     labels[, m] <- c(s, st, z)
     f <- on[1:2, m]
     if (!all(f)) labels[1:2, m] <- if (any(f)) labels[1:2, m][f] else NA_character_
-    if (!z_on[1L] || !n_z) labels[-(1:2), m] <- NA_character_
   }
   # Coefficient rows are needed only if some coefficient's range differs from
   # its component's spatial row
@@ -635,7 +645,7 @@ matern_prior_flags <- function(priors, labels, spatial, spatiotemporal,
   has_svc_prior <- has_pc_prior(priors$matern_svc)
   has_prior <- c(has_pc_prior(priors$matern_s), has_pc_prior(priors$matern_st),
     rep(has_svc_prior, n_z))
-  svc_on <- matrix(rep(spatial == "on", each = n_z), n_z, n_m)
+  svc_on <- matrix(TRUE, n_z, n_m)
   field_on <- rbind(spatial == "on" & !omit_spatial_intercept,
     spatiotemporal != "off", svc_on)
   on <- rbind(unname(attr(labels, "on")[1:2, , drop = FALSE]), svc_on)
@@ -698,11 +708,13 @@ get_scale_factor <- function(prop_removed, n_hooks, pstar) {
 #'   proportion of baits removed for each fishing event as the predictor.
 #'   Check when the curve drops off as the proportion bait removed increases.
 #'
-#' The `lwr` limit for [sdmTMB::censored_poisson()] should be the observed catch
-#' counts, i.e., `n_catch` here.
-#'
-#' If `upr` in [sdmTMB::censored_poisson()] is set to NA, the full
-#' right-censored Poisson likelihood is used without any upper bound.
+#' Pass the returned vector to the `censored_upper` argument of [sdmTMB()]
+#' with `family = censored_poisson()` and the observed catch counts
+#' (`n_catch`) as the response. Fishing events with `prop_removed` below
+#' `pstar` get an upper bound equal to the observed catch and are therefore
+#' treated as uncensored. Alternatively, set `censored_upper` to `Inf` for
+#' fishing events above `pstar` to use the right-censored likelihood without
+#' an upper bound.
 #'
 #' The right-censored Poisson density can be written as:
 #'
@@ -723,11 +735,24 @@ get_scale_factor <- function(prop_removed, n_hooks, pstar) {
 #' In practice, these computations are done in log space for numerical
 #' stability.
 #'
-#' @return A numeric vector of upper bound catch counts of the target species to
-#'   improve convergence of the censored method.
+#' With [censored_binomial()] or [censored_betabinomial()], the number of
+#' hooks is already an upper bound on the count, so `Inf` can be used for
+#' censored fishing events.
 #'
-#' @references See \doi{10.1139/cjfas-2022-0159} for more details.
-#' @noRd
+#' @return A numeric vector of upper bound catch counts of the target species to
+#'   improve convergence of the censored method. Bounds are capped at
+#'   `n_hooks`.
+#'
+#' @references
+#' Watson, J., Edwards, A.M., and Auger-Méthé, M. 2023. A statistical
+#' censoring approach accounts for hook competition in abundance indices from
+#' longline surveys. Canadian Journal of Fisheries and Aquatic Sciences. 80(3):
+#' 468--486. \doi{10.1139/cjfas-2022-0159}
+#'
+#' @seealso [censored_poisson()], [censored_binomial()],
+#'   [censored_betabinomial()], and the
+#'   [hook competition article](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html).
+#' @export
 #'
 #' @examples
 #' dat <- structure(
@@ -803,7 +828,7 @@ get_censored_upper <- function(
   high <- n_catch
   high[prop_removed >= pstar] <- high[prop_removed >= pstar] +
     upper_bound[prop_removed >= pstar]
-  round(high)
+  pmin(round(high), n_hooks)
 }
 
 #' Set delta model for [ggeffects::ggpredict()]
@@ -878,27 +903,17 @@ get_fitted_time <- function(x) {
 }
 
 reload_model <- function(object) {
-  if ("parlist" %in% names(object)) {
-    # tinyVAST does this to be extra sure... I've found one case where it was needed
-    obj <- make_sdmTMB_adfun(
-      data = object$tmb_data,
-      parameters = object$parlist, #!! important part
-      map = object$tmb_map,
-      random = object$tmb_random,
-      backend = backend_sdmTMB(object),
-      profile = object$control$profile
-    )
-    obj$env$beSilent()
-    nll_new <- obj$fn(object$model$par) #!! important: need to eval once (restores last.par.best etc.)
-    if (abs(nll_new - object$model$objective) > 0.01) {
-      cli_abort(c("Model fit is not identical to recorded value:", "
-        something is not working as expected"))
-    }
-    object$tmb_obj <- obj
-    object
-  } else {
+  if (!"parlist" %in% names(object)) {
     cli_abort("`reload_model()` only works with models fit with sdmTMB 0.5.0.9006 and higher.")
   }
+  # tinyVAST does this to be extra sure... I've found one case where it was needed
+  obj <- remake_tmb_obj(object)
+  if (abs(obj$fn(object$model$par) - object$model$objective) > 0.01) {
+    cli_abort(c("Model fit is not identical to recorded value:", "
+      something is not working as expected"))
+  }
+  object$tmb_obj <- obj
+  object
 }
 
 reinitialize <- function(x) {

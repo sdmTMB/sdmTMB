@@ -22,7 +22,6 @@ simulate_new(
   df = NULL,
   threshold_coefs = NULL,
   fixed_re = list(omega_s = NULL, epsilon_st = NULL, zeta_s = NULL),
-  previous_fit = NULL,
   seed = sample.int(1e+06, 1),
   time_varying = NULL,
   time_varying_type = c("rw", "rw0", "ar1"),
@@ -51,7 +50,6 @@ sdmTMB_simulate(
   df = NULL,
   threshold_coefs = NULL,
   fixed_re = list(omega_s = NULL, epsilon_st = NULL, zeta_s = NULL),
-  previous_fit = NULL,
   seed = sample.int(1e+06, 1),
   time_varying = NULL,
   time_varying_type = c("rw", "rw0", "ar1"),
@@ -114,10 +112,6 @@ vignette for details.}
 (e.g., previously estimated) values. \code{NULL} values indicate that the
 corresponding random effects should be simulated.}
 
-\item{previous_fit}{(\strong{Deprecated}; please use \code{\link[=simulate.sdmTMB]{simulate.sdmTMB()}}).
-An optional previous \code{\link[=sdmTMB]{sdmTMB()}} fit to pull parameter values.
-Will be overridden by any non-\code{NULL} parameter arguments supplied directly.}
-
 \item{seed}{Seed number. The TMB and RTMB backends (see the \code{backend}
 argument of \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}}, passed via \code{control}) draw random numbers
 differently, so the same seed gives different simulated values with each.}
@@ -138,9 +132,8 @@ be supplied as a single value or a vector the same length as \code{sigma_V}.}
 
 \item{nonlocal_formula}{An optional one-sided formula describing
 covariate-diffusion terms to pass to \code{\link[=sdmTMB]{sdmTMB()}}. Supported wrappers are
-\code{diffusion()} and \code{time_lag()}. Same-covariate wrappers select one joint
-operator and coefficient. See \code{\link[=sdmTMB]{sdmTMB()}} for the \code{time_lag()} \code{start}
-argument.}
+\code{\link[=diffusion]{diffusion()}} and \code{\link[=time_lag]{time_lag()}}. Same-covariate wrappers select one joint
+operator and coefficient.}
 
 \item{lags_kappaS}{Spatial diffusion scale for \code{diffusion()} terms.
 Must be positive and finite. Supply a single value or

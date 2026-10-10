@@ -322,6 +322,7 @@ test_that("RTMB anisotropic and areal fits match TMB", {
 test_that("TMB and RTMB simulate AR1 and RW barrier fields at the same scale", {
   skip_on_cran()
   skip_if_not_installed("sdmTMBextra")
+  skip_if_not_installed("INLAspacetime")
   skip_if_not_installed("sf")
   d <- rtmb_spatial_data()
   mesh <- make_mesh(d, c("x", "y"), cutoff = 0.7)

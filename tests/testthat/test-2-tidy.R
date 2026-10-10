@@ -79,6 +79,25 @@ test_that("tidy() works with time-varying coefficients", {
   ))
 })
 
+test_that("tidy() ran_vals labels time-varying coefficients by delta component", {
+  skip_on_cran()
+
+  fit <- sdmTMB(
+    density ~ 0,
+    time_varying = ~1,
+    data = pcod_2011, time = "year", mesh = pcod_mesh_2011,
+    family = delta_gamma(), spatiotemporal = "off"
+  )
+  pars <- tidy(fit, "ran_vals")
+  b <- as.list(fit$sd_report, "Estimate")$b_rw_t
+  expect_equal(nrow(pars), 8L)
+  expect_equal(pars$model, rep(1:2, each = 4))
+  expect_equal(pars$term, rep(paste0("(Intercept):", c(2011, 2013, 2015, 2017)), 2))
+  expect_equal(pars$estimate[pars$model == 1], c(b[, , 1]))
+  expect_equal(pars$estimate[pars$model == 2], c(b[, , 2]))
+  expect_identical(pars, tidy(fit, "ran_vals", model = 2))
+})
+
 test_that("tidy() works with smooth terms", {
   skip_on_cran()
   skip_on_ci()

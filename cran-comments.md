@@ -1,4 +1,4 @@
-This version adds minor functionality and fixes minor bugs.
+This version fixes a NOTE and WARNING on CRAN, adds functionality, and fixes minor bugs.
 
 ## R CMD check results
 
