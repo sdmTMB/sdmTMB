@@ -24,7 +24,8 @@
 \item{effects}{A character value. One of \code{"fixed"} ('fixed' or main-effect
 parameters), \code{"ran_pars"} (standard deviations, spatial range, and other
 random effect and dispersion-related terms), \code{"ran_vals"} (individual
-random intercepts or slopes, if included; behaves like \code{ranef()}),
+random intercepts or slopes and time-varying coefficients, if included;
+behaves like \code{ranef()}; see Details),
 \code{"ran_vcov"} (list of variance covariance matrices for the random effects,
 by model and group), or \code{"rsr"} (Restricted Spatial Regression fixed-effect
 coefficients adjusted for spatial confounding with the random fields;
@@ -34,7 +35,8 @@ model must be fitted with
 \code{"dispersion"} returns dispersion-model coefficients when \code{dispformula} is used.}
 
 \item{model}{Which model to tidy if a delta model (1 or 2). The \code{model} will be
-ignored when effects is \code{"ran_vals"} (all returned in a single dataframe)}
+ignored when effects is \code{"ran_vals"} (all returned in a single data frame
+with a \code{model} column).}
 
 \item{conf.int}{Include a confidence interval?}
 
@@ -60,6 +62,13 @@ Currently, \code{effects = "ran_pars"} also includes dispersion-related terms
 (e.g., \code{phi}) only when dispersion is scalar. With \code{dispformula},
 use \code{effects = "dispersion"} to extract dispersion-model coefficients.
 
+Time-varying coefficients (from the \code{time_varying} argument in \code{\link[=sdmTMB]{sdmTMB()}})
+are returned with \code{effects = "ran_vals"}, one row per coefficient and time
+slice, with terms named \code{"<coefficient>:<time>"} (e.g., \code{"(Intercept):2011"}).
+These are on the link scale. Their standard deviation (\code{sigma_V}) and, for
+\code{time_varying_type = "ar1"}, correlation (\code{rho_time}) are returned with
+\code{effects = "ran_pars"}.
+
 Standard errors for spatial variance terms fit in log space (e.g., variance
 terms, range, or parameters associated with the observation error) are
 omitted to avoid confusion. Confidence intervals are still available.
@@ -79,6 +88,14 @@ fit <- sdmTMB(density ~ poly(depth_scaled, 2, raw = TRUE) + (1 | fyear),
   family = tweedie()
 )
 tidy(fit, "ran_vals")
+
+# time-varying coefficients:
+fit <- sdmTMB(density ~ 0, time_varying = ~ 1, time = "year",
+  data = pcod_2011, mesh = pcod_mesh_2011, family = tweedie(),
+  spatiotemporal = "off"
+)
+tidy(fit, "ran_vals", conf.int = TRUE)
+tidy(fit, "ran_pars")
 }
 \references{
 Restricted Spatial Regression (\code{effects = "rsr"}):

@@ -4,7 +4,8 @@
 #' @param effects A character value. One of `"fixed"` ('fixed' or main-effect
 #'   parameters), `"ran_pars"` (standard deviations, spatial range, and other
 #'   random effect and dispersion-related terms), `"ran_vals"` (individual
-#'   random intercepts or slopes, if included; behaves like `ranef()`),
+#'   random intercepts or slopes and time-varying coefficients, if included;
+#'   behaves like `ranef()`; see Details),
 #'   `"ran_vcov"` (list of variance covariance matrices for the random effects,
 #'   by model and group), or `"rsr"` (Restricted Spatial Regression fixed-effect
 #'   coefficients adjusted for spatial confounding with the random fields;
@@ -17,7 +18,8 @@
 #' @param exponentiate Whether to exponentiate the fixed-effect coefficient
 #'   estimates and confidence intervals.
 #' @param model Which model to tidy if a delta model (1 or 2). The `model` will be
-#'   ignored when effects is `"ran_vals"` (all returned in a single dataframe)
+#'   ignored when effects is `"ran_vals"` (all returned in a single data frame
+#'   with a `model` column).
 #'
 #' @param silent Omit any messages?
 #' @param ... Extra arguments (not used).
@@ -29,6 +31,13 @@
 #' Currently, `effects = "ran_pars"` also includes dispersion-related terms
 #' (e.g., `phi`) only when dispersion is scalar. With `dispformula`,
 #' use `effects = "dispersion"` to extract dispersion-model coefficients.
+#'
+#' Time-varying coefficients (from the `time_varying` argument in [sdmTMB()])
+#' are returned with `effects = "ran_vals"`, one row per coefficient and time
+#' slice, with terms named `"<coefficient>:<time>"` (e.g., `"(Intercept):2011"`).
+#' These are on the link scale. Their standard deviation (`sigma_V`) and, for
+#' `time_varying_type = "ar1"`, correlation (`rho_time`) are returned with
+#' `effects = "ran_pars"`.
 #'
 #' Standard errors for spatial variance terms fit in log space (e.g., variance
 #' terms, range, or parameters associated with the observation error) are
@@ -65,7 +74,14 @@
 #'   family = tweedie()
 #' )
 #' tidy(fit, "ran_vals")
-
+#'
+#' # time-varying coefficients:
+#' fit <- sdmTMB(density ~ 0, time_varying = ~ 1, time = "year",
+#'   data = pcod_2011, mesh = pcod_mesh_2011, family = tweedie(),
+#'   spatiotemporal = "off"
+#' )
+#' tidy(fit, "ran_vals", conf.int = TRUE)
+#' tidy(fit, "ran_pars")
 tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vcov", "rsr", "dispersion"), model = 1,
                  conf.int = TRUE, conf.level = 0.95, exponentiate = FALSE,
                  silent = FALSE, ...) {
@@ -565,27 +581,20 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     tv_names <- colnames(model.matrix(x$time_varying, x$data))
     time_slices <- x$time_lu$time_from_data
     yrs <- rep(time_slices, times = length(tv_names))
+    # b_rw_t is [time, coefficient, model]; like other "ran_vals", return all models
+    n_per_model <- length(yrs)
+    n_models <- length(est$b_rw_t) / n_per_model
 
-    if (delta) {
-      out_ranef_tv <- data.frame(
-        model = model,
-        term = paste0(rep(tv_names, each = length(time_slices)), ":", yrs),
-        estimate = c(est$b_rw_t),
-        std.error = c(se$b_rw_t),
-        conf.low = c(est$b_rw_t) - crit * c(se$b_rw_t),
-        conf.high = c(est$b_rw_t) + crit * c(se$b_rw_t),
-        stringsAsFactors = FALSE
-      )
-    } else {
-      out_ranef_tv <- data.frame(
-        term = paste0(rep(tv_names, each = length(time_slices)), ":", yrs),
-        estimate = c(est$b_rw_t),
-        std.error = c(se$b_rw_t),
-        conf.low = c(est$b_rw_t) - crit * c(se$b_rw_t),
-        conf.high = c(est$b_rw_t) + crit * c(se$b_rw_t),
-        stringsAsFactors = FALSE
-      )
-    }
+    out_ranef_tv <- data.frame(
+      model = rep(seq_len(n_models), each = n_per_model),
+      term = rep(paste0(rep(tv_names, each = length(time_slices)), ":", yrs), n_models),
+      estimate = c(est$b_rw_t),
+      std.error = c(se$b_rw_t),
+      conf.low = c(est$b_rw_t) - crit * c(se$b_rw_t),
+      conf.high = c(est$b_rw_t) + crit * c(se$b_rw_t),
+      stringsAsFactors = FALSE
+    )
+    if (!delta) out_ranef_tv$model <- NULL
 
     if(is.null(out_ranef)) {
       out_ranef <- out_ranef_tv

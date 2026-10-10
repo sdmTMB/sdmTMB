@@ -271,6 +271,11 @@
 
 ## Bug fixes: prediction, indices, and other
 
+* `tidy(effects = "ran_vals")` for delta models with `time_varying`
+  coefficients now labels each row with the correct `model` component. It was
+  returning both components labelled with the requested `model`. As with IID
+  random effects, both components are returned regardless of `model`.
+
 * `tidy(effects = "ran_pars")` again reports `sigma_V`, the SD of
   time-varying coefficients, for all `time_varying_type` values. It was being
   silently dropped, and AR1 time-varying models were skipped entirely.
