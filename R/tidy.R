@@ -145,6 +145,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     p$sigma_E <- .subset_model(p$sigma_E)
     p$sigma_O <- .subset_model(p$sigma_O)
     p$sigma_Z <- .subset_model(p$sigma_Z)
+    p$sigma_V <- .subset_model(p$sigma_V)
     p$rho_sar <- .subset_model(p$rho_sar)
     p$alpha_car <- .subset_model(p$alpha_car)
     if (!multi_family) {
@@ -266,9 +267,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     log_name <- c(log_name, "log_sigma_Z")
     name <- c(name, "sigma_Z")
   }
-  if (x$tmb_data$random_walk) {
+  if (!is.null(x$time_varying)) {
     log_name <- c(log_name, "ln_tau_V")
-    name <- c(name, "tau_V")
+    name <- c(name, "sigma_V")
   }
   if (!all(est$rho_time == 0)) {
     log_name <- c(log_name, "rho_time_unscaled")
@@ -333,6 +334,10 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
             conf.high = plogis(.e + crit * .se),
             stringsAsFactors = FALSE
           )
+        }
+        tv_names <- colnames(x$tmb_data$X_rw_ik)
+        if (this %in% c("sigma_V", "rho_time") && length(tv_names) > 1L) {
+          out_re[[i]]$term <- paste0(i, "[", tv_names, "]")
         }
       }
       ii <- ii + 1
@@ -483,7 +488,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
 
   if (identical(est$ln_tau_E, 0)) out_re <- out_re[out_re$term != "sigma_E", ]
-  if (identical(est$ln_tau_V, 0)) out_re <- out_re[out_re$term != "sigma_V", ]
+  if (identical(est$ln_tau_V, 0)) out_re <- out_re[!startsWith(out_re$term, "sigma_V"), ]
   if (identical(est$ln_tau_O, 0)) out_re <- out_re[out_re$term != "sigma_O", ]
   if (identical(est$ln_tau_Z, 0)) out_re <- out_re[out_re$term != "sigma_Z", ]
   if (is.na(x$tmb_map$ar1_phi[model])) out_re <- out_re[out_re$term != "rho", ]

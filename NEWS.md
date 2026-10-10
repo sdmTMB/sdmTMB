@@ -271,6 +271,13 @@
 
 ## Bug fixes: prediction, indices, and other
 
+* `tidy(effects = "ran_pars")` again reports `sigma_V`, the SD of
+  time-varying coefficients, for all `time_varying_type` values. It was being
+  silently dropped, and AR1 time-varying models were skipped entirely.
+  With more than one time-varying coefficient, the `sigma_V` and `rho_time`
+  terms are now labelled with their coefficient, e.g. `sigma_V[depth_scaled]`
+  and `rho_time[depth_scaled]`.
+
 * `sanity()` no longer warns ("no non-missing arguments to min") for
   non-spatial models fit without a mesh.
 

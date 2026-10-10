@@ -78,8 +78,8 @@ test_that("AR1 time-varying works", {
                 spatiotemporal = "off",
                 family = tweedie())
   s <- tidy(fit, "ran_pars")
-  expect_equal(dim(s), c(3L, 5L))
-  expect_equal(s$term, c("phi","rho_time","tweedie_p"))
+  expect_equal(dim(s), c(4L, 5L))
+  expect_equal(s$term, c("phi","sigma_V","rho_time","tweedie_p"))
 
   # test that tidy works -- RW
   fit <- sdmTMB(density ~ 1, time = "year",
@@ -88,8 +88,8 @@ test_that("AR1 time-varying works", {
                 spatiotemporal = "off",
                 family = tweedie(), priors = sdmTMBpriors(sigma_V = gamma_cv(0.2, 0.5)))
   s <- tidy(fit, "ran_pars")
-  expect_equal(dim(s), c(2L, 5L))
-  expect_equal(s$term, c("phi","tweedie_p"))
+  expect_equal(dim(s), c(3L, 5L))
+  expect_equal(s$term, c("phi","sigma_V","tweedie_p"))
 
   # test that tidy works -- AR1
   fit <- sdmTMB(density ~ 1, time = "year",
@@ -99,8 +99,8 @@ test_that("AR1 time-varying works", {
                 spatiotemporal = "off",
                 family = tweedie(), priors = sdmTMBpriors(sigma_V = gamma_cv(0.2, 0.5)))
   s <- tidy(fit, "ran_pars")
-  expect_equal(dim(s), c(3L, 5L))
-  expect_equal(s$term, c("phi", "rho_time", "tweedie_p"))
+  expect_equal(dim(s), c(4L, 5L))
+  expect_equal(s$term, c("phi", "sigma_V", "rho_time", "tweedie_p"))
 
   # test that tidy works -- no time varying
   fit <- sdmTMB(density ~ as.factor(year), time = "year",
@@ -119,8 +119,9 @@ test_that("AR1 time-varying works", {
                 spatiotemporal = "off",
                 family = tweedie())
   s <- tidy(fit, "ran_pars")
-  expect_equal(dim(s), c(4L, 5L))
-  expect_equal(s$term, c("phi","rho_time","rho_time","tweedie_p"))
+  expect_equal(dim(s), c(6L, 5L))
+  expect_equal(s$term, c("phi", "sigma_V[depth_scaled]", "sigma_V[I(depth_scaled^2)]",
+    "rho_time[depth_scaled]", "rho_time[I(depth_scaled^2)]", "tweedie_p"))
 
   # test that tidy works with delta
   fit <- sdmTMB(density ~ depth_scaled, time = "year",
@@ -130,18 +131,18 @@ test_that("AR1 time-varying works", {
                 spatiotemporal = "off",
                 family = delta_gamma(), priors = sdmTMBpriors(sigma_V = gamma_cv(0.2, 0.5)))
   s <- tidy(fit, "ran_pars")
-  expect_equal(dim(s), c(1L, 6L))
-  expect_equal(s$term, c("rho_time"))
+  expect_equal(dim(s), c(2L, 6L))
+  expect_equal(s$term, c("sigma_V", "rho_time"))
 
   s <- tidy(fit, "ran_pars", model = 1)
-  expect_equal(dim(s), c(1L, 6L))
-  expect_equal(s$term, c("rho_time"))
+  expect_equal(dim(s), c(2L, 6L))
+  expect_equal(s$term, c("sigma_V", "rho_time"))
   # values changed when the delta sigma_V prior stopped being applied twice
-  expect_equal(s$estimate, c(0.869430355), tolerance = 0.001)
+  expect_equal(s$estimate[2], c(0.869430355), tolerance = 0.001)
 
   s <- tidy(fit, "ran_pars", model = 2)
-  expect_equal(s$term, c("phi", "rho_time"))
-  expect_equal(s$estimate, c(0.651627427, 0.722630797), tolerance = 0.001)
+  expect_equal(s$term, c("phi", "sigma_V", "rho_time"))
+  expect_equal(s$estimate[-2], c(0.651627427, 0.722630797), tolerance = 0.001)
 
 })
 
