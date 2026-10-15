@@ -13,7 +13,9 @@
 #'   the corresponding `B` argument vector of coefficient values.
 #' @param data A data frame containing the predictors described in `formula` and
 #'   the time column if `time` is specified.
-#' @param mesh Output from [make_mesh()].
+#' @param mesh Output from [make_mesh()] or, for areal SAR/CAR models,
+#'   [make_areal_domain()] (with `spatial_model = "sar"` or `"car"` passed via
+#'   `...`).
 #' @param time The time column name.
 #' @param time_varying An optional one-sided formula describing time-varying
 #'   covariates passed through to [sdmTMB()] for building a time-varying random
@@ -29,7 +31,7 @@
 #'   one joint coefficient.
 #' @param range Parameter that controls the decay of spatial correlation. If a
 #'   vector of length 2, `share_range` will be set to `FALSE` and the spatial
-#'   and spatiotemporal ranges will be unique.
+#'   and spatiotemporal ranges will be unique. Not used for areal models.
 #' @param rho Spatiotemporal correlation between years; should be between -1 and
 #'   1.
 #' @param sigma_O SD of spatial process (Omega).
@@ -65,11 +67,16 @@
 #' @param lags_rhoT Temporal diffusion persistence for `time_lag()` terms.
 #'   Must satisfy `0 < rhoT < 1`. Supply a single value or one
 #'   value per covariate needing temporal diffusion.
+#' @param rho_sar Spatial dependence parameter for `spatial_model = "sar"`;
+#'   between -1 and 1.
+#' @param alpha_car Spatial dependence parameter for `spatial_model = "car"`;
+#'   between 0 and 1.
 #' @param ... Any other arguments to pass to [sdmTMB()].
 #'
 #' @return A data frame where:
 #' * The first column is the time variable (if present).
-#' * The second and third columns are the spatial coordinates.
+#' * The second and third columns are the spatial coordinates (or, for areal
+#'   models, a single column of areal unit IDs).
 #' * `omega_s` represents the simulated spatial random effects (only if present).
 #' * `zeta_s` represents the simulated spatially varying covariate field (only if present).
 #' * `epsilon_st` represents the simulated spatiotemporal random effects (only if present).
@@ -140,6 +147,8 @@ simulate_new <- function(formula,
                          nonlocal_formula = NULL,
                          lags_kappaS = NULL,
                          lags_rhoT = NULL,
+                         rho_sar = NULL,
+                         alpha_car = NULL,
                          ...) {
 
   # if (!missing(seed)) {
@@ -183,8 +192,9 @@ simulate_new <- function(formula,
   if (!is.null(sigma_V)) sigma_V <- as.numeric(sigma_V)
   if (!is.null(rho_time)) rho_time <- as.numeric(rho_time)
 
-  assert_that(is(mesh, "sdmTMBmesh"))
-  assert_that(!is.null(range), !is.null(sigma_O) || !is.null(sigma_E), !is.null(B))
+  is_areal <- is_areal_domain(mesh)
+  assert_that(is(mesh, "sdmTMBmesh") || is_areal)
+  assert_that(is_areal || !is.null(range), !is.null(sigma_O) || !is.null(sigma_E), !is.null(B))
   if (!family$family %in% c("binomial", "poisson")) {
     assert_that(!is.null(phi))
   }
@@ -222,7 +232,7 @@ simulate_new <- function(formula,
       time = time,
       family = family,
       do_fit = FALSE,
-      share_range = length(range) == 1L,
+      share_range = length(range) <= 1L,
       time_varying = time_varying,
       time_varying_type = time_varying_type,
       nonlocal_formula = nonlocal_formula
@@ -312,17 +322,33 @@ simulate_new <- function(formula,
   if (is.null(sigma_Z)) sigma_Z <- matrix(0, nrow = 0L, ncol = 0L) # DELTA FIXME
   if (is.null(sigma_E)) sigma_E <- 0
 
-  if (length(range) == 1L) range <- rep(range, 2)
+  if (is_areal) {
+    if (is_car_fit(fit)) {
+      if (is.null(alpha_car)) cli::cli_abort("`alpha_car` must be supplied for `spatial_model = \"car\"`.")
+      assert_that(alpha_car > 0, alpha_car < 1)
+      params$logit_rho_sar <- stats::qlogis(alpha_car)
+    } else {
+      if (is.null(rho_sar)) cli::cli_abort("`rho_sar` must be supplied for `spatial_model = \"sar\"`.")
+      assert_that(rho_sar > -1, rho_sar < 1)
+      params$logit_rho_sar <- stats::qlogis((rho_sar + 1) / 2)
+    }
+    # areal fields: SD = 1 / tau
+    params$ln_tau_O <- -log(sigma_O)
+    params$ln_tau_Z <- matrix(-log(sigma_Z), nrow = nrow(sigma_Z), ncol = 1L)
+    params$ln_tau_E <- -log(sigma_E)
+  } else {
+    if (length(range) == 1L) range <- rep(range, 2)
 
-  kappa <- sqrt(8) / range
-  params$ln_kappa <- matrix(log(kappa), ncol = 1L) # TODO DELTA
+    kappa <- sqrt(8) / range
+    params$ln_kappa <- matrix(log(kappa), ncol = 1L) # TODO DELTA
 
-  tau_O <- 1 / (sqrt(4 * pi) * kappa[1] * sigma_O)
-  params$ln_tau_O <- log(tau_O)
-  tau_Z <- 1 / (sqrt(4 * pi) * kappa[1] * sigma_Z)
-  params$ln_tau_Z <- matrix(log(tau_Z), nrow = nrow(sigma_Z), ncol = 1L) # DELTA FIXME
-  tau_E <- 1 / (sqrt(4 * pi) * kappa[2] * sigma_E)
-  params$ln_tau_E <- log(tau_E)
+    tau_O <- 1 / (sqrt(4 * pi) * kappa[1] * sigma_O)
+    params$ln_tau_O <- log(tau_O)
+    tau_Z <- 1 / (sqrt(4 * pi) * kappa[1] * sigma_Z)
+    params$ln_tau_Z <- matrix(log(tau_Z), nrow = nrow(sigma_Z), ncol = 1L) # DELTA FIXME
+    tau_E <- 1 / (sqrt(4 * pi) * kappa[2] * sigma_E)
+    params$ln_tau_E <- log(tau_E)
+  }
 
   n_tv <- if (!is.null(fit$tmb_data$X_rw_ik)) ncol(fit$tmb_data$X_rw_ik) else 0L
   has_time_varying <- !is.null(time_varying)
@@ -407,8 +433,12 @@ simulate_new <- function(formula,
 
   d <- list()
   if (!is.null(fit$time)) d[[fit$time]] <- data[[fit$time]]
-  d[[mesh$xy_cols[1]]] <- data[[mesh$xy_cols[1]]]
-  d[[mesh$xy_cols[2]]] <- data[[mesh$xy_cols[2]]]
+  if (is_areal) {
+    d[[mesh$space_column]] <- data[[mesh$space_column]]
+  } else {
+    d[[mesh$xy_cols[1]]] <- data[[mesh$xy_cols[1]]]
+    d[[mesh$xy_cols[2]]] <- data[[mesh$xy_cols[2]]]
+  }
 
   d[["omega_s"]] <- if (sum(sigma_O) > 0) s$omega_s_A
   d[["epsilon_st"]] <- if (sum(sigma_E) > 0) s$epsilon_st_A_vec

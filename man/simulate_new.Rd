@@ -30,6 +30,8 @@ simulate_new(
   nonlocal_formula = NULL,
   lags_kappaS = NULL,
   lags_rhoT = NULL,
+  rho_sar = NULL,
+  alpha_car = NULL,
   ...
 )
 
@@ -58,6 +60,8 @@ sdmTMB_simulate(
   nonlocal_formula = NULL,
   lags_kappaS = NULL,
   lags_rhoT = NULL,
+  rho_sar = NULL,
+  alpha_car = NULL,
   ...
 )
 }
@@ -69,7 +73,9 @@ the corresponding \code{B} argument vector of coefficient values.}
 \item{data}{A data frame containing the predictors described in \code{formula} and
 the time column if \code{time} is specified.}
 
-\item{mesh}{Output from \code{\link[=make_mesh]{make_mesh()}}.}
+\item{mesh}{Output from \code{\link[=make_mesh]{make_mesh()}} or, for areal SAR/CAR models,
+\code{\link[=make_areal_domain]{make_areal_domain()}} (with \code{spatial_model = "sar"} or \code{"car"} passed via
+\code{...}).}
 
 \item{family}{Family as in \code{\link[=sdmTMB]{sdmTMB()}}. Delta families are not supported.
 Instead, simulate the two component models separately and combine.}
@@ -84,7 +90,7 @@ one joint coefficient.}
 
 \item{range}{Parameter that controls the decay of spatial correlation. If a
 vector of length 2, \code{share_range} will be set to \code{FALSE} and the spatial
-and spatiotemporal ranges will be unique.}
+and spatiotemporal ranges will be unique. Not used for areal models.}
 
 \item{rho}{Spatiotemporal correlation between years; should be between -1 and
 1.}
@@ -143,13 +149,20 @@ one value per covariate needing a spatial scale.}
 Must satisfy \verb{0 < rhoT < 1}. Supply a single value or one
 value per covariate needing temporal diffusion.}
 
+\item{rho_sar}{Spatial dependence parameter for \code{spatial_model = "sar"};
+between -1 and 1.}
+
+\item{alpha_car}{Spatial dependence parameter for \code{spatial_model = "car"};
+between 0 and 1.}
+
 \item{...}{Any other arguments to pass to \code{\link[=sdmTMB]{sdmTMB()}}.}
 }
 \value{
 A data frame where:
 \itemize{
 \item The first column is the time variable (if present).
-\item The second and third columns are the spatial coordinates.
+\item The second and third columns are the spatial coordinates (or, for areal
+models, a single column of areal unit IDs).
 \item \code{omega_s} represents the simulated spatial random effects (only if present).
 \item \code{zeta_s} represents the simulated spatially varying covariate field (only if present).
 \item \code{epsilon_st} represents the simulated spatiotemporal random effects (only if present).

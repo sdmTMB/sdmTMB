@@ -793,3 +793,28 @@ test_that("no-spatial areal models do not estimate SAR rho", {
   expect_s3_class(fit, "sdmTMB")
   expect_false("logit_rho_sar" %in% names(fit$tmb_obj$par))
 })
+
+test_that("simulate_new works with areal SAR/CAR domains", {
+  skip_on_cran()
+  skip_if_not_installed("sf")
+  domain <- make_areal_domain(ohio_sf, id_column = "county")
+  d <- data.frame(county = rep(domain$unit_names, 20))
+
+  for (m in c("sar", "car")) {
+    s <- simulate_new(~ 1, data = d, mesh = domain, spatial_model = m,
+      B = 0.5, sigma_O = 0.6, phi = 0.3, rho_sar = 0.7, alpha_car = 0.9,
+      seed = 1)
+    expect_identical(names(s)[1:2], c("county", "omega_s"))
+    expect_equal(nrow(s), nrow(d))
+    fit <- sdmTMB(observed ~ 1, data = s, mesh = domain, spatial_model = m)
+    p <- tidy(fit, "ran_pars")
+    expect_equal(p$estimate[p$term == "sigma_O"], 0.6, tolerance = 0.15)
+    expect_equal(p$estimate[p$term == "phi"], 0.3, tolerance = 0.1)
+  }
+
+  expect_error(
+    simulate_new(~ 1, data = d, mesh = domain, spatial_model = "car",
+      B = 0.5, sigma_O = 0.6, phi = 0.3),
+    "alpha_car"
+  )
+})

@@ -80,6 +80,10 @@
 
 ## New features
 
+* `simulate_new()` now works with areal SAR/CAR models: pass an areal domain
+  from `make_areal_domain()` as `mesh`, set `spatial_model = "sar"` or
+  `"car"`, and supply `rho_sar` or `alpha_car` instead of `range`. #552
+
 * Added `lognormal_prior()` as an option for `sdmTMBpriors(sigma_V = ...)`
   priors on time-varying coefficient SDs.
 
