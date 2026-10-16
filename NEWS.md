@@ -31,8 +31,9 @@
   the same warning as the default (`NULL`).
 
 * The arguments of `sdmTMB()` after `family` are reordered into groups:
-  random fields, observation model, other model terms, estimation, and
-  deprecated arguments. Code that passes arguments after `family` by position
+  core model, observation-level adjustments, field configuration, additional
+  model structure, specialized response options, estimation, and deprecated
+  arguments. Code that passes arguments after `family` by position
   must name them.
 
 * Censoring bounds for `censored_poisson()` and `censored_betabinomial()` are

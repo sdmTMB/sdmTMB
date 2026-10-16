@@ -12,32 +12,32 @@ sdmTMB(
   family = gaussian(link = "identity"),
   spatial = c("on", "off"),
   spatiotemporal = c("iid", "ar1", "rw", "off"),
-  extra_time = NULL,
+  offset = NULL,
+  weights = NULL,
   spatial_model = c("spde", "sar", "car"),
   share_range = TRUE,
   anisotropy = FALSE,
-  offset = NULL,
-  weights = NULL,
-  dispformula = ~1,
-  censored_upper = NULL,
-  distribution_column = NULL,
+  extra_time = NULL,
   spatial_varying = NULL,
   time_varying = NULL,
   time_varying_type = c("rw", "rw0", "ar1"),
+  dispformula = ~1,
   nonlocal_formula = NULL,
   nonlocal_data = NULL,
   knots = NULL,
+  censored_upper = NULL,
+  distribution_column = NULL,
+  silent = TRUE,
   reml = FALSE,
   priors = sdmTMBpriors(),
   bayesian = FALSE,
   control = sdmTMBcontrol(),
   previous_fit = NULL,
-  silent = TRUE,
   do_fit = TRUE,
+  experimental = NULL,
   do_index = FALSE,
   predict_args = NULL,
-  index_args = NULL,
-  experimental = NULL
+  index_args = NULL
 )
 }
 \arguments{
@@ -88,9 +88,17 @@ consider switching to \code{'rw'}. See the \href{https://sdmTMB.github.io/sdmTMB
 mathematical details. Capitalization is ignored. \code{TRUE} gets converted to
 \code{'iid'} and \code{FALSE} gets converted to \code{'off'}.}
 
-\item{extra_time}{Optional extra time slices (e.g., years) to include for
-interpolation or forecasting with the predict function. See the Details
-section below.}
+\item{offset}{A numeric vector representing the model offset \emph{or} a character
+value representing the column name of the offset. In delta/hurdle models,
+this applies only to the positive component except for Poisson-link delta
+models, where it also enters the occurrence-probability calculation.
+Usually a log transformed variable.}
+
+\item{weights}{An optional numeric vector (not a column name) of weights on
+each observation's contribution to the likelihood. As in \pkg{glmmTMB},
+weights need not sum to one and are not rescaled. For binomial-type
+families with a proportion response, \code{weights} gives the number of trials
+instead; see 'Binomial families' in Details.}
 
 \item{spatial_model}{Spatial process model. \code{"spde"} uses the default
 continuous-space SPDE approximation. \code{"sar"} and \code{"car"} use areal spatial
@@ -106,37 +114,9 @@ parameters (\code{FALSE})? For delta models, can be a list, e.g.,
 directionally dependent)? See \code{\link[=plot_anisotropy]{plot_anisotropy()}}. Applies to SPDE models
 only and is shared by both components of a delta model.}
 
-\item{offset}{A numeric vector representing the model offset \emph{or} a character
-value representing the column name of the offset. In delta/hurdle models,
-this applies only to the positive component except for Poisson-link delta
-models, where it also enters the occurrence-probability calculation.
-Usually a log transformed variable.}
-
-\item{weights}{An optional numeric vector (not a column name) of weights on
-each observation's contribution to the likelihood. As in \pkg{glmmTMB},
-weights need not sum to one and are not rescaled. For binomial-type
-families with a proportion response, \code{weights} gives the number of trials
-instead; see 'Binomial families' in Details.}
-
-\item{dispformula}{A one-sided formula for the dispersion parameter (e.g.,
-\code{phi}). The default, \code{~ 1}, estimates a single value. Ignored for
-families without a dispersion parameter (e.g., binomial or Poisson). In
-delta models, applies to the positive component. Not yet available for
-multi-family models or truncated negative binomial families.}
-
-\item{censored_upper}{Upper bounds for the censored families (see
-\link{Families}): a numeric vector or the name of a column in \code{data}. Each
-response is a count between its observed value and this bound. A bound
-equal to the response is uncensored, a larger bound is interval-censored,
-and \code{Inf} is right-censored (capped at the number of trials for
-\code{\link[=censored_binomial]{censored_binomial()}} and \code{\link[=censored_betabinomial]{censored_betabinomial()}}). Non-integer bounds
-are rounded down. For left censoring (e.g., fewer than 5), use a response
-of 0 and a bound of 4.}
-
-\item{distribution_column}{For experimental multi-family models, the name of
-the column in \code{data} mapping each row to a family in the named \code{family}
-list. See the multi-family vignette for the supported family and method
-combinations.}
+\item{extra_time}{Optional extra time slices (e.g., years) to include for
+interpolation or forecasting with the predict function. See the Details
+section below.}
 
 \item{spatial_varying}{An optional one-sided formula of coefficients that
 should vary in space as random fields. Allows the effect of a covariate to
@@ -173,6 +153,12 @@ For \code{'rw0'} and \code{'ar1'}, include the same covariates in \code{formula}
 time-varying process then describes deviations from that average effect.
 Shared by both components of a delta model.}
 
+\item{dispformula}{A one-sided formula for the dispersion parameter (e.g.,
+\code{phi}). The default, \code{~ 1}, estimates a single value. Ignored for
+families without a dispersion parameter (e.g., binomial or Poisson). In
+delta models, applies to the positive component. Not yet available for
+multi-family models or truncated negative binomial families.}
+
 \item{nonlocal_formula}{An optional one-sided formula of non-local
 covariate effects: \code{\link[=diffusion]{diffusion()}} for an effect of conditions in the
 surrounding area, and \code{\link[=time_lag]{time_lag()}} for an effect of conditions in
@@ -196,6 +182,23 @@ Defaults to \code{NULL}, in which case \code{data} is used.}
 construction of smoothing terms. See \code{\link[mgcv:gam]{mgcv::gam()}} and \code{\link[mgcv:gamm]{mgcv::gamm()}}.
 E.g., \verb{s(x, bs = 'cc', k = 4), knots = list(x = c(1, 2, 3, 4))}}
 
+\item{censored_upper}{Upper bounds for the censored families (see
+\link{Families}): a numeric vector or the name of a column in \code{data}. Each
+response is a count between its observed value and this bound. A bound
+equal to the response is uncensored, a larger bound is interval-censored,
+and \code{Inf} is right-censored (capped at the number of trials for
+\code{\link[=censored_binomial]{censored_binomial()}} and \code{\link[=censored_betabinomial]{censored_betabinomial()}}). Non-integer bounds
+are rounded down. For left censoring (e.g., fewer than 5), use a response
+of 0 and a bound of 4.}
+
+\item{distribution_column}{For experimental multi-family models, the name of
+the column in \code{data} mapping each row to a family in the named \code{family}
+list. See the multi-family vignette for the supported family and method
+combinations.}
+
+\item{silent}{Silent or include optimization details? Helpful to set to
+\code{FALSE} for models that take a while to fit.}
+
 \item{reml}{Logical: use REML (restricted maximum likelihood) estimation
 rather than maximum likelihood? REML accounts for uncertainty in estimating
 fixed effects and can reduce bias in variance parameter estimates, but
@@ -218,11 +221,11 @@ optimization with. Can greatly speed up fitting. Note that the model must
 be set up \emph{exactly} the same way. However, the data and \code{weights} arguments
 can change, which can be useful for cross-validation.}
 
-\item{silent}{Silent or include optimization details? Helpful to set to
-\code{FALSE} for models that take a while to fit.}
-
 \item{do_fit}{Fit the model (\code{TRUE}) or return the processed data without
 fitting (\code{FALSE})?}
+
+\item{experimental}{A named list for esoteric or in-development options. Here
+be dragons.}
 
 \item{do_index}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} Do index
 standardization calculations while fitting? Instead, fit the model and
@@ -237,9 +240,6 @@ to pass to \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} \strong{if} \code{do_
 \item{index_args}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} A list of arguments to
 pass to \code{\link[=get_index]{get_index()}} \strong{if} \code{do_index = TRUE}. Currently, \code{area} and
 \code{derived_link} are supported.}
-
-\item{experimental}{A named list for esoteric or in-development options. Here
-be dragons.}
 }
 \value{
 An object (list) of class \code{sdmTMB}. Useful elements include:
