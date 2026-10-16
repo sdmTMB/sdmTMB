@@ -256,7 +256,17 @@
 
 * Fix `time_varying` models with more than one column (e.g., `~ 1 + x`), where
   estimated `b_rw_t` and `sigma_V` for all but the last term were shrunk.
-  Likelihoods, fitted values, and predictions are unchanged.
+  Fitted values and predictions are unchanged, but the log likelihood (and
+  therefore AIC) shifts relative to earlier versions, so don't compare these
+  across versions.
+
+* Fix covariate diffusion with `diffusion()` but no `time_lag()` in
+  `nonlocal_formula`. The time column of the nonlocal grid was ignored, so the
+  diffused covariate was zero in every time slice after the first and the fit
+  was silently wrong.
+
+* Fix `student(link = "inverse")`, which errored ("illegal `family` argument")
+  while computing starting values.
 
 * Fix `breakpt()` likelihoods and gradients after the cutpoint moves from its
   starting value in the TMB backend.
