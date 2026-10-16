@@ -2,14 +2,13 @@
 
 ## Breaking changes
 
-* Removed the defunct `delta_poisson_link_gamma()` and
+* Removed the previously deprecrated `delta_poisson_link_gamma()` and
   `delta_poisson_link_lognormal()`. Use `delta_gamma(type = "poisson-link")` or
   `delta_lognormal(type = "poisson-link")`.
 
-* Removed the defunct `extract_mcmc()` and `add_barrier_mesh()` functions; use the
-  versions in sdmTMBextra. Also removed the defunct `previous_fit` argument of
-  `sdmTMB_simulate()` (use `simulate.sdmTMB()`) and the error for the old
-  `experimental = list(lwr, upr)` censoring syntax.
+* Removed the previously deprecrated `extract_mcmc()` and `add_barrier_mesh()` functions; use the
+  versions in sdmTMBextra. Also removed the previously deprecrated `previous_fit` argument of
+  `simulate_new()` (use `simulate.sdmTMB()`).
 
 * `sdmTMB_cv()` now scores held-out data with a predictive density integrated
   over the approximate posterior of the random effects
@@ -81,13 +80,6 @@
 
 ## New features
 
-* `simulate_new()` now works with areal SAR/CAR models: pass an areal domain
-  from `make_areal_domain()` as `mesh`, set `spatial_model = "sar"` or
-  `"car"`, and supply `rho_sar` or `alpha_car` instead of `range`. #552
-
-* Added `lognormal_prior()` as an option for `sdmTMBpriors(sigma_V = ...)`
-  priors on time-varying coefficient SDs.
-
 * **RTMB is now the default backend.** The model code is written in R (via
   RTMB) with about 50% fewer lines, and gives the same results as the TMB
   backend in all our tests, although simulated values differ between backends
@@ -103,6 +95,13 @@
   * `get_index(bias_correct = TRUE)`: 1.5x
   * `simulate(nsim = 400)`: 1.9x
   * `project(nsim = 400)` (30-year AR1 projection): 9.3x
+
+* `simulate_new()` now works with areal SAR/CAR models: pass an areal domain
+  from `make_areal_domain()` as `mesh`, set `spatial_model = "sar"` or
+  `"car"`, and supply `rho_sar` or `alpha_car` instead of `range`. #552
+
+* Added `lognormal_prior()` as an option for `sdmTMBpriors(sigma_V = ...)`
+  priors on time-varying coefficient SDs.
 
 * `simulate.sdmTMB()` gains a `simulate_re` argument to choose which random
   effects are simulated as new (any of `"spatial"`, `"spatiotemporal"`,
@@ -126,7 +125,7 @@
   different observation family (e.g., binomial, count, and delta-lognormal data
   in one model with shared fields). Supply a named list to `family` and name
   the column mapping rows to families with `distribution_column`. See the new
-  multi-family vignette.
+  multi-family vignette/article.
 
 * Add `ordbeta()` for ordered beta regression (Kubinec 2023), an alternative to
   zero-one-inflated beta for continuous data on `[0, 1]` with point masses at 0
@@ -164,13 +163,13 @@
 
 * Add a `loo::elpd()` method for `sdmTMB_cv()` output so models can be compared
   with `loo::loo_compare()`, including a standard error of the difference. See
-  `?sdmTMB_cv()` for an example.
+  `?sdmTMB_cv` for an example.
 
 * Add deviance residuals and `deviance()` for `gengamma()` and
   `censored_poisson()`.
 
 * Add `make_zero_one_map()` for categories (e.g., year factors) where the
-  response is all zeros or ones (#386).
+  response is all zeros or ones. #386
 
 * Add `sample_fe` argument to `predict.sdmTMB()`. With `nsim > 0` and
   `sample_fe = FALSE`, fixed effects are held at their estimates and only
