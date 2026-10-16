@@ -74,6 +74,7 @@ test_that("RTMB basic likelihoods match TMB at fixed parameters", {
 })
 
 test_that("RTMB matches TMB for other families", {
+  skip_on_cran()
   d <- rtmb_family_data(90L, 81)
   mesh <- make_mesh(d, c("x", "y"), n_knots = 15L, type = "kmeans")
   d$dist <- rep(c("tw", "bb", "gg"), 30L)
@@ -507,6 +508,7 @@ test_that("censored beta-binomial fits sum the shorter side with a precision che
 })
 
 test_that("censored beta-binomial held-out CV rows use the direct sum", {
+  skip_on_cran()
   local_rtmb_backend()
   set.seed(5)
   n <- 60L
@@ -537,6 +539,7 @@ test_that("censored beta-binomial held-out CV rows use the direct sum", {
 # are 5 Monte Carlo standard errors; variance errors use the sample fourth
 # central moment.
 test_that("simulated observations match their distributions in both backends", {
+  skip_on_cran()
   n <- 20000L
   d <- data.frame(x = rep(c(0, 1), each = n / 2), trials = 8)
   b_j <- c(0.3, 0.5)
@@ -619,6 +622,7 @@ test_that("simulated observations match their distributions in both backends", {
 })
 
 test_that("RTMB truncated NB draws are finite and match conditional moments", {
+  skip_on_cran()
   n <- 20000L
   for (family in c("truncated_nbinom1", "truncated_nbinom2")) {
     for (mu in c(1e-20, 1e-10, 0.1, 1, 10, 1e4)) {

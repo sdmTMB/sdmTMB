@@ -21,7 +21,7 @@
 ^Dockerfile$
 ^CRAN-SUBMISSION$
 ^vignettes/web_only$
-revdep/
+^revdep$
 ^vignettes/articles$
 ^doc$
 ^Meta$

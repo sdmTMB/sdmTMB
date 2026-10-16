@@ -35,6 +35,7 @@ test_that("RTMB binomial, Gamma, and lognormal likelihoods match TMB", {
 })
 
 test_that("RTMB delta models match every TMB report and sdreport row", {
+  skip_on_cran()
   d <- rtmb_delta_data()
   d$response[[5L]] <- NA
   mesh <- make_mesh(d, c("x", "y"), n_knots = 15L, type = "kmeans")
@@ -110,6 +111,7 @@ test_that("RTMB multi-family models match TMB", {
 })
 
 test_that("RTMB delta fits match TMB estimates, predictions, and draws", {
+  skip_on_cran()
   set.seed(72)
   n <- 150L
   d <- data.frame(x = runif(n), y = runif(n), z = rnorm(n))
