@@ -64,7 +64,7 @@ sdmTMB is an R package that fits spatial and spatiotemporal GLMMs (generalized l
     Stan](#bayesian-mcmc-sampling-with-stan)
 - [Meshes](#meshes)
   - [Using a custom fmesher mesh](#using-a-custom-fmesher-mesh)
-  - [Barrier meshes](#barrier-meshes)
+  - [Physical correlation barriers](#physical-correlation-barriers)
 - [Related software](#related-software)
 
 ## Installation
@@ -102,8 +102,8 @@ There are some extra utilities in the
 ### Speeding up large models (optional)
 
 For large models, an optimized BLAS library (the linear algebra library
-R uses) can make sdmTMB models much faster, often around 8 times faster.
-Suggested installation instructions for [Mac
+R uses) can make sdmTMB models much faster, sometimes up to 8 times
+faster. Suggested installation instructions for [Mac
 users](https://www.mail-archive.com/r-sig-mac@r-project.org/msg06199.html)
 or [with OpenBLAS on a
 Mac](https://gist.github.com/seananderson/3c6cbf640ba566ce936c79442b9a6068),
@@ -159,7 +159,7 @@ estimation.
   independent each time step or that follow a random walk or
   autoregressive (AR1) process
 - Areal models (CAR/SAR) for polygon or gridded data, as an alternative
-  to the mesh-based approach
+  to the mesh-based SPDE approach
 - Random intercepts and slopes with lme4-style syntax, e.g.,
   `(1 + x | group)`
 - Smooth (non-linear) covariate effects with mgcv-style `s()` terms
@@ -247,6 +247,8 @@ random fields. Journal of Statistical Software. 115(2):1–46.
 
 A list of known publications that use sdmTMB can be found
 [here](https://github.com/sdmTMB/sdmTMB/tree/main/scratch/citations).
+That list can get out of date. Also see the latest [Google Scholar
+citations](https://scholar.google.com/scholar?hl=en&as_sdt=2005&sciodt=0,5&cites=7171945376278202645&scipsc=&q=&scisbd=1).
 Please use the above citation so we can track publications.
 
 ## Basic use
@@ -872,7 +874,8 @@ m_cv <- sdmTMB_cv(
   data = pcod, mesh = mesh,
   family = tweedie(link = "log"), k_folds = 2
 )
-#> ℹ `sdmTMB_cv()` now scores held-out data with `predictive = "mle-mvn"` by default (previously `"mle-eb"`).
+#> ℹ `sdmTMB_cv()` now scores held-out data with `predictive = "mle-mvn"` by
+#>   default (previously `"mle-eb"`).
 #> ℹ Previous values are returned in `sum_loglik_mle_eb` and `cv_loglik_mle_eb`.
 #> ℹ Set `predictive` explicitly to silence this message.
 #> Running fits with `future.apply()`.
@@ -980,10 +983,10 @@ plot(mesh)
 
 <img src="man/figures/README-fmesher-mesh-1.png" alt="" width="30%" />
 
-### Barrier meshes
+### Physical correlation barriers
 
-A barrier mesh limits correlation across physical barriers, such as land
-for a marine species or water for a terrestrial one. See
+A mesh can be constructed to limit correlation across physical barriers,
+such as land for a marine species or water for a terrestrial one. See
 `add_barrier_mesh()` in
 [sdmTMBextra](https://github.com/sdmTMB/sdmTMBextra).
 
@@ -993,7 +996,7 @@ sdmTMB is heavily inspired by the
 [VAST](https://github.com/James-Thorson-NOAA/VAST) and
 [glmmTMB](https://github.com/glmmTMB/glmmTMB) R packages.
 
-The [sdmTMBexperiments](https://github.com/DeepWaterIMR/sdmTMBexperiments) R package (not maintained by the sdmTMB developers) provides experimental helper functions for working with fitted sdmTMB models, including model comparison, mesh-resolution sensitivity, retrospective analyses, and index plotting.
+<!-- The [sdmTMBexperiments](https://github.com/DeepWaterIMR/sdmTMBexperiments) R package (not maintained by the sdmTMB developers) provides experimental helper functions for working with fitted sdmTMB models, including model comparison, mesh-resolution sensitivity, retrospective analyses, and index plotting. -->
 
 The newer [tinyVAST](https://github.com/vast-lib/tinyVAST) R package can
 fit many of the models that VAST and sdmTMB can, with an interface
