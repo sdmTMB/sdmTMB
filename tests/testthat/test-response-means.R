@@ -62,3 +62,49 @@ test_that("gengamma() rejects parameters without a finite mean", {
     expect_true(is.finite(obj$fn(p)), label = backend)
   }
 })
+
+test_that("Response-scale draws use each draw's ordbeta cutpoints and NB dispersion", {
+  skip_on_cran()
+  set.seed(1)
+  d <- data.frame(y = c(0, 0.2, 0.5, 0.7, 1, 0.4, 0.6, 0.3))
+  fit_ob <- sdmTMB(y ~ 1, data = d, family = ordbeta(), spatial = "off")
+  d2 <- data.frame(y = c(1, 2, 4, 7, 3, 2, 5, 9))
+  fit_nb <- sdmTMB(y ~ 1, data = d2, family = truncated_nbinom2(),
+    spatial = "off")
+  # ordered beta: vary only the cutpoints
+  vals <- list(c(-3, log(2)), c(0, log(2)))
+  best <- fit_ob$tmb_obj$env$last.par.best
+  m <- vapply(vals, function(v) {
+    x <- best
+    x[names(x) == "psi"] <- v
+    x
+  }, numeric(length(best)))
+  p <- predict(fit_ob, newdata = d[1, , drop = FALSE], type = "response",
+    mcmc_samples = m)
+  eta <- fit_ob$parlist$b_j
+  expected <- vapply(vals, function(v) {
+    cp <- c(v[1], v[1] + exp(v[2]))
+    p0 <- plogis(cp[1] - eta)
+    p1 <- plogis(eta - cp[2])
+    p1 + (1 - p0 - p1) * plogis(eta)
+  }, numeric(1))
+  expect_equal(as.numeric(p[1, ]), expected)
+  expect_gt(abs(diff(expected)), 0.01)
+
+  # truncated NB2: vary only phi
+  best <- fit_nb$tmb_obj$env$last.par.best
+  lphi <- log(c(0.2, 20))
+  m <- vapply(lphi, function(v) {
+    x <- best
+    x[names(x) == "ln_phi"] <- v
+    x
+  }, numeric(length(best)))
+  p <- predict(fit_nb, newdata = d2[1, , drop = FALSE], type = "response",
+    mcmc_samples = m)
+  mu <- exp(fit_nb$parlist$b_j)
+  expected <- vapply(exp(lphi), function(phi) {
+    mu / (1 - dnbinom(0, size = phi, mu = mu))
+  }, numeric(1))
+  expect_equal(as.numeric(p[1, ]), expected)
+  expect_gt(abs(diff(expected)), 0.1)
+})

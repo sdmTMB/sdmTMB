@@ -346,3 +346,37 @@ test_that("Deviance includes weights, NB1 holds phi fixed, and signs are kept", 
       c(-sqrt(2), sqrt(-2 * log(1 - exp(-1)))), label = backend)
   }
 })
+
+test_that("compare_deviance() requires matching weights and censoring bounds", {
+  set.seed(1)
+  d <- data.frame(y = rpois(30, 3))
+  fit <- sdmTMB(y ~ 1, data = d, family = poisson(), spatial = "off")
+  fit_w <- sdmTMB(y ~ 1, data = d, family = poisson(), spatial = "off",
+    weights = rep(100, nrow(d)))
+  expect_error(compare_deviance(fit, fit_w), "same likelihood `weights`")
+  expect_error(compare_deviance(fit_w, fit), "same likelihood `weights`")
+})
+
+test_that("Non-integer censored_upper bounds are rounded down consistently", {
+  d <- data.frame(y = c(1, 3, 2, 4, 1))
+  upr <- c(2.5, 3, 2, 4, 1)
+  fit <- sdmTMB(y ~ 1, data = d, family = censored_poisson(), spatial = "off",
+    censored_upper = upr, do_fit = FALSE,
+    control = sdmTMBcontrol(backend = "tmb", multiphase = FALSE))
+  expect_equal(fit$tmb_data$upr, floor(upr))
+  p <- fit$tmb_params
+  p$b_j[] <- log(3)
+  obj <- make_sdmTMB_adfun(fit$tmb_data, p, fit$tmb_map, fit$tmb_random,
+    backend = "tmb")
+  f <- function(x) obj$fn(x)
+  gr <- obj$gr(obj$par)
+  fd <- numeric(length(obj$par))
+  for (i in seq_along(fd)) {
+    h <- 1e-6
+    up <- dn <- obj$par
+    up[i] <- up[i] + h
+    dn[i] <- dn[i] - h
+    fd[i] <- (f(up) - f(dn)) / (2 * h)
+  }
+  expect_equal(as.numeric(gr), fd, tolerance = 1e-5)
+})

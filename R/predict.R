@@ -754,7 +754,14 @@ predict_draw_reports <- function(object, obj, lp, req) {
     t_draws <- project_historical_draws(lp, sd_report, nsim,
       sample_fe = req$sample_fe, sample_historical_re = TRUE)
   }
-  apply(t_draws, 2L, obj$report)
+  out <- apply(t_draws, 2L, obj$report)
+  # Response-scale means also depend on `ln_phi` and `psi`, which vary by draw:
+  fixed <- obj$env$lfixed()
+  attr(out, "draw_pars") <- lapply(seq_len(ncol(t_draws)), function(i) {
+    pars <- obj$env$parList(t_draws[fixed, i])
+    pars[intersect(c("ln_phi", "psi"), names(pars))]
+  })
+  out
 }
 
 # Matrix of draws (rows x draws) of `sims_var` from the per-draw reports `r`.
@@ -762,8 +769,12 @@ predict_draws <- function(r, req, object, tmb_data, nd) {
   sims_var <- req$sims_var
   pred_row_family_id <- tmb_data$proj_family_id + 1L
   if (sims_var == "est") {
-    out <- lapply(r, predict_est, req = req, tmb_data = tmb_data,
-      scale = req$type, model = req$model)
+    draw_pars <- attr(r, "draw_pars")
+    out <- lapply(seq_along(r), function(i) {
+      req_i <- req
+      req_i[names(draw_pars[[i]])] <- draw_pars[[i]]
+      predict_est(r[[i]], req_i, tmb_data, scale = req$type, model = req$model)
+    })
     out <- do.call("cbind", out)
     rownames(out) <- nd[[object$time]] # for use in index calcs
     attr(out, "time") <- object$time

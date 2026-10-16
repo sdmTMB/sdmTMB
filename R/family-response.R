@@ -209,5 +209,7 @@
     ), .frequency = "regularly", .frequency_id = "sdmTMB_censored_upper_na")
     censored_upper[is.na(censored_upper)] <- Inf
   }
-  censored_upper
+  # Counts are integers, so bounds are rounded down; the likelihood sums the
+  # counts below the bound and the gradients assume an integer bound.
+  floor(censored_upper)
 }

@@ -207,6 +207,10 @@
 
 ## Bug fixes: statistical and likelihood
 
+* Fixed wrong gradients for `censored_poisson()` (and other censored count
+  families) when `censored_upper` had non-integer values. Bounds are now rounded
+  down, as documented, when the model is set up.
+
 * Simulating new correlated random intercepts and slopes, e.g., `(1 + x | g)`,
   with `simulate(re_form = ~0)` on the TMB backend no longer gives an error.
 
@@ -281,6 +285,16 @@
   field density and their own estimated range.
 
 ## Bug fixes: prediction, indices, and other
+
+* `simulate()` with `newdata` now uses the covariate-diffusion field built from
+  `newdata` (or `nonlocal_newdata`) rather than the fitted one.
+
+* Response-scale `predict()` draws (`nsim` or `mcmc_samples`) now use each
+  draw's ordered-beta cutpoints and truncated-NB dispersion instead of the
+  fitted estimates.
+
+* `compare_deviance()` now errors if the models use different likelihood
+  `weights` or `censored_upper` bounds.
 
 * `tidy(effects = "ran_vals")` for delta models with `time_varying`
   coefficients now labels each row with the correct `model` component. It was

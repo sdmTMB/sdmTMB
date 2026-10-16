@@ -731,6 +731,9 @@ move_proj_to_tmbdat <- function(x, object, newdata, called_by_simulate = FALSE, 
   x$Zt_list <- x$Zt_list_proj
   x$offset_i <- x$proj_offset_i
   x$obs_family_id <- x$proj_family_id
+  # simulation runs the fitting path, so it needs the projected covariate field
+  x$covariate_diffusion$covariate_vertex_time <-
+    x$covariate_diffusion$proj_covariate_vertex_time
   n_m <- length(x$X_ij) ## n linear predictor [m]odels
   x$y_i <- matrix(NA, ncol = n_m, nrow = nrow(x$proj_X_ij[[1]])) # fake
   x$weights_i <- rep(1, nrow(x$y_i)) # fake: FIXME: bring in?

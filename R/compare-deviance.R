@@ -108,6 +108,12 @@ compare_deviance <- function(object, reduced) {
     check.attributes = FALSE))) {
     cli_abort("`object` and `reduced` must be fit to the same response data.")
   }
+  if (!isTRUE(all.equal(object$tmb_data$weights_i, reduced$tmb_data$weights_i))) {
+    cli_abort("`object` and `reduced` must use the same likelihood `weights`.")
+  }
+  if (!isTRUE(all.equal(object$tmb_data$upr, reduced$tmb_data$upr))) {
+    cli_abort("`object` and `reduced` must use the same `censored_upper` bounds.")
+  }
   dev <- deviance(object) # checks the family has a deviance
 
   pars <- unique(unlist(.deviance_shape_pars[fam]))
