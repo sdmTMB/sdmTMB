@@ -210,6 +210,9 @@
     censored_upper[is.na(censored_upper)] <- Inf
   }
   # Counts are integers, so bounds are rounded down; the likelihood sums the
-  # counts below the bound and the gradients assume an integer bound.
+  # counts below the bound and the gradients assume an integer bound. Values
+  # within floating-point error of an integer are that integer.
+  whole <- is.finite(censored_upper) & .is_whole_number(censored_upper)
+  censored_upper[whole] <- round(censored_upper[whole])
   floor(censored_upper)
 }
