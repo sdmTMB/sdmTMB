@@ -2,13 +2,14 @@
 
 ## Breaking changes
 
-* Removed the previously deprecrated `delta_poisson_link_gamma()` and
+* Removed the previously deprecated `delta_poisson_link_gamma()` and
   `delta_poisson_link_lognormal()`. Use `delta_gamma(type = "poisson-link")` or
   `delta_lognormal(type = "poisson-link")`.
 
-* Removed the previously deprecrated `extract_mcmc()` and `add_barrier_mesh()` functions; use the
-  versions in sdmTMBextra. Also removed the previously deprecrated `previous_fit` argument of
-  `simulate_new()` (use `simulate.sdmTMB()`).
+* Removed the previously deprecated `extract_mcmc()` and `add_barrier_mesh()`
+  functions; use the versions in sdmTMBextra. Also removed the previously
+  deprecated `previous_fit` argument of `simulate_new()` (use
+  `simulate.sdmTMB()`).
 
 * `sdmTMB_cv()` now scores held-out data with a predictive density integrated
   over the approximate posterior of the random effects

@@ -1,4 +1,6 @@
-This version fixes a NOTE and WARNING on CRAN, adds functionality, and fixes minor bugs.
+This version fixes a NOTE on CRAN and a CRAN ERROR on 'donttest'
+given recent updates to the visreg package. This version also
+adds functionality and fixes bugs.
 
 ## R CMD check results
 
