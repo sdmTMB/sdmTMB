@@ -14,7 +14,6 @@
 sdmTMBpriors(
   matern_s = pc_matern(range_gt = NA, sigma_lt = NA),
   matern_st = pc_matern(range_gt = NA, sigma_lt = NA),
-  aniso = pc_anisotropy(ratio_lt = NA),
   phi = halfnormal(NA, NA),
   ar1_rho = normal(NA, NA),
   tweedie_p = normal(NA, NA),
@@ -26,7 +25,8 @@ sdmTMBpriors(
   threshold_logistic_s95 = normal(NA, NA),
   threshold_logistic_smax = normal(NA, NA),
   custom = NULL,
-  custom_log_jacobian = NULL
+  custom_log_jacobian = NULL,
+  aniso = pc_anisotropy(ratio_lt = NA)
 )
 
 normal(location = 0, scale = 1)
@@ -51,10 +51,6 @@ spatial random field Matérn parameters.}
 Note that you will likely want to set \code{share_range = FALSE} if you choose
 to set both a spatial and spatiotemporal Matérn PC prior since they both
 include a prior on the spatial range parameter.}
-
-\item{aniso}{A PC prior (\code{pc_anisotropy()}) on the geometric anisotropy of
-the random fields. Requires \code{anisotropy = TRUE} in \code{\link[=sdmTMB]{sdmTMB()}} and the RTMB
-backend (the default).}
 
 \item{phi}{A \code{halfnormal()} prior for the dispersion parameter in the
 observation distribution.}
@@ -93,6 +89,10 @@ density contributions (RTMB backend only; see \strong{Custom priors} below).}
 \item{custom_log_jacobian}{Optional function of \verb{(par, theta)} returning the
 log absolute Jacobian for \code{custom}. Only used if \code{bayesian = TRUE}. Requires
 \code{custom}.}
+
+\item{aniso}{A PC prior (\code{pc_anisotropy()}) on the geometric anisotropy of
+the random fields. Requires \code{anisotropy = TRUE} in \code{\link[=sdmTMB]{sdmTMB()}} and the RTMB
+backend (the default).}
 
 \item{location}{Location parameter(s). Typically the mean.}
 

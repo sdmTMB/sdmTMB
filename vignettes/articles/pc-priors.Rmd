@@ -1,0 +1,153 @@
+---
+title: "PC priors on Matérn fields"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{PC priors on Matérn fields}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+**If the code in this vignette has not been evaluated, a rendered version is available on the [documentation site](https://sdmTMB.github.io/sdmTMB/index.html) under 'Articles'.**
+
+```{r setup, include = FALSE, cache=FALSE}
+EVAL <- identical(Sys.getenv("NOT_CRAN"), "true")
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 6,
+  fig.asp = 0.618,
+  eval = EVAL,
+  purl = EVAL
+)
+```
+
+```{r packages, message=FALSE, warning=FALSE}
+library(sdmTMB)
+```
+
+Penalized complexity (PC) priors (Simpson et al. 2017) shrink a model component towards a simpler base model, with a user-chosen rate of shrinkage.
+For a Matérn random field (Fuglstad et al. 2019), the PC prior shrinks towards a base model.
+For the range this is a field with an infinite range; for the marginal standard deviation it is a field with no variance.
+The joint prior on the range and standard deviation is implemented in `pc_matern()`.
+You set each prior with an intuitive statement about the parameter: `pc_matern(range_gt, sigma_lt)` says the range is probably *greater than* `range_gt` and the marginal standard deviation is probably *less than* `sigma_lt`.
+With the default `range_prob = 0.05` and `sigma_prob = 0.05`, each statement holds with 95% prior probability.
+
+This article shows PC priors on an isotropic model and on an anisotropic model, where `pc_anisotropy()` (Llamazares-Elias et al. 2024) also shrinks the field towards isotropy.
+The anisotropic prior requires the RTMB backend (the default).
+
+## Data and mesh
+
+We use the Pacific cod trawl survey data included with the package.
+
+```{r data}
+mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 6)
+```
+
+The mesh is reasonably fine relative to the estimated range (about 20 km).
+This matters for anisotropy: when the triangles are coarse relative to the range, a fitted model can show strong anisotropy that is an artifact of the mesh.
+Check that the estimated anisotropy is stable as the mesh is refined.
+
+## Isotropic model with a PC prior
+
+Coordinates (`X` and `Y`) are in UTM kilometres, so the range is in kilometres.
+Here we say the range is probably greater than 10 km and the marginal standard deviation of the field is probably less than 5.
+We can see the prior with `plot_pc_matern()`.
+
+```{r plot-pc}
+plot_pc_matern(range_gt = 10, sigma_lt = 5)
+```
+
+Then fit the model with and without the prior.
+
+```{r fit-iso, message=FALSE, warning=FALSE}
+fit_iso0 <- sdmTMB(
+  density ~ 1,
+  data = pcod,
+  mesh = mesh,
+  family = tweedie(),
+  spatial = "on"
+)
+
+fit_iso <- update(
+  fit_iso0,
+  priors = sdmTMBpriors(
+    matern_s = pc_matern(range_gt = 10, sigma_lt = 5)
+  )
+)
+```
+
+```{r tidy-iso}
+tidy(fit_iso0, "ran_pars")
+tidy(fit_iso, "ran_pars")
+```
+
+The prior is weakly informative: it pulls the range and standard deviation away from implausibly small ranges and large variances, but the data still dominate when they are informative.
+The same `matern_st = pc_matern(...)` argument sets a prior on the spatiotemporal field.
+
+## Anisotropic model with PC priors
+
+With `anisotropy = TRUE`, the range can differ by direction.
+`pc_anisotropy(ratio_lt)` is a joint prior on the range and the anisotropy that shrinks towards isotropy.
+Here we say the ratio of the major to minor axis ranges is probably less than 3.
+The range part of the prior still comes from `pc_matern()`, so we supply both.
+With anisotropy, `range_gt` refers to the geometric mean of the ranges along the major and minor axes, $\sqrt{\textrm{range}_\textrm{min} \times \textrm{range}_\textrm{max}}$, which is the range $\sqrt{8} / \kappa$ an isotropic field with the same $\kappa$ would have.
+The prior on the range depends on the anisotropy: it pushes the range away from small values more strongly when the field is more elongated.
+The 5% probability that the geometric mean range is less than 10 km is an average over the prior on the anisotropy ratio; it is higher for nearly isotropic fields (about 9% here) and lower for strongly anisotropic ones (about 1% at a ratio of 3).
+The minor-axis range can therefore be below `range_gt`, so choose `range_gt` with the geometric mean in mind rather than the shortest range.
+
+```{r fit-aniso, message=FALSE, warning=FALSE}
+fit_aniso0 <- update(fit_iso0, anisotropy = TRUE)
+
+fit_aniso <- update(
+  fit_iso0,
+  anisotropy = TRUE,
+  priors = sdmTMBpriors(
+    matern_s = pc_matern(range_gt = 10, sigma_lt = 5),
+    aniso = pc_anisotropy(ratio_lt = 3)
+  )
+)
+```
+
+```{r tidy-aniso}
+tidy(fit_aniso0, "ran_pars", conf.int = TRUE)
+tidy(fit_aniso, "ran_pars", conf.int = TRUE)
+```
+
+The estimated anisotropy can be plotted with `plot_anisotropy()`.
+The ellipses show the range in each direction.
+
+```{r plot-aniso}
+plot_anisotropy(fit_aniso0)
+plot_anisotropy(fit_aniso)
+```
+
+Here the data support modest anisotropy, and the prior shrinks it somewhat towards isotropy.
+When the data say little about the anisotropy, the unpenalized fit can produce extreme, elongated ellipses, and the prior pulls these towards a circle.
+The intervals on `range_min` and `range_max` are unreliable when the ratio is close to 1 (see `?tidy.sdmTMB`).
+
+## Comparing the fits
+
+With anisotropy, the tidy output reports `range_min` and `range_max`: the ranges along the minor and major axes.
+Their ratio is the quantity constrained by `pc_anisotropy()`, and their geometric mean is the range that `pc_matern()` refers to.
+
+```{r compare}
+get_ranges <- function(fit) {
+  x <- tidy(fit, "ran_pars")
+  x <- x[x$term %in% c("range_min", "range_max"), ]
+  setNames(x$estimate, x$term)
+}
+r0 <- get_ranges(fit_aniso0)
+r1 <- get_ranges(fit_aniso)
+round(c(without_prior = unname(r0[2] / r0[1]), with_prior = unname(r1[2] / r1[1])), 2)
+```
+
+Log likelihoods and AIC from fits with priors include the penalty and are not comparable with unpenalized fits.
+
+## References
+
+Fuglstad, G.-A., Simpson, D., Lindgren, F., and Rue, H. 2019. Constructing priors that penalize the complexity of Gaussian random fields. Journal of the American Statistical Association 114(525): 445--452. <https://doi.org/10.1080/01621459.2017.1415907>
+
+Llamazares-Elias, L., Latz, J., and Lindgren, F. 2024. A parameterization of anisotropic Gaussian fields with penalized complexity priors. arXiv:2409.02331. <https://arxiv.org/abs/2409.02331>
+
+Simpson, D., Rue, H., Riebler, A., Martins, T.G., and Sørbye, S.H. 2017. Penalising model component complexity: a principled, practical approach to constructing priors. Statistical Science 32(1): 1--28. <https://doi.org/10.1214/16-STS576>

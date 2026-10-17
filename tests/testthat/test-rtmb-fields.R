@@ -306,8 +306,12 @@ test_that("RTMB anisotropic and areal fits match TMB", {
     rt <- fits[[name]]("rtmb")
     expect_equal(rt$model$par, cpp$model$par, tolerance = 1e-5, info = name)
     expect_sdreport_matches(rt, cpp, tolerance = 1e-4, info = name)
-    expect_equal(tidy(rt, "ran_pars"), tidy(cpp, "ran_pars"),
-      tolerance = 1e-4, info = name)
+    # Only RTMB has standard errors for the anisotropic axis ranges.
+    tidy_rt <- tidy(rt, "ran_pars")
+    tidy_cpp <- tidy(cpp, "ran_pars")
+    axis <- tidy_rt$term %in% c("range_min", "range_max")
+    tidy_rt[axis, c("std.error", "conf.low", "conf.high")] <- NA_real_
+    expect_equal(tidy_rt, tidy_cpp, tolerance = 1e-4, info = name)
     expect_equal(predict(rt)$est, predict(cpp)$est, tolerance = 1e-5,
       info = name)
     # Unconditional draws resample the fields from their precision.

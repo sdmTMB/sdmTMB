@@ -7,6 +7,17 @@
   priors no longer disable `anisotropy = TRUE` when it is supplied. RTMB
   backend only.
 
+* Fix the anisotropic ranges reported by `print()`, `tidy()` (`range_min`,
+  `range_max`), and `plot_anisotropy()`, and the arrows in
+  `plot_anisotropy2()`. These scaled the range by the eigenvalues of `H`
+  rather than their square roots, so the reported major to minor axis ratio
+  was the square of the true ratio. Fitted models are unchanged.
+
+* `tidy(effects = "ran_pars")` now reports standard errors and confidence
+  intervals for the anisotropic `range_min` and `range_max` with the RTMB
+  backend, by the delta method on the log scale. They are unreliable when the
+  anisotropy is weakly identified and `NA` at exact isotropy.
+
 # sdmTMB 1.2.0
 
 ## Breaking changes

@@ -236,8 +236,8 @@ plot.sdmTMBmesh <- function(x, ...) {
 }
 
 # from TMB examples repository:
-make_anisotropy_spde <- function(spde, anistropy = TRUE) {
-  if (anistropy) {
+make_anisotropy_spde <- function(spde, anisotropy = TRUE) {
+  if (anisotropy) {
     inla_mesh <- spde$mesh
     Dset <- 1:2
     inla_mesh <- spde$mesh

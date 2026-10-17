@@ -22,11 +22,11 @@ rtmb_prior_inputs <- function(data) {
 }
 
 # PC prior for a Matern field; `prior` is `pc_matern()`'s
-# c(range_gt, sigma_lt, range_prob, sigma_prob).
-# `lambda_range` replaces the range rate under the anisotropy prior.
+# c(range_gt, sigma_lt, range_prob, sigma_prob). `lambda_range` replaces the
+# isotropic range rate under the anisotropy prior.
 rtmb_pc_matern <- function(log_tau, log_kappa, prior, share_range = FALSE,
-                           stan = FALSE,
-                           lambda_range = -log(prior[[3L]]) * prior[[1L]]) {
+                           stan = FALSE, lambda_range = NULL) {
+  if (is.null(lambda_range)) lambda_range <- -log(prior[[3L]]) * prior[[1L]]
   lambda_sigma <- -log(prior[[4L]]) / prior[[2L]]
   range <- sqrt(8) / exp(log_kappa)
   sigma <- exp(-log_tau - log_kappa) / sqrt(4 * pi)
@@ -60,10 +60,10 @@ rtmb_prior_nll <- function(par, theta, prepared) {
   for (m in seq_len(prepared$n_m)) {
     # Under the anisotropy prior, the range rate scales with f(|v|)
     if (!is.null(aniso)) {
-      cosh_v <- rtmb_aniso_cosh(par$ln_H_input[, m])
-      f_v <- pc_aniso_f(cosh_v)
+      sinh2_v <- rtmb_aniso_sinh2(par$ln_H_input[, m])
+      f_v <- pc_aniso_f(sinh2_v)
       if (m %in% aniso$components) {
-        nll <- nll - rtmb_pc_aniso(cosh_v, aniso$lambda_v)
+        nll <- nll - rtmb_pc_aniso(sinh2_v, aniso$lambda_v)
       }
     }
     if (!is.null(prior$b)) {
@@ -74,14 +74,12 @@ rtmb_prior_nll <- function(par, theta, prepared) {
     if (!is.null(prior$matern_s)) {
       nll <- nll - rtmb_pc_matern(par$ln_tau_O[[m]], par$ln_kappa[1L, m],
         prior$matern_s, stan = stan,
-        lambda_range = if (is.null(aniso)) -log(prior$matern_s[[3L]]) *
-          prior$matern_s[[1L]] else aniso$range_s * f_v)
+        lambda_range = if (!is.null(aniso)) aniso$range_s * f_v)
     }
     if (!is.null(prior$matern_st)) {
       nll <- nll - rtmb_pc_matern(par$ln_tau_E[[m]], par$ln_kappa[2L, m],
         prior$matern_st, stan = stan,
-        lambda_range = if (is.null(aniso)) -log(prior$matern_st[[3L]]) *
-          prior$matern_st[[1L]] else aniso$range_st * f_v,
+        lambda_range = if (!is.null(aniso)) aniso$range_st * f_v,
         # the range is shared and the spatial prior already includes it
         share_range = prepared$share_range[[m]] && !is.null(prior$matern_s))
     }
@@ -150,50 +148,54 @@ aniso_prior_spec <- function(prior, backend, anisotropy, map, n_m) {
 # the rates of the conditional priors on the ranges given the anisotropy.
 rtmb_aniso_prior_inputs <- function(spec, priors) {
   if (is.null(spec)) return(NULL)
-  f0 <- pc_aniso_f(1)
+  f0 <- pc_aniso_f(0)
   lambda_v <- -log(spec$ratio_prob) /
-    (pc_aniso_f((spec$ratio_lt + 1 / spec$ratio_lt) / 2) - f0)
+    pc_aniso_df(sinh(log(spec$ratio_lt))^2)
+  # The marginal P(range < range_gt) is exp(-q * f0) / (1 + q / lambda_v)
+  # with q = range_s / range_gt. Solve for q as a fraction of its upper
+  # bound, the isotropic rate, with a relative tolerance.
   range_rate <- function(p) {
     if (is.null(p)) return(NULL)
-    y <- lambda_v * f0
-    w <- lambert_w0_log(y + log(y) - log(p[[3L]]))
-    p[[1L]] * (w / f0 - lambda_v)
+    upper <- -log(p[[3L]]) / f0
+    root <- stats::uniroot(function(t) {
+      f0 * upper * t + log1p(upper * t / lambda_v) + log(p[[3L]])
+    }, c(0, 1), tol = .Machine$double.eps^2)$root
+    p[[1L]] * upper * root
   }
-  c(spec, list(lambda_v = lambda_v,
+  out <- list(lambda_v = lambda_v,
     range_s = range_rate(priors$matern_s),
-    range_st = range_rate(priors$matern_st)))
-}
-
-# Principal branch of the Lambert W function of exp(log_z), by Newton's
-# method on log(W), which is convex in log(W) and safe for large z.
-lambert_w0_log <- function(log_z) {
-  u <- if (log_z > 1) log(log_z) else 0
-  for (i in seq_len(100L)) {
-    step <- (u + exp(u) - log_z) / (1 + exp(u))
-    u <- u - step
-    if (abs(step) < 1e-12) break
+    range_st = range_rate(priors$matern_st))
+  rates <- unlist(out)
+  if (!all(is.finite(rates) & rates > 0)) {
+    cli_abort("`pc_anisotropy()` and `pc_matern()` give a non-finite or zero prior rate; check `ratio_lt` and `range_gt`.")
   }
-  exp(u)
+  c(spec, out)
 }
 
-# cosh(|v|) for `H = MakeH(x)`, which is tr(H) / 2 since det(H) = 1 and the
-# eigenvalues of H are exp(+/- |v|).
-rtmb_aniso_cosh <- function(x) {
-  (exp(x[[1L]]) + (1 + x[[2L]]^2) * exp(-x[[1L]])) / 2
+# sinh(|v|)^2 for `H = MakeH(x)`, from cosh(|v|) - 1 without cancellation,
+# so tight priors evaluate accurately near isotropy, where the value and its
+# gradient are zero.
+rtmb_aniso_sinh2 <- function(x) {
+  cosh_m1 <- rtmb_aniso_cosh_m1(x)
+  cosh_m1 * (cosh_m1 + 2)
 }
 
 # The distance function f(|v|) = sqrt(pi / 3 * (3 * cosh(2|v|) + 1)) in
-# terms of cosh(|v|).
-pc_aniso_f <- function(cosh_v) sqrt(pi * (6 * cosh_v^2 - 2) / 3)
+# terms of sinh2 = sinh(|v|)^2, and f(|v|) - f(0) without cancellation.
+pc_aniso_f <- function(sinh2) sqrt(4 * pi / 3 + 2 * pi * sinh2)
+pc_aniso_df <- function(sinh2) {
+  2 * pi * sinh2 / (pc_aniso_f(sinh2) + pc_aniso_f(0))
+}
 
 # Log PC prior density of the anisotropy as a density of `ln_H_input`: the
 # density of `v`, lambda_v * f'(|v|) / (2 * pi * |v|) *
 # exp(-lambda_v * (f(|v|) - f(0))), times the Jacobian |v| / sinh(|v|) from
-# `ln_H_input` to `v`. It is smooth at isotropy and has its mode there.
-rtmb_pc_aniso <- function(cosh_v, lambda_v) {
-  log(lambda_v) + 0.5 * log(4 * pi) + log(cosh_v) -
-    0.5 * log(2 * cosh_v^2 - 2 / 3) - log(2 * pi) -
-    lambda_v * (pc_aniso_f(cosh_v) - pc_aniso_f(1))
+# `ln_H_input` to `v`, which simplifies to lambda_v * cosh(|v|) / f(|v|) *
+# exp(-lambda_v * (f(|v|) - f(0))). It is smooth at isotropy and has its
+# mode there.
+rtmb_pc_aniso <- function(sinh2, lambda_v) {
+  log(lambda_v) + 0.5 * log1p(sinh2) - log(pc_aniso_f(sinh2)) -
+    lambda_v * pc_aniso_df(sinh2)
 }
 
 # Custom priors ------------------------------------------------------------

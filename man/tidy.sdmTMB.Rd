@@ -69,6 +69,15 @@ These are on the link scale. Their standard deviation (\code{sigma_V}) and, for
 \code{time_varying_type = "ar1"}, correlation (\code{rho_time}) are returned with
 \code{effects = "ran_pars"}.
 
+With \code{anisotropy = TRUE}, \code{effects = "ran_pars"} reports \code{range_min} and
+\code{range_max}, the ranges along the minor and major axes, in place of \code{range}.
+Their geometric mean is \code{range}. With the RTMB backend, their standard
+errors are from the delta method and their confidence intervals are Wald
+intervals on the log scale. These intervals are unreliable when the
+anisotropy is weakly identified, such as when \code{range_max / range_min} is
+close to 1, because the axis ranges have no derivative at isotropy. They are
+\code{NA} at exact isotropy and with the TMB backend.
+
 Standard errors for spatial variance terms fit in log space (e.g., variance
 terms, range, or parameters associated with the observation error) are
 omitted to avoid confusion. Confidence intervals are still available.

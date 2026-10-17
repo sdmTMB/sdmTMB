@@ -165,7 +165,6 @@
 sdmTMBpriors <- function(
   matern_s = pc_matern(range_gt = NA, sigma_lt = NA),
   matern_st = pc_matern(range_gt = NA, sigma_lt = NA),
-  aniso = pc_anisotropy(ratio_lt = NA),
   phi = halfnormal(NA, NA),
   ar1_rho = normal(NA, NA),
   tweedie_p = normal(NA, NA),
@@ -177,7 +176,8 @@ sdmTMBpriors <- function(
   threshold_logistic_s95 = normal(NA, NA),
   threshold_logistic_smax = normal(NA, NA),
   custom = NULL,
-  custom_log_jacobian = NULL
+  custom_log_jacobian = NULL,
+  aniso = pc_anisotropy(ratio_lt = NA)
 ) {
   assert_that(attr(matern_s, "dist") == "pc_matern")
   assert_that(attr(matern_st, "dist") == "pc_matern")
@@ -203,7 +203,6 @@ sdmTMBpriors <- function(
   list(
     matern_s = matern_s,
     matern_st = matern_st,
-    aniso = aniso,
     phi = phi,
     ar1_rho = ar1_rho,
     tweedie_p = tweedie_p,
@@ -215,7 +214,8 @@ sdmTMBpriors <- function(
     threshold_logistic_s95 = threshold_logistic_s95,
     threshold_logistic_smax = threshold_logistic_smax,
     custom = custom,
-    custom_log_jacobian = custom_log_jacobian
+    custom_log_jacobian = custom_log_jacobian,
+    aniso = aniso
   )
 }
 
@@ -387,8 +387,8 @@ pc_matern <- function(range_gt, sigma_lt, range_prob = 0.05, sigma_prob = 0.05) 
 #' )
 #' }
 pc_anisotropy <- function(ratio_lt, ratio_prob = 0.05) {
-  assert_that(ratio_prob > 0 && ratio_prob < 1)
-  if (!is.na(ratio_lt)) assert_that(ratio_lt > 1)
+  assert_that(is.finite(ratio_prob), ratio_prob > 0 && ratio_prob < 1)
+  if (!is.na(ratio_lt)) assert_that(is.finite(ratio_lt), ratio_lt > 1)
   x <- c(ratio_lt, ratio_prob)
   `attr<-`(x, "dist", "pc_anisotropy")
 }

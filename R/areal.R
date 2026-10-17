@@ -382,12 +382,12 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
 
   barrier <- "spde_barrier" %in% names(spde)
   if (barrier && anisotropy) {
-    cli::cli_warn("Using a barrier mesh; therefore, anistropy will be disabled.")
+    cli::cli_warn("Using a barrier mesh; therefore, anisotropy will be disabled.")
     anisotropy <- FALSE
   }
   if (any(c(!is.na(priors$matern_s[1:2]), !is.na(priors$matern_st[1:2]))) &&
     anisotropy && (is.null(priors$aniso) || is.na(priors$aniso[[1]]))) {
-    cli::cli_warn("Using PC Matern priors without `pc_anisotropy()`; therefore, anistropy will be disabled.")
+    cli::cli_warn("Using PC Matern priors without `pc_anisotropy()`; therefore, anisotropy will be disabled.")
     anisotropy <- FALSE
   }
   if (!"A_st" %in% names(spde)) {

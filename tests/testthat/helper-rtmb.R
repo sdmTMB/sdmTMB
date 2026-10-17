@@ -24,13 +24,21 @@ sdreport_by_name <- function(sd, columns = "Estimate") {
     function(column) split(unname(sd[, column]), rownames(sd)))
 }
 
+# Drop the ADREPORTs only the RTMB backend has (the log ranges along the
+# anisotropic axes) from an `sdreport()` summary.
+rtmb_only_reports <- c("log_range_min", "log_range_max")
+drop_rtmb_only_reports <- function(sd) {
+  sd[!rownames(sd) %in% rtmb_only_reports, , drop = FALSE]
+}
+
 # Compare the `sdreport()` estimates and standard errors of two fits.
 expect_sdreport_matches <- function(actual, expected, tolerance = 1e-5,
                                     info = NULL) {
   columns <- c("Estimate", "Std. Error")
   for (type in c("fixed", "report")) {
     expect_equal(
-      sdreport_by_name(summary(actual$sd_report, type), columns),
+      sdreport_by_name(drop_rtmb_only_reports(
+        summary(actual$sd_report, type)), columns),
       sdreport_by_name(summary(expected$sd_report, type), columns),
       tolerance = tolerance, info = paste(info, type))
   }
@@ -73,7 +81,8 @@ expect_rtmb_matches_tmb <- function(data, parameters, map, random,
   }
   if (sdreport) {
     sd_cpp <- suppressWarnings(summary(sdreport_sdmTMB(cpp), "report"))
-    sd_rt <- suppressWarnings(summary(sdreport_sdmTMB(rt), "report"))
+    sd_rt <- drop_rtmb_only_reports(
+      suppressWarnings(summary(sdreport_sdmTMB(rt), "report")))
     expect_equal(sdreport_by_name(sd_rt), sdreport_by_name(sd_cpp),
       tolerance = 1e-6, info = info)
   }
