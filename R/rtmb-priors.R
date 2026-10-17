@@ -4,7 +4,7 @@
 rtmb_prior_inputs <- function(data) {
   template <- sdmTMBpriors()
   template$b <- template$sigma_V <- NULL
-  template$custom <- template$custom_log_jacobian <- NULL
+  template$custom <- template$custom_log_jacobian <- template$aniso <- NULL
   sizes <- lengths(template)
   stopifnot(sum(sizes) == length(data$priors))
   values <- split(data$priors,
@@ -17,14 +17,16 @@ rtmb_prior_inputs <- function(data) {
   priors$sigma_V <- data$priors_sigma_V
   priors$stan <- data$stan_flag == 1L
   priors$custom <- data$priors_custom
+  priors$aniso <- rtmb_aniso_prior_inputs(data$priors_aniso, priors)
   priors
 }
 
 # PC prior for a Matern field; `prior` is `pc_matern()`'s
 # c(range_gt, sigma_lt, range_prob, sigma_prob).
+# `lambda_range` replaces the range rate under the anisotropy prior.
 rtmb_pc_matern <- function(log_tau, log_kappa, prior, share_range = FALSE,
-                           stan = FALSE) {
-  lambda_range <- -log(prior[[3L]]) * prior[[1L]]
+                           stan = FALSE,
+                           lambda_range = -log(prior[[3L]]) * prior[[1L]]) {
   lambda_sigma <- -log(prior[[4L]]) / prior[[2L]]
   range <- sqrt(8) / exp(log_kappa)
   sigma <- exp(-log_tau - log_kappa) / sqrt(4 * pi)
@@ -54,7 +56,16 @@ rtmb_prior_nll <- function(par, theta, prepared) {
   }
   threshold <- theta$threshold
   nll <- 0
+  aniso <- prior$aniso
   for (m in seq_len(prepared$n_m)) {
+    # Under the anisotropy prior, the range rate scales with f(|v|)
+    if (!is.null(aniso)) {
+      cosh_v <- rtmb_aniso_cosh(par$ln_H_input[, m])
+      f_v <- pc_aniso_f(cosh_v)
+      if (m %in% aniso$components) {
+        nll <- nll - rtmb_pc_aniso(cosh_v, aniso$lambda_v)
+      }
+    }
     if (!is.null(prior$b)) {
       b <- if (m == 1L) par$b_j else par$b_j2
       nll <- nll - sum(RTMB::dmvnorm(b[prior$b$index] - prior$b$mean,
@@ -62,11 +73,15 @@ rtmb_prior_nll <- function(par, theta, prepared) {
     }
     if (!is.null(prior$matern_s)) {
       nll <- nll - rtmb_pc_matern(par$ln_tau_O[[m]], par$ln_kappa[1L, m],
-        prior$matern_s, stan = stan)
+        prior$matern_s, stan = stan,
+        lambda_range = if (is.null(aniso)) -log(prior$matern_s[[3L]]) *
+          prior$matern_s[[1L]] else aniso$range_s * f_v)
     }
     if (!is.null(prior$matern_st)) {
       nll <- nll - rtmb_pc_matern(par$ln_tau_E[[m]], par$ln_kappa[2L, m],
         prior$matern_st, stan = stan,
+        lambda_range = if (is.null(aniso)) -log(prior$matern_st[[3L]]) *
+          prior$matern_st[[1L]] else aniso$range_st * f_v,
         # the range is shared and the spatial prior already includes it
         share_range = prepared$share_range[[m]] && !is.null(prior$matern_s))
     }
@@ -104,6 +119,81 @@ rtmb_prior_nll <- function(par, theta, prepared) {
   nll <- nll + normal(theta$phi, prior$phi)
   if (stan && !is.null(prior$phi)) nll <- nll - sum(par$ln_phi)
   nll
+}
+
+# Anisotropy PC prior ------------------------------------------------------
+
+# Check the `pc_anisotropy()` prior and record which components' `H` it
+# applies to: each distinct estimated column of `ln_H_input`, so a shared `H`
+# is counted once. NULL without the prior.
+aniso_prior_spec <- function(prior, backend, anisotropy, map, n_m) {
+  if (is.null(prior) || is.na(prior[[1L]])) return(NULL)
+  if (backend != "rtmb") {
+    cli_abort("`pc_anisotropy()` needs `sdmTMBcontrol(backend = \"rtmb\")`.")
+  }
+  if (!isTRUE(anisotropy == 1L)) {
+    cli_abort("`pc_anisotropy()` needs `anisotropy = TRUE` and a mesh without barriers.")
+  }
+  components <- seq_len(n_m)
+  if (!is.null(map)) {
+    cols <- t(matrix(as.integer(map), nrow = 2L))
+    components <- which(!duplicated(cols) & rowSums(!is.na(cols)) > 0L)
+  }
+  list(ratio_lt = prior[[1L]], ratio_prob = prior[[2L]],
+    components = components)
+}
+
+# Rates for the anisotropy prior from `aniso_prior_spec()` and the
+# `pc_matern()` priors, following Theorem 5 of Llamazares-Elias et al. (2024):
+# P(major / minor range ratio > ratio_lt) = ratio_prob and, marginally,
+# P(range < range_gt) = range_prob. `range_s` and `range_st` times f(|v|) are
+# the rates of the conditional priors on the ranges given the anisotropy.
+rtmb_aniso_prior_inputs <- function(spec, priors) {
+  if (is.null(spec)) return(NULL)
+  f0 <- pc_aniso_f(1)
+  lambda_v <- -log(spec$ratio_prob) /
+    (pc_aniso_f((spec$ratio_lt + 1 / spec$ratio_lt) / 2) - f0)
+  range_rate <- function(p) {
+    if (is.null(p)) return(NULL)
+    y <- lambda_v * f0
+    w <- lambert_w0_log(y + log(y) - log(p[[3L]]))
+    p[[1L]] * (w / f0 - lambda_v)
+  }
+  c(spec, list(lambda_v = lambda_v,
+    range_s = range_rate(priors$matern_s),
+    range_st = range_rate(priors$matern_st)))
+}
+
+# Principal branch of the Lambert W function of exp(log_z), by Newton's
+# method on log(W), which is convex in log(W) and safe for large z.
+lambert_w0_log <- function(log_z) {
+  u <- if (log_z > 1) log(log_z) else 0
+  for (i in seq_len(100L)) {
+    step <- (u + exp(u) - log_z) / (1 + exp(u))
+    u <- u - step
+    if (abs(step) < 1e-12) break
+  }
+  exp(u)
+}
+
+# cosh(|v|) for `H = MakeH(x)`, which is tr(H) / 2 since det(H) = 1 and the
+# eigenvalues of H are exp(+/- |v|).
+rtmb_aniso_cosh <- function(x) {
+  (exp(x[[1L]]) + (1 + x[[2L]]^2) * exp(-x[[1L]])) / 2
+}
+
+# The distance function f(|v|) = sqrt(pi / 3 * (3 * cosh(2|v|) + 1)) in
+# terms of cosh(|v|).
+pc_aniso_f <- function(cosh_v) sqrt(pi * (6 * cosh_v^2 - 2) / 3)
+
+# Log PC prior density of the anisotropy as a density of `ln_H_input`: the
+# density of `v`, lambda_v * f'(|v|) / (2 * pi * |v|) *
+# exp(-lambda_v * (f(|v|) - f(0))), times the Jacobian |v| / sinh(|v|) from
+# `ln_H_input` to `v`. It is smooth at isotropy and has its mode there.
+rtmb_pc_aniso <- function(cosh_v, lambda_v) {
+  log(lambda_v) + 0.5 * log(4 * pi) + log(cosh_v) -
+    0.5 * log(2 * cosh_v^2 - 2 / 3) - log(2 * pi) -
+    lambda_v * (pc_aniso_f(cosh_v) - pc_aniso_f(1))
 }
 
 # Custom priors ------------------------------------------------------------

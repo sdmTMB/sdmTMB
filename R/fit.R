@@ -1291,6 +1291,7 @@ sdmTMB <- function(
   .priors$b <- NULL # removes this in the list, so not passed in as data
   .priors$sigma_V <- NULL # removes this in the list, so not passed in as data
   .priors$custom <- .priors$custom_log_jacobian <- NULL # passed separately
+  .priors$aniso <- NULL # RTMB only; passed separately
   if (nrow(priors_b) == 1L && ncol(X_ij[[1]]) > 1L) { # TODO change hard coded index on X_ij
     if (!is.na(priors_b[[1]])) {
       message("Expanding `b` priors to match model matrix.")
@@ -1791,6 +1792,8 @@ sdmTMB <- function(
     #     paste(round(tmb_params[[names(map)[i]]], 3), collapse = ", "))))
   }
   tmb_map <- c(map, tmb_map) # add user-supplied mapping
+  tmb_data$priors_aniso <- aniso_prior_spec(priors$aniso, backend,
+    domain$anisotropy, tmb_map$ln_H_input, n_m)
 
   if (isTRUE(control$profile)) {
     prof <- c("b_j")

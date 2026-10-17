@@ -1,5 +1,12 @@
 # sdmTMB (development version)
 
+* Add `pc_anisotropy()`, a PC prior on anisotropic Matérn fields
+  (Llamazares-Elias et al. 2024, arXiv:2409.02331), passed through
+  `sdmTMBpriors(aniso = ...)`. It shrinks the fields towards isotropy and
+  calibrates any `pc_matern()` range prior on the marginal range. PC Matérn
+  priors no longer disable `anisotropy = TRUE` when it is supplied. RTMB
+  backend only.
+
 # sdmTMB 1.2.0
 
 ## Breaking changes

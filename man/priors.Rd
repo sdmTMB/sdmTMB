@@ -8,11 +8,13 @@
 \alias{lognormal_prior}
 \alias{mvnormal}
 \alias{pc_matern}
+\alias{pc_anisotropy}
 \title{Prior distributions}
 \usage{
 sdmTMBpriors(
   matern_s = pc_matern(range_gt = NA, sigma_lt = NA),
   matern_st = pc_matern(range_gt = NA, sigma_lt = NA),
+  aniso = pc_anisotropy(ratio_lt = NA),
   phi = halfnormal(NA, NA),
   ar1_rho = normal(NA, NA),
   tweedie_p = normal(NA, NA),
@@ -38,6 +40,8 @@ lognormal_prior(meanlog, sdlog)
 mvnormal(location = 0, scale = diag(length(location)))
 
 pc_matern(range_gt, sigma_lt, range_prob = 0.05, sigma_prob = 0.05)
+
+pc_anisotropy(ratio_lt, ratio_prob = 0.05)
 }
 \arguments{
 \item{matern_s}{A PC (Penalized Complexity) prior (\code{pc_matern()}) on the
@@ -47,6 +51,10 @@ spatial random field Matérn parameters.}
 Note that you will likely want to set \code{share_range = FALSE} if you choose
 to set both a spatial and spatiotemporal Matérn PC prior since they both
 include a prior on the spatial range parameter.}
+
+\item{aniso}{A PC prior (\code{pc_anisotropy()}) on the geometric anisotropy of
+the random fields. Requires \code{anisotropy = TRUE} in \code{\link[=sdmTMB]{sdmTMB()}} and the RTMB
+backend (the default).}
 
 \item{phi}{A \code{halfnormal()} prior for the dispersion parameter in the
 observation distribution.}
@@ -107,6 +115,12 @@ with \code{1 - sigma_prob} probability.}
 \item{range_prob}{Probability. See description for \code{range_gt}.}
 
 \item{sigma_prob}{Probability. See description for \code{sigma_lt}.}
+
+\item{ratio_lt}{A value one expects the ratio of the major to minor axis
+ranges is \strong{l}ess \strong{t}han with \code{1 - ratio_prob} probability. Must be
+greater than 1.}
+
+\item{ratio_prob}{Probability. See description for \code{ratio_lt}.}
 }
 \value{
 A named list with values for the specified priors.
@@ -147,6 +161,18 @@ without a PC prior and then constraining the model from there. A better
 option would be to simulate from a model with a given range and sigma to
 choose reasonable values for the system or base the prior on knowledge from a
 model fit to a similar system but with more spatial information in the data.
+
+\code{pc_anisotropy()} is the PC prior of Llamazares-Elias et al. (2024) for
+anisotropic Matérn fields. It is a joint prior on the range and the
+anisotropy: it shrinks the fields towards isotropy and the range towards
+infinity, with a uniform prior on the direction of anisotropy. With
+\code{pc_anisotropy()}, the \code{range_gt} and \code{range_prob} of any \code{pc_matern()}
+prior refer to the marginal prior on the range \code{sqrt(8) / kappa}, which is
+the geometric mean of the ranges along the major and minor axes. The prior on
+the marginal SDs is unchanged. The anisotropy prior is expressed on the
+scale of the estimated anisotropy parameters (\code{ln_H_input}), so it already
+includes its Jacobian whether or not \code{bayesian = TRUE}. In delta models with
+shared anisotropy (the default), it is applied once.
 
 \code{lognormal_prior()} defines a lognormal prior with the same parameterization
 as \code{\link[stats:dlnorm]{stats::dlnorm()}}. The median is \code{exp(meanlog)}.
@@ -265,11 +291,29 @@ m <- sdmTMB(density ~ 0 + depth_scaled + depth_scaled2 + as.factor(year),
     matern_st = pc_matern(range_gt = 5, sigma_lt = 1))
 )
 }
+pc_anisotropy(ratio_lt = 3)
+
+\donttest{
+# PC priors on an anisotropic spatial field
+mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 20)
+m <- sdmTMB(density ~ 1,
+  data = pcod, mesh = mesh, family = tweedie(),
+  anisotropy = TRUE,
+  priors = sdmTMBpriors(
+    matern_s = pc_matern(range_gt = 10, sigma_lt = 5),
+    aniso = pc_anisotropy(ratio_lt = 3)
+  )
+)
+}
 }
 \references{
 Fuglstad, G.-A., Simpson, D., Lindgren, F., and Rue, H. (2016) Constructing
 Priors that Penalize the Complexity of Gaussian Random Fields.
 arXiv:1503.00256
+
+Llamazares-Elias, L., Latz, J., and Lindgren, F. (2024) A parameterization
+of anisotropic Gaussian fields with penalized complexity priors.
+arXiv:2409.02331
 
 Simpson, D., Rue, H., Martins, T., Riebler, A., and Sørbye, S. (2015)
 Penalising model component complexity: A principled, practical approach to

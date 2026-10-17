@@ -37,10 +37,27 @@
 #' choose reasonable values for the system or base the prior on knowledge from a
 #' model fit to a similar system but with more spatial information in the data.
 #'
+#' @details
+#' `pc_anisotropy()` is the PC prior of Llamazares-Elias et al. (2024) for
+#' anisotropic Matérn fields. It is a joint prior on the range and the
+#' anisotropy: it shrinks the fields towards isotropy and the range towards
+#' infinity, with a uniform prior on the direction of anisotropy. With
+#' `pc_anisotropy()`, the `range_gt` and `range_prob` of any `pc_matern()`
+#' prior refer to the marginal prior on the range `sqrt(8) / kappa`, which is
+#' the geometric mean of the ranges along the major and minor axes. The prior on
+#' the marginal SDs is unchanged. The anisotropy prior is expressed on the
+#' scale of the estimated anisotropy parameters (`ln_H_input`), so it already
+#' includes its Jacobian whether or not `bayesian = TRUE`. In delta models with
+#' shared anisotropy (the default), it is applied once.
+#'
 #' @references
 #' Fuglstad, G.-A., Simpson, D., Lindgren, F., and Rue, H. (2016) Constructing
 #' Priors that Penalize the Complexity of Gaussian Random Fields.
 #' arXiv:1503.00256
+#'
+#' Llamazares-Elias, L., Latz, J., and Lindgren, F. (2024) A parameterization
+#' of anisotropic Gaussian fields with penalized complexity priors.
+#' arXiv:2409.02331
 #'
 #' Simpson, D., Rue, H., Martins, T., Riebler, A., and Sørbye, S. (2015)
 #' Penalising model component complexity: A principled, practical approach to
@@ -52,6 +69,9 @@
 #'   Note that you will likely want to set `share_range = FALSE` if you choose
 #'   to set both a spatial and spatiotemporal Matérn PC prior since they both
 #'   include a prior on the spatial range parameter.
+#' @param aniso A PC prior (`pc_anisotropy()`) on the geometric anisotropy of
+#'   the random fields. Requires `anisotropy = TRUE` in [sdmTMB()] and the RTMB
+#'   backend (the default).
 #' @param phi A `halfnormal()` prior for the dispersion parameter in the
 #'   observation distribution.
 #' @param ar1_rho A `normal()` prior for the AR1 random field parameter. Note
@@ -145,6 +165,7 @@
 sdmTMBpriors <- function(
   matern_s = pc_matern(range_gt = NA, sigma_lt = NA),
   matern_st = pc_matern(range_gt = NA, sigma_lt = NA),
+  aniso = pc_anisotropy(ratio_lt = NA),
   phi = halfnormal(NA, NA),
   ar1_rho = normal(NA, NA),
   tweedie_p = normal(NA, NA),
@@ -160,6 +181,7 @@ sdmTMBpriors <- function(
 ) {
   assert_that(attr(matern_s, "dist") == "pc_matern")
   assert_that(attr(matern_st, "dist") == "pc_matern")
+  assert_that(attr(aniso, "dist") == "pc_anisotropy")
   assert_that(attr(phi, "dist") == "normal")
   assert_that(attr(sigma_V, "dist") %in% c("gamma", "lognormal"))
   assert_that(attr(tweedie_p, "dist") == "normal")
@@ -181,6 +203,7 @@ sdmTMBpriors <- function(
   list(
     matern_s = matern_s,
     matern_st = matern_st,
+    aniso = aniso,
     phi = phi,
     ar1_rho = ar1_rho,
     tweedie_p = tweedie_p,
@@ -340,4 +363,32 @@ pc_matern <- function(range_gt, sigma_lt, range_prob = 0.05, sigma_prob = 0.05) 
   if (!is.na(sigma_lt)) assert_that(!is.na(range_gt))
   x <- c(range_gt, sigma_lt, range_prob, sigma_prob)
   `attr<-`(x, "dist", "pc_matern")
+}
+
+#' @param ratio_lt A value one expects the ratio of the major to minor axis
+#'   ranges is **l**ess **t**han with `1 - ratio_prob` probability. Must be
+#'   greater than 1.
+#' @param ratio_prob Probability. See description for `ratio_lt`.
+#' @export
+#' @rdname priors
+#' @examples
+#' pc_anisotropy(ratio_lt = 3)
+#'
+#' \donttest{
+#' # PC priors on an anisotropic spatial field
+#' mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 20)
+#' m <- sdmTMB(density ~ 1,
+#'   data = pcod, mesh = mesh, family = tweedie(),
+#'   anisotropy = TRUE,
+#'   priors = sdmTMBpriors(
+#'     matern_s = pc_matern(range_gt = 10, sigma_lt = 5),
+#'     aniso = pc_anisotropy(ratio_lt = 3)
+#'   )
+#' )
+#' }
+pc_anisotropy <- function(ratio_lt, ratio_prob = 0.05) {
+  assert_that(ratio_prob > 0 && ratio_prob < 1)
+  if (!is.na(ratio_lt)) assert_that(ratio_lt > 1)
+  x <- c(ratio_lt, ratio_prob)
+  `attr<-`(x, "dist", "pc_anisotropy")
 }
