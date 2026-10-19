@@ -107,6 +107,15 @@ rtmb_time_varying <- function(b_rw_t, theta, prepared, simulate, m) {
   list(nll = nll, value = b_rw_t)
 }
 
+# Covariance of one IID random effect group's coefficients in component `m`.
+iid_re_covariance <- function(re_cov_pars, group, m) {
+  sds <- exp(re_cov_pars[group$sd_rows, m])
+  if (group$dimension == 1L) return(matrix(sds^2))
+  correlation <- RTMB::unstructured(group$dimension)$corr(
+    re_cov_pars[group$corr_rows, m])
+  correlation * (sds %o% sds)
+}
+
 # IID random intercepts and slopes, correlated within a group when requested.
 rtmb_iid_effects <- function(re_b_pars, par, groups, simulate, m) {
   nll <- 0
@@ -117,9 +126,7 @@ rtmb_iid_effects <- function(re_b_pars, par, groups, simulate, m) {
       if (simulate) re_b_pars[index, m] <- stats::rnorm(length(index), 0, sds)
       nll <- nll - sum(RTMB::dnorm(re_b_pars[index, m], 0, sds, log = TRUE))
     } else {
-      correlation <- RTMB::unstructured(group$dimension)$corr(
-        par$re_cov_pars[group$corr_rows, m])
-      covariance <- correlation * (sds %o% sds)
+      covariance <- iid_re_covariance(par$re_cov_pars, group, m)
       if (simulate) covariance_chol <- t(chol(covariance))
       for (index in group$coefficients) {
         if (simulate) {

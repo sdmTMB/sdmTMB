@@ -2,7 +2,8 @@
 #
 # Returns `tmb_data` with the `proj_*` slots filled and the internal frame
 # `nd` (the user's rows plus any dummy columns needed for model matrices,
-# including a fake response for `model.frame()` and smoothers).
+# including a fake response for `model.frame()` and smoothers), plus
+# `new_re` (see predict_iid_re_matrices()).
 predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
   newdata <- req$newdata
   has_nonlocal <- !is.null(object$nonlocal_parsed)
@@ -48,7 +49,7 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
     stage = "prediction"
   )
 
-  Zt_list <- predict_iid_re_matrices(object, req, newdata, length(formula))
+  iid_re <- predict_iid_re_matrices(object, req, newdata, length(formula))
   proj_X_ij <- predict_fixed_matrices(object, req, newdata)
   proj_Xdisp_ij <- predict_disp_matrix(object, newdata)
   # TODO DELTA hardcoded to 1:
@@ -64,7 +65,14 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
   tmb_data$proj_X_ij <- proj_X_ij
   tmb_data$proj_Xdisp_ij <- proj_Xdisp_ij
   tmb_data$proj_X_rw_ik <- proj_X_rw_ik
-  tmb_data$Zt_list_proj <- Zt_list
+  tmb_data$Zt_list_proj <- iid_re$Zt_list
+  n_new_re <- length(unlist(lapply(iid_re$new_re, `[[`, "rows")))
+  if (n_new_re > 0L) {
+    # fitted rows have no sampled new levels; RTMB needs conformable `Zt`
+    tmb_data$Zt_list <- lapply(tmb_data$Zt_list, function(Zt) {
+      rbind(Zt, Matrix::Matrix(0, n_new_re, ncol(Zt), sparse = TRUE))
+    })
+  }
   time_lu <- object$time_lu
   tmb_data$proj_year <- time_lu$year_i[match(newdata[[object$time]], time_lu$time_from_data)]
   tmb_data$proj_time_include <- as.integer(time_lu$time_from_data %in% newdata[[object$time]])
@@ -90,7 +98,7 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
   tmb_data$proj_Xs <- sm$Xs
   tmb_data$proj_z_i <- predict_svc_matrix(object, newdata)
 
-  list(tmb_data = tmb_data, nd = newdata)
+  list(tmb_data = tmb_data, nd = newdata, new_re = iid_re$new_re)
 }
 
 # Validate `newdata` coordinates and time; fill in a time column where the
@@ -215,7 +223,7 @@ predict_spatial_index <- function(object, req, newdata) {
 # All linear predictors share the same random effect structure.
 predict_iid_re_matrices <- function(object, req, newdata, n_formula) {
   if (sum(object$tmb_data$n_re_groups) == 0 || !isFALSE(req$pop_pred_iid)) {
-    return(list())
+    return(list(Zt_list = list(), new_re = list()))
   }
   re_formula_no_response <- stats::formula(
     stats::delete.response(
@@ -231,24 +239,26 @@ predict_iid_re_matrices <- function(object, req, newdata, n_formula) {
       "i" = "Use `re_form_iid = NA` or `re_form_iid = ~0` to exclude random effects in prediction."
     ))
   }
-  new_level_rows <- integer(0)
-  for (i in seq_along(RE_names)) {
-    assert_that(is.factor(newdata[[RE_names[i]]]),
-      msg = sprintf("Random effect group column `%s` in newdata is not a factor.", RE_names[i]))
-    levels_fit <- levels(object$data[[RE_names[i]]])
-    values_nd <- as.character(newdata[[RE_names[i]]])
-    is_new_level <- !is.na(values_nd) & !values_nd %in% levels_fit
-    if (any(is_new_level)) {
-      new_level_rows <- union(new_level_rows, which(is_new_level))
+  sample_new <- identical(req$allow_new_levels, "sample")
+  # levels with an estimated random effect (unused factor levels have none):
+  levels_fit <- lapply(stats::setNames(nm = unique(RE_names)),
+    function(g) levels(droplevels(object$data[[g]])))
+  new_levels <- list()
+  for (g in names(levels_fit)) {
+    assert_that(is.factor(newdata[[g]]),
+      msg = sprintf("Random effect group column `%s` in newdata is not a factor.", g))
+    values_nd <- as.character(newdata[[g]])
+    new_levels[[g]] <- unique(values_nd[!is.na(values_nd) & !values_nd %in% levels_fit[[g]]])
+    if (length(new_levels[[g]]) && !sample_new) {
       if (isFALSE(req$allow_new_levels)) {
         cli_abort(c(
-          "Found new levels in random effect grouping variable {.field {RE_names[i]}}.",
+          "Found new levels in random effect grouping variable {.field {g}}.",
           "i" = "Set `allow_new_levels = TRUE` to predict these rows at the population level (random effect value of 0)."
         ))
       }
       if (is.null(req$allow_new_levels)) {
         cli_warn(c(
-          "Found new levels in random effect grouping variable {.field {RE_names[i]}}.",
+          "Found new levels in random effect grouping variable {.field {g}}.",
           "i" = "These rows will use population-level IID random effect predictions (`re_form_iid = NA`).",
           "i" = "Set `allow_new_levels = TRUE` to suppress this warning."
         ))
@@ -256,14 +266,19 @@ predict_iid_re_matrices <- function(object, req, newdata, n_formula) {
     }
   }
 
-  # now do with a joint data frame to ensure factor levels match
+  # now do with a joint data frame to ensure factor levels match;
+  # new grouping levels go after the fitted ones
   common_cols <- intersect(colnames(object$data), colnames(newdata))
   nd_aligned <- newdata[, common_cols, drop = FALSE]
   for (col_name in common_cols) {
     if (is.factor(object$data[[col_name]]) && is.factor(nd_aligned[[col_name]])) {
       nd_aligned[[col_name]] <- factor(
         as.character(nd_aligned[[col_name]]),
-        levels = levels(object$data[[col_name]])
+        levels = if (col_name %in% names(levels_fit)) {
+          c(levels_fit[[col_name]], new_levels[[col_name]])
+        } else {
+          levels(object$data[[col_name]])
+        }
       )
       if (anyNA(nd_aligned[[col_name]])) {
         nd_aligned[[col_name]][is.na(nd_aligned[[col_name]])] <-
@@ -275,10 +290,30 @@ predict_iid_re_matrices <- function(object, req, newdata, n_formula) {
   xx <- parse_formula(re_formula_no_response, joint_df)
   # drop the original data:
   Zt <- xx$re_cov_terms$Zt[, seq(nrow(object$data) + 1, nrow(object$data) + nrow(newdata)), drop = FALSE]
-  if (length(new_level_rows) > 0) {
-    Zt[, new_level_rows] <- 0
+
+  # Zt rows run by term, then level, then coefficient. Rows of new levels are
+  # dropped (a random effect of 0) or, when sampling, moved after the fitted
+  # rows to match the extra `re_b_pars` rows that predict_objective() adds.
+  q <- lengths(xx$re_cov_terms$cnms)
+  n_fit <- lengths(levels_fit[RE_names])
+  n_new <- lengths(new_levels[RE_names])
+  is_new <- unlist(lapply(seq_along(q), function(i) {
+    rep(seq_len(n_fit[i] + n_new[i]) > n_fit[i], each = q[i])
+  }))
+  Zt <- Zt[c(which(!is_new), if (sample_new) which(is_new)), , drop = FALSE]
+
+  # `re_b_pars` rows of each new level and the term giving its covariance:
+  new_re <- list()
+  next_row <- sum(n_fit * q)
+  if (sample_new) {
+    for (i in seq_along(q)) {
+      for (k in seq_len(n_new[i])) {
+        new_re[[length(new_re) + 1L]] <- list(term = i, rows = next_row + seq_len(q[i]))
+        next_row <- next_row + q[i]
+      }
+    }
   }
-  rep(list(Zt), n_formula)
+  list(Zt_list = rep(list(Zt), n_formula), new_re = new_re)
 }
 
 # Fixed-effect model matrices, one per linear predictor.

@@ -46,7 +46,13 @@
 #'   random effect value of zero (a population-level prediction). `TRUE`
 #'   allows them silently, `FALSE` gives an error (as with `allow.new.levels`
 #'   in \pkg{lme4} and \pkg{glmmTMB}), and `NULL` (default) allows them with a
-#'   warning. Not relevant if `re_form_iid` excludes the random effects.
+#'   warning. With `nsim`, `"sample"` instead draws each new level's random
+#'   effects from their estimated (multivariate) normal distribution in every
+#'   draw, as with `sample_new_levels = "gaussian"` in \pkg{brms}, so the draws
+#'   include variation among levels. Rows sharing a new level share its draw,
+#'   and fitted levels keep their usual draws. To include this variation for
+#'   all rows, give the grouping factor a level not in the fitted data (see
+#'   Examples). Not relevant if `re_form_iid` excludes the random effects.
 #'   Grouping columns in `newdata` must be factors.
 #' @param nsim Number of draws. If `> 0`, returns a matrix of draws instead of
 #'   a data frame (see Value). Each draw takes the fixed and random effects
@@ -293,6 +299,18 @@
 #' plot_map(p, exp(est)) +
 #'   ggtitle("Prediction (fixed effects + all random effects)") +
 #'   scale_fill_viridis_c(trans = "sqrt")
+#'
+#' # Including variation among random effect levels ----------------------
+#'
+#' d <- pcod_2011
+#' d$fyear <- as.factor(d$year)
+#' m <- sdmTMB(density ~ depth_scaled + (1 | fyear), data = d,
+#'   family = tweedie(), spatial = "off")
+#' # a level not in the data draws a new year effect in each draw:
+#' nd <- data.frame(depth_scaled = 0, fyear = factor("new"))
+#' p <- predict(m, newdata = nd, nsim = 200, type = "response",
+#'   allow_new_levels = "sample")
+#' quantile(p, c(0.1, 0.5, 0.9))
 #' }
 
 predict.sdmTMB <- function(object, newdata = NULL,
@@ -382,12 +400,13 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
       r <- rtmb_report_values(tmb_data, object$parlist)
       new_tmb_obj <- NULL
     } else {
-      objective <- predict_objective(object, tmb_data)
+      objective <- predict_objective(object, tmb_data,
+        length(unlist(lapply(prep$new_re, `[[`, "rows"))))
       new_tmb_obj <- objective$obj
       lp <- objective$lp
 
       if (req$nsim > 0 || !is.null(req$mcmc_samples)) {
-        r <- predict_draw_reports(object, new_tmb_obj, lp, req)
+        r <- predict_draw_reports(object, new_tmb_obj, lp, req, prep$new_re)
         if (return_tmb_report) return(r)
         return(predict_draws(r, req, object, tmb_data, prep$nd))
       }
@@ -451,14 +470,27 @@ predict_report_only <- function(object, req, return_tmb_object) {
 # Build the prediction objective from `tmb_data` and return it with the fitted
 # parameter vector `lp`. Fits saved with `parlist` and `last.par.best` need no
 # live fitted objective; older fits recover parameters from `object$tmb_obj`.
-predict_objective <- function(object, tmb_data) {
+predict_objective <- function(object, tmb_data, n_new_re = 0L) {
   has_saved_fit <- !is.null(object$parlist) && !is.null(object$last.par.best)
   if (!has_saved_fit) reinitialize(object)
+  parameters <- if (has_saved_fit) object$parlist else get_pars(object)
+  map <- object$tmb_map
+  if (n_new_re > 0L) {
+    # Rows for sampled new levels go after the fitted ones and are numbered
+    # after them in the map, so they sit at the end of the `re_b_pars` block.
+    b_map <- matrix(as.integer(map$re_b_pars), ncol = ncol(parameters$re_b_pars))
+    new_map <- matrix(NA_integer_, n_new_re, ncol(b_map))
+    has_re <- object$tmb_data$n_re_groups > 0
+    new_map[, has_re] <- max(b_map, na.rm = TRUE) + seq_len(n_new_re * sum(has_re))
+    map$re_b_pars <- factor(rbind(b_map, new_map))
+    parameters$re_b_pars <- rbind(parameters$re_b_pars,
+      matrix(0, n_new_re, ncol(b_map)))
+  }
   obj <- make_sdmTMB_adfun(
     data = tmb_data,
     profile = object$control$profile,
-    parameters = if (has_saved_fit) object$parlist else get_pars(object),
-    map = object$tmb_map,
+    parameters = parameters,
+    map = map,
     random = object$tmb_random,
     backend = backend_sdmTMB(object),
     silent = TRUE
@@ -468,8 +500,43 @@ predict_objective <- function(object, tmb_data) {
   } else {
     obj$fn(object$model$par)
     lp <- obj$env$last.par.best
+    if (n_new_re > 0L) lp <- lp[-new_re_slots(object, obj, n_new_re)]
   }
-  list(obj = obj, lp = lp)
+  list(obj = obj, lp = lp) # `lp` excludes any sampled new-level slots
+}
+
+# Positions in `obj`'s parameter vector of the `re_b_pars` rows that
+# predict_objective() added for `n_new_re` sampled new levels.
+new_re_slots <- function(object, obj, n_new_re) {
+  utils::tail(which(names(obj$env$par) == "re_b_pars"),
+    n_new_re * sum(object$tmb_data$n_re_groups > 0))
+}
+
+# Fill the sampled new-level slots of each parameter draw (`t_draws`, without
+# the slots) with draws from N(0, Sigma) given that draw's `re_cov_pars`.
+predict_sample_new_re <- function(object, obj, t_draws, new_re) {
+  rows <- unlist(lapply(new_re, `[[`, "rows"))
+  slots <- new_re_slots(object, obj, length(rows))
+  out <- matrix(0, length(obj$env$par), ncol(t_draws))
+  out[-slots, ] <- t_draws
+  has_re <- which(object$tmb_data$n_re_groups > 0)
+  groups <- lapply(has_re, function(m) rtmb_re_groups(object$tmb_data, m))
+  fixed <- obj$env$lfixed()
+  for (i in seq_len(ncol(out))) {
+    re_cov_pars <- obj$env$parList(out[fixed, i])$re_cov_pars
+    b <- matrix(0, length(rows), length(has_re))
+    for (j in seq_along(has_re)) {
+      chol_t <- lapply(groups[[j]], function(group) {
+        t(chol(iid_re_covariance(re_cov_pars, group, has_re[j])))
+      })
+      for (level in new_re) {
+        L <- chol_t[[level$term]]
+        b[match(level$rows, rows), j] <- L %*% stats::rnorm(nrow(L))
+      }
+    }
+    out[slots, i] <- b
+  }
+  out
 }
 
 # Nonlocal covariate values as named prediction columns.
@@ -566,6 +633,12 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
       "i" = "Use `type = 'link'` with `se_fit = TRUE`, or use `nsim` for response-scale uncertainty."))
   }
 
+  if (identical(allow_new_levels, "sample") && (se_fit ||
+    (nsim == 0 && is.null(mcmc_samples)))) {
+    cli_abort(c("`allow_new_levels = \"sample\"` requires draws.",
+      "i" = "Use `nsim` (or `mcmc_samples`), and summarize the draws for uncertainty."))
+  }
+
   if (is.null(re_form) && isTRUE(se_fit)) {
     msg <- paste0("Prediction can be slow when `se_fit = TRUE` and random fields ",
       "are included (i.e., `re_form = NULL`). Consider using the `nsim` argument ",
@@ -591,8 +664,8 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
   pop_pred <- (!is.null(re_form) && ((re_form == ~0) || identical(re_form, NA)))
   pop_pred_iid <- (!is.null(re_form_iid) && ((re_form_iid == ~0) || identical(re_form_iid, NA)))
   if (!is.null(allow_new_levels) && !isTRUE(allow_new_levels) &&
-    !isFALSE(allow_new_levels)) {
-    cli_abort("`allow_new_levels` must be `NULL`, `TRUE`, or `FALSE`.")
+    !isFALSE(allow_new_levels) && !identical(allow_new_levels, "sample")) {
+    cli_abort("`allow_new_levels` must be `NULL`, `TRUE`, `FALSE`, or `\"sample\"`.")
   }
   exclude_RE <- if (pop_pred_iid) 1L else object$tmb_data$exclude_RE
 
@@ -732,8 +805,8 @@ predict_terms <- function(x, object, family_spec, row_family_id) {
 
 # Reports for each parameter draw: MCMC samples or draws from the joint
 # precision matrix (or the random effects only, conditional on the fixed
-# effects, if `sample_fe = FALSE`).
-predict_draw_reports <- function(object, obj, lp, req) {
+# effects, if `sample_fe = FALSE`), with any sampled new levels.
+predict_draw_reports <- function(object, obj, lp, req, new_re = list()) {
   nsim <- req$nsim
   if (!is.null(req$mcmc_samples)) {
     t_draws <- req$mcmc_samples
@@ -754,6 +827,7 @@ predict_draw_reports <- function(object, obj, lp, req) {
     t_draws <- project_historical_draws(lp, sd_report, nsim,
       sample_fe = req$sample_fe, sample_historical_re = TRUE)
   }
+  if (length(new_re)) t_draws <- predict_sample_new_re(object, obj, t_draws, new_re)
   out <- apply(t_draws, 2L, obj$report)
   # Response-scale means also depend on `ln_phi` and `psi`, which vary by draw:
   fixed <- obj$env$lfixed()

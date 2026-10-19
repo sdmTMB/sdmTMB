@@ -1,5 +1,15 @@
 # sdmTMB (development version)
 
+* `predict(..., nsim = n, allow_new_levels = "sample")` draws the random
+  effects of IID grouping levels not seen in fitting from their estimated
+  (multivariate) normal distribution in each draw, so predictions can include
+  variation among levels (e.g., a new site). Fitted levels keep their usual
+  draws. #553
+
+* Predicting with a new level of one IID random effect grouping factor no
+  longer drops the other grouping factors' random effects for those rows
+  (e.g., a new `site` with a fitted `year` in `(1 | site) + (1 | year)`).
+
 * Add `pc_anisotropy()`, a PC prior on anisotropic Matérn fields
   (Llamazares-Elias et al. 2024, arXiv:2409.02331), passed through
   `sdmTMBpriors(aniso = ...)`. It shrinks the fields towards isotropy and

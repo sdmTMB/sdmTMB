@@ -321,6 +321,85 @@ test_that("Model with random intercepts fits appropriately.", {
   expect_error(predict(m, newdata = nd), regexp = "missing from `newdata`")
 })
 
+test_that("New random effect levels are zeroed per grouping term", {
+  set.seed(1)
+  d <- data.frame(g = factor(rep(1:20, each = 10)), h = factor(rep(1:5, 40)))
+  d$y <- c(-1, -0.5, 0, 0.5, 1)[d$h] + rnorm(20, 0, 0.5)[d$g] +
+    rnorm(200, 0, 0.1)
+  m <- sdmTMB(y ~ 1 + (1 | g) + (1 | h), data = d, spatial = "off")
+  nd <- data.frame(g = factor("new"), h = factor(c("1", "5")))
+  p <- predict(m, newdata = nd, allow_new_levels = TRUE)
+  b <- m$parlist$re_b_pars[, 1]
+  # a new `g` keeps the fitted `h` effects:
+  expect_equal(p$est, as.numeric(coef(m)) + b[20 + c(1, 5)], tolerance = 1e-6)
+})
+
+test_that("New random effect levels can be sampled in draws", {
+  skip_on_cran()
+  set.seed(1)
+  d <- data.frame(g = factor(rep(1:40, each = 15)), x = rnorm(600))
+  b <- matrix(rnorm(80), ncol = 2) %*% chol(matrix(c(0.36, 0.12, 0.12, 0.16), 2))
+  d$y <- 1 + 0.5 * d$x + b[d$g, 1] + b[d$g, 2] * d$x + rnorm(600, 0, 0.2)
+  m <- sdmTMB(y ~ x + (1 | g), data = d, spatial = "off")
+  sigma <- exp(m$parlist$re_cov_pars[1, 1])
+
+  nd <- data.frame(x = 0, g = factor(c("1", "new", "new", "new2")))
+  set.seed(2)
+  p <- predict(m, newdata = nd, nsim = 2000, allow_new_levels = "sample",
+    sample_fe = FALSE)
+  # rows sharing a new level share each draw:
+  expect_identical(p[2, ], p[3, ])
+  expect_equal(sd(p[2, ]), sigma, tolerance = 0.06)
+  expect_equal(sd(p[4, ]), sigma, tolerance = 0.06)
+  expect_gt(abs(cor(p[2, ], p[4, ])), -0.1)
+  expect_lt(abs(cor(p[2, ], p[4, ])), 0.1)
+  # fitted levels keep their draws:
+  set.seed(2)
+  p_fit <- predict(m, newdata = nd[1, , drop = FALSE], nsim = 2000,
+    sample_fe = FALSE)
+  expect_identical(p_fit[1, ], p[1, ])
+
+  # correlated random slopes take the estimated covariance:
+  m2 <- sdmTMB(y ~ x + (1 + x | g), data = d, spatial = "off")
+  S <- iid_re_covariance(m2$parlist$re_cov_pars,
+    rtmb_re_groups(m2$tmb_data, 1)[[1]], 1)
+  nd2 <- data.frame(x = c(0, 1), g = factor("new"))
+  set.seed(3)
+  p2 <- predict(m2, newdata = nd2, nsim = 4000, allow_new_levels = "sample",
+    sample_fe = FALSE)
+  draws <- cbind(p2[1, ], p2[2, ] - p2[1, ])
+  expect_equal(c(cov(draws)), c(S), tolerance = 0.1)
+
+  expect_error(predict(m, newdata = nd, allow_new_levels = "sample"),
+    regexp = "requires draws")
+  expect_error(predict(m, newdata = nd, allow_new_levels = "sample",
+    nsim = 2, se_fit = TRUE), regexp = "requires draws")
+})
+
+test_that("Sampled new levels work for delta models and repeated groups", {
+  skip_on_cran()
+  d <- pcod_2011
+  d$fyear <- as.factor(d$year)
+  m <- sdmTMB(density ~ 1 + (1 | fyear), data = d, family = delta_gamma(),
+    spatial = "off")
+  nd <- data.frame(fyear = factor(c("2099", "2011")))
+  p <- predict(m, newdata = nd, nsim = 50, allow_new_levels = "sample",
+    type = "response")
+  expect_equal(dim(p), c(2L, 50L))
+  expect_true(all(is.finite(p) & p > 0))
+
+  skip_if_not_installed("lme4")
+  data("sleepstudy", package = "lme4")
+  fit <- sdmTMB(Reaction ~ Days + (1 | Subject) + (0 + Days | Subject),
+    sleepstudy, spatial = "off", silent = TRUE)
+  sds <- exp(fit$parlist$re_cov_pars[1:2, 1])
+  nd <- data.frame(Days = c(0, 10), Subject = factor("new"))
+  set.seed(1)
+  p <- predict(fit, newdata = nd, nsim = 3000, allow_new_levels = "sample",
+    sample_fe = FALSE)
+  expect_equal(c(sd(p[1, ]), sd(p[2, ] - p[1, ]) / 10), sds, tolerance = 0.06)
+})
+
 test_that("Interleaved random-effect groups retain covariance parameter order", {
   skip_on_cran()
   skip_if_not_installed("glmmTMB")
