@@ -55,7 +55,7 @@ test_that("Print anisotropy prints correctly", {
 
   plot_anisotropy(fit_sp_only)
   plot_anisotropy2(fit_sp_only)
-  expect_output(print(fit_sp_only), regexp = "\\(spatial\\): 6.1 to 86.0 at 126")
+  expect_output(print(fit_sp_only), regexp = "\\(spatial\\): 11.9 to 44.5 at 126")
 
   # Anisotropy with only spatiotemporal random field
   test_mesh <- make_mesh(data = dogfish, xy_cols = c("X", "Y"), cutoff = 10)
@@ -72,7 +72,7 @@ test_that("Print anisotropy prints correctly", {
     control = sdmTMBcontrol(newton_loops = 1)
   )
 
-  expect_output(print(fit_st_only), regexp = "\\(spatiotemporal\\): 9.0 to 72.2 at 135")
+  expect_output(print(fit_st_only), regexp = "\\(spatiotemporal\\): 15.2 to 42.9 at 135")
 # -------------------
 
   # Anisotropy when not shared across random fields
@@ -103,7 +103,7 @@ test_that("Print anisotropy prints correctly", {
     control = sdmTMBcontrol(newton_loops = 1L)
   )
 
-  expect_output(cat(print_anisotropy(fit_dg_shared, m = 1)), regexp = "\\(spatial\\): 36")
+  expect_output(cat(print_anisotropy(fit_dg_shared, m = 1)), regexp = "\\(spatial\\): 44.5")
   expect_output(cat(print_anisotropy(fit_dg_shared, m = 2)), regexp = "\\(spatial\\): 2")
 
   # Anisotropy when not shared across random fields in delta model
@@ -118,10 +118,10 @@ test_that("Print anisotropy prints correctly", {
     anisotropy = TRUE
   )
 
-  expect_output(cat(print_anisotropy(fit_dg_not_shared, m = 1)), regexp = "\\(spatial\\): 19")
-  expect_output(cat(print_anisotropy(fit_dg_not_shared, m = 1)), regexp = "\\(spatiotemporal\\): 12")
+  expect_output(cat(print_anisotropy(fit_dg_not_shared, m = 1)), regexp = "\\(spatial\\): 26.3")
+  expect_output(cat(print_anisotropy(fit_dg_not_shared, m = 1)), regexp = "\\(spatiotemporal\\): 166.0")
   expect_output(cat(print_anisotropy(fit_dg_not_shared, m = 2)), regexp = "\\(spatial\\): 0")
-  expect_output(cat(print_anisotropy(fit_dg_not_shared, m = 2)), regexp = "\\(spatiotemporal\\): 9")
+  expect_output(cat(print_anisotropy(fit_dg_not_shared, m = 2)), regexp = "\\(spatiotemporal\\): 12.3")
 })
 
 test_that("multi-family anisotropy reports both linear predictors", {

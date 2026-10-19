@@ -39,6 +39,15 @@
 #' `time_varying_type = "ar1"`, correlation (`rho_time`) are returned with
 #' `effects = "ran_pars"`.
 #'
+#' With `anisotropy = TRUE`, `effects = "ran_pars"` reports `range_min` and
+#' `range_max`, the ranges along the minor and major axes, in place of `range`.
+#' Their geometric mean is `range`. With the RTMB backend, their standard
+#' errors are from the delta method and their confidence intervals are Wald
+#' intervals on the log scale. These intervals are unreliable when the
+#' anisotropy is weakly identified, such as when `range_max / range_min` is
+#' close to 1, because the axis ranges have no derivative at isotropy. They are
+#' `NA` at exact isotropy and with the TMB backend.
+#'
 #' Standard errors for spatial variance terms fit in log space (e.g., variance
 #' terms, range, or parameters associated with the observation error) are
 #' omitted to avoid confusion. Confidence intervals are still available.
@@ -155,6 +164,8 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     p$log_sigma_E <- .subset_model(p$log_sigma_E)
     p$log_sigma_Z <- .subset_model(p$log_sigma_Z)
     p$log_range <- .subset_model(p$log_range)
+    p$log_range_min <- .subset_model(p$log_range_min)
+    p$log_range_max <- .subset_model(p$log_range_max)
     p$logit_rho_sar <- .subset_model(p$logit_rho_sar)
 
     p$range <- .subset_model(p$range)
@@ -516,11 +527,8 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     out_re <- out_re[out_re$term != "range", ]
     aniso_df <- aniso_ranges_to_df(aniso_ranges)
     if (!is.null(aniso_df)) {
-      # Add columns to match out_re structure
-      aniso_df$std.error <- NA_real_
-      aniso_df$conf.low <- NA_real_
-      aniso_df$conf.high <- NA_real_
-      out_re <- rbind(out_re, aniso_df)
+      out_re <- rbind(out_re, aniso_range_intervals(aniso_df, est, se, crit,
+        spatial = x$spatial[model] != "off"))
     }
   }
 
@@ -761,6 +769,29 @@ aniso_ranges_to_df <- function(aniso_ranges) {
     estimate = estimates,
     stringsAsFactors = FALSE
   )
+}
+
+# Standard errors and CIs for the anisotropic ranges from the log ranges
+# along each axis (`log_range_min`, `log_range_max`; RTMB only). These are NA
+# without them and at isotropy, where the axis ranges have no derivative.
+# Rows without "spatiotemporal" in their term are the spatial field, unless
+# only the spatiotemporal field is on.
+aniso_range_intervals <- function(aniso_df, est, se, crit, spatial) {
+  field <- ifelse(grepl("spatiotemporal", aniso_df$term) | !spatial, 2L, 1L)
+  axis <- ifelse(grepl("_min$", aniso_df$term), "log_range_min", "log_range_max")
+  pick <- function(p) {
+    vapply(seq_along(axis), function(i) {
+      x <- p[[axis[[i]]]]
+      if (length(x) < field[[i]] || !is.finite(x[[field[[i]]]])) NA_real_
+      else as.numeric(x[[field[[i]]]])
+    }, numeric(1L))
+  }
+  log_est <- pick(est)
+  log_se <- pick(se)
+  aniso_df$std.error <- aniso_df$estimate * log_se
+  aniso_df$conf.low <- exp(log_est - crit * log_se)
+  aniso_df$conf.high <- exp(log_est + crit * log_se)
+  aniso_df
 }
 
 # Internal helper to extract anisotropic range min/max values

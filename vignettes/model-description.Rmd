@@ -522,6 +522,8 @@ There are a number of ways to implement anisotropic covariance [@fuglstad2015a],
 The elements of $\bH$ are defined by the parameters $h_1 > 0$ and $h_2$ so that $H_{1,1} = h_{1}$, $H_{1,2} = H_{2,1} = h_{2}$ and $H_{2,2} = (1 + h_{2}^2) / h_{1}$.
 $\bH$ is symmetric and positive definite with determinant 1, so it stretches distances along one axis and shrinks them along the perpendicular axis without changing area.
 The result is a different range in each direction, with the orientation of the major axis estimated.
+Along an eigenvector of $\bH$ with eigenvalue $e$, the range is $\sqrt{e} \sqrt{8} / \kappa$.
+The ranges along the major and minor axes (`range_max` and `range_min` in `tidy()`) therefore have a geometric mean of $\sqrt{8} / \kappa$.
 
 Once a model is fitted with `sdmTMB()`, the anisotropy relationships may be plotted using the `plot_anisotropy()` function, which takes the fitted object as an argument.
 If a barrier mesh is used, anisotropy is disabled.

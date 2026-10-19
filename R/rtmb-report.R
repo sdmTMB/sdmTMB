@@ -102,6 +102,9 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
       list(`ln_phi_i(0)` = obs$ln_phi_i[[1L]], `phi_i(0)` = obs$phi_i[[1L]])
     },
     if (prepared$mixture) par[c("logit_p_extreme", "log_ratio_mix")],
+    if (spde_field && prepared$anisotropy) {
+      rtmb_aniso_log_ranges(theta$range, par$ln_H_input)
+    },
     if (requested[["total"]]) derived["total"],
     if (requested[["eao"]]) derived["log_eao"]
   )
