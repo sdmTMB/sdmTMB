@@ -238,6 +238,7 @@ test_that("tidy() works with delta model with random intercepts and AR1 time ser
 
 test_that("tidy() correctly handles anisotropic ranges", {
   skip_on_cran()
+  local_rtmb_backend()
   skip_on_ci()
 
   # Test 1: Spatial-only anisotropic model (should have range_min and range_max)
@@ -358,6 +359,7 @@ test_that("tidy() correctly handles anisotropic ranges", {
 
 test_that("tidy() anisotropic range SEs match the delta method", {
   skip_on_cran()
+  local_rtmb_backend()
   fit <- sdmTMB(density ~ 1, data = pcod_2011, mesh = pcod_mesh_2011,
     family = tweedie(), anisotropy = TRUE)
   td <- tidy(fit, "ran_pars", conf.int = TRUE)
