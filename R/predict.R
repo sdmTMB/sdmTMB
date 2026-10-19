@@ -526,12 +526,11 @@ predict_sample_new_re <- function(object, obj, t_draws, new_re) {
     re_cov_pars <- obj$env$parList(out[fixed, i])$re_cov_pars
     b <- matrix(0, length(rows), length(has_re))
     for (j in seq_along(has_re)) {
-      chol_t <- lapply(groups[[j]], function(group) {
-        t(chol(iid_re_covariance(re_cov_pars, group, has_re[j])))
-      })
-      for (level in new_re) {
-        L <- chol_t[[level$term]]
-        b[match(level$rows, rows), j] <- L %*% stats::rnorm(nrow(L))
+      for (term in new_re) {
+        L <- t(chol(iid_re_covariance(re_cov_pars, groups[[j]][[term$term]], has_re[j])))
+        # one column per level:
+        z <- matrix(stats::rnorm(nrow(L) * term$n_levels), nrow(L))
+        b[match(term$rows, rows), j] <- L %*% z
       }
     }
     out[slots, i] <- b

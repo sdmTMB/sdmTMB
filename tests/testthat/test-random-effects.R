@@ -351,7 +351,6 @@ test_that("New random effect levels can be sampled in draws", {
   expect_identical(p[2, ], p[3, ])
   expect_equal(sd(p[2, ]), sigma, tolerance = 0.06)
   expect_equal(sd(p[4, ]), sigma, tolerance = 0.06)
-  expect_gt(abs(cor(p[2, ], p[4, ])), -0.1)
   expect_lt(abs(cor(p[2, ], p[4, ])), 0.1)
   # fitted levels keep their draws:
   set.seed(2)

@@ -302,16 +302,15 @@ predict_iid_re_matrices <- function(object, req, newdata, n_formula) {
   }))
   Zt <- Zt[c(which(!is_new), if (sample_new) which(is_new)), , drop = FALSE]
 
-  # `re_b_pars` rows of each new level and the term giving its covariance:
+  # `re_b_pars` rows of each term's new levels (level by level, then
+  # coefficient) and the term giving their covariance:
   new_re <- list()
-  next_row <- sum(n_fit * q)
   if (sample_new) {
-    for (i in seq_along(q)) {
-      for (k in seq_len(n_new[i])) {
-        new_re[[length(new_re) + 1L]] <- list(term = i, rows = next_row + seq_len(q[i]))
-        next_row <- next_row + q[i]
-      }
-    }
+    n_rows <- n_new * q
+    first <- sum(n_fit * q) + cumsum(n_rows) - n_rows
+    new_re <- lapply(which(n_new > 0), function(i) {
+      list(term = i, n_levels = n_new[[i]], rows = first[[i]] + seq_len(n_rows[[i]]))
+    })
   }
   list(Zt_list = rep(list(Zt), n_formula), new_re = new_re)
 }
