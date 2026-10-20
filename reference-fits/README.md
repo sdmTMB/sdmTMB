@@ -27,7 +27,9 @@ Rscript reference-fits/run.R record [--filter REGEX] [--cores N]
   compares TMB with RTMB. It writes nothing.
 - `record` is `validate` for both backends. It writes the TMB values to
   `ref/reference.csv` (and versions to `ref/session.txt`) only if every case
-  passes `sanity()` and the two backends agree within tolerance. With
+  passes `sanity()` and the two backends agree within tolerance. Cases limited
+  to one backend (`backends` in `cases.R`, e.g., RTMB-only families) record
+  that backend's values and skip the comparison. With
   `--filter`, only the matching cases are replaced.
 
 ## Accepting a change
@@ -52,7 +54,9 @@ explanation of why the values moved.
 ## Cases
 
 - `family/`: every family and documented link, non-spatial (fast), including
-  binomial with `cbind()` trials and with proportions plus `weights`.
+  binomial with `cbind()` trials and with proportions plus `weights`, and the
+  censored families (all but `censored_poisson()` are RTMB-only), including
+  `censored_method = "direct"` and an observation-level random intercept.
 - `offset/`: one family per link with an offset.
 - `delta/`: every delta family, non-default `link1`/`link2`,
   `type = "poisson-link"`, and offsets.

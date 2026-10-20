@@ -68,10 +68,14 @@ test_that("time_lag() start defaults to stationary and accepts zero", {
 
   expect_error(.parse_nonlocal_formula(~ time_lag(x1, start = "one")),
     "must be \"stationary\" or \"zero\"")
-  expect_error(.parse_nonlocal_formula(~ time_lag(x1, "zero")),
-    "Unsupported argument")
+  expect_equal(.parse_nonlocal_formula(~ time_lag(x1, "zero"))$terms$start, "zero")
+  expect_equal(
+    .parse_nonlocal_formula(~ time_lag(start = "zero", x = x1))$terms$variable,
+    "x1"
+  )
   expect_error(.parse_nonlocal_formula(~ diffusion(x1, start = "zero")),
     "Unsupported argument")
+  expect_error(time_lag(x1), "only meaningful inside")
 })
 
 test_that("nonlocal_formula covariates do not need to be in the main formula", {

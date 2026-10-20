@@ -91,11 +91,10 @@ rtmb_as_vector <- function(out) {
 rtmb_product <- function(A, x) rtmb_as_vector(A %*% x)
 
 # Project per-time vertex values to stations, then index by station and time.
-# `values` is a list of one vector per time step.
+# `values` is a list of one vector per time step, projected in one product.
 rtmb_station_values <- function(rows, values) {
-  at_station <- do.call(cbind, lapply(values, function(v) {
-    rtmb_product(rows$A_station, v)
-  }))
+  at_station <- rows$A_station %*% do.call(cbind, values)
+  if (methods::is(at_station, "Matrix")) at_station <- as.matrix(at_station)
   at_station[rows$station_index + nrow(at_station) * (rows$time - 1L)]
 }
 
@@ -182,12 +181,22 @@ rtmb_derived_indices <- function(par, theta, prepared, projected) {
   if (prepared$n_m > 1L) {
     mu <- projected$combined$response
   } else {
-    mu <- rep(0, nrow(projected$eta))
+    eta <- if (prepared$pop_pred) projected$fe else projected$eta
+    mu <- rep(0, nrow(eta))
     for (f in unique(rows$family_id)) {
       family <- prepared$families[[f]]
       family$link[[1L]] <- prepared$index$link
       i <- which(rows$family_id == f)
-      mu[i] <- rtmb_component_mean(projected$eta[i, 1L], family, 1L, theta)
+      mu[i] <- rtmb_component_mean(eta[i, 1L], family, 1L, theta)
+      # Prototype: for cloglog (censored) betabinomial, the mean per-hook
+      # catch rate E(-log(1 - p)) = digamma(phi) - digamma(phi * (1 - pbar))
+      # instead of exp(eta). It matched an R-side check and works with bias
+      # correction, but the bias-corrected index was about 4x slower on the
+      # hook-competition article's grid, so it isn't exposed.
+      # See the article for an R-side calculation from predict().
+      # phi <- theta$phi[[family$phi]]
+      # b <- phi * exp(-exp(projected$eta[i, 1L]))
+      # mu[i] <- rtmb_digamma(phi) - rtmb_digamma(b)
     }
   }
   n_t <- prepared$n_t
@@ -248,3 +257,16 @@ rtmb_derived_indices <- function(par, theta, prepared, projected) {
   }
   out
 }
+
+# AD-safe digamma for x > 0 (for the commented-out mean rate above) from
+# psi(x) = psi(x + 6) - sum 1 / (x + j) and the asymptotic series at x + 6
+# (relative error about 1e-12).
+# rtmb_digamma <- function(x) {
+#   shift <- 0
+#   for (j in 0:5) shift <- shift + 1 / (x + j)
+#   z <- x + 6
+#   w <- 1 / (z * z)
+#   log(z) - 0.5 / z -
+#     w * (1 / 12 - w * (1 / 120 - w * (1 / 252 - w * (1 / 240 - w / 132)))) -
+#     shift
+# }

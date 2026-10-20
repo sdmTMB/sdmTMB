@@ -303,6 +303,14 @@ test_that("Model with random intercepts fits appropriately.", {
   p_silent <- predict(m, newdata = nd, allow_new_levels = TRUE)
   expect_equal(p_warn$est, p_silent$est)
   expect_equal(p_silent$est, as.numeric(coef(m)))
+  expect_error(
+    predict(m, newdata = nd, allow_new_levels = FALSE),
+    regexp = "Found new levels"
+  )
+  expect_no_warning(predict(m, newdata = nd, re_form_iid = NA,
+    allow_new_levels = FALSE))
+  expect_error(predict(m, newdata = nd, allow_new_levels = NA),
+    regexp = "must be")
 
   # predicting with missing factors works with the right re_form_iid
   m <- sdmTMB(data = s, formula = observed ~ 1 + (1 | g), spatial = "off")

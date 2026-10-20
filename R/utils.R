@@ -57,10 +57,13 @@
 #'   implement lower and upper bounds, so you must set `newton_loops = 0` if
 #'   setting limits.
 #' @param upper An optional named list of upper bounds within the optimization.
-#' @param censored_upper An optional vector of upper bounds for
-#'   [sdmTMBcontrol()]. Values of `NA` indicate an unbounded right-censored
-#'   distribution, values greater than the observation indicate an upper bound,
-#'   and values equal to the observation indicate no censoring.
+#' @param censored_method How [censored_betabinomial()] sums the likelihood.
+#'   `"auto"` (default) sums the interval or its
+#'   complement, whichever has fewer terms, and checks the precision at the
+#'   estimate, refitting with the direct sum for any rows that fail. `"direct"`
+#'   always sums the interval, which can be much slower. The check only
+#'   applies at the estimate, so consider `"direct"` when evaluating the
+#'   likelihood far from it (e.g., MCMC sampling).
 #' @param get_joint_precision Logical. Passed to `getJointPrecision` in
 #'   [TMB::sdreport()]. Must be `TRUE` to use simulation-based methods in
 #'   [predict.sdmTMB()] or [get_index_sims()]. If not needed, setting this to
@@ -144,7 +147,7 @@ sdmTMBcontrol <- function(
   map = NULL,
   lower = NULL,
   upper = NULL,
-  censored_upper = NULL,
+  censored_method = c("auto", "direct"),
   multiphase = TRUE,
   profile = FALSE,
   get_joint_precision = TRUE,
@@ -203,6 +206,7 @@ sdmTMBcontrol <- function(
     collapse_ar1_threshold < 0.5
   )
   sar_weight_style <- match.arg(sar_weight_style)
+  censored_method <- match.arg(censored_method)
   backend <- match.arg(backend, c("tmb", "rtmb"))
 
   out <- named_list(
@@ -219,7 +223,7 @@ sdmTMBcontrol <- function(
     map,
     lower,
     upper,
-    censored_upper,
+    censored_method,
     multiphase,
     parallel,
     get_joint_precision,
@@ -446,6 +450,11 @@ extract_call_name <- function(call_element, max_width = 80) {
     return(deparsed)
   }
 
+  # String literals (e.g., time = "year")
+  if (is.character(call_element) && length(call_element) == 1L) {
+    return(call_element)
+  }
+
   obj_class <- class(call_element)[1]
   return(obj_class)
 }
@@ -626,11 +635,13 @@ get_scale_factor <- function(prop_removed, n_hooks, pstar) {
 #'   proportion of baits removed for each fishing event as the predictor.
 #'   Check when the curve drops off as the proportion bait removed increases.
 #'
-#' The `lwr` limit for [sdmTMB::censored_poisson()] should be the observed catch
-#' counts, i.e., `n_catch` here.
-#'
-#' If `upr` in [sdmTMB::censored_poisson()] is set to NA, the full
-#' right-censored Poisson likelihood is used without any upper bound.
+#' Pass the returned vector to the `censored_upper` argument of [sdmTMB()]
+#' with `family = censored_poisson()` and the observed catch counts
+#' (`n_catch`) as the response. Fishing events with `prop_removed` below
+#' `pstar` get an upper bound equal to the observed catch and are therefore
+#' treated as uncensored. Alternatively, set `censored_upper` to `Inf` for
+#' fishing events above `pstar` to use the right-censored likelihood without
+#' an upper bound.
 #'
 #' The right-censored Poisson density can be written as:
 #'
@@ -651,11 +662,24 @@ get_scale_factor <- function(prop_removed, n_hooks, pstar) {
 #' In practice, these computations are done in log space for numerical
 #' stability.
 #'
-#' @return A numeric vector of upper bound catch counts of the target species to
-#'   improve convergence of the censored method.
+#' With [censored_binomial()] or [censored_betabinomial()], the number of
+#' hooks is already an upper bound on the count, so `Inf` can be used for
+#' censored fishing events.
 #'
-#' @references See \doi{10.1139/cjfas-2022-0159} for more details.
-#' @noRd
+#' @return A numeric vector of upper bound catch counts of the target species to
+#'   improve convergence of the censored method. Bounds are capped at
+#'   `n_hooks`.
+#'
+#' @references
+#' Watson, J., Edwards, A.M., and Auger-Méthé, M. 2023. A statistical
+#' censoring approach accounts for hook competition in abundance indices from
+#' longline surveys. Canadian Journal of Fisheries and Aquatic Sciences. 80(3):
+#' 468--486. \doi{10.1139/cjfas-2022-0159}
+#'
+#' @seealso [censored_poisson()], [censored_binomial()],
+#'   [censored_betabinomial()], and the
+#'   [hook competition article](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html).
+#' @export
 #'
 #' @examples
 #' dat <- structure(
@@ -731,7 +755,7 @@ get_censored_upper <- function(
   high <- n_catch
   high[prop_removed >= pstar] <- high[prop_removed >= pstar] +
     upper_bound[prop_removed >= pstar]
-  round(high)
+  pmin(round(high), n_hooks)
 }
 
 #' Set delta model for [ggeffects::ggpredict()]

@@ -20,7 +20,9 @@
 #' \pkg{ggplot2} object.
 #'
 #' `plot_anisotropy2()`: A plot of eigenvectors illustrating the estimated
-#' anisotropy. A list of the plotted data is invisibly returned. Uses base
+#' anisotropy, each scaled by the factor by which it stretches the range (the
+#' square root of the eigenvalue of `H`). A list of the plotted data is
+#' invisibly returned. Uses base
 #' graphics. If anisotropy was turned off when fitting the model, `NULL` is
 #' returned instead of a plot object.
 #' @references Code adapted from VAST R package
@@ -170,8 +172,8 @@ plot_anisotropy2 <- function(object, model = 1) {
   dat <- data.frame(
     x0 = c(0, 0),
     y0 = c(0, 0),
-    x1 = eig$vectors[1, , drop = TRUE] * eig$values,
-    y1 = eig$vectors[2, , drop = TRUE] * eig$values
+    x1 = eig$vectors[1, , drop = TRUE] * sqrt(eig$values),
+    y1 = eig$vectors[2, , drop = TRUE] * sqrt(eig$values)
   )
   plot(0,
     xlim = range(c(dat$x0, dat$x1)),
@@ -298,7 +300,8 @@ plot_smooth <- function(object, select = 1, n = 100, level = 0.95,
   if (return_data) {
     return(p)
   }
-  inv <- .bind_phi_linkinv(family(object), .object_ln_phi(object))
+  inv <- .response_linkinv(family(object), .object_par(object, "ln_phi"),
+    .object_par(object, "psi"))
   qv <- stats::qnorm(1 - (1 - level) / 2)
 
   if (!ggplot) {
@@ -356,14 +359,17 @@ calculate_anisotropy_components <- function(x, m = 1L) {
   # Get eigenvalues/vectors from H matrix (or H2 for delta model 2)
   H <- if (two_lp && m == 2L) report$H2 else report$H
   eig <- eigen(H)
+  # Distance is sqrt(h' H^-1 h), so the range along an eigenvector of H is
+  # the isotropic range times the square root of its eigenvalue
+  stretch <- sqrt(eig$values)
 
   # Calculate major and minor axis vectors for spatial field
-  maj_s <- eig$vectors[, 1, drop = TRUE] * eig$values[1] * range_s
-  min_s <- eig$vectors[, 2, drop = TRUE] * eig$values[2] * range_s
+  maj_s <- eig$vectors[, 1, drop = TRUE] * stretch[1] * range_s
+  min_s <- eig$vectors[, 2, drop = TRUE] * stretch[2] * range_s
 
   # Calculate major and minor axis vectors for spatiotemporal field
-  maj_st <- eig$vectors[, 1, drop = TRUE] * eig$values[1] * range_st
-  min_st <- eig$vectors[, 2, drop = TRUE] * eig$values[2] * range_st
+  maj_st <- eig$vectors[, 1, drop = TRUE] * stretch[1] * range_st
+  min_st <- eig$vectors[, 2, drop = TRUE] * stretch[2] * range_st
 
   list(
     eig = eig,

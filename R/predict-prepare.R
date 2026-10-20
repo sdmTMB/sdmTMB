@@ -50,7 +50,8 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
 
   design <- .newdata_design(object, newdata,
     include_iid = sum(object$tmb_data$n_re_groups) > 0 && isFALSE(req$pop_pred_iid),
-    warn_new_levels = isFALSE(req$allow_new_levels))
+    new_levels = if (isFALSE(req$allow_new_levels)) "error" else "zero",
+    warn_new_levels = is.null(req$allow_new_levels))
   Zt_list <- design$Zt_list
   proj_X_ij <- predict_append_nonlocal(object, req, design$X_ij)
   proj_Xdisp_ij <- predict_disp_matrix(object, newdata)

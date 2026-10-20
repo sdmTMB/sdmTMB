@@ -566,7 +566,8 @@ sigma.sdmTMB <- function(object, ...) {
     }
   }
 
-  if (family_name %in% c("nbinom1", "nbinom2", "tweedie")) {
+  if (family_name %in% c("nbinom1", "nbinom2", "censored_nbinom1",
+    "censored_nbinom2", "tweedie")) {
     # For negative binomial, return phi (dispersion parameter)
     tmb_obj <- object$tmb_obj
     phi_idx <- which(names(tmb_obj$env$last.par.best) == "ln_phi")
@@ -577,7 +578,7 @@ sigma.sdmTMB <- function(object, ...) {
   }
 
   # Poisson, binomial don't have dispersion, return 1 (as in glmmTMB)
-  if (family_name %in% c("poisson", "binomial")) {
+  if (family_name %in% c("poisson", "binomial", "censored_binomial")) {
     return(1)
   }
 

@@ -13,7 +13,9 @@
 #'   the corresponding `B` argument vector of coefficient values.
 #' @param data A data frame containing the predictors described in `formula` and
 #'   the time column if `time` is specified.
-#' @param mesh Output from [make_mesh()].
+#' @param mesh Output from [make_mesh()] or, for areal SAR/CAR models,
+#'   [make_areal_domain()] (with `spatial_model = "sar"` or `"car"` passed via
+#'   `...`).
 #' @param time The time column name.
 #' @param time_varying An optional one-sided formula describing time-varying
 #'   covariates passed through to [sdmTMB()] for building a time-varying random
@@ -29,7 +31,7 @@
 #'   one joint coefficient.
 #' @param range Parameter that controls the decay of spatial correlation. If a
 #'   vector of length 2, `share_range` will be set to `FALSE` and the spatial
-#'   and spatiotemporal ranges will be unique.
+#'   and spatiotemporal ranges will be unique. Not used for areal models.
 #' @param rho Spatiotemporal correlation between years; should be between -1 and
 #'   1.
 #' @param sigma_O SD of spatial process (Omega).
@@ -49,9 +51,6 @@
 #' @param fixed_re A list of optional random effects to fix at specified
 #'   (e.g., previously estimated) values. `NULL` values indicate that the
 #'   corresponding random effects should be simulated.
-#' @param previous_fit (**Deprecated**; please use [simulate.sdmTMB()]).
-#'   An optional previous [sdmTMB()] fit to pull parameter values.
-#'   Will be overridden by any non-`NULL` parameter arguments supplied directly.
 #' @param seed Seed number. The TMB and RTMB backends (see the `backend`
 #'   argument of [sdmTMBcontrol()], passed via `control`) draw random numbers
 #'   differently, so the same seed gives different simulated values with each.
@@ -60,20 +59,24 @@
 #'   be supplied as a single value or a vector the same length as `sigma_V`.
 #' @param nonlocal_formula An optional one-sided formula describing
 #'   covariate-diffusion terms to pass to [sdmTMB()]. Supported wrappers are
-#'   `diffusion()` and `time_lag()`. Same-covariate wrappers select one joint
-#'   operator and coefficient. See [sdmTMB()] for the `time_lag()` `start`
-#'   argument.
+#'   [diffusion()] and [time_lag()]. Same-covariate wrappers select one joint
+#'   operator and coefficient.
 #' @param lags_kappaS Spatial diffusion scale for `diffusion()` terms.
 #'   Must be positive and finite. Supply a single value or
 #'   one value per covariate needing a spatial scale.
 #' @param lags_rhoT Temporal diffusion persistence for `time_lag()` terms.
 #'   Must satisfy `0 < rhoT < 1`. Supply a single value or one
 #'   value per covariate needing temporal diffusion.
+#' @param rho_sar Spatial dependence parameter for `spatial_model = "sar"`;
+#'   between -1 and 1.
+#' @param alpha_car Spatial dependence parameter for `spatial_model = "car"`;
+#'   between 0 and 1.
 #' @param ... Any other arguments to pass to [sdmTMB()].
 #'
 #' @return A data frame where:
 #' * The first column is the time variable (if present).
-#' * The second and third columns are the spatial coordinates.
+#' * The second and third columns are the spatial coordinates (or, for areal
+#'   models, a single column of areal unit IDs).
 #' * `omega_s` represents the simulated spatial random effects (only if present).
 #' * `zeta_s` represents the simulated spatially varying covariate field (only if present).
 #' * `epsilon_st` represents the simulated spatiotemporal random effects (only if present).
@@ -136,7 +139,6 @@ simulate_new <- function(formula,
                          df = NULL,
                          threshold_coefs = NULL,
                          fixed_re = list(omega_s = NULL, epsilon_st = NULL, zeta_s = NULL),
-                         previous_fit = NULL,
                          seed = sample.int(1e6, 1),
                          time_varying = NULL,
                          time_varying_type = c("rw", "rw0", "ar1"),
@@ -145,11 +147,10 @@ simulate_new <- function(formula,
                          nonlocal_formula = NULL,
                          lags_kappaS = NULL,
                          lags_rhoT = NULL,
+                         rho_sar = NULL,
+                         alpha_car = NULL,
                          ...) {
 
-  if (!is.null(previous_fit)) stop("`previous_fit` is deprecated. See `simulate.sdmTMB()`", call. = FALSE)
-  if (!is.null(previous_fit)) mesh <- previous_fit$spde
-  if (!is.null(previous_fit)) data <- previous_fit$data
   # if (!missing(seed)) {
   #   msg <- c("The `seed` argument may be deprecated in the future.",
   #     "We recommend instead setting the seed manually with `set.seed()` prior to calling `sdmTMB_simulate()`.",
@@ -191,60 +192,56 @@ simulate_new <- function(formula,
   if (!is.null(sigma_V)) sigma_V <- as.numeric(sigma_V)
   if (!is.null(rho_time)) rho_time <- as.numeric(rho_time)
 
-  if (is.null(previous_fit)) {
-    assert_that(is(mesh, "sdmTMBmesh"))
-    assert_that(!is.null(range), !is.null(sigma_O) || !is.null(sigma_E), !is.null(B))
-    if (!family$family %in% c("binomial", "poisson")) {
-      assert_that(!is.null(phi))
-    }
-
-    response <- get_response(formula)
-    if (length(response) == 0L) {
-      formula <- as.formula(paste("sdmTMB_response_", paste(as.character(formula), collapse = "")))
-      data[["sdmTMB_response_"]] <- 0.1 # fake! does nothing but lets sdmTMB parse the formula
-      if (family$family %in% c("binomial", "poisson", "nbinom2", "nbinom1", "truncated_nbinom2", "truncated_nbinom1")) {
-        data[["sdmTMB_response_"]] <- 1
-      }
-    }
-
-    .sim_re <- list(
-      omega = TRUE, epsilon = TRUE, zeta = TRUE,
-      IID = TRUE, RW = TRUE, smooth = TRUE
-    )
-    if (!is.null(fixed_re$omega_s)) {
-      .sim_re$omega <- FALSE
-    }
-    if (!is.null(fixed_re$epsilon_st)) {
-      .sim_re$epsilon <- FALSE
-    }
-    if (!is.null(fixed_re$zeta_s)) {
-      .sim_re$zeta <- FALSE
-    }
-    .sim_re <- as.integer(unlist(.sim_re))
-
-    # get tmb_data structure; parsed model matrices etc.:
-    fit_args <- c(
-      list(
-        formula = formula,
-        data = data,
-        mesh = mesh,
-        time = time,
-        family = family,
-        do_fit = FALSE,
-        share_range = length(range) == 1L,
-        time_varying = time_varying,
-        time_varying_type = time_varying_type,
-        nonlocal_formula = nonlocal_formula
-      ),
-      dots
-    )
-
-    fit <- do.call(sdmTMB, fit_args)
-    params <- fit$tmb_params
-  } else {
-    fit <- previous_fit
-    params <- fit$tmb_obj$env$parList()
+  is_areal <- is_areal_domain(mesh)
+  assert_that(is(mesh, "sdmTMBmesh") || is_areal)
+  assert_that(is_areal || !is.null(range), !is.null(sigma_O) || !is.null(sigma_E), !is.null(B))
+  if (!family$family %in% c("binomial", "poisson")) {
+    assert_that(!is.null(phi))
   }
+
+  response <- get_response(formula)
+  if (length(response) == 0L) {
+    formula <- as.formula(paste("sdmTMB_response_", paste(as.character(formula), collapse = "")))
+    data[["sdmTMB_response_"]] <- 0.1 # fake! does nothing but lets sdmTMB parse the formula
+    if (family$family %in% c("binomial", "poisson", "nbinom2", "nbinom1", "truncated_nbinom2", "truncated_nbinom1")) {
+      data[["sdmTMB_response_"]] <- 1
+    }
+  }
+
+  .sim_re <- list(
+    omega = TRUE, epsilon = TRUE, zeta = TRUE,
+    IID = TRUE, RW = TRUE, smooth = TRUE
+  )
+  if (!is.null(fixed_re$omega_s)) {
+    .sim_re$omega <- FALSE
+  }
+  if (!is.null(fixed_re$epsilon_st)) {
+    .sim_re$epsilon <- FALSE
+  }
+  if (!is.null(fixed_re$zeta_s)) {
+    .sim_re$zeta <- FALSE
+  }
+  .sim_re <- as.integer(unlist(.sim_re))
+
+  # get tmb_data structure; parsed model matrices etc.:
+  fit_args <- c(
+    list(
+      formula = formula,
+      data = data,
+      mesh = mesh,
+      time = time,
+      family = family,
+      do_fit = FALSE,
+      share_range = length(range) <= 1L,
+      time_varying = time_varying,
+      time_varying_type = time_varying_type,
+      nonlocal_formula = nonlocal_formula
+    ),
+    dots
+  )
+
+  fit <- do.call(sdmTMB, fit_args)
+  params <- fit$tmb_params
   tmb_data <- fit$tmb_data
   tmb_data$sim_re <- as.integer(.sim_re)
   # tmb_data$sim_re <- c(1L, 0L, 0L, 0L, 0L, 0L)
@@ -321,37 +318,40 @@ simulate_new <- function(formula,
     params$b_threshold <- threshold_coefs
   }
 
-  if (!is.null(previous_fit)) {
-    range <- fit$tmb_obj$report()$range
-  }
+  if (is.null(sigma_O)) sigma_O <- 0
+  if (is.null(sigma_Z)) sigma_Z <- matrix(0, nrow = 0L, ncol = 0L) # DELTA FIXME
+  if (is.null(sigma_E)) sigma_E <- 0
 
-  if (is.null(previous_fit)) {
-    if (is.null(sigma_O)) sigma_O <- 0
-    if (is.null(sigma_Z)) sigma_Z <- matrix(0, nrow = 0L, ncol = 0L) # DELTA FIXME
-    if (is.null(sigma_E)) sigma_E <- 0
-  }
+  if (is_areal) {
+    if (is_car_fit(fit)) {
+      if (is.null(alpha_car)) cli::cli_abort("`alpha_car` must be supplied for `spatial_model = \"car\"`.")
+      assert_that(alpha_car > 0, alpha_car < 1)
+      params$logit_rho_sar <- stats::qlogis(alpha_car)
+    } else {
+      if (is.null(rho_sar)) cli::cli_abort("`rho_sar` must be supplied for `spatial_model = \"sar\"`.")
+      assert_that(rho_sar > -1, rho_sar < 1)
+      params$logit_rho_sar <- stats::qlogis((rho_sar + 1) / 2)
+    }
+    # areal fields: SD = 1 / tau
+    params$ln_tau_O <- -log(sigma_O)
+    params$ln_tau_Z <- matrix(-log(sigma_Z), nrow = nrow(sigma_Z), ncol = 1L)
+    params$ln_tau_E <- -log(sigma_E)
+  } else {
+    if (length(range) == 1L) range <- rep(range, 2)
 
-  if (length(range) == 1L) range <- rep(range, 2)
+    kappa <- sqrt(8) / range
+    params$ln_kappa <- matrix(log(kappa), ncol = 1L) # TODO DELTA
 
-  kappa <- sqrt(8) / range
-  params$ln_kappa <- matrix(log(kappa), ncol = 1L) # TODO DELTA
-
-  if (!is.null(sigma_O) || is.null(previous_fit)) {
     tau_O <- 1 / (sqrt(4 * pi) * kappa[1] * sigma_O)
     params$ln_tau_O <- log(tau_O)
-  }
-  if (!is.null(sigma_Z) || is.null(previous_fit)) {
     tau_Z <- 1 / (sqrt(4 * pi) * kappa[1] * sigma_Z)
     params$ln_tau_Z <- matrix(log(tau_Z), nrow = nrow(sigma_Z), ncol = 1L) # DELTA FIXME
-  }
-  if (!is.null(sigma_E) || is.null(previous_fit)) {
     tau_E <- 1 / (sqrt(4 * pi) * kappa[2] * sigma_E)
     params$ln_tau_E <- log(tau_E)
   }
 
   n_tv <- if (!is.null(fit$tmb_data$X_rw_ik)) ncol(fit$tmb_data$X_rw_ik) else 0L
-  has_time_varying <- !is.null(time_varying) ||
-    (!is.null(previous_fit) && !is.null(previous_fit$time_varying))
+  has_time_varying <- !is.null(time_varying)
 
   if (has_time_varying && n_tv == 0L) {
     cli::cli_abort("Internal error: expected time-varying design matrix.")
@@ -433,8 +433,12 @@ simulate_new <- function(formula,
 
   d <- list()
   if (!is.null(fit$time)) d[[fit$time]] <- data[[fit$time]]
-  d[[mesh$xy_cols[1]]] <- data[[mesh$xy_cols[1]]]
-  d[[mesh$xy_cols[2]]] <- data[[mesh$xy_cols[2]]]
+  if (is_areal) {
+    d[[mesh$space_column]] <- data[[mesh$space_column]]
+  } else {
+    d[[mesh$xy_cols[1]]] <- data[[mesh$xy_cols[1]]]
+    d[[mesh$xy_cols[2]]] <- data[[mesh$xy_cols[2]]]
+  }
 
   d[["omega_s"]] <- if (sum(sigma_O) > 0) s$omega_s_A
   d[["epsilon_st"]] <- if (sum(sigma_E) > 0) s$epsilon_st_A_vec
@@ -524,14 +528,26 @@ sdmTMB_simulate <- simulate_new
 #'   effects (this only simulates observation error). `~0` or `NA` to simulate
 #'   new random effects (smoothers, which internally are random effects, will
 #'   not be simulated as new).
+#' @param simulate_re Optional character vector naming the random effects to
+#'   simulate as new, instead of `re_form`. Any of `"spatial"`,
+#'   `"spatiotemporal"`, `"spatial_varying"`, and `"time_varying"` (matching
+#'   the corresponding [sdmTMB()] arguments) and `"group_re"` (random
+#'   intercepts and slopes from formula terms such as `(1 + x | g)`). Random
+#'   effects not named are held at their values in the parameter vector: the
+#'   empirical Bayes estimates with `type = "mle-eb"` or the approximate
+#'   posterior draw with `type = "mle-mvn"`. For example,
+#'   `simulate_re = "spatiotemporal"` with `type = "mle-mvn"` and
+#'   `mle_mvn_samples = "single"` keeps the spatial fields at one posterior
+#'   draw shared across all `nsim` while drawing new spatiotemporal fields for
+#'   each simulation. `NULL` (the default) uses `re_form` instead.
 #' @param mle_mvn_samples Applies if `type = "mle-mvn"`. If `"single"`, take
 #'   a single MVN draw from the random effects. If `"multiple"`, take an MVN
 #'   draw from the random effects for each of the `nsim`.
 #' @param model If a delta/hurdle model, which model to simulate from?
 #'   `NA` = combined, `1` = first model, `2` = second model.
 #' @param newdata Optional new data frame from which to simulate.
-#' @param mcmc_samples An optional matrix of MCMC samples. See `extract_mcmc()`
-#'   in the \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra}
+#' @param mcmc_samples An optional matrix of MCMC samples. See
+#'   `sdmTMBextra::extract_mcmc()` in the \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra}
 #'   package.
 #' @param return_tmb_report Return the \pkg{TMB} report from `simulate()`? This
 #'   lets you parse out whatever elements you want from the simulation.
@@ -587,6 +603,7 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
                             model = c(NA, 1, 2),
                             newdata = NULL,
                             re_form = NULL,
+                            simulate_re = NULL,
                             mle_mvn_samples = c("single", "multiple"),
                             mcmc_samples = NULL,
                             return_tmb_report = FALSE,
@@ -617,8 +634,26 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
       "i" = "New catch fields would no longer match the fitted sampling process. Use `re_form = NULL` to simulate conditional on the fitted fields."
     ))
   }
+  # order of tmb_data$sim_re; smoothers (6th) are never simulated as new
+  sim_re_names <- c("spatial", "spatiotemporal", "spatial_varying",
+    "group_re", "time_varying")
+  if (!is.null(simulate_re)) {
+    if (!is.null(re_form)) {
+      cli_abort("Supply only one of `re_form` and `simulate_re`.")
+    }
+    bad <- setdiff(simulate_re, sim_re_names)
+    if (length(bad)) {
+      cli_abort(c(
+        "Unknown `simulate_re` value{?s}: {.val {bad}}.",
+        "i" = "Use any of {.val {sim_re_names}}."
+      ))
+    }
+  }
   tmb_dat <- object$tmb_data
-  if (conditional_re) {
+  if (!is.null(simulate_re)) {
+    stopifnot(length(object$tmb_data$sim_re) == 6L) # in case this gets changed
+    tmb_dat$sim_re <- c(as.integer(sim_re_names %in% simulate_re), 0L)
+  } else if (conditional_re) {
     tmb_dat$sim_re <- rep(0L, length(object$tmb_data$sim_re)) # don't simulate any REs
   } else {
     stopifnot(length(object$tmb_data$sim_re) == 6L) # in case this gets changed

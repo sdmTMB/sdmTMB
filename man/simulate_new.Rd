@@ -22,7 +22,6 @@ simulate_new(
   df = NULL,
   threshold_coefs = NULL,
   fixed_re = list(omega_s = NULL, epsilon_st = NULL, zeta_s = NULL),
-  previous_fit = NULL,
   seed = sample.int(1e+06, 1),
   time_varying = NULL,
   time_varying_type = c("rw", "rw0", "ar1"),
@@ -31,6 +30,8 @@ simulate_new(
   nonlocal_formula = NULL,
   lags_kappaS = NULL,
   lags_rhoT = NULL,
+  rho_sar = NULL,
+  alpha_car = NULL,
   ...
 )
 
@@ -51,7 +52,6 @@ sdmTMB_simulate(
   df = NULL,
   threshold_coefs = NULL,
   fixed_re = list(omega_s = NULL, epsilon_st = NULL, zeta_s = NULL),
-  previous_fit = NULL,
   seed = sample.int(1e+06, 1),
   time_varying = NULL,
   time_varying_type = c("rw", "rw0", "ar1"),
@@ -60,6 +60,8 @@ sdmTMB_simulate(
   nonlocal_formula = NULL,
   lags_kappaS = NULL,
   lags_rhoT = NULL,
+  rho_sar = NULL,
+  alpha_car = NULL,
   ...
 )
 }
@@ -71,7 +73,9 @@ the corresponding \code{B} argument vector of coefficient values.}
 \item{data}{A data frame containing the predictors described in \code{formula} and
 the time column if \code{time} is specified.}
 
-\item{mesh}{Output from \code{\link[=make_mesh]{make_mesh()}}.}
+\item{mesh}{Output from \code{\link[=make_mesh]{make_mesh()}} or, for areal SAR/CAR models,
+\code{\link[=make_areal_domain]{make_areal_domain()}} (with \code{spatial_model = "sar"} or \code{"car"} passed via
+\code{...}).}
 
 \item{family}{Family as in \code{\link[=sdmTMB]{sdmTMB()}}. Delta families are not supported.
 Instead, simulate the two component models separately and combine.}
@@ -86,7 +90,7 @@ one joint coefficient.}
 
 \item{range}{Parameter that controls the decay of spatial correlation. If a
 vector of length 2, \code{share_range} will be set to \code{FALSE} and the spatial
-and spatiotemporal ranges will be unique.}
+and spatiotemporal ranges will be unique. Not used for areal models.}
 
 \item{rho}{Spatiotemporal correlation between years; should be between -1 and
 1.}
@@ -114,10 +118,6 @@ vignette for details.}
 (e.g., previously estimated) values. \code{NULL} values indicate that the
 corresponding random effects should be simulated.}
 
-\item{previous_fit}{(\strong{Deprecated}; please use \code{\link[=simulate.sdmTMB]{simulate.sdmTMB()}}).
-An optional previous \code{\link[=sdmTMB]{sdmTMB()}} fit to pull parameter values.
-Will be overridden by any non-\code{NULL} parameter arguments supplied directly.}
-
 \item{seed}{Seed number. The TMB and RTMB backends (see the \code{backend}
 argument of \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}}, passed via \code{control}) draw random numbers
 differently, so the same seed gives different simulated values with each.}
@@ -138,9 +138,8 @@ be supplied as a single value or a vector the same length as \code{sigma_V}.}
 
 \item{nonlocal_formula}{An optional one-sided formula describing
 covariate-diffusion terms to pass to \code{\link[=sdmTMB]{sdmTMB()}}. Supported wrappers are
-\code{diffusion()} and \code{time_lag()}. Same-covariate wrappers select one joint
-operator and coefficient. See \code{\link[=sdmTMB]{sdmTMB()}} for the \code{time_lag()} \code{start}
-argument.}
+\code{\link[=diffusion]{diffusion()}} and \code{\link[=time_lag]{time_lag()}}. Same-covariate wrappers select one joint
+operator and coefficient.}
 
 \item{lags_kappaS}{Spatial diffusion scale for \code{diffusion()} terms.
 Must be positive and finite. Supply a single value or
@@ -150,13 +149,20 @@ one value per covariate needing a spatial scale.}
 Must satisfy \verb{0 < rhoT < 1}. Supply a single value or one
 value per covariate needing temporal diffusion.}
 
+\item{rho_sar}{Spatial dependence parameter for \code{spatial_model = "sar"};
+between -1 and 1.}
+
+\item{alpha_car}{Spatial dependence parameter for \code{spatial_model = "car"};
+between 0 and 1.}
+
 \item{...}{Any other arguments to pass to \code{\link[=sdmTMB]{sdmTMB()}}.}
 }
 \value{
 A data frame where:
 \itemize{
 \item The first column is the time variable (if present).
-\item The second and third columns are the spatial coordinates.
+\item The second and third columns are the spatial coordinates (or, for areal
+models, a single column of areal unit IDs).
 \item \code{omega_s} represents the simulated spatial random effects (only if present).
 \item \code{zeta_s} represents the simulated spatially varying covariate field (only if present).
 \item \code{epsilon_st} represents the simulated spatiotemporal random effects (only if present).

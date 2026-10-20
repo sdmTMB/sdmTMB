@@ -207,6 +207,17 @@ test_that("Truncated NB response predictions use the estimated phi", {
   expect_equal(predict(fit0, type = "response")$est[1], p, tolerance = 1e-4)
 })
 
+test_that("Truncated NB response residuals use the truncated mean", {
+  set.seed(1)
+  d <- data.frame(y = rnbinom(300, mu = 3, size = 1.5))
+  d <- d[d$y > 0, , drop = FALSE]
+  for (family in list(truncated_nbinom1(), truncated_nbinom2())) {
+    fit <- sdmTMB(y ~ 1, data = d, spatial = "off", family = family)
+    expect_equal(residuals(fit, type = "response"),
+      d$y - predict(fit, type = "response")$est)
+  }
+})
+
 test_that("Truncated NB fits sharing a family object keep their own phi", {
   set.seed(1)
   d1 <- data.frame(y = rnbinom(300, mu = 3, size = 1.5))

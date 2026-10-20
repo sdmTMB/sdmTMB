@@ -34,12 +34,16 @@ rtmb_logit_inverse_link <- function(eta, link) {
 }
 
 # Response mean of one component, as used for combined projections. The
-# truncated negative binomials report the mean of the truncated distribution.
+# truncated negative binomials report the mean of the truncated distribution
+# and ordered beta includes its point masses at 0 and 1.
 rtmb_component_mean <- function(eta, family, m, theta) {
   mu <- rtmb_inverse_link(eta, family$link[[m]])
   spec <- rtmb_obs_family(family$family[[m]])
   if (!is.null(spec$log_nzprob)) {
     mu <- mu / exp(spec$log_nzprob(mu, theta$phi[[family$phi]]))
+  }
+  if (family$family[[m]] == "ordbeta") {
+    mu <- spec$mean(mu, list(eta = eta, psi = theta$psi))
   }
   mu
 }
@@ -69,10 +73,12 @@ rtmb_obs_state <- function(i, m, family, eta, par, theta, prepared, ln_phi_i) {
   if (!is.na(family$gengamma_Q)) {
     state$Q <- par$gengamma_Q[[family$gengamma_Q]]
   }
-  if (name == "ordbeta") state$psi <- ordbeta_cutpoints(par$psi)
-  if (name == "censored_poisson") {
+  if (name == "ordbeta") state$psi <- theta$psi
+  if (name %in% c("censored_poisson", "censored_nbinom1", "censored_nbinom2",
+    "censored_binomial", "censored_betabinomial")) {
     state$upr <- fit$upr[i]
   }
+  if (name == "censored_betabinomial") state$cens_direct <- fit$cens_direct[i]
   if (family$combine == "poisson_link") {
     # Poisson-link delta: component 1 models log numbers density, and
     # component 2 log weight, with the offset inside both means.
@@ -140,7 +146,7 @@ rtmb_observations <- function(par, theta, prepared, eta) {
       y <- fit$y[i, m]
       log_density <- spec$logpdf(y, s$mu, s)
       jnll_obs[i] <- jnll_obs[i] - fit$weights[i] * log_density
-      if (!is.null(spec$deviance)) {
+      if (prepared$deviance && !is.null(spec$deviance)) {
         # As in C++, some residuals can be NaN; keep them without R's
         # warnings. Weights scale each squared residual, as in glm().
         devresid[i, m] <- sqrt(fit$weights[i]) * suppressWarnings(

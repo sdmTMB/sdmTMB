@@ -3,6 +3,10 @@
 # Reports at exactly `parameters`, with no inner optimization.
 report_both_backends <- function(fit, parameters) {
   lapply(c(tmb = "tmb", rtmb = "rtmb"), function(backend) {
+    # Evaluated directly so that RTMB also reports deviance residuals
+    if (backend == "rtmb") {
+      return(rtmb_report_values(fit$tmb_data, parameters, deviance = TRUE))
+    }
     obj <- make_sdmTMB_adfun(fit$tmb_data, parameters, fit$tmb_map,
       random = NULL, backend = backend)
     obj$report()

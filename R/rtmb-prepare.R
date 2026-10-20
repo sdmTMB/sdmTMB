@@ -33,10 +33,11 @@ rtmb_prepare <- function(data) {
     epsilon_ar1 = data$ar1_fields[components] == 1L,
     epsilon_rw = data$rw_fields[components] == 1L,
     share_range = data$share_range[components] == 1L,
-    # SVC fields enter the predictor whenever present; like the C++ template,
-    # their density is only evaluated for components with a spatial field.
+    # SVC fields enter every component's predictor, so each component has an
+    # SVC density whether or not it has a spatial intercept field. (The first
+    # fitting phase turns fields off with `no_spatial`.)
     svc = svc,
-    svc_density = svc & include_spatial,
+    svc_density = svc && any_field,
 
     # Other effects and predictor terms
     time_varying = time_varying_type != "none",
@@ -56,7 +57,9 @@ rtmb_prepare <- function(data) {
       "epsilon_st", "zeta_s", "re_b_pars", "b_rw_t", "b_smooth")),
     simulate_obs = on(data$sim_obs),
 
-    # Reports
+    # Reports. Deviance residuals are only computed on request (see
+    # rtmb_report_values()), keeping them off fitting and simulation tapes.
+    deviance = FALSE,
     rsr = on(data$do_rsr),
     pop_pred = on(data$pop_pred),
     adreport_projection = on(data$calc_se),
@@ -197,7 +200,10 @@ rtmb_row_inputs <- function(data, families, projection) {
       time = data$year_i + 1L,
       family_id = data$obs_family_id + 1L,
       y = data$y_i, size = data$size, weights = data$weights_i,
-      upr = rep_len(data$upr, nrow(data$y_i)), Xdisp = data$Xdisp_ij
+      upr = rep_len(data$upr, nrow(data$y_i)), Xdisp = data$Xdisp_ij,
+      # Censored beta-binomial rows summed directly (see rtmb_dcensbetabinom())
+      cens_direct = rep_len(if (is.null(data$cens_direct)) 1L else
+        data$cens_direct, nrow(data$y_i))
     )
   }
   rtmb_row_family_flags(out, families, projection)
@@ -301,4 +307,5 @@ rtmb_validate <- function(data, prepared, parameters, random, ...) {
   if (!is.null(prepared$priors$tweedie_p) && any(tweedie)) {
     cli::cli_abort("Priors not enabled for Tweedie p currently.")
   }
+  rtmb_check_custom_priors(parameters, prepared)
 }

@@ -66,8 +66,12 @@ rtmb_objective <- function(par, prepared, adreport = NULL) {
 # Reports of the RTMB model at the full parameter list `par`, evaluated with
 # plain numbers. Equivalent to `obj$report()` without building (taping) an AD
 # object, which for large prediction grids dominates time and memory.
-rtmb_report_values <- function(data, par) {
-  rtmb_evaluate(par, rtmb_prepare(data))$reports
+# `deviance = TRUE` also computes deviance residuals (`devresid`), which are
+# otherwise reported as zeros.
+rtmb_report_values <- function(data, par, deviance = FALSE) {
+  prepared <- rtmb_prepare(data)
+  prepared$deviance <- deviance
+  rtmb_evaluate(par, prepared)$reports
 }
 
 # Resolve parameters to their natural scale, evaluate latent effects, compute
@@ -88,7 +92,8 @@ rtmb_evaluate <- function(par, prepared) {
   fitted$rw <- fitted$rw * active
   fitted$epsilon <- fitted$epsilon * active
   obs <- rtmb_observations(par, theta, prepared, fitted$eta)
-  jnll <- effects$nll + sum(obs$jnll_obs) + rtmb_prior_nll(par, theta, prepared)
+  jnll <- effects$nll + sum(obs$jnll_obs) + rtmb_prior_nll(par, theta, prepared) -
+    rtmb_custom_log_density(par, theta, prepared)
   sampling <- NULL
   if (!is.null(prepared$preferential)) {
     sampling <- rtmb_sampling(par, theta, effects, prepared)
@@ -121,10 +126,17 @@ rtmb_transform <- function(par, prepared) {
   n_m <- prepared$n_m
   # Maps the real line to a correlation in (-1, 1).
   correlation <- function(x) 2 * RTMB::plogis(x) - 1
-  # Components without a spatial field report sigma_O = log_sigma_O = 0.
+  # Components without a spatial (spatiotemporal) field have
+  # sigma_O = log_sigma_O = 0 (sigma_E = log_sigma_E = 0).
   log_sigma_O <- sigma_O <- matrix(0, 1L, n_m)
+  log_sigma_E <- sigma_E <- matrix(0, 1L, n_m)
   log_sigma_Z <- sigma_Z <- matrix(0, nrow(par$ln_tau_Z), n_m)
   for (m in seq_len(n_m)) {
+    if (prepared$temporal[[m]]) {
+      log_sigma_E[1L, m] <- rtmb_log_field_sd(par$ln_tau_E[[m]],
+        par$ln_kappa[2L, m], inputs)
+      sigma_E[1L, m] <- exp(log_sigma_E[1L, m])
+    }
     ln_kappa <- par$ln_kappa[1L, m]
     if (prepared$include_spatial[[m]]) {
       log_sigma_O[1L, m] <- rtmb_log_field_sd(par$ln_tau_O[[m]], ln_kappa,
@@ -153,6 +165,8 @@ rtmb_transform <- function(par, prepared) {
     log_sigma_O = log_sigma_O,
     sigma_Z = sigma_Z,
     log_sigma_Z = log_sigma_Z,
+    sigma_E = sigma_E,
+    log_sigma_E = log_sigma_E,
     rho = correlation(par$ar1_phi),
     rho_sar = correlation(par$logit_rho_sar),
     alpha_car = RTMB::plogis(par$logit_rho_sar),
@@ -185,6 +199,7 @@ rtmb_transform <- function(par, prepared) {
     phi = exp(par$ln_phi),
     tweedie_p = RTMB::plogis(par$thetaf) + 1,
     student_df = exp(par$ln_student_df) + 1,
+    psi = if (length(par$psi)) ordbeta_cutpoints(par$psi),
     # The larger mixture component's mean is `mix_ratio` times the smaller.
     p_extreme = RTMB::plogis(par$logit_p_extreme),
     mix_ratio = exp(par$log_ratio_mix) + 1

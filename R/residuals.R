@@ -83,10 +83,49 @@ qres_betabinomial <- function(object, y, mu, .n = NULL) {
 
   if (is.null(.n)) .n <- rep(1, length(y))
 
-  a <- pbbinom(pmax(0, y - 1), size = .n, alpha = alpha, beta = beta)
+  a <- pbbinom(y - 1, size = .n, alpha = alpha, beta = beta)
   b <- pbbinom(y, size = .n, alpha = alpha, beta = beta)
   u <- stats::runif(n = length(y), min = pmin(a, b), max = pmax(a, b))
   stats::qnorm(u)
+}
+
+# Censored counts are uniform over the CDF across their interval [y, upr].
+qres_censored_betabinomial <- function(object, y, mu, .n = NULL) {
+  upr <- object$tmb_data$upr
+  upr <- ifelse(is.finite(upr), upr, .n)
+  phi <- exp(get_pars(object)[["ln_phi"]])
+  alpha <- mu * phi
+  beta <- (1 - mu) * phi
+  a <- pbbinom(y - 1, size = .n, alpha = alpha, beta = beta)
+  b <- pbbinom(upr, size = .n, alpha = alpha, beta = beta)
+  u <- stats::runif(n = length(y), min = pmin(a, b), max = pmax(a, b))
+  stats::qnorm(u)
+}
+
+qres_censored_binomial <- function(object, y, mu, .n = NULL) {
+  upr <- object$tmb_data$upr
+  upr <- ifelse(is.finite(upr), upr, .n)
+  a <- stats::pbinom(y - 1, .n, mu)
+  b <- stats::pbinom(upr, .n, mu)
+  u <- stats::runif(n = length(y), min = pmin(a, b), max = pmax(a, b))
+  stats::qnorm(u)
+}
+
+# Censored counts are uniform over the CDF across their interval [y, upr].
+qres_censored_nb <- function(object, y, mu, size) {
+  upr <- floor(object$tmb_data$upr)
+  a <- stats::pnbinom(y - 1, size = size, mu = mu)
+  b <- stats::pnbinom(upr, size = size, mu = mu)
+  u <- stats::runif(n = length(y), min = pmin(a, b), max = pmax(a, b))
+  stats::qnorm(u)
+}
+
+qres_censored_nbinom1 <- function(object, y, mu, ...) {
+  qres_censored_nb(object, y, mu, mu / exp(get_pars(object)[["ln_phi"]]))
+}
+
+qres_censored_nbinom2 <- function(object, y, mu, ...) {
+  qres_censored_nb(object, y, mu, exp(get_pars(object)[["ln_phi"]]))
 }
 
 qres_nbinom2 <- function(object, y, mu, ...) {
@@ -512,20 +551,29 @@ residuals.sdmTMB <- function(object,
     nd <- object$data
     est_column <- if (model == 1L) "est1" else "est2"
   }
-  if(fam %in% c("truncated_nbinom1", "truncated_nbinom2")){
-    linkinv <- function(eta){exp(eta)}
-  } # for residuals, use untruncated mean
+  if (type == "response") {
+    # response residuals use the response mean, as in `predict()`
+    fam_linkinv <- list(family = fam, linkinv = linkinv)
+    linkinv <- .response_linkinv(fam_linkinv, .object_par(object, "ln_phi"),
+      .object_par(object, "psi"))
+  } else if (fam %in% c("truncated_nbinom1", "truncated_nbinom2")) {
+    linkinv <- exp # quantile residuals use the untruncated mean
+  }
   if (is.null(qres_func) && type != "deviance") {
     res_func <- switch(fam,
       gaussian = qres_gaussian,
       binomial = qres_binomial,
+      censored_binomial = qres_censored_binomial,
       betabinomial = qres_betabinomial,
+      censored_betabinomial = qres_censored_betabinomial,
       tweedie  = qres_tweedie,
       Beta     = qres_beta,
       ordbeta  = qres_ordbeta,
       Gamma    = qres_gamma,
       nbinom2  = qres_nbinom2,
       nbinom1  = qres_nbinom1,
+      censored_nbinom2 = qres_censored_nbinom2,
+      censored_nbinom1 = qres_censored_nbinom1,
       truncated_nbinom2  = qres_truncated_nbinom2,
       truncated_nbinom1  = qres_truncated_nbinom1,
       poisson  = qres_pois,
@@ -632,7 +680,21 @@ residuals.sdmTMB <- function(object,
         cli_abort("Deviance residuals not implemented for binomial family with size > 1.")
       }
     }
-    report <- object$tmb_obj$report(object$tmb_obj$env$last.par.best)
+    if (backend_sdmTMB(object) == "tmb" && !is_delta(object) &&
+        object$family$family == "nbinom1") {
+      cli_abort(c(
+        "NB1 deviance residuals are not implemented for the TMB backend.",
+        "i" = "Refit with `sdmTMBcontrol(backend = \"rtmb\")`."
+      ))
+    }
+    env <- object$tmb_obj$env
+    report <- if (backend_sdmTMB(object) == "rtmb") {
+      # Deviance residuals are left off the RTMB tape; evaluate them directly.
+      rtmb_report_values(object$tmb_data,
+        env$parList(par = env$last.par.best), deviance = TRUE)
+    } else {
+      object$tmb_obj$report(env$last.par.best)
+    }
     resids <- report$devresid[, model, drop = TRUE]
     if (all(resids == 0)) {
       cli_abort("Deviance residuals not implemented for this family.")

@@ -133,6 +133,9 @@ rtmb_report <- function(par, theta, prepared, effects, fitted, obs,
     if (!is.null(theta$sigma_alpha_pref)) {
       list(log_sigma_alpha_pref = log(theta$sigma_alpha_pref))
     },
+    if (spde_field && prepared$anisotropy) {
+      rtmb_aniso_log_ranges(theta$range, par$ln_H_input)
+    },
     if (requested[["total"]]) derived["total"],
     if (requested[["eao"]]) derived["log_eao"]
   )

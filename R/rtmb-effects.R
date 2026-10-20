@@ -20,10 +20,13 @@ rtmb_gmrf <- function(x, Q, scale, simulate) {
     value = x)
 }
 
-# Log spatiotemporal SD by time step (constant over time).
-rtmb_log_sigma_E <- function(par, prepared, m) {
-  rep(rtmb_log_field_sd(par$ln_tau_E[[m]], par$ln_kappa[2L, m],
-    prepared$precision), prepared$n_t)
+# `n` GMRF draws (columns) with precision `Q` and `dgmrf()` scale `scale`,
+# as from `n` calls of `rtmb_gmrf(..., simulate = TRUE)` with plain numbers.
+rtmb_rgmrf <- function(n, Q, scale) {
+  L <- Matrix::Cholesky(Q, super = TRUE, LDL = FALSE)
+  u <- matrix(stats::rnorm(ncol(L) * n), ncol(L), n)
+  u <- Matrix::solve(L, Matrix::solve(L, u, system = "Lt"), system = "Pt")
+  scale * as.matrix(u)
 }
 
 # Spatiotemporal field `epsilon_st` with IID, AR1, or RW time structure.
@@ -50,11 +53,14 @@ rtmb_spatiotemporal_field <- function(epsilon_st, par, theta, prepared, Q,
       else if (rw) epsilon_st[, t - 1L, m]
       else 0
     }
-    if (simulate) {
-      for (t in intersect(seq_len(n_t), prepared$simulate_t)) {
+    sim_t <- if (simulate) intersect(seq_len(n_t), prepared$simulate_t)
+    if (length(sim_t)) {
+      # One factorization for all steps; draws match per-step dgmrf() calls.
+      draws <- rtmb_rgmrf(length(sim_t), Q, scale)
+      for (i in seq_along(sim_t)) {
+        t <- sim_t[[i]]
         step <- if (t > 1L) innovation_scale else 1
-        draw <- rtmb_gmrf(numeric(dim(epsilon_st)[1L]), Q, scale, TRUE)
-        epsilon_st[, t, m] <- previous_mean(t) + step * draw$value
+        epsilon_st[, t, m] <- previous_mean(t) + step * draws[, i]
       }
     }
     return(list(nll = 0, value = epsilon_st))
@@ -168,8 +174,7 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
     result$value
   }
   for (m in seq_len(n_m)) {
-    if (prepared$spatial[[m]] || prepared$temporal[[m]] ||
-        prepared$svc_density[[m]]) {
+    if (prepared$spatial[[m]] || prepared$temporal[[m]] || prepared$svc_density) {
       Q <- rtmb_precision(inputs, theta, 1L, m)
     }
     if (prepared$spatial[[m]]) {
@@ -177,7 +182,7 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
         inputs)
       effects$omega_s[, m] <- gmrf(effects$omega_s[, m], Q, scale, "omega_s")
     }
-    if (prepared$svc_density[[m]]) {
+    if (prepared$svc_density) {
       for (z in seq_len(dim(effects$zeta_s)[2L])) {
         scale <- rtmb_gmrf_scale(theta$log_sigma_Z[z, m], par$ln_kappa[1L, m],
           inputs)
@@ -185,7 +190,11 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
           "zeta_s")
       }
     }
-    log_sigma_E <- rtmb_log_sigma_E(par, prepared, m)
+    # Reported by time step, as in the C++ template, which reports it even
+    # without a spatiotemporal field; `theta` has it only with one.
+    log_sigma_E <- if (prepared$temporal[[m]]) theta$log_sigma_E[1L, m] else
+      rtmb_log_field_sd(par$ln_tau_E[[m]], par$ln_kappa[2L, m], inputs)
+    log_sigma_E <- rep(log_sigma_E, prepared$n_t)
     effects$log_sigma_E[, m] <- log_sigma_E
     if (prepared$temporal[[m]]) {
       shared <- prepared$share_range[[m]] || rtmb_areal(inputs)
