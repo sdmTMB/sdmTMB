@@ -27,7 +27,7 @@ compile-opt:
 	echo "pkgbuild::clean_dll(); pkgbuild::compile_dll(debug = FALSE)" | $(R) --no-echo
 
 # Quick tests: skip compile-opt (reuses the existing DLL) and use a terse
-# reporter. Override with e.g. "make TEST_REPORTER=progress test-quick"
+# reporter. Override with e.g. "make TEST_REPORTER=progress test"
 TEST_REPORTER=check
 TEST_NCPUS=ncpus <- parallel::detectCores(); options(Ncpus = if (is.na(ncpus)) 1L else max(1L, as.integer(round(ncpus / 2 - 1))))
 
