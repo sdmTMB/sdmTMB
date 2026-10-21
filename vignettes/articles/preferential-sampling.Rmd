@@ -228,11 +228,15 @@ sampling depth coefficients changes. Covariate effects in the sampling
 formula don't need to match the catch model's, which also helps when the
 catch model uses a smoother.
 
+By default, the sampling model also includes its own spatial field
+(`spatial = "on"`). Our simulation has none, so we turn it off here and
+revisit it [below](#is-a-sampling-only-field-warranted).
+
 ```{r fit-joint}
 fit <- update(fit_catch,
   preferential = preferential_sampling(
     sampled ~ 0 + factor(year) + dist_port + poly(depth, 2),
-    data = frame
+    data = frame, spatial = "off"
   )
 )
 ```
@@ -331,7 +335,7 @@ independent, and the catch estimates match `fit_catch`.
 fit_zero <- update(fit,
   preferential = preferential_sampling(
     sampled ~ 0 + factor(year) + dist_port + poly(depth, 2),
-    data = frame, coefficient = "zero"
+    data = frame, spatial = "off", coefficient = "zero"
   )
 )
 AIC(fit_zero, fit)
@@ -349,7 +353,7 @@ A misspecified sampling model can also mislead this test.
 Unexplained spatial structure in sampling, such as access or tradition, can
 be mistaken for preference if it happens to line up with the catch fields.
 Measured access covariates, like distance to port, are the first defense.
-A sampling-only field is the second: `spatial = "on"`. The joint models
+A sampling-only field is the second, and the default (`spatial = "on"`). The joint models
 share the same catch data and sampling frame, so their AIC values are
 comparable with each other (but not with the catch-only model).
 
@@ -415,8 +419,8 @@ $\eta_2$ only.
   `simulate(re_form = NA)`, `project()`, and `sdmTMB_cv()` aren't supported.
   `predict_sampling()` covers the fitted frame only.
 * **Currently supported.** The RTMB backend; single log-link Poisson, NB2,
-  Gamma, Tweedie, or lognormal families, or delta-gamma and
-  delta-lognormal with default links (standard or Poisson-link); univariate `s()` smoothers; IID random intercepts
+  Gamma, Tweedie, lognormal, or generalized gamma families, or delta-gamma,
+  delta-lognormal, and delta-generalized-gamma with default links (standard or Poisson-link); univariate `s()` smoothers; IID random intercepts
   (excluded, or included at known levels); ordinary isotropic spatial and
   spatiotemporal fields; ordinary fixed effects in the sampling formula; a
   constant preference coefficient or one that varies by time step

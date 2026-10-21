@@ -12,7 +12,7 @@ preferential_sampling(
   target = c("fields", "expected"),
   coefficient = c("constant", "iid", "rw", "zero"),
   baseline = c("off", "iid", "rw"),
-  spatial = c("off", "on")
+  spatial = c("on", "off")
 )
 }
 \arguments{
@@ -121,8 +121,8 @@ estimating them freely with \code{0 + factor(year)}, and so requires a
 \code{formula} with an intercept and without free time-step effects.}
 
 \item{spatial}{Whether to add a time-invariant spatial random field to the
-sampling model (\code{"off"} or \code{"on"}). This does not affect the main
-model's fields.}
+sampling model: \code{"on"} (default) or \code{"off"}. This does not affect the
+main model's fields.}
 }
 \value{
 A list of class \code{sdmTMB_preferential}.
@@ -152,8 +152,8 @@ prediction, \code{offset} enters \eqn{\eta_2} only.
 
 This feature requires the RTMB backend (the default), a main model with a spatial
 or spatiotemporal field, and either a single log-link family (Poisson,
-NB2, Gamma, Tweedie, or lognormal) or a \code{\link[=delta_gamma]{delta_gamma()}} or
-\code{\link[=delta_lognormal]{delta_lognormal()}} family with default links (standard or Poisson-link). Smoothers in the main model must be univariate
+NB2, Gamma, Tweedie, lognormal, or generalized gamma) or a \code{\link[=delta_gamma]{delta_gamma()}},
+\code{\link[=delta_lognormal]{delta_lognormal()}}, or \code{\link[=delta_gengamma]{delta_gengamma()}} family with default links (standard or Poisson-link). Smoothers in the main model must be univariate
 \code{s()} terms without \code{by} variables.
 }
 \section{Fitted models}{

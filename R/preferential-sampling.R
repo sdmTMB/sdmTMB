@@ -34,8 +34,8 @@
 #'
 #' This feature requires the RTMB backend (the default), a main model with a spatial
 #' or spatiotemporal field, and either a single log-link family (Poisson,
-#' NB2, Gamma, Tweedie, or lognormal) or a [delta_gamma()] or
-#' [delta_lognormal()] family with default links (standard or Poisson-link). Smoothers in the main model must be univariate
+#' NB2, Gamma, Tweedie, lognormal, or generalized gamma) or a [delta_gamma()],
+#' [delta_lognormal()], or [delta_gengamma()] family with default links (standard or Poisson-link). Smoothers in the main model must be univariate
 #' `s()` terms without `by` variables.
 #'
 #' @section Fitted models:
@@ -155,8 +155,8 @@
 #'   estimating them freely with `0 + factor(year)`, and so requires a
 #'   `formula` with an intercept and without free time-step effects.
 #' @param spatial Whether to add a time-invariant spatial random field to the
-#'   sampling model (`"off"` or `"on"`). This does not affect the main
-#'   model's fields.
+#'   sampling model: `"on"` (default) or `"off"`. This does not affect the
+#'   main model's fields.
 #'
 #' @return A list of class `sdmTMB_preferential`.
 #' @export
@@ -170,7 +170,7 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
                                   target = c("fields", "expected"),
                                   coefficient = c("constant", "iid", "rw", "zero"),
                                   baseline = c("off", "iid", "rw"),
-                                  spatial = c("off", "on")) {
+                                  spatial = c("on", "off")) {
   if (!inherits(formula, "formula") || length(formula) != 3L) {
     cli_abort("`formula` must be a two-sided formula such as `sampled ~ 1`.")
   }
@@ -269,15 +269,15 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
   # Standard deltas use logit/log links; Poisson-link deltas log/log.
   supported_delta <- delta && !multi_family &&
     identical(family$family[[1L]], "binomial") &&
-    family$family[[2L]] %in% c("Gamma", "lognormal") && (
+    family$family[[2L]] %in% c("Gamma", "lognormal", "gengamma") && (
       (identical(family$type, "standard") &&
         identical(unname(family$link), c("logit", "log"))) ||
       (identical(family$type, "poisson_link_delta") &&
         identical(unname(family$link), c("log", "log"))))
   unsupported <- c(
-    "delta models other than `delta_gamma()` or `delta_lognormal()` with default links" =
+    "delta models other than `delta_gamma()`, `delta_lognormal()`, or `delta_gengamma()` with default links" =
       delta && !multi_family && !supported_delta,
-    "families other than log-link Poisson, NB2, Gamma, Tweedie, or lognormal" =
+    "families other than log-link Poisson, NB2, Gamma, Tweedie, lognormal, or generalized gamma" =
       !delta && !multi_family && !log_link_family,
     "multi-family models" = multi_family,
     "areal (SAR/CAR) models" = areal,
@@ -311,7 +311,7 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
 
 # Families whose log-link predictor is the log of the response mean.
 .preferential_families <- c("poisson", "nbinom2", "Gamma", "tweedie",
-  "lognormal")
+  "lognormal", "gengamma")
 
 # Functions that summarize the data they are given. In a formula they are
 # recomputed on new data unless the fitted values are kept in `predvars`, as

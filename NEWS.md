@@ -16,13 +16,15 @@
   model for which cells of an eligible sampling frame were sampled is linked
   to the main model's spatial and spatiotemporal fields (by default; or to
   its full standardized expected catch with `target = "expected"`) through a
-  shared preference coefficient, with its own fixed effects, an optional
-  sampling-only spatial field, and optional IID or random-walk time-step
+  shared preference coefficient, with its own fixed effects, a
+  sampling-only spatial field (on by default; `spatial = "off"` removes it),
+  and optional IID or random-walk time-step
   processes for the preference coefficient (`coefficient`) and the sampling
   baseline (`baseline`). See `predict_sampling()`,
   `tidy(fit, model = "sampling")`, and the preferential-sampling article.
-  Supported families are single log-link Poisson, NB2, Gamma, Tweedie, and
-  lognormal, and `delta_gamma()` and `delta_lognormal()` with default links,
+  Supported families are single log-link Poisson, NB2, Gamma, Tweedie,
+  lognormal, and generalized gamma, and `delta_gamma()`, `delta_lognormal()`,
+  and `delta_gengamma()` with default links,
   including `type = "poisson-link"`.
 
 # sdmTMB 1.2.0
