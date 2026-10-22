@@ -103,8 +103,9 @@ components, \code{1} gives the first (binary) component, and \code{2} the second
 component as \code{est1} and \code{est2}. Ignored for other models. See the
 \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-model vignette}.}
 
-\item{offset}{A numeric vector of offset values, one per row of \code{newdata}
-(not a column name). If \code{NULL} (default), predictions for the fitted data
+\item{offset}{A numeric vector of offset values, one per row of \code{newdata},
+or a single value for all rows (not a column name). If \code{NULL} (default),
+predictions for the fitted data
 use the fitted offset, and predictions with \code{newdata} use an offset of 0,
 i.e., predictions per unit of the offset (e.g., density rather than
 catch when the offset is log area swept).}

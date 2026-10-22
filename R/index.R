@@ -38,7 +38,8 @@
 #'   sum of densities rather than an area-weighted total. See Details for
 #'   other uses.
 #' @param offset An optional numeric vector of offset values, one per row of
-#'   `newdata` (not a column name). If `NULL` (default), the offset is 0, so
+#'   `newdata`, or a single value for all rows (not a column name). If `NULL`
+#'   (default), the offset is 0, so
 #'   predictions are per unit of the offset (e.g., density rather than catch
 #'   when the offset is log area swept).
 #' @param silent Logical: suppress TMB's output while calculating? In
@@ -303,10 +304,13 @@ chunk_time <- function(x, chunks) {
     if (!is.data.frame(newdata)) {
       cli_abort("`newdata` must be a data frame.")
     }
-    if (!is.null(offset) &&
-        (!is.numeric(offset) || length(offset) != nrow(newdata))) {
-      cli_abort("`offset` must be a numeric vector with one value per row of `newdata`.")
+    # A NULL offset is 0 here (per unit of offset), which is what an index
+    # usually needs, so don't trigger the predict() offset message.
+    if (is.null(offset)) offset <- 0
+    if (!is.numeric(offset) || !length(offset) %in% c(1L, nrow(newdata))) {
+      cli_abort("`offset` must have length one or one value per row of `newdata`.")
     }
+    offset <- rep_len(offset, nrow(newdata))
     args <- c(list(
       object = obj,
       newdata = newdata,
@@ -367,12 +371,11 @@ get_index_split <- function(
     offset <- predict_args$offset
     predict_args$offset <- NULL
   }
-  if (is.null(offset)) {
-    offset <- rep(0, nrow(newdata))
+  if (is.null(offset)) offset <- 0
+  if (!is.numeric(offset) || !length(offset) %in% c(1L, nrow(newdata))) {
+    cli_abort("`offset` must have length one or one value per row of `newdata`.")
   }
-  if (!is.numeric(offset) || length(offset) != nrow(newdata)) {
-    cli_abort("`offset` must be a numeric vector with one value per row of `newdata`.")
-  }
+  offset <- rep_len(offset, nrow(newdata))
   if (is.character(area)) {
     if (length(area) != 1L || !area %in% names(newdata)) {
       cli_abort("A character `area` must name a column in `newdata`.")

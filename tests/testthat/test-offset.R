@@ -171,11 +171,37 @@ test_that("predicting on newdata with a non-null offset in fit but a null offset
     offset = "area_swept",
     spatial = "off"
   )
-  pred <- predict(fit)
-  pred <- predict(fit, offset = rep(0, nrow(dat)))
-  pred <- predict(fit, newdata = qcs_grid, offset = rep(0, nrow(qcs_grid)))
-  pred <- predict(fit, newdata = qcs_grid)
+  rlang::local_options(rlib_message_verbosity = "verbose") # ignore "once"
+  expect_no_message(pred <- predict(fit))
+  expect_no_message(pred <- predict(fit, offset = rep(0, nrow(dat))))
+  expect_no_message(pred0 <- predict(fit, newdata = qcs_grid, offset = 0))
   expect_message({pred <- predict(fit, newdata = qcs_grid)}, regexp = "offset")
+  expect_equal(pred$est, pred0$est)
+
+  # a scalar offset is recycled
+  pred1 <- predict(fit, newdata = qcs_grid, offset = log(100))
+  expect_equal(pred1$est, pred0$est + log(100))
+  expect_error(predict(fit, newdata = qcs_grid, offset = c(0, 1)), regexp = "length one")
+
+  # get_index() defaults to an offset of 0 without a message
+  nd <- replicate_df(qcs_grid, "year", unique(dat$year))
+  fit_t <- sdmTMB(
+    catch_weight ~ 0 + as.factor(year),
+    data = dat,
+    family = Gamma("log"),
+    offset = "area_swept",
+    time = "year",
+    spatial = "off",
+    spatiotemporal = "off"
+  )
+  expect_no_message(
+    ind <- get_index(fit_t, newdata = nd, bias_correct = FALSE),
+    message = "offset"
+  )
+  ind0 <- get_index(fit_t, newdata = nd, offset = 0, bias_correct = FALSE)
+  expect_equal(ind, ind0)
+  ind1 <- get_index(fit_t, newdata = nd, offset = log(2), bias_correct = FALSE)
+  expect_equal(ind1$est, 2 * ind0$est)
 })
 
 # #

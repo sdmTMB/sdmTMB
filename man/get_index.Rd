@@ -106,7 +106,8 @@ sum of densities rather than an area-weighted total. See Details for
 other uses.}
 
 \item{offset}{An optional numeric vector of offset values, one per row of
-\code{newdata} (not a column name). If \code{NULL} (default), the offset is 0, so
+\code{newdata}, or a single value for all rows (not a column name). If \code{NULL}
+(default), the offset is 0, so
 predictions are per unit of the offset (e.g., density rather than catch
 when the offset is log area swept).}
 

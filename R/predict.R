@@ -78,8 +78,9 @@
 #'   component as `est1` and `est2`. Ignored for other models. See the
 #'   [delta-model
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html).
-#' @param offset A numeric vector of offset values, one per row of `newdata`
-#'   (not a column name). If `NULL` (default), predictions for the fitted data
+#' @param offset A numeric vector of offset values, one per row of `newdata`,
+#'   or a single value for all rows (not a column name). If `NULL` (default),
+#'   predictions for the fitted data
 #'   use the fitted offset, and predictions with `newdata` use an offset of 0,
 #'   i.e., predictions per unit of the offset (e.g., density rather than
 #'   catch when the offset is log area swept).
@@ -609,13 +610,15 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
 predict_offset <- function(req, object, n) {
   if (req$newdata_supplied && is.null(req$offset) && !all(object$offset == 0)) { # #372
     cli_inform(c(
-      "Fitted object contains an offset but the offset is `NULL` in `predict.sdmTMB()` and `newdata` were supplied.",
-      "Prediction will proceed assuming the offset vector is 0 in the prediction.",
-      "Specify an offset vector in `predict.sdmTMB()` to override this."))
+      "i" = "Model was fit with an offset; predicting on {.arg newdata} with an offset of 0.",
+      " " = "Predictions are therefore per one unit of the offset's exposure (e.g., effort, area, or time).",
+      " " = "Supply {.arg offset} to use other values, or set {.code offset = 0} to silence this message."
+    ), .frequency = "once", .frequency_id = "sdmTMB_predict_offset")
   }
   if (!is.null(req$offset)) {
+    if (length(req$offset) == 1L) return(rep(req$offset, n))
     if (n != length(req$offset))
-      cli_abort("Prediction offset vector does not equal number of rows in prediction dataset.")
+      cli_abort("`offset` must have length one or one value per row of the prediction data.")
     return(req$offset)
   }
   if (req$newdata_supplied) rep(0, n) else object$tmb_data$offset_i
