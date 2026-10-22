@@ -182,6 +182,7 @@ test_that("predicting on newdata with a non-null offset in fit but a null offset
   pred1 <- predict(fit, newdata = qcs_grid, offset = log(100))
   expect_equal(pred1$est, pred0$est + log(100))
   expect_error(predict(fit, newdata = qcs_grid, offset = c(0, 1)), regexp = "length one")
+  expect_error(predict(fit, newdata = qcs_grid, offset = "area_swept"), regexp = "numeric")
 
   # get_index() defaults to an offset of 0 without a message
   nd <- replicate_df(qcs_grid, "year", unique(dat$year))

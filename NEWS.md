@@ -11,6 +11,14 @@
   backend, by the delta method on the log scale. They are unreliable when the
   anisotropy is weakly identified and `NA` at exact isotropy.
 
+* `offset` in `predict.sdmTMB()` and `get_index()` can now be a single value
+  that is recycled across all rows of `newdata`.
+
+* The message when predicting on `newdata` from a model fit with an offset
+  but without supplying `offset` has been clarified and is now shown once per
+  session. It is no longer triggered by `get_index()`, which uses an offset of
+  0 by default. Set `offset = 0` to silence it.
+
 # sdmTMB 1.2.0
 
 ## Breaking changes

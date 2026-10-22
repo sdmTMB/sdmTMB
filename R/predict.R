@@ -610,12 +610,14 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
 predict_offset <- function(req, object, n) {
   if (req$newdata_supplied && is.null(req$offset) && !all(object$offset == 0)) { # #372
     cli_inform(c(
-      "i" = "Model was fit with an offset; predicting on {.arg newdata} with an offset of 0.",
-      " " = "Predictions are therefore per one unit of the offset's exposure (e.g., effort, area, or time).",
-      " " = "Supply {.arg offset} to use other values, or set {.code offset = 0} to silence this message."
+      "i" = "This model has an offset, but no {.arg offset} was given for {.arg newdata}, so an offset of 0 is used.",
+      " " = "With a log offset (e.g., log of effort, area, or time), predictions are then per unit of that quantity rather than totals.",
+      " " = "That is usually what you want for maps and indices. Supply {.arg offset} for other values, or use {.code offset = 0} to hide this message."
     ), .frequency = "once", .frequency_id = "sdmTMB_predict_offset")
   }
   if (!is.null(req$offset)) {
+    if (!is.numeric(req$offset) && !all(is.na(req$offset)))
+      cli_abort("`offset` must be a numeric vector (not a column name).")
     if (length(req$offset) == 1L) return(rep(req$offset, n))
     if (n != length(req$offset))
       cli_abort("`offset` must have length one or one value per row of the prediction data.")
