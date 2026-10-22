@@ -77,6 +77,11 @@ cAIC.sdmTMB <- function(object, what = c("cAIC", "EDF"), ...) {
     return(object$edf)
   }
 
+  if (is.null(object$tmb_random)) {
+    cli_inform(c("This model has no random effects.", "cAIC and EDF only apply to models with random effects."))
+    return(invisible(NULL))
+  }
+
   tmb_data <- object$tmb_data
 
   ## Ensure profile = NULL
@@ -110,18 +115,15 @@ cAIC.sdmTMB <- function(object, what = c("cAIC", "EDF"), ...) {
   q <- sum(indx)
   p <- length(object$model$par)
 
-  ## use '-' for Hess because model returns negative loglikelihood
-  if (is.null(object$tmb_random)) {
-    cli_inform(c("This model has no random effects.", "cAIC and EDF only apply to models with random effects."))
-    return(invisible(NULL))
-  }
-  Hess_new <- -Matrix::Matrix(obj_new$env$f(parDataMode, order = 1, type = "ADGrad"), sparse = TRUE)
-  Hess_new <- Hess_new[indx, indx] ## marginal precision matrix of REs
+  ## Sparse Hessians of the random effects:
+  ## joint (Hess) and with data weights set to zero (Hess_new; prior precision of REs)
+  Hess <- obj$env$spHess(parDataMode, random = TRUE)
+  Hess_new <- obj_new$env$spHess(parDataMode, random = TRUE)
 
-  ## Joint hessian etc
-  Hess <- -Matrix::Matrix(obj$env$f(parDataMode, order = 1, type = "ADGrad"), sparse = TRUE)
-  Hess <- Hess[indx, indx]
-  negEDF <- Matrix::diag(Matrix::solve(Hess, Hess_new, sparse = FALSE))
+  ## diag(Hess^-1 %*% Hess_new) only needs elements of Hess^-1 on the sparsity
+  ## pattern of Hess, which solveSubset() computes from the sparse Cholesky
+  solveSubset <- utils::getFromNamespace("solveSubset", "TMB")
+  negEDF <- Matrix::rowSums(solveSubset(Hess) * Hess_new)
 
   if (what == "caic") {
     jnll <- obj$env$f(parDataMode)

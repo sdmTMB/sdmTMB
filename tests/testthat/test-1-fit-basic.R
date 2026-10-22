@@ -123,7 +123,7 @@ test_that("Anisotropy fits and plots", {
   expect_equal(m$tmb_obj$report()$H,
     structure(
       c(0.665528444798002, 0.079350716881963, 0.079350716881963, 1.51202633656794),
-      .Dim = c(2L, 2L)
+      dim = c(2L, 2L)
     ),
     tolerance = 1e-3
   )
@@ -220,4 +220,10 @@ test_that("poly() works on newdata", {
   )
   p2 <- predict(m2, newdata = nd)
   expect_equal(p, p2, tolerance = 1e-4)
+})
+
+test_that("extract_call_name() returns string literals for print()", {
+  expect_identical(extract_call_name(quote(year)), "year")
+  expect_identical(extract_call_name("year"), "year")
+  expect_null(extract_call_name(NULL))
 })

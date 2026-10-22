@@ -57,8 +57,8 @@ test_that("Link/response type works", {
   p <- predict(fit_delt, type = "link", re_form = NA, se_fit = TRUE)
   mean(p$est)
 
-  expect_warning(
-    p <- predict(fit_delt, type = "response", re_form = NA, se_fit = TRUE), regexp = "link"
+  expect_error(
+    predict(fit_delt, type = "response", re_form = NA, se_fit = TRUE), regexp = "link scale"
   )
 })
 
@@ -92,20 +92,11 @@ test_that("Response prediction works as reported in https://github.com/sdmTMB/sd
     type = "link"
   )
 
-  expect_warning(
-    p2 <- predict(fit_dg,
-      newdata = nd,
-      re_form = NULL,
-      re_form_iid = NULL,
-      se_fit = TRUE,
-      type = "response"
-    ),
-    regexp = "link"
+  expect_true(all(c("est", "est1", "est2", "est_se") %in% names(p1)))
+  expect_error(
+    predict(fit_dg, newdata = nd, se_fit = TRUE, type = "response"),
+    regexp = "link scale"
   )
-
-  expect_equal(p1$est1, p2$est1)
-  expect_equal(p1$est2, p2$est2)
-  expect_equal(p1$est, p2$est)
 
   # without se_fit = TRUE
   p1 <- predict(fit_dg,
@@ -127,4 +118,51 @@ test_that("Response prediction works as reported in https://github.com/sdmTMB/sd
   expect_equal(plogis(p1$est1), p2$est1)
   expect_equal(exp(p1$est2), p2$est2)
   expect_equal(plogis(p1$est1) * exp(p1$est2), p2$est)
+})
+
+test_that("Predicting without newdata matches predicting on the fitted data", {
+  skip_on_cran()
+
+  d <- pcod_2011
+  d$off <- log(seq(0.5, 2, length.out = nrow(d)))
+  d$year_scaled <- as.numeric(scale(d$year))
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  check_no_newdata <- function(fit) {
+    p1 <- predict(fit)
+    p2 <- predict(fit, newdata = fit$data, offset = fit$offset)
+    expect_equal(names(p1), names(p2))
+    expect_equal(p1, p2, tolerance = 1e-6)
+  }
+
+  fit <- sdmTMB(density ~ s(depth), offset = "off", data = d, mesh = mesh,
+    family = tweedie(), time = "year")
+  check_no_newdata(fit)
+
+  fit <- sdmTMB(log(density + 1) ~ 1, data = d, mesh = mesh,
+    spatial_varying = ~ 0 + year_scaled, time = "year",
+    spatiotemporal = "off")
+  check_no_newdata(fit)
+
+  fit <- sdmTMB(density ~ 1, data = subset(d, density > 0), mesh = mesh,
+    family = lognormal_mix(), spatial = "off")
+  check_no_newdata(fit)
+})
+
+test_that("Population predictions order columns like full predictions", {
+  fit <- sdmTMB(density ~ depth_scaled, data = pcod_2011,
+    mesh = pcod_mesh_2011, family = delta_gamma())
+  nd <- pcod_2011[1:5, c("depth_scaled", "X", "Y")]
+  p <- predict(fit, newdata = nd, re_form = NA, se_fit = TRUE)
+  expect_identical(names(p), c(names(nd), "est", "est1", "est2", "est_se"))
+})
+
+test_that("Non-spatial predictions keep the user's coordinate columns", {
+  fit <- sdmTMB(density ~ depth_scaled, data = pcod_2011, spatial = "off",
+    family = tweedie())
+  nd <- pcod_2011[1:5, c("depth_scaled", "X", "Y")]
+  p <- predict(fit, newdata = nd)
+  expect_true(all(c("X", "Y") %in% names(p)))
+  expect_equal(p$X, nd$X)
+  p <- predict(fit, newdata = nd, type = "response")
+  expect_true(all(c("X", "Y") %in% names(p)))
 })

@@ -61,7 +61,7 @@ test_that("ordbeta() simulation matches the distribution in both backends", {
     for (case in cases) {
       par <- obj$par
       par[names(par) == "b_j"] <- case$b_j
-      par[names(par) == "psi"] <- case$psi
+      par[names(par) == "psi"] <- c(case$psi[1], log(diff(case$psi)))
       par[names(par) == "ln_phi"] <- log(case$phi)
       set.seed(1)
       y <- obj$simulate(par)$y_i
@@ -122,6 +122,35 @@ test_that("ordbeta() residuals are well calibrated", {
   expect_equal(sd(r), 1, tolerance = 0.15)
 })
 
+test_that("ordbeta() response means and indices include the point masses", {
+  skip_on_cran()
+  set.seed(3)
+  n <- 300
+  x <- rnorm(n)
+  eta <- 0.2 + 0.7 * x
+  psi <- c(-1.0, 1.2)
+  p0 <- plogis(psi[1] - eta); p1 <- plogis(eta - psi[2])
+  u <- runif(n); y <- rbeta(n, plogis(eta) * 5, (1 - plogis(eta)) * 5)
+  y[u < p0] <- 0; y[u > 1 - p1] <- 1
+  d <- data.frame(y = y, x = x, year = 1L)
+  for (backend in c("tmb", "rtmb")) {
+    fit <- sdmTMB(y ~ x, data = d, family = ordbeta(), spatial = "off",
+      time = "year", spatiotemporal = "off",
+      control = sdmTMBcontrol(backend = backend))
+    cuts <- ordbeta_cutpoints(get_pars(fit)$psi)
+    eta_hat <- predict(fit)$est
+    mean_y <- plogis(eta_hat - cuts[2]) +
+      (1 - plogis(cuts[1] - eta_hat) - plogis(eta_hat - cuts[2])) *
+      plogis(eta_hat)
+    p <- predict(fit, type = "response")
+    expect_equal(p$est, mean_y, tolerance = 1e-6)
+    expect_equal(residuals(fit, type = "response"), y - mean_y,
+      tolerance = 1e-6)
+    ind <- get_index(fit, newdata = d, area = 1 / n, bias_correct = FALSE)
+    expect_equal(ind$est, mean(mean_y), tolerance = 1e-6)
+  }
+})
+
 test_that("ordbeta() likelihood matches glmmTMB exactly", {
   skip_on_cran()
   skip_if_not_installed("glmmTMB")
@@ -172,4 +201,17 @@ test_that("ordbeta() is rejected in multi-family mode", {
       distribution_column = "g", spatial = "off"),
     regexp = "ordbeta"
   )
+})
+
+test_that("ordbeta() cutpoints stay ordered for any parameter values", {
+  for (backend in c("tmb", "rtmb")) {
+    obj <- sdmTMB(y ~ 1, data = data.frame(y = c(0, 1)), family = ordbeta(),
+      spatial = "off", do_fit = FALSE,
+      control = sdmTMBcontrol(backend = backend))$tmb_obj
+    par <- obj$par
+    par[names(par) == "b_j"] <- 0
+    par[names(par) == "psi"] <- c(1, -5) # cutpoints 1 and 1 + exp(-5)
+    expect_equal(obj$fn(par),
+      -log(plogis(1)) - log(plogis(-(1 + exp(-5)))), label = backend)
+  }
 })

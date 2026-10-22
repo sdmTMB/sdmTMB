@@ -21,7 +21,7 @@
 ^Dockerfile$
 ^CRAN-SUBMISSION$
 ^vignettes/web_only$
-revdep/
+^revdep$
 ^vignettes/articles$
 ^doc$
 ^Meta$
@@ -37,3 +37,4 @@ revdep/
 ^\.codex-plugins
 ^Rplots.pdf$
 ^tests/optional$
+^reference-fits$

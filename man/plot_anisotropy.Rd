@@ -27,7 +27,9 @@ was turned off when fitting the model, \code{NULL} is returned instead of a
 \pkg{ggplot2} object.
 
 \code{plot_anisotropy2()}: A plot of eigenvectors illustrating the estimated
-anisotropy. A list of the plotted data is invisibly returned. Uses base
+anisotropy, each scaled by the factor by which it stretches the range (the
+square root of the eigenvalue of \code{H}). A list of the plotted data is
+invisibly returned. Uses base
 graphics. If anisotropy was turned off when fitting the model, \code{NULL} is
 returned instead of a plot object.
 }

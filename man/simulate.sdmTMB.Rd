@@ -12,6 +12,7 @@
   model = c(NA, 1, 2),
   newdata = NULL,
   re_form = NULL,
+  simulate_re = NULL,
   mle_mvn_samples = c("single", "multiple"),
   mcmc_samples = NULL,
   return_tmb_report = FALSE,
@@ -46,12 +47,25 @@ effects (this only simulates observation error). \code{~0} or \code{NA} to simul
 new random effects (smoothers, which internally are random effects, will
 not be simulated as new).}
 
+\item{simulate_re}{Optional character vector naming the random effects to
+simulate as new, instead of \code{re_form}. Any of \code{"spatial"},
+\code{"spatiotemporal"}, \code{"spatial_varying"}, and \code{"time_varying"} (matching
+the corresponding \code{\link[=sdmTMB]{sdmTMB()}} arguments) and \code{"group_re"} (random
+intercepts and slopes from formula terms such as \code{(1 + x | g)}). Random
+effects not named are held at their values in the parameter vector: the
+empirical Bayes estimates with \code{type = "mle-eb"} or the approximate
+posterior draw with \code{type = "mle-mvn"}. For example,
+\code{simulate_re = "spatiotemporal"} with \code{type = "mle-mvn"} and
+\code{mle_mvn_samples = "single"} keeps the spatial fields at one posterior
+draw shared across all \code{nsim} while drawing new spatiotemporal fields for
+each simulation. \code{NULL} (the default) uses \code{re_form} instead.}
+
 \item{mle_mvn_samples}{Applies if \code{type = "mle-mvn"}. If \code{"single"}, take
 a single MVN draw from the random effects. If \code{"multiple"}, take an MVN
 draw from the random effects for each of the \code{nsim}.}
 
-\item{mcmc_samples}{An optional matrix of MCMC samples. See \code{extract_mcmc()}
-in the \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra}
+\item{mcmc_samples}{An optional matrix of MCMC samples. See
+\code{sdmTMBextra::extract_mcmc()} in the \href{https://github.com/sdmTMB/sdmTMBextra}{sdmTMBextra}
 package.}
 
 \item{return_tmb_report}{Return the \pkg{TMB} report from \code{simulate()}? This
@@ -106,7 +120,7 @@ sum(s1 == 0)/length(s1)
 sum(dat$observed == 0) / length(dat$observed)
 
 # simulate with random effects sampled from their approximate posterior
-s2 <- simulate(fit, nsim = 1, params = "mle-mvn")
+s2 <- simulate(fit, nsim = 1, type = "mle-mvn")
 # these may be useful in conjunction with DHARMa simulation-based residuals
 
 # simulate with new random fields:

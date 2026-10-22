@@ -1,8 +1,6 @@
 #' Perform stacking with log scores on `sdmTMB_cv()` output
 #'
 #' @description
-#' `r lifecycle::badge("experimental")`
-#'
 #' This approach is described in Yao et al. (2018) \doi{10.1214/17-BA1091}. The
 #' general method minimizes (or maximizes) some quantity across models. For
 #' simple models with normal error, this may be the root mean squared error

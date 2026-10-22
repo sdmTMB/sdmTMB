@@ -299,7 +299,7 @@ test_that("Censored Poisson fits", {
   m_nocens_pois <- sdmTMB(
     data = sim_dat, formula = observed ~ 1,
     mesh = mesh, family = censored_poisson(link = "log"),
-    control = sdmTMBcontrol(censored_upper = sim_dat$observed)
+    censored_upper = sim_dat$observed
   )
   expect_equal(m_nocens_pois$tmb_data$y_i[,1], m_nocens_pois$tmb_data$upr)
   expect_equal(m_nocens_pois$tmb_data$family_code[1, 1], unname(.valid_family["censored_poisson"]))
@@ -321,21 +321,12 @@ test_that("Censored Poisson fits", {
   U_1 <- 8 # U_1 and above cannot be directly observed - instead we see >= U1
   y <- sim_dat$observed
   lwr <- ifelse(y >= U_1, U_1, y)
-  upr <- ifelse(y >= U_1, NA, y)
+  upr <- ifelse(y >= U_1, Inf, y)
 
-  # old:
-  expect_error(m_right_cens_pois <- sdmTMB(
-    data = sim_dat, formula = observed ~ 1,
-    family = censored_poisson(link = "log"),
-    experimental = list(lwr = lwr, upr = upr),
-    spatial = "off"
-  ), regexp = "upr")
-
-  # new:
   m_right_cens_pois <- sdmTMB(
     data = sim_dat, formula = observed ~ 1,
     family = censored_poisson(link = "log"),
-    control = sdmTMBcontrol(censored_upper = upr),
+    censored_upper = upr,
     spatial = "off"
   )
 
@@ -349,7 +340,7 @@ test_that("Censored Poisson fits", {
   m_interval_cens_pois <- sdmTMB(
     data = sim_dat, formula = observed ~ 1,
     family = censored_poisson(link = "log"),
-    control = sdmTMBcontrol(censored_upper = upr),
+    censored_upper = upr,
     spatial = "off"
   )
   expect_true(all(!is.na(summary(m_interval_cens_pois$sd_report)[, "Std. Error"])))
@@ -367,8 +358,8 @@ test_that("Censored Poisson fits", {
     m <- sdmTMB(
       data = sim_dat, formula = observed ~ 1,
       mesh = mesh, family = censored_poisson(link = "log"),
-      control = sdmTMBcontrol(censored_upper = c(4, 5, 6))
-    ), regexp = "upr")
+      censored_upper = c(4, 5, 6)
+    ), regexp = "one value per row")
 
   # missing lwr/upr
   expect_error(
@@ -377,6 +368,222 @@ test_that("Censored Poisson fits", {
       mesh = mesh, family = censored_poisson(link = "log"),
     ), regexp = "censored_upper")
 
+})
+
+test_that("censored_upper accepts a column name", {
+  set.seed(1)
+  d <- data.frame(x = rnorm(60), year = rep(1:3, 20), X = runif(60),
+    Y = runif(60))
+  d$y <- rpois(60, exp(1 + 0.3 * d$x))
+  d$upr <- ifelse(seq_len(60) %% 4 == 0, Inf, d$y)
+  fit <- function(...) sdmTMB(y ~ x, data = d, spatial = "off",
+    family = censored_poisson(), ...)
+  m <- fit(censored_upper = d$upr)
+  m_col <- fit(censored_upper = "upr")
+  expect_equal(m_col$model$par, m$model$par)
+  expect_error(fit(censored_upper = "nope"), regexp = "column")
+  # NA is deprecated and treated as Inf
+  rlang::local_options(rlib_warning_verbosity = "verbose")
+  upr_na <- d$upr
+  upr_na[is.infinite(upr_na)] <- NA
+  expect_warning(m_na <- fit(censored_upper = upr_na), regexp = "deprecated")
+  expect_equal(m_na$model$par, m$model$par)
+
+  # Random folds stratified by time reorder the data; the bounds must follow.
+  cv <- function(...) {
+    set.seed(2)
+    sdmTMB_cv(y ~ x, data = d, mesh = make_mesh(d, c("X", "Y"), cutoff = 0.2),
+      time = "year", spatial = "off", spatiotemporal = "off",
+      family = censored_poisson(), k_folds = 3, predictive = "mle-eb", ...)
+  }
+  cv_vec <- cv(censored_upper = d$upr)
+  cv_col <- cv(censored_upper = "upr")
+  expect_equal(cv_vec$data$cv_loglik, cv_col$data$cv_loglik)
+  m1 <- cv_vec$models[[1]]
+  expect_identical(m1$tmb_data$upr, m1$data$upr)
+})
+
+test_that("Censored beta-binomial family works", {
+  local_rtmb_backend()
+  set.seed(1)
+  n <- 200L
+  d <- data.frame(year = factor(rep(1:2, each = n / 2)),
+    hooks = sample(c(50, 100), n, replace = TRUE))
+  p <- 1 - exp(-exp(c(-2.5, -2)[d$year]))
+  d$y <- rbinom(n, d$hooks, rbeta(n, p * 10, (1 - p) * 10))
+  censored <- seq_len(n) %% 3 == 0
+  upr <- ifelse(censored, Inf, d$y)
+
+  m_bb <- sdmTMB(y ~ 0 + year, data = d, weights = d$hooks, spatial = "off",
+    family = betabinomial(link = "cloglog"))
+  m_exact <- sdmTMB(y ~ 0 + year, data = d, weights = d$hooks, spatial = "off",
+    family = censored_betabinomial(link = "cloglog"),
+    censored_upper = d$y)
+  expect_equal(m_exact$model$par, m_bb$model$par, tolerance = 1e-6)
+  expect_equal(m_exact$tmb_data$family_code[1, 1],
+    unname(.valid_family["censored_betabinomial"]))
+
+  m_cens <- sdmTMB(y ~ 0 + year, data = d, weights = d$hooks, spatial = "off",
+    family = censored_betabinomial(link = "cloglog"),
+    censored_upper = upr)
+  expect_equal(m_cens$tmb_data$upr, ifelse(censored, d$hooks, d$y))
+  expect_true(m_cens$sd_report$pdHess)
+  # censored counts are lower bounds, so the estimates increase:
+  expect_true(all(coef(m_cens) > coef(m_bb)))
+  p_cens <- predict(m_cens, type = "response")
+  expect_equal(p_cens$est, 1 - exp(-exp(coef(m_cens)[as.integer(d$year)])),
+    ignore_attr = TRUE)
+  set.seed(1)
+  r <- residuals(m_cens, type = "mle-eb")
+  expect_true(all(is.finite(r)))
+
+  # a two-column response gives the same model
+  m_cbind <- sdmTMB(cbind(y, hooks - y) ~ 0 + year, data = d, spatial = "off",
+    family = censored_betabinomial(link = "cloglog"),
+    censored_upper = upr)
+  expect_equal(m_cbind$model$par, m_cens$model$par, tolerance = 1e-6)
+
+  # censored zeros up to the number of hooks contribute nothing
+  d0 <- d
+  d0$y[censored] <- 0
+  m0 <- sdmTMB(y ~ 0 + year, data = d0, weights = d0$hooks, spatial = "off",
+    family = censored_betabinomial(link = "cloglog"),
+    censored_upper = upr, do_fit = FALSE)
+  m0_bb <- sdmTMB(y ~ 0 + year, data = d0[!censored, ],
+    weights = d0$hooks[!censored], spatial = "off",
+    family = betabinomial(link = "cloglog"), do_fit = FALSE)
+  par <- c(-2, -1.5, 2)
+  expect_equal(m0$tmb_obj$fn(par), m0_bb$tmb_obj$fn(par))
+
+  expect_error(sdmTMB(y ~ 0 + year, data = d, weights = d$hooks,
+    spatial = "off", family = censored_betabinomial(),
+    censored_upper = d$hooks + 1),
+    regexp = "number of trials")
+  expect_error(sdmTMB(y ~ 0 + year, data = d, weights = d$hooks,
+    spatial = "off", family = censored_betabinomial(),
+    censored_upper = d$y - 1),
+    regexp = "observed count")
+  expect_error(sdmTMB(y ~ 0 + year, data = d, weights = d$hooks,
+    spatial = "off", family = censored_betabinomial()),
+    regexp = "censored_upper")
+  expect_error(censored_betabinomial(link = "log"), regexp = "not available")
+})
+
+test_that("Censored binomial family works", {
+  local_rtmb_backend()
+  set.seed(1)
+  n <- 200L
+  d <- data.frame(year = factor(rep(1:2, each = n / 2)),
+    hooks = sample(c(50, 100), n, replace = TRUE))
+  p <- 1 - exp(-exp(c(-2.5, -2)[d$year]))
+  d$y <- rbinom(n, d$hooks, p)
+  censored <- seq_len(n) %% 3 == 0
+  upr <- ifelse(censored, Inf, d$y)
+
+  m_binom <- sdmTMB(y / hooks ~ 0 + year, data = d, weights = d$hooks,
+    spatial = "off", family = binomial(link = "cloglog"))
+  m_exact <- sdmTMB(y ~ 0 + year, data = d, weights = d$hooks, spatial = "off",
+    family = censored_binomial(link = "cloglog"),
+    censored_upper = d$y)
+  expect_equal(m_exact$model$par, m_binom$model$par, tolerance = 1e-6)
+  expect_equal(c(logLik(m_exact)), c(logLik(m_binom)), tolerance = 1e-8)
+  expect_equal(m_exact$tmb_data$family_code[1, 1],
+    unname(.valid_family["censored_binomial"]))
+
+  m_cens <- sdmTMB(y ~ 0 + year, data = d, weights = d$hooks, spatial = "off",
+    family = censored_binomial(link = "cloglog"),
+    censored_upper = upr)
+  expect_equal(m_cens$tmb_data$upr, ifelse(censored, d$hooks, d$y))
+  expect_true(m_cens$sd_report$pdHess)
+  expect_true(all(coef(m_cens) > coef(m_binom)))
+  expect_false("phi" %in% tidy(m_cens, "ran_pars")$term)
+  p_cens <- predict(m_cens, type = "response")
+  expect_equal(p_cens$est, 1 - exp(-exp(coef(m_cens)[as.integer(d$year)])),
+    ignore_attr = TRUE)
+  set.seed(1)
+  r <- residuals(m_cens, type = "mle-eb")
+  expect_true(all(is.finite(r)))
+  s <- simulate(m_cens, nsim = 2)
+  expect_true(all(s <= d$hooks))
+
+  # the index from `derived_link = "log"` sums the per-hook rate exp(eta)
+  nd <- data.frame(year = factor(1:2))
+  ind <- get_index(m_cens, newdata = nd, derived_link = "log",
+    bias_correct = FALSE)
+  expect_equal(ind$est, sum(exp(coef(m_cens))), tolerance = 1e-6)
+
+  # censored zeros up to the number of hooks contribute nothing
+  d0 <- d
+  d0$y[censored] <- 0
+  m0 <- sdmTMB(y ~ 0 + year, data = d0, weights = d0$hooks, spatial = "off",
+    family = censored_binomial(link = "cloglog"),
+    censored_upper = upr, do_fit = FALSE)
+  m0_binom <- sdmTMB(y / hooks ~ 0 + year, data = d0[!censored, ],
+    weights = d0$hooks[!censored], spatial = "off",
+    family = binomial(link = "cloglog"), do_fit = FALSE)
+  par <- c(-2, -1.5)
+  expect_equal(m0$tmb_obj$fn(par), m0_binom$tmb_obj$fn(par))
+
+  expect_error(sdmTMB(y ~ 0 + year, data = d, weights = d$hooks,
+    spatial = "off", family = censored_binomial(),
+    censored_upper = d$hooks + 1),
+    regexp = "number of trials")
+  expect_error(sdmTMB(y ~ 0 + year, data = d, weights = d$hooks,
+    spatial = "off", family = censored_binomial(),
+    censored_upper = d$y),
+    NA)
+  expect_error(sdmTMB(y ~ 0 + year, data = d, weights = d$hooks,
+    spatial = "off", family = censored_binomial(),
+    censored_upper = upr, control = sdmTMBcontrol(backend = "tmb")),
+    regexp = "backend")
+  expect_error(censored_binomial(link = "log"), regexp = "not available")
+  lk <- "cloglog"
+  expect_identical(censored_binomial(link = lk)$link, "cloglog")
+  expect_identical(censored_binomial(link = cloglog)$link, "cloglog")
+  expect_identical(censored_binomial()$family, "censored_binomial")
+})
+
+test_that("Censored negative binomial families work", {
+  local_rtmb_backend()
+  set.seed(2)
+  n <- 200L
+  d <- data.frame(year = factor(rep(1:2, each = n / 2)),
+    hooks = sample(c(50, 100), n, replace = TRUE))
+  d$y <- rnbinom(n, mu = d$hooks * exp(c(-3, -2.5)[d$year]), size = 2)
+  censored <- seq_len(n) %% 3 == 0
+  upr <- ifelse(censored, Inf, d$y)
+  for (fam in c("nbinom1", "nbinom2")) {
+    m_nb <- sdmTMB(y ~ 0 + year, offset = log(d$hooks), data = d,
+      spatial = "off", family = get(fam)())
+    m_exact <- sdmTMB(y ~ 0 + year, offset = log(d$hooks), data = d,
+      spatial = "off", family = get(paste0("censored_", fam))(),
+      censored_upper = d$y)
+    expect_equal(m_exact$model$par, m_nb$model$par, tolerance = 1e-6)
+    expect_equal(c(logLik(m_exact)), c(logLik(m_nb)), tolerance = 1e-8)
+    m_cens <- update(m_exact, censored_upper = upr)
+    expect_identical(m_cens$model$convergence, 0L)
+    expect_true(m_cens$sd_report$pdHess)
+    expect_true(all(coef(m_cens) > coef(m_nb)))
+    expect_true("phi" %in% tidy(m_cens, "ran_pars")$term)
+    expect_equal(sigma(m_cens), exp(m_cens$model$par[["ln_phi"]]))
+    set.seed(1)
+    expect_true(all(is.finite(residuals(m_cens, type = "mle-eb"))))
+    expect_equal(dim(simulate(m_cens, nsim = 2)), c(n, 2L))
+  }
+  expect_identical(censored_nbinom2()$family, "censored_nbinom2")
+  expect_identical(censored_nbinom1(link = log)$link, "log")
+  l <- "log"
+  expect_identical(censored_nbinom2(link = l)$link, "log")
+  expect_error(sdmTMB(y ~ 0 + year, data = d, spatial = "off",
+    family = censored_nbinom2(), censored_upper = d$y - 1),
+    regexp = "censored_upper")
+  expect_error(sdmTMB(y ~ 0 + year, data = transform(d, y = y + 0.5),
+    spatial = "off", family = censored_nbinom2(), censored_upper = rep(Inf, n)),
+    regexp = "whole-number")
+  expect_error(sdmTMB(y ~ 0 + year, data = d, spatial = "off",
+    family = censored_nbinom1(), censored_upper = upr,
+    control = sdmTMBcontrol(backend = "tmb")),
+    regexp = "backend")
 })
 
 test_that("Censored Poisson upper limit function works", {
@@ -406,6 +613,9 @@ test_that("Censored Poisson upper limit function works", {
     pstar = 0.9
   )
   expect_equal(x, c(3, 3, 3))
+  # bounds are capped at the number of hooks
+  x <- get_censored_upper(prop_removed = 1, n_catch = 9, n_hooks = 10, pstar = 0.5)
+  expect_equal(x, 10)
   expect_error(
     get_censored_upper(
       prop_removed = c(0.5, 0.3, 0.2),

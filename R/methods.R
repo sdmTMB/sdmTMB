@@ -129,7 +129,8 @@ logLik.sdmTMB <- function(object, ...) {
   val <- -object$model$objective
   nobs <- nobs.sdmTMB(object)
   lpb <- names(object$tmb_obj$env$last.par.best)
-  ran <- c("omega_s", "epsilon_st", "zeta_s", "b_rw_t", "RE", "b_smooth", "re_b_pars")
+  ran <- c("omega_s", "epsilon_st", "zeta_s", "b_rw_t", "RE", "b_smooth", "re_b_pars",
+    "xi_s", "b_pref_dev", "alpha_pref_dev")
   df <- sum(!lpb %in% ran)
   structure(val,
     nobs = nobs, nall = nobs, df = df,
@@ -228,7 +229,7 @@ ranef.sdmTMB <- function(object, ...) {
 deviance.sdmTMB <- function(object, ...) {
   .check_family_capability(object, "deviance")
   implemented <- c("poisson", "Gamma", "binomial",
-    "gaussian", "lognormal", "tweedie", "nbinom1", "nbinom2")
+    "gaussian", "lognormal", "tweedie", "nbinom1", "nbinom2", "gengamma", "censored_poisson")
   if (!.object_has_two_components(object, caller = "`deviance()`")) {
     if (!object$family$family %in% implemented) {
       cli_abort("Deviance not implemented for the fitted family")
@@ -483,6 +484,11 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
     call$data <- object$data
   }
 
+  # likewise keep the saved preferential-sampling specification
+  if (!"preferential" %in% names(new_args) && !is.null(object$preferential)) {
+    call$preferential <- object$preferential$spec
+  }
+
   # keep the fitted controls and backend unless `control` is replaced;
   # otherwise the backend would re-resolve from the current global option
   if (!"control" %in% names(new_args)) {
@@ -560,7 +566,8 @@ sigma.sdmTMB <- function(object, ...) {
     }
   }
 
-  if (family_name %in% c("nbinom1", "nbinom2", "tweedie")) {
+  if (family_name %in% c("nbinom1", "nbinom2", "censored_nbinom1",
+    "censored_nbinom2", "tweedie")) {
     # For negative binomial, return phi (dispersion parameter)
     tmb_obj <- object$tmb_obj
     phi_idx <- which(names(tmb_obj$env$last.par.best) == "ln_phi")
@@ -571,7 +578,7 @@ sigma.sdmTMB <- function(object, ...) {
   }
 
   # Poisson, binomial don't have dispersion, return 1 (as in glmmTMB)
-  if (family_name %in% c("poisson", "binomial")) {
+  if (family_name %in% c("poisson", "binomial", "censored_binomial")) {
     return(1)
   }
 

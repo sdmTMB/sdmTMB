@@ -126,7 +126,7 @@ dharma_residuals <- function(simulated_response, object, plot = TRUE,
   assert_that(is.logical(plot))
   assert_that(is.matrix(simulated_response))
   assert_that(nrow(simulated_response) == nrow(object$response))
-  if (attr(simulated_response, "type") != "mle-mvn" && !is.null(object$tmb_random)) {
+  if (attr(simulated_response, "type") != "mle-mvn" && !has_no_random_effects(object)) {
     cli_warn("It is recommended to use `simulate.sdmTMB(fit, type = 'mle-mvn')` if simulating for DHARMa residuals. See the description in ?residuals.sdmTMB under the types of residuals section.")
   }
   family_spec <- .object_family_spec(object, caller = "`dharma_residuals()`")

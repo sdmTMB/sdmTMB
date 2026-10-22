@@ -93,6 +93,7 @@ Sørbye
 TMB
 TMBad
 TSS
+Thorson
 Thygesen
 Tweedie
 UBSAN
@@ -120,6 +121,7 @@ boldsymbol
 breakpt
 brms
 cAIC
+catchability
 cdot
 centre
 centred
@@ -221,3 +223,13 @@ valgrind
 visreg
 warmup
 wiggliness
+Kullback
+Leibler
+Windmeijer
+RTMB
+barycentric
+longline
+nonlocal
+untruncated
+neighbour
+neighbours

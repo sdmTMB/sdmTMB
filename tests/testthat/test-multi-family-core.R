@@ -651,7 +651,7 @@ test_that("mixed-family predict returns rowwise combined and masked component ou
 
   expect_error(
     predict(fixture$fit, newdata = fixture$newdata, type = "response", se_fit = TRUE),
-    regexp = "not yet supported"
+    regexp = "link scale"
   )
 })
 
@@ -860,7 +860,7 @@ test_that("mixed-family weighted-average and EAO helpers use rowwise families", 
     area = area,
     bias_correct = FALSE
   )
-  manual_mean_dens <- sum(pred_resp$est * pred_resp$est) / sum(pred_resp$est)
+  manual_mean_dens <- sum(area * pred_resp$est^2) / manual_total
   manual_eao <- manual_total / manual_mean_dens
   expect_equal(eao$est, manual_eao, tolerance = 1e-6)
 })

@@ -1,7 +1,5 @@
 #' Project from an \pkg{sdmTMB} model using simulation
 #'
-#' @description `r lifecycle::badge("experimental")`
-#'
 #' @description Project forward in time from an \pkg{sdmTMB} model using a
 #' simulation approach for computational efficiency.
 #' This can be helpful for calculating predictive intervals for long
@@ -163,6 +161,9 @@ project <- function(
     ...) {
   assert_that(inherits(object, "sdmTMB"))
   assert_that(is.data.frame(newdata))
+  if (!is.null(object$preferential)) {
+    cli_abort("`project()` is not supported for preferential-sampling models yet.")
+  }
   if (!is.numeric(nsim) || length(nsim) != 1L || is.na(nsim) ||
       !is.finite(nsim) || nsim < 1 || nsim != floor(nsim)) {
     cli_abort("`nsim` must be one finite, positive whole number.")
@@ -311,7 +312,28 @@ project <- function(
 
   ## do simulations
   if (!silent) cli::cli_progress_bar("Simulating projections", total = nsim)
-  ret <- list()
+  if (delta) {
+    element_names <- c("est1", "est2", "epsilon_st1", "epsilon_st2")
+    element_internal <- c(
+      "proj_eta", "proj_eta", "proj_epsilon_st_A_vec",
+      "proj_epsilon_st_A_vec"
+    )
+    linear_predictor <- c(1L, 2L, 1L, 2L)
+  } else {
+    element_names <- c("est", "epsilon_st")
+    element_internal <- c("proj_eta", "proj_epsilon_st_A_vec")
+    linear_predictor <- c(1L, 1L)
+  }
+  if (all("off" == object$spatiotemporal)) {
+    element_names <- element_names[element_internal == "proj_eta"]
+    linear_predictor <- linear_predictor[element_internal == "proj_eta"]
+    element_internal <- element_internal[element_internal == "proj_eta"]
+  }
+  ## By default, fill one column per simulation of each returned element
+  ## rather than keeping the reports, which hold every projected predictor
+  ## component and can be several times larger.
+  ret <- if (return_tmb_report || !is.null(sims_var)) vector("list", nsim)
+  out <- list()
   for (i in seq_len(nsim)) {
     if (!silent) cli::cli_progress_update()
     lpx <- lp[, i, drop = TRUE]
@@ -344,7 +366,19 @@ project <- function(
         epsilon_active = epsilon_active
       )
     }
-    ret[[i]] <- obj$simulate(par = lpx)
+    sim <- obj$simulate(par = lpx)
+    if (return_tmb_report) {
+      ret[[i]] <- sim
+    } else if (!is.null(sims_var)) {
+      if (i == 1L) check_project_sims_var(sim, sims_var)
+      ret[[i]] <- sim[sims_var]
+    } else {
+      for (j in seq_along(element_names)) {
+        value <- sim[[element_internal[j]]][, linear_predictor[j]]
+        if (i == 1L) out[[element_names[j]]] <- matrix(NA_real_, length(value), nsim)
+        out[[element_names[j]]][, i] <- value
+      }
+    }
   }
   if (!silent) cli::cli_progress_done()
   if (return_tmb_report) {
@@ -352,28 +386,6 @@ project <- function(
   }
   if (!is.null(sims_var)) {
     return(extract_project_sims(ret, sims_var))
-  }
-
-  out <- list()
-  if (delta) {
-    element_names <- c("est1", "est2", "epsilon_st1", "epsilon_st2")
-    element_internal <- c(
-      "proj_eta", "proj_eta", "proj_epsilon_st_A_vec",
-      "proj_epsilon_st_A_vec"
-    )
-    linear_predictor <- c(1L, 2L, 1L, 2L)
-  } else {
-    element_names <- c("est", "epsilon_st")
-    element_internal <- c("proj_eta", "proj_epsilon_st_A_vec")
-    linear_predictor <- c(1L, 1L)
-  }
-  for (i in seq_along(element_names)) {
-    eni <- element_names[i]
-    out[[eni]] <- lapply(ret, \(x) x[[element_internal[i]]][, linear_predictor[i]])
-    out[[eni]] <- do.call(cbind, out[[eni]])
-  }
-  if (all("off" == object$spatiotemporal)) {
-    out$epsilon_st1 <- out$epsilon_st2 <- out$epsilon_st <- NULL
   }
   out
 }
@@ -507,7 +519,7 @@ project_apply_future_re <- function(
     if (future_re == "zero") {
       b_rw_t[future_index, , ] <- 0
     } else if (future_re == "fix") {
-      b_rw_t[future_index, , ] <- b_rw_t[historical_n_t, , ]
+      for (tt in future_index) b_rw_t[tt, , ] <- b_rw_t[historical_n_t, , ]
     } else if (isTRUE(object$tmb_data$ar1_time == 1L)) {
       rho_time <- 2 * stats::plogis(pars$rho_time_unscaled) - 1
       for (m in seq_len(dim(b_rw_t)[3])) {
@@ -665,14 +677,18 @@ project_time_extension <- function(time_lu, new_time) {
   )
 }
 
-extract_project_sims <- function(reports, sims_var) {
-  available <- names(reports[[1L]])
+check_project_sims_var <- function(report, sims_var) {
+  available <- names(report)
   if (!sims_var %in% available) {
     cli_abort(c(
       "`sims_var = \"{sims_var}\"` was not found in the TMB simulation report.",
       "i" = "Available elements include: {paste(available, collapse = ', ')}."
     ))
   }
+}
+
+extract_project_sims <- function(reports, sims_var) {
+  check_project_sims_var(reports[[1L]], sims_var)
   values <- lapply(reports, `[[`, sims_var)
   first <- values[[1L]]
   first_dim <- dim(first)
@@ -718,6 +734,9 @@ move_proj_to_tmbdat <- function(x, object, newdata, called_by_simulate = FALSE, 
   x$Zt_list <- x$Zt_list_proj
   x$offset_i <- x$proj_offset_i
   x$obs_family_id <- x$proj_family_id
+  # simulation runs the fitting path, so it needs the projected covariate field
+  x$covariate_diffusion$covariate_vertex_time <-
+    x$covariate_diffusion$proj_covariate_vertex_time
   n_m <- length(x$X_ij) ## n linear predictor [m]odels
   x$y_i <- matrix(NA, ncol = n_m, nrow = nrow(x$proj_X_ij[[1]])) # fake
   x$weights_i <- rep(1, nrow(x$y_i)) # fake: FIXME: bring in?

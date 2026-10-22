@@ -91,7 +91,7 @@ test_that("extra_time, newdata, get_index() work", {
 
   # with do_index = TRUE
   nd <- replicate_df(pcod, "year", unique(pcod$year))
-  m2 <- sdmTMB(
+  lifecycle::expect_deprecated(m2 <- sdmTMB(
     density ~ 1,
     time_varying = ~ 1,
     time_varying_type = "ar1",
@@ -104,7 +104,7 @@ test_that("extra_time, newdata, get_index() work", {
     predict_args = list(newdata = nd),
     index_args = list(area = 1), # used to cause crash b/c extra_time
     extra_time = c(2006, 2008, 2010, 2012, 2014, 2016, 2018) # last real year is 2017
-  )
+  ), "do_index")
   ind6 <- get_index(m2)
   expect_identical(ind6$year, c(2003, 2004, 2005, 2007, 2009, 2011, 2013, 2015, 2017))
   expect_equal(ind3$est, ind6$est, tolerance = 0.1)

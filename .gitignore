@@ -27,3 +27,7 @@ AGENTS.md
 scratch-local/
 /.quarto/
 **/*.quarto_ipynb
+reference-fits/check-*.csv
+reference-fits/validate-*.csv
+reference-fits/timings-local.csv
+reference-fits/ref/session.txt

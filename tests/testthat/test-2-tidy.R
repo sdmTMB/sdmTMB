@@ -79,6 +79,25 @@ test_that("tidy() works with time-varying coefficients", {
   ))
 })
 
+test_that("tidy() ran_vals labels time-varying coefficients by delta component", {
+  skip_on_cran()
+
+  fit <- sdmTMB(
+    density ~ 0,
+    time_varying = ~1,
+    data = pcod_2011, time = "year", mesh = pcod_mesh_2011,
+    family = delta_gamma(), spatiotemporal = "off"
+  )
+  pars <- tidy(fit, "ran_vals")
+  b <- as.list(fit$sd_report, "Estimate")$b_rw_t
+  expect_equal(nrow(pars), 8L)
+  expect_equal(pars$model, rep(1:2, each = 4))
+  expect_equal(pars$term, rep(paste0("(Intercept):", c(2011, 2013, 2015, 2017)), 2))
+  expect_equal(pars$estimate[pars$model == 1], c(b[, , 1]))
+  expect_equal(pars$estimate[pars$model == 2], c(b[, , 2]))
+  expect_identical(pars, tidy(fit, "ran_vals", model = 2))
+})
+
 test_that("tidy() works with smooth terms", {
   skip_on_cran()
   skip_on_ci()
@@ -219,6 +238,7 @@ test_that("tidy() works with delta model with random intercepts and AR1 time ser
 
 test_that("tidy() correctly handles anisotropic ranges", {
   skip_on_cran()
+  local_rtmb_backend()
   skip_on_ci()
 
   # Test 1: Spatial-only anisotropic model (should have range_min and range_max)
@@ -241,11 +261,13 @@ test_that("tidy() correctly handles anisotropic ranges", {
   expect_true("range_min" %in% t1$term)
   expect_true("range_max" %in% t1$term)
 
-  # std.error and CIs should be NA for anisotropic ranges
-  expect_true(is.na(t1$std.error[t1$term == "range_min"]))
-  expect_true(is.na(t1$std.error[t1$term == "range_max"]))
-  expect_true(is.na(t1$conf.low[t1$term == "range_min"]))
-  expect_true(is.na(t1$conf.high[t1$term == "range_min"]))
+  # RTMB reports standard errors and log-scale Wald CIs for the axis ranges
+  aniso_rows <- t1[t1$term %in% c("range_min", "range_max"), ]
+  expect_true(all(aniso_rows$std.error > 0))
+  expect_true(all(aniso_rows$conf.low < aniso_rows$estimate))
+  expect_true(all(aniso_rows$conf.high > aniso_rows$estimate))
+  expect_equal(sqrt(aniso_rows$conf.low * aniso_rows$conf.high),
+    aniso_rows$estimate)
 
   # Check that values match plot_anisotropy
   aniso_df <- plot_anisotropy(fit_sp_only, return_data = TRUE)
@@ -333,4 +355,45 @@ test_that("tidy() correctly handles anisotropic ranges", {
   expect_true("range" %in% t4$term)
   expect_false("range_min" %in% t4$term)
   expect_false("range_max" %in% t4$term)
+})
+
+test_that("tidy() anisotropic range SEs match the delta method", {
+  skip_on_cran()
+  local_rtmb_backend()
+  fit <- sdmTMB(density ~ 1, data = pcod_2011, mesh = pcod_mesh_2011,
+    family = tweedie(), anisotropy = TRUE)
+  td <- tidy(fit, "ran_pars", conf.int = TRUE)
+  td <- td[match(c("range_min", "range_max"), td$term), ]
+  # log axis ranges from the eigenvalues of H, independent of the RTMB code
+  log_ranges <- function(p) {
+    pl <- fit$tmb_obj$env$parList(p)
+    x <- pl$ln_H_input[, 1]
+    H <- matrix(c(exp(x[1]), x[2], x[2], (1 + x[2]^2) * exp(-x[1])), 2)
+    log(sqrt(8) / exp(pl$ln_kappa[1, 1])) + log(rev(eigen(H)$values)) / 2
+  }
+  p <- fit$model$par
+  J <- vapply(seq_along(p), function(j) {
+    e <- replace(numeric(length(p)), j, 1e-5)
+    (log_ranges(p + e) - log_ranges(p - e)) / 2e-5
+  }, numeric(2))
+  log_se <- sqrt(diag(J %*% fit$sd_report$cov.fixed %*% t(J)))
+  expect_equal(td$estimate, exp(log_ranges(p)), tolerance = 1e-6)
+  expect_equal(td$std.error / td$estimate, log_se, tolerance = 1e-4)
+  expect_equal(td$conf.high, exp(log_ranges(p) + stats::qnorm(0.975) * log_se),
+    tolerance = 1e-4)
+
+  fit_tmb <- update(fit, control = sdmTMBcontrol(backend = "tmb"))
+  td_tmb <- tidy(fit_tmb, "ran_pars", conf.int = TRUE)
+  aniso_tmb <- td_tmb[td_tmb$term %in% c("range_min", "range_max"), ]
+  expect_equal(nrow(aniso_tmb), 2L)
+  expect_true(all(is.na(aniso_tmb$std.error)))
+})
+
+test_that("Anisotropic range intervals are NA at isotropy", {
+  df <- data.frame(term = c("range_min", "range_max"), estimate = c(2, 2))
+  out <- aniso_range_intervals(df,
+    est = list(log_range_min = log(2), log_range_max = log(2)),
+    se = list(log_range_min = NaN, log_range_max = NaN), crit = 1.96,
+    spatial = TRUE)
+  expect_true(all(is.na(out[c("std.error", "conf.low", "conf.high")])))
 })

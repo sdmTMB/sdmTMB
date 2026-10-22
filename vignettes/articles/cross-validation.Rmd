@@ -64,15 +64,16 @@ pcod$fyear <- as.factor(pcod$year)
 
 
 ```{r ex1, eval=TRUE}
-# Set parallel processing if desired:
-library(future)
-plan(multisession, workers = 2)
+# Parallel processing can be used by setting a `future::plan()`, e.g.:
+# library(future)
+# plan(multisession, workers = 2)
 m_cv <- sdmTMB::sdmTMB_cv(
   density ~ 0 + s(depth_scaled) + fyear,
   data = pcod,
   mesh = mesh,
   family = tweedie(link = "log"),
-  k_folds = 4
+  k_folds = 4,
+  predictive = "mle-mvn"
 )
 ```
 
@@ -80,14 +81,15 @@ In the above example, folds are assigned randomly, but these can be modified for
 Without getting into the complexities of the `blockCV` or `spatialsample` packages, we could simply use `kmeans()` to generate spatial clusters, e.g.
 
 ```{r ex2, eval=TRUE}
-clust <- kmeans(pcod[, c("X", "Y")], 20)$cluster
+clust <- kmeans(pcod[, c("X", "Y")], 8)$cluster
 
 m_cv <- sdmTMB::sdmTMB_cv(
   density ~ 0 + s(depth_scaled) + fyear,
   data = pcod,
   mesh = mesh,
   fold_ids = clust,
-  family = tweedie(link = "log")
+  family = tweedie(link = "log"),
+  predictive = "mle-mvn"
 )
 ```
 
@@ -102,7 +104,8 @@ m_cv <- sdmTMB::sdmTMB_cv(
   mesh = mesh,
   fold_ids = clust,
   spatiotemporal = "off",
-  family = tweedie(link = "log")
+  family = tweedie(link = "log"),
+  predictive = "mle-mvn"
 )
 ```
 
@@ -110,6 +113,7 @@ m_cv <- sdmTMB::sdmTMB_cv(
 
 Many measures of predictive accuracy can be used to evaluate model performance.
 By default, `sdmTMB_cv()` returns a list that contains the sum of the log-likelihood values for each left-out fold and the total summed across the left-out folds. This is analogous to the expected log predictive density (ELPD) in the Bayesian literature and can be interpreted as a measure of predictive ability for new observations.
+With `predictive = "mle-mvn"` (the default), each held-out observation's predictive density is averaged over `nsim` draws of the random effects from their approximate posterior, so uncertainty in the random fields is accounted for. `predictive = "mle-eb"` instead evaluates the density at the estimated random effects, which can be overconfident with flexible random fields (e.g., fine meshes); these values are always returned in `sum_loglik_mle_eb`.
 These can be accessed as below, and inspecting the quantities across folds may help elucidate whether there are particular folds that are difficult to predict.
 
 ```{r ex4, eval=TRUE}
@@ -118,7 +122,8 @@ m_cv <- sdmTMB_cv(
   data = pcod,
   mesh = mesh,
   family = tweedie(link = "log"),
-  k_folds = 4
+  k_folds = 4,
+  predictive = "mle-mvn"
 )
 
 m_cv$fold_loglik # fold log-likelihood
@@ -131,7 +136,8 @@ The `fold_loglik` values represent the sum of predictive log-likelihood values a
 m <- sdmTMB_cv(
   density ~ depth_scaled + depth_scaled2,
   data = pcod, mesh = make_mesh(pcod, c("X", "Y"), cutoff = 25),
-  family = tweedie(link = "log"), k_folds = 3
+  family = tweedie(link = "log"), k_folds = 3,
+  predictive = "mle-mvn"
 )
 
 # RMSE across entire dataset:
@@ -165,7 +171,8 @@ m_cv <- sdmTMB_cv(
   mesh = mesh,
   fold_ids = clust,
   family = tweedie(link = "log"),
-  k_folds = length(unique(clust))
+  k_folds = length(unique(clust)),
+  predictive = "mle-mvn"
 )
 ```
 
@@ -192,7 +199,8 @@ m_lfocv <- sdmTMB_cv(
   lfo_validations = 3, # number of time steps to validate
   family = binomial(),
   spatiotemporal = "off",
-  time = "year" # must be specified
+  time = "year", # must be specified
+  predictive = "mle-mvn"
 )
 
 # See how the LFOCV folds were assigned:
@@ -203,18 +211,20 @@ table(example_data$cv_fold, example_data$year)
 # Comparing two or more models
 
 We can use the output of `sdmTMB_cv()` to compare two or more models.
-For example, if we wanted to evaluate support for a depth effect, we could do 10-fold cross-validation (it is important that the folds be the same across the two models).
+For example, if we wanted to evaluate support for a depth effect, we could do 5-fold cross-validation (it is important that the folds be the same across the two models).
 In this example, using either the predictive log-likelihood or ELPD would lead one to conclude that including depth improves the predictive accuracy of the model.
 
 ```{r ex7, eval=TRUE}
-clust <- sample(seq_len(10), size = nrow(pcod), replace = TRUE)
+set.seed(1)
+clust <- sample(seq_len(5), size = nrow(pcod), replace = TRUE)
 
 m1 <- sdmTMB::sdmTMB_cv(
   density ~ 0 + fyear,
   data = pcod,
   mesh = mesh,
   fold_ids = clust,
-  family = tweedie(link = "log")
+  family = tweedie(link = "log"),
+  predictive = "mle-mvn"
 )
 
 m2 <- sdmTMB::sdmTMB_cv(
@@ -222,13 +232,25 @@ m2 <- sdmTMB::sdmTMB_cv(
   data = pcod,
   mesh = mesh,
   fold_ids = clust,
-  family = tweedie(link = "log")
+  family = tweedie(link = "log"),
+  predictive = "mle-mvn"
 )
 
 # Compare log-likelihoods -- higher is better!
 m1$sum_loglik
 m2$sum_loglik
 ```
+
+To judge whether a difference is meaningful, we can pass the pointwise out-of-sample log predictive densities to the loo package with `loo::elpd()`. `loo::loo_compare()` then reports the difference in expected log predictive density (`elpd_diff`) relative to the best model along with its standard error (`se_diff`), which is based on the variation in pointwise differences across observations:
+
+```{r ex7-loo, eval=TRUE}
+loo::loo_compare(list(
+  fyear = loo::elpd(m1),
+  fyear_depth = loo::elpd(m2)
+))
+```
+
+`loo_compare()` only checks that the models have the same number of observations, so it is up to us to make sure they were fit with the same folds and the same `predictive` argument.
 
 # Model ensembling
 
@@ -285,7 +307,8 @@ If we wanted to apply this in the context of cross validation, we could do it li
 ```{r, eval=FALSE}
 x <- sdmTMB_cv(
   present ~ s(depth), data = pcod, spatial = "off",
-  mesh = mesh, family = binomial(), k_folds = 2
+  mesh = mesh, family = binomial(), k_folds = 2,
+  predictive = "mle-mvn"
 )
 roc <- pROC::roc(x$data$present, plogis(x$data$cv_predicted))
 auc <- pROC::auc(roc)
@@ -344,7 +367,8 @@ m_cv <- sdmTMB_cv(
   data = pcod,
   mesh = mesh,
   family = tweedie(link = "log"),
-  k_folds = 2
+  k_folds = 2,
+  predictive = "mle-mvn"
 )
 
 # Convert to sf format for spatial assessment

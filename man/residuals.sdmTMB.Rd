@@ -75,8 +75,8 @@ taken from a single approximate posterior sample. The "approximate" part
 refers to the sample being taken from the random effects' assumed MVN
 distribution. In practice, the sample is obtained based on the mode and
 Hessian of the random effects taking advantage of sparsity in the Hessian for
-computational efficiency. This sample is taken with \code{obj$MC()}, where \code{obj}
-is the \pkg{TMB} object created with \code{TMB::MakeADFun()}. See Waagepetersen
+computational efficiency. This is the same sample as \code{obj$env$MC()}, where
+\code{obj} is the \pkg{TMB} object created with \code{TMB::MakeADFun()}. See Waagepetersen
 (2006) and the description in the source code for the internal \pkg{TMB}
 function \code{TMB:::oneSamplePosterior()}. Residuals are converted to randomized
 quantile residuals as described above.

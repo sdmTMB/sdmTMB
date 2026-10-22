@@ -66,14 +66,14 @@ First, we'll construct a mesh for the spatial random effects:
 mesh <- make_mesh(dogfish, c("X", "Y"), cutoff = 10)
 ```
 
-Next, we'll fit a spatiotemporal model for dogfish density using a delta generalized-gamma family (Dunic et al. 2025). This models the positive catches with a generalized gamma distribution that works well for Pacific Dogfish given their occasional giant outlying catch values. A simpler Tweedie or delta-gamma family could have been used too. We'll include depth as a predictor using a quadratic effect:
+Next, we'll fit a spatiotemporal model for dogfish density using a delta-gamma family. A delta generalized-gamma family (Dunic et al. 2025) or a Tweedie family could have been used too. We'll include depth as a predictor using a quadratic effect:
 
 ```{r fit-model}
 fit <- sdmTMB(
   catch_weight ~ poly(log(depth), 2),
   data = dogfish,
   mesh = mesh,
-  family = delta_gengamma(type = "poisson-link"),
+  family = delta_gamma(),
   spatial = "on",
   time = "year",
   spatiotemporal = "IID"

@@ -11,7 +11,9 @@ test_that("lower and upper work", {
   skip_on_cran()
   d <- subset(pcod, year == 2011)
   pcod_spde <- make_mesh(d, c("X", "Y"), cutoff = 30)
-  expect_warning({
+  # parameters pinned at bounds have non-zero gradients; `suppressWarnings()`
+  # only drops the gradient warnings `expect_warning()` doesn't match
+  suppressWarnings(expect_warning({
     suppressMessages({
       m <- sdmTMB(density ~ depth_scaled,
         data = d, mesh = pcod_spde, family = tweedie(link = "log"),
@@ -20,11 +22,11 @@ test_that("lower and upper work", {
           lower = list(ln_phi = 0),
           upper = list(ln_phi = 2.5)))
     })},
-    regexp = "upper")
+    regexp = "upper"))
   expect_equal(m$model$par[["ln_phi"]], 2.5, tolerance = 1e-6)
   # FIXME NEWTON LOOPS GOING OUTSIDE BOUNDS?
 
-  expect_warning({
+  suppressWarnings(expect_warning({
     suppressMessages({
       m <- sdmTMB(density ~ depth_scaled,
         data = d, mesh = pcod_spde, family = tweedie(link = "log"),
@@ -33,7 +35,7 @@ test_that("lower and upper work", {
           lower = list(b_j = c(3, -0.46)),
           upper = list(b_j = c(3.5, -0.45))
         ))
-    })}, regexp = "bound")
+    })}, regexp = "bound"))
   expect_equal(m$model$par[[2]], -0.45, tolerance = 1e-6)
 })
 
