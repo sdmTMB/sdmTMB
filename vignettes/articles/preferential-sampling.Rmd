@@ -427,6 +427,22 @@ $\eta_2$ only.
   (`coefficient = "iid"` or `"rw"`); and an optional IID or random-walk
   sampling baseline (`baseline`). Other features give an error.
 
+## Generating indices for stock assessments
+
+* **When does preferential sampling matter?** If the preference coefficient $b$, fishing effort, and the spatial distribution of the population are roughly stable, preferential sampling mainly biases the level of a fishery-dependent index: effort concentrates in high-density areas by a similar amount every year. Most assessments estimate catchability, which absorbs a constant level bias, so a catch-only `sdmTMB()` model and a joint model should give similar trends. The bias becomes a trend bias when $b$ changes over time, when the proportion of the domain fished changes, or when the population's range contracts or expands (hyperstability).
+
+* **Define the sampling frame.** The frame should contain only cells that were available to the fleet. Cells that could not be fished (closed areas, depths or regions outside the fishery's range) must be omitted, not coded as 0; otherwise $b$ is inflated. Define this from the fleet's footprint over all years, not year by year.
+
+* **Start with annual sampling intercepts and a sampling field.** Use annual intercepts $\gamma_t$ (e.g., `sampled ~ 0 + factor(year)`) so changes in effort are not attributed to $b$ or the catch fields, `spatial = "on"` to absorb persistent spatial patterns in fishing (ports, gear), and known access covariates (e.g., distance to port, depth).
+
+* **Test hypotheses about $b$ explicitly.** With the same frame and sampling formula, compare `coefficient = "zero"` vs `"constant"` (is there preferential sampling?) and `"constant"` vs `"iid"` or `"rw"` (does it change over time?). Changes in fishing practices, markets, management, and technology make a time-varying $b$ plausible, but with short time series $\sigma_b$ may be estimated near 0. This indicates the data cannot distinguish a time-varying $b$ from a constant one. 
+
+* **If the fit has problems, simplify.** If $\sigma_b$ collapses, use the constant-$b$ model. If annual intercepts are problematic (sparse years, all or no cells sampled), use `baseline = "iid"` or `"rw"` to shrink them toward each other rather than a single static $\gamma$: a pooled intercept forces year-to-year changes in effort into $b_t$ or the catch fields.
+
+* **Treat a very large $b$ as a warning sign.** Values much larger than ~5 usually mean the catch fields are being bent to separate fished from unfished cells, where there are no catch data to constrain them. Compare the field SDs with a catch-only fit, check `sigma_xi`, and use `predict_sampling()` to see whether the target or the sampling field explains where fishing occurs. 
+
+* **Report both indices.** Report the catch-only and joint indices (with `bias_correct = TRUE`). If their trends differ, it may be worth considering both as sensitivity runs in the assessment, alongside time-varying catchability as an alternative.
+
 ## Troubleshooting
 
 * **"Observed sampling indicators are all 0/1 wherever column ... is 1".**
