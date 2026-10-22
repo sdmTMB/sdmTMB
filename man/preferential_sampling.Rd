@@ -26,10 +26,11 @@ terms.}
 \item{data}{A data frame with one row per eligible cell and time step. It
 must contain the mesh coordinates, the \code{time} column of the main model,
 the sampling response and covariates, and every covariate in the main
-model's fixed effects and smoothers. The main model is evaluated on these
-rows as with \code{newdata} in \code{\link[=predict.sdmTMB]{predict.sdmTMB()}}, so set catchability
-covariates (e.g., gear) to reference values here. Holding a smoothed
-covariate at a reference value holds its smoother at that value.}
+model's fixed effects, smoothers, and \code{time_varying} formula. The main
+model is evaluated on these rows as with \code{newdata} in
+\code{\link[=predict.sdmTMB]{predict.sdmTMB()}}, so set catchability covariates (e.g., gear) to
+reference values here. Holding a smoothed covariate at a reference value
+holds its smoother at that value.}
 
 \item{re_form_iid}{\code{NA} (default) excludes the main model's IID random
 effects from the expected-catch surface, so their grouping columns aren't
@@ -52,8 +53,8 @@ Diggle et al. (2010) and Conn et al. (2017). Covariates that affect
 where sampling happens belong in the sampling \code{formula}, including
 those also in the main model.
 \item \code{"expected"}: the full log expected value, including fixed effects,
-smoothers, and \code{offset}, so that sampling also prefers high expected
-catch due to covariates.
+smoothers, \code{time_varying} terms, and \code{offset}, so that sampling also
+prefers high expected catch due to covariates.
 }
 
 For a single log-link family (or a Poisson-link delta) and a constant
@@ -84,11 +85,11 @@ match a fit without \code{preferential}.
 The deviations \eqn{b_t - \bar{b}} (with \eqn{\bar{b}} = \code{b_pref})
 multiply \eqn{h - \bar{h}_t}, where \eqn{\bar{h}_t} is the mean over
 the rows of \code{data} in time step \eqn{t} of \eqn{h} without its spatial
-and spatiotemporal fields (i.e., of the fixed effects, smoothers, IID
-effects, and \code{offset}). The deviations therefore change how strongly
-sampling concentrates on high expected catch within a time step, not
-(to the extent the fields average to about 0 over the frame) the time
-step's sampling rate. Given the deviations, centering changes only what
+and spatiotemporal fields (i.e., of the fixed effects, smoothers,
+\code{time_varying} terms, IID effects, and \code{offset}). The deviations
+therefore change how strongly sampling concentrates on high expected
+catch within a time step, not (to the extent the fields average to about
+0 over the frame) the time step's sampling rate. Given the deviations, centering changes only what
 free time-step intercepts in \code{formula} mean. It still changes the fitted
 model: it is equivalent to an uncentered deviation whose time-step
 intercept moves with it, by \eqn{-(b_t - \bar{b})\bar{h}_t}. Without
@@ -102,8 +103,8 @@ The fields are left out of \eqn{\bar{h}_t} because their frame mean
 would link every sampling row to every mesh vertex of its time step and
 make fitting slow. So if the main model's time-step means come from a
 random-walk or AR(1) spatiotemporal field rather than fixed effects,
-consider adding time-step fixed effects (e.g., \code{0 + factor(year)}) to the
-main model.
+consider adding time-step fixed effects (e.g., \code{0 + factor(year)}) or a
+time-varying intercept (\code{time_varying = ~ 1}) to the main model.
 
 Every time step of the main model (including \code{extra_time}) gets a
 coefficient; time steps without observed sampling indicators get theirs

@@ -25,7 +25,9 @@
   Supported families are single log-link Poisson, NB2, Gamma, Tweedie,
   lognormal, and generalized gamma, and `delta_gamma()`, `delta_lognormal()`,
   and `delta_gengamma()` with default links,
-  including `type = "poisson-link"`.
+  including `type = "poisson-link"`. `time_varying` terms are part of the
+  expected catch, not the fields, so they enter only with
+  `target = "expected"`.
 
 # sdmTMB 1.2.0
 

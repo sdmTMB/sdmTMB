@@ -70,10 +70,11 @@
 #' @param data A data frame with one row per eligible cell and time step. It
 #'   must contain the mesh coordinates, the `time` column of the main model,
 #'   the sampling response and covariates, and every covariate in the main
-#'   model's fixed effects and smoothers. The main model is evaluated on these
-#'   rows as with `newdata` in [predict.sdmTMB()], so set catchability
-#'   covariates (e.g., gear) to reference values here. Holding a smoothed
-#'   covariate at a reference value holds its smoother at that value.
+#'   model's fixed effects, smoothers, and `time_varying` formula. The main
+#'   model is evaluated on these rows as with `newdata` in
+#'   [predict.sdmTMB()], so set catchability covariates (e.g., gear) to
+#'   reference values here. Holding a smoothed covariate at a reference value
+#'   holds its smoother at that value.
 #' @param re_form_iid `NA` (default) excludes the main model's IID random
 #'   effects from the expected-catch surface, so their grouping columns aren't
 #'   needed. `NULL` includes the fitted random intercepts at the group levels
@@ -92,8 +93,8 @@
 #'     where sampling happens belong in the sampling `formula`, including
 #'     those also in the main model.
 #'   * `"expected"`: the full log expected value, including fixed effects,
-#'     smoothers, and `offset`, so that sampling also prefers high expected
-#'     catch due to covariates.
+#'     smoothers, `time_varying` terms, and `offset`, so that sampling also
+#'     prefers high expected catch due to covariates.
 #'
 #'   For a single log-link family (or a Poisson-link delta) and a constant
 #'   coefficient, the two are the same model when the sampling `formula`
@@ -120,11 +121,11 @@
 #'   The deviations \eqn{b_t - \bar{b}} (with \eqn{\bar{b}} = `b_pref`)
 #'   multiply \eqn{h - \bar{h}_t}, where \eqn{\bar{h}_t} is the mean over
 #'   the rows of `data` in time step \eqn{t} of \eqn{h} without its spatial
-#'   and spatiotemporal fields (i.e., of the fixed effects, smoothers, IID
-#'   effects, and `offset`). The deviations therefore change how strongly
-#'   sampling concentrates on high expected catch within a time step, not
-#'   (to the extent the fields average to about 0 over the frame) the time
-#'   step's sampling rate. Given the deviations, centering changes only what
+#'   and spatiotemporal fields (i.e., of the fixed effects, smoothers,
+#'   `time_varying` terms, IID effects, and `offset`). The deviations
+#'   therefore change how strongly sampling concentrates on high expected
+#'   catch within a time step, not (to the extent the fields average to about
+#'   0 over the frame) the time step's sampling rate. Given the deviations, centering changes only what
 #'   free time-step intercepts in `formula` mean. It still changes the fitted
 #'   model: it is equivalent to an uncentered deviation whose time-step
 #'   intercept moves with it, by \eqn{-(b_t - \bar{b})\bar{h}_t}. Without
@@ -138,8 +139,8 @@
 #'   would link every sampling row to every mesh vertex of its time step and
 #'   make fitting slow. So if the main model's time-step means come from a
 #'   random-walk or AR(1) spatiotemporal field rather than fixed effects,
-#'   consider adding time-step fixed effects (e.g., `0 + factor(year)`) to the
-#'   main model.
+#'   consider adding time-step fixed effects (e.g., `0 + factor(year)`) or a
+#'   time-varying intercept (`time_varying = ~ 1`) to the main model.
 #'
 #'   Every time step of the main model (including `extra_time`) gets a
 #'   coefficient; time steps without observed sampling indicators get theirs
@@ -238,9 +239,9 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
 #' @noRd
 .validate_preferential_scope <- function(spec, formula, delta, multi_family,
                                          family, areal, mesh, mesh_missing,
-                                         anisotropy, time_varying,
-                                         spatial_varying, nonlocal_formula,
-                                         normalize, backend, no_spatial) {
+                                         anisotropy, spatial_varying,
+                                         nonlocal_formula, normalize, backend,
+                                         no_spatial) {
   if (!inherits(spec, "sdmTMB_preferential")) {
     cli_abort("`preferential` must be created with `preferential_sampling()`.")
   }
@@ -283,7 +284,6 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
     "areal (SAR/CAR) models" = areal,
     "barrier meshes" = "spde_barrier" %in% names(mesh),
     "anisotropy" = isTRUE(anisotropy),
-    "`time_varying`" = !is.null(time_varying),
     "`spatial_varying`" = !is.null(spatial_varying),
     "`nonlocal_formula`" = !is.null(nonlocal_formula),
     "threshold (`breakpt()`/`logistic()`) terms" =
@@ -473,7 +473,8 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
 #' zero-based, as elsewhere in the model data; `rtmb_prepare()` converts them.
 #' Row order is kept throughout.
 #' @noRd
-.prepare_preferential <- function(spec, model, X_ij, mesh, time, time_df) {
+.prepare_preferential <- function(spec, model, X_ij, tv_spec, mesh, time,
+                                  time_df) {
   data <- spec$data
   n <- nrow(data)
   r <- as.numeric(data[[spec$response]])
@@ -538,7 +539,8 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
     unlist(lapply(model$terms, function(x) all.vars(stats::delete.response(x)))),
     all.vars(stats::delete.response(
       stats::terms(model$smoothers$formula_no_bars))),
-    if (include_iid) barnames(bars)
+    if (include_iid) barnames(bars),
+    if (!is.null(tv_spec)) all.vars(tv_spec$terms)
   )), "the main model")
   design <- tryCatch(
     .newdata_design(model, data, include_iid = include_iid,
@@ -556,6 +558,7 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
       cli_abort("Internal error: the shared catch design doesn't match the fitted design.")
     }
   }
+  X_rw_ik <- if (!is.null(tv_spec)) .apply_design(tv_spec, data)
 
   # Start the sampling coefficients at the sampling-only logistic regression
   # estimates; separation was ruled out above.
@@ -579,6 +582,7 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
       Zs = design$Zs,
       Xs = design$Xs,
       Zt_list = design$Zt_list,
+      X_rw_ik = X_rw_ik,
       offset_i = spec$offset,
       A_station = A_station,
       station_i = station_i,

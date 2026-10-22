@@ -86,8 +86,8 @@ pref_names <- c("gamma_pref", "b_pref", "ln_tau_xi", "ln_kappa_xi", "xi_s",
   "ln_sigma_b_pref", "b_pref_dev", "ln_sigma_alpha_pref", "alpha_pref_dev")
 
 prepare_for <- function(fit, spec) {
-  .prepare_preferential(spec, fit, fit$tmb_data$X_ij, fit$spde, fit$time,
-    fit$time_lu)
+  .prepare_preferential(spec, fit, fit$tmb_data$X_ij,
+    fit$design_specs$time_varying, fit$spde, fit$time, fit$time_lu)
 }
 
 # Shared catch predictor at the frame rows, from the RTMB predictor code at
@@ -161,7 +161,7 @@ test_that("preferential sampling requires RTMB and rejects unsupported features"
   expect_error(build(catch ~ s(depth, x)), "univariate `s()`", fixed = TRUE)
   expect_error(build(catch ~ t2(depth, x)), "univariate `s()`", fixed = TRUE)
   expect_error(build(catch ~ breakpt(depth)), "threshold")
-  expect_error(build(time_varying = ~depth), "time_varying")
+  expect_silent(build(time_varying = ~depth))
   expect_error(build(spatial_varying = ~depth), "spatial_varying")
   expect_error(build(anisotropy = TRUE), "anisotropy")
   expect_error(build(family = gaussian()), "families other than")
@@ -1415,4 +1415,86 @@ test_that("random-walk preference and baseline processes fit", {
   expect_equal(p$est, p$est_fixed + p$est_baseline + p$est_preference,
     tolerance = 1e-10)
   expect_equal(p$est_baseline, rv$estimate[9:16][p$year])
+})
+
+pref_tv_dat <- function(dat) {
+  dat$depth_scaled <- (dat$depth - 50) / 30
+  dat
+}
+
+pref_tv_joint <- function(dat, grid, family = poisson(), target = "expected",
+                          coefficient = "constant", ...) {
+  sdmTMB(catch ~ gear,
+    data = dat, mesh = pref_mesh(dat), time = "year", family = family,
+    time_varying = ~ 0 + depth_scaled, time_varying_type = "rw0",
+    preferential = preferential_sampling(sampled ~ 0 + factor(year),
+      data = grid, target = target, coefficient = coefficient),
+    control = sdmTMBcontrol(backend = "rtmb"), ...
+  )
+}
+
+test_that("time-varying coefficients enter the shared surface as in prediction", {
+  skip_on_cran()
+  dat <- pref_tv_dat(pref_dat())
+  grid <- pref_tv_dat(pref_grid())
+  fit <- pref_tv_joint(dat, grid)
+  expect_true(fit$pos_def_hessian)
+  expect_equal(unname(fit$tmb_data$preferential$X_rw_ik),
+    unname(predict(fit, newdata = grid, return_tmb_data = TRUE)$proj_X_rw_ik))
+  p <- predict(fit, newdata = grid, offset = rep(0, nrow(grid)))
+  expect_equal(predict_sampling(fit)$est_target, p$est, tolerance = 1e-8)
+  # A fields-only target leaves the time-varying term out.
+  fields <- pref_tv_joint(dat, grid, target = "fields")
+  expect_equal(predict_sampling(fields)$est_target,
+    predict(fields, newdata = grid)$est_rf, tolerance = 1e-8)
+})
+
+test_that("time-varying fits decouple with the preference coefficient at 0", {
+  skip_on_cran()
+  dat <- pref_tv_dat(pref_dat())
+  joint <- pref_tv_joint(dat, pref_tv_dat(pref_grid()), coefficient = "zero")
+  catch <- sdmTMB(catch ~ gear,
+    data = dat, mesh = pref_mesh(dat), time = "year", family = poisson(),
+    time_varying = ~ 0 + depth_scaled, time_varying_type = "rw0",
+    control = sdmTMBcontrol(backend = "rtmb"))
+  shared <- names(catch$model$par)
+  expect_equal(joint$model$par[names(joint$model$par) %in% shared],
+    catch$model$par, tolerance = 1e-4)
+  expect_equal(tidy(joint, "ran_vals")$estimate,
+    tidy(catch, "ran_vals")$estimate, tolerance = 1e-3)
+})
+
+test_that("time-varying delta fits with a temporal preference coefficient", {
+  skip_on_cran()
+  dat <- pref_tv_dat(pref_delta_dat())
+  grid <- pref_tv_dat(pref_grid())
+  fit <- pref_tv_joint(dat, grid, family = delta_gamma(), coefficient = "iid",
+    spatiotemporal = "off")
+  expect_lt(max(abs(fit$gradients)), 1e-3)
+  r <- fit$tmb_obj$report(fit$tmb_obj$env$last.par.best)
+  p <- predict(fit, newdata = grid, offset = rep(0, nrow(grid)),
+    type = "response")
+  expect_equal(r$sampling_target_i, log(p$est), tolerance = 1e-8)
+})
+
+test_that("the sampling frame must support the time-varying design", {
+  skip_on_cran()
+  dat <- pref_tv_dat(pref_dat())
+  grid <- pref_tv_dat(pref_grid())
+  build <- function(grid, time_varying = ~ 0 + depth_scaled) {
+    sdmTMB(catch ~ 1,
+      data = dat, mesh = pref_mesh(dat), time = "year", family = poisson(),
+      time_varying = time_varying, time_varying_type = "rw0",
+      preferential = preferential_sampling(sampled ~ 0 + factor(year),
+        data = grid),
+      control = sdmTMBcontrol(backend = "rtmb"), do_fit = FALSE)
+  }
+  expect_error(build(grid[, names(grid) != "depth_scaled"]),
+    "Missing: depth_scaled")
+  bad <- grid
+  bad$depth_scaled[3] <- NA
+  expect_error(build(bad), "can't contain `NA`")
+  bad <- grid
+  bad$gear <- factor("d")
+  expect_error(build(bad, time_varying = ~ 0 + gear), "time_varying")
 })

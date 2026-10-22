@@ -998,7 +998,7 @@ sdmTMB <- function(
       multi_family = is_multi_family, family = family, areal = is_areal,
       mesh = spde,
       mesh_missing = mesh_missing, anisotropy = anisotropy,
-      time_varying = time_varying, spatial_varying = spatial_varying,
+      spatial_varying = spatial_varying,
       nonlocal_formula = nonlocal_formula_parsed, normalize = normalize,
       backend = backend, no_spatial = no_spatial
     )
@@ -1239,6 +1239,14 @@ sdmTMB <- function(
   # always shared; only keep track of one:
   sm <- sm[[1]]
 
+  if (!is.null(time_varying)) {
+    tv_design <- .make_design(time_varying, data, "`time_varying`")
+    X_rw_ik <- tv_design$X
+  } else {
+    X_rw_ik <- matrix(0, nrow = nrow(data), ncol = 1)
+    tv_design <- NULL
+  }
+
   preferential_prep <- if (!is.null(preferential)) {
     .prepare_preferential(
       preferential,
@@ -1248,7 +1256,8 @@ sdmTMB <- function(
         contrasts = lapply(X_ij, attr, which = "contrasts"),
         smoothers = sm, data = data
       ),
-      X_ij = X_ij, mesh = spde, time = time, time_df = time_df
+      X_ij = X_ij, tv_spec = tv_design$spec, mesh = spde, time = time,
+      time_df = time_df
     )
   }
 
@@ -1294,14 +1303,6 @@ sdmTMB <- function(
   assert_that(length(offset) == length(y_i), msg = "Offset doesn't match length of data")
   if (nrow(Xdisp_ij) != length(y_i)) {
     cli_abort("Internal error: `dispformula` model matrix rows do not match response length.")
-  }
-
-  if (!is.null(time_varying)) {
-    tv_design <- .make_design(time_varying, data, "`time_varying`")
-    X_rw_ik <- tv_design$X
-  } else {
-    X_rw_ik <- matrix(0, nrow = nrow(data), ncol = 1)
-    tv_design <- NULL
   }
 
   n_s <- domain$n_s
