@@ -65,7 +65,7 @@ test_that("RTMB time-varying coefficients match TMB", {
   d$response <- rnorm(n)
   mesh <- make_mesh(d, c("x", "y"), n_knots = 18L, type = "kmeans")
   for (time_type in c("rw", "rw0", "ar1")) {
-    fit <- sdmTMB(response ~ z, data = d, mesh = mesh, time = "time",
+    fit <- sdmTMB(response ~ 1, data = d, mesh = mesh, time = "time",
       spatial = "off", spatiotemporal = "off",
       time_varying = ~0 + z + w, time_varying_type = time_type,
       family = gaussian(), control = sdmTMBcontrol(multiphase = FALSE),

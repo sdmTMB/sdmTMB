@@ -1,5 +1,11 @@
 # sdmTMB (development version)
 
+* `sdmTMB()` now warns when `time_varying_type = "rw"` (the default) is
+  combined with `time_varying` terms that overlap with the fixed effects in
+  `formula`, which makes the model unidentifiable. This includes implicit
+  overlaps such as `formula = y ~ 0 + factor(x)` with `time_varying = ~ 1`.
+  The warning suggests `time_varying_type = "rw0"`.
+
 * Fix the anisotropic ranges reported by `print()`, `tidy()` (`range_min`,
   `range_max`), and `plot_anisotropy()`, and the arrows in
   `plot_anisotropy2()`. These scaled the range by the eigenvalues of `H`

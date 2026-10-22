@@ -1269,6 +1269,17 @@ sdmTMB <- function(
   if (!is.null(time_varying)) {
     tv_design <- .make_design(time_varying, data, "`time_varying`")
     X_rw_ik <- tv_design$X
+    if (time_varying_type == "rw") {
+      X_fixed <- if (sm$has_smooths) lapply(X_ij, cbind, sm$Xs) else X_ij
+      confounded <- vapply(X_fixed, rw_confounded, logical(1), X_rw = X_rw_ik)
+      if (any(confounded)) {
+        cli_warn(c(
+          "The `time_varying` terms overlap with the fixed effects in `formula`, so the model is likely not identifiable with `time_varying_type = 'rw'`.",
+          "i" = "Use `time_varying_type = 'rw0'` (or 'ar1') and keep the terms in `formula`, or remove the overlapping terms from `formula`.",
+          "i" = "This includes implicit intercepts, e.g., `formula = y ~ 0 + factor(x)` with `time_varying = ~ 1`."
+        ))
+      }
+    }
   } else {
     X_rw_ik <- matrix(0, nrow = nrow(data), ncol = 1)
     tv_design <- NULL
@@ -2267,6 +2278,15 @@ parse_spatial_arg <- function(spatial) {
     spatial <- "off"
   }
   spatial
+}
+
+# With `time_varying_type = "rw"` the first time slice is unconstrained, so any
+# combination of `time_varying` columns that lies in the span of the fixed
+# effects (e.g., `~ 0 + factor(x)` with `time_varying = ~ 1`) is not identified.
+rw_confounded <- function(X, X_rw) {
+  if (!ncol(X) || !ncol(X_rw)) return(FALSE)
+  rank <- function(x) qr(x)$rank
+  rank(cbind(X, X_rw)) < rank(X) + rank(X_rw)
 }
 
 check_irregalar_time <- function(data, time, spatiotemporal, time_varying, extra_time,

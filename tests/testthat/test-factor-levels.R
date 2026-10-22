@@ -135,7 +135,7 @@ test_that("predict handles dropped factor levels in time_varying factors", {
 
   for (tv_formula in list(~ substrate, ~ 0 + substrate)) {
     fit <- sdmTMB(
-      y ~ X + Y,
+      y ~ 0 + X + Y,
       time_varying = tv_formula,
       data = dat,
       time = "year",

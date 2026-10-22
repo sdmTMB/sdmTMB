@@ -33,6 +33,7 @@ test_that("predict() routes omitted newdata and resolves offsets by row source",
     return_tmb_data = TRUE)$proj_offset_i, rep(1, nrow(d)))
 
   # supplied newdata defaults to zero offset (with a message) unless overridden
+  rlang::local_options(rlib_message_verbosity = "verbose") # ignore "once"
   expect_message(td_nd <- predict(fit, newdata = d, return_tmb_data = TRUE),
     "offset")
   expect_equal(td_nd$proj_offset_i, rep(0, nrow(d)))
