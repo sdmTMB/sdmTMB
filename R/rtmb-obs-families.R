@@ -122,6 +122,17 @@ rtmb_obs_families <- list(
     }
   ),
 
+  # Conway-Maxwell-Poisson parameterized by its mean, with nu = 1 / phi.
+  compois = list(
+    logpdf = function(y, mu, s) RTMB::dcompois2(y, mu, 1 / s$phi, log = TRUE),
+    simulate = function(mu, s) rtmb_rcompois2(mu, 1 / s$phi),
+    # With nu fixed, the saturated mean is y.
+    deviance = function(y, mu, s, log_density) {
+      saturated <- RTMB::dcompois2(y, y + 1e-10, 1 / s$phi, log = TRUE)
+      sign(y - mu) * sqrt(2 * (saturated - log_density))
+    }
+  ),
+
   # Compound Poisson-gamma with power `tweedie_p` in (1, 2).
   tweedie = list(
     logpdf = function(y, mu, s) {
@@ -288,6 +299,25 @@ rtmb_obs_families$censored_nbinom2 <- list(
   },
   simulate = rtmb_obs_families$nbinom2$simulate
 )
+# Inverse-CDF draws. RTMB's unexported rcompois2() wraps TMB's rejection
+# sampler, which is biased when nu * mean exceeds ~700. The range doubles until
+# the terms past the mean are negligible, then the CDF is renormalized because
+# the approximate normalizing constant can leave its total just off 1.
+rtmb_rcompois2 <- function(mu, nu) {
+  nu <- rep_len(nu, length(mu))
+  u <- stats::runif(length(mu))
+  vapply(seq_along(mu), function(i) {
+    upr <- ceiling(mu[i] + 10 * sqrt(mu[i] / min(nu[i], 1))) + 10
+    repeat {
+      y <- seq(0, upr)
+      logp <- RTMB::dcompois2(y, mu[i], nu[i], log = TRUE)
+      if (logp[length(logp)] < -50) break
+      upr <- 2 * upr
+    }
+    cdf <- cumsum(exp(logp))
+    as.numeric(y[which(cdf >= u[i] * cdf[length(cdf)])[1]])
+  }, numeric(1L))
+}
 rtmb_obs_families$gamma_mix <- rtmb_mixture(rtmb_obs_families$Gamma)
 rtmb_obs_families$lognormal_mix <- rtmb_mixture(rtmb_obs_families$lognormal)
 rtmb_obs_families$nbinom2_mix <- rtmb_mixture(rtmb_obs_families$nbinom2)

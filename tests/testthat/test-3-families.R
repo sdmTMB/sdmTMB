@@ -223,6 +223,74 @@ test_that("Poisson fits", {
   expect_length(residuals(m), nrow(pcod))
 })
 
+test_that("Non-integer count responses warn", {
+  skip_on_cran()
+  d <- data.frame(y = c(0, 1.5, 2, 3, 0, 4))
+  expect_warning(sdmTMB(y ~ 1, data = d, spatial = "off",
+    family = poisson(), do_fit = FALSE), "Non-integer")
+  expect_warning(sdmTMB(y ~ 1, data = d, spatial = "off",
+    family = delta_truncated_nbinom2(), do_fit = FALSE), "Non-integer")
+  d$y <- round(d$y)
+  expect_no_warning(sdmTMB(y ~ 1, data = d, spatial = "off",
+    family = poisson(), do_fit = FALSE))
+})
+
+test_that("Conway-Maxwell-Poisson fits underdispersed counts", {
+  skip_on_cran()
+  local_rtmb_backend()
+  set.seed(1)
+  loc <- data.frame(x = stats::runif(500), y = stats::runif(500))
+  mesh <- make_mesh(loc, c("x", "y"), cutoff = 0.1)
+  s <- sdmTMB_simulate(~ 1, loc, mesh = mesh, family = compois(),
+    B = 1.5, phi = 0.4, range = 0.5, sigma_O = 0.3, seed = 1)
+
+  m_glmmTMB <- glmmTMB::glmmTMB(observed ~ 1, data = s,
+    family = glmmTMB::compois())
+  m_ns <- sdmTMB(observed ~ 1, data = s, family = compois(), spatial = "off")
+  expect_equal(unname(m_ns$model$par), unname(m_glmmTMB$fit$par),
+    tolerance = 1e-4)
+
+  expect_error(sdmTMB(observed ~ 1, data = s, family = compois(),
+    spatial = "off", control = sdmTMBcontrol(backend = "tmb")), "rtmb")
+
+  m <- sdmTMB(observed ~ 1, data = s, mesh = mesh, family = compois())
+  expect_equal(sigma(m), 0.4, tolerance = 0.2)
+  expect_equal(tidy(m, "ran_pars")$estimate[[3]], 0.3, tolerance = 0.3)
+
+  sims <- simulate(m, nsim = 50, type = "mle-mvn")
+  expect_equal(dim(sims), c(nrow(s), 50L))
+  expect_true(all(sims == round(sims)))
+  r <- dharma_residuals(sims, m, plot = FALSE, return_DHARMa = TRUE)
+  expect_s3_class(r, "DHARMa")
+
+  set.seed(1)
+  res <- residuals(m, type = "mle-eb")
+  expect_length(res, nrow(s))
+  expect_true(all(is.finite(res)))
+  expect_equal(mean(res), 0, tolerance = 0.1)
+  expect_equal(stats::sd(res), 1, tolerance = 0.1)
+  expect_gt(stats::shapiro.test(res)$p.value, 0.01)
+  # with nu = 1 the CDF is Poisson
+  expect_equal(pcompois2(0:10, rep(3, 11), rep(1, 11)), stats::ppois(0:10, 3))
+})
+
+test_that("Conway-Maxwell-Poisson draws match the exact moments", {
+  skip_on_ci()
+  skip_on_cran()
+  local_rtmb_backend()
+  # includes nu * mean > 700, where TMB's rcompois2() is biased
+  set.seed(1)
+  for (p in list(c(0.5, 0.2), c(3, 3), c(200, 10))) {
+    k <- 0:1000
+    prob <- RTMB::dcompois2(k, p[1], p[2])
+    ex_mean <- sum(k * prob)
+    ex_var <- sum((k - ex_mean)^2 * prob)
+    x <- rtmb_rcompois2(rep(p[1], 1e4), p[2])
+    expect_equal(mean(x), ex_mean, tolerance = 0.05)
+    expect_equal(stats::var(x), ex_var, tolerance = 0.1)
+  }
+})
+
 test_that("Binomial fits", {
   skip_on_cran()
   d <- pcod[pcod$year == 2017, ]

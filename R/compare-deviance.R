@@ -151,6 +151,7 @@ compare_deviance <- function(object, reduced) {
 .deviance_shape_pars <- list(
   nbinom1 = "ln_phi",
   nbinom2 = "ln_phi",
+  compois = "ln_phi",
   lognormal = "ln_phi",
   tweedie = "thetaf",
   gengamma = c("ln_phi", "gengamma_Q")

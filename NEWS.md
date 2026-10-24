@@ -1,5 +1,11 @@
 # sdmTMB (development version)
 
+* Add the `compois()` Conway-Maxwell-Poisson family, parameterized by its
+  mean, for underdispersed (or overdispersed) counts.
+
+* `sdmTMB()` now warns about non-integer responses for count families
+  including the positive component of delta models.
+
 * `sdmTMB()` now warns when `time_varying_type = "rw"` (the default) is
   combined with `time_varying` terms that overlap with the fixed effects in
   `formula`, which makes the model unidentifiable. This includes implicit

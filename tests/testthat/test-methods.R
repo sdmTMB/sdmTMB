@@ -142,7 +142,7 @@ test_that("more sigma methods work", {
   expect_equal(round(sigma(fit), 3), 1.414)
 
   fit <- sdmTMB(
-    density ~ 1,
+    round(density) ~ 1,
     data = pcod_2011, spatial = "off",
     family = poisson(link = "log")
   )

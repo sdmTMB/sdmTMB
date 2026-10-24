@@ -1016,7 +1016,7 @@ sdmTMB <- function(
   # FIXME parallel setup here?
 
   rtmb_only <- intersect(family_spec$components$family_name, c("censored_nbinom1",
-    "censored_nbinom2", "censored_binomial", "censored_betabinomial"))
+    "censored_nbinom2", "censored_binomial", "censored_betabinomial", "compois"))
   if (length(rtmb_only) && backend != "rtmb") {
     cli_abort("`{rtmb_only[[1]]}()` needs `sdmTMBcontrol(backend = \"rtmb\")`.")
   }

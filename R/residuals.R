@@ -163,6 +163,24 @@ qres_nbinom1 <- function(object, y, mu, ...) {
   stats::qnorm(u)
 }
 
+# No closed form, so sum the mass function; nu = 1 / phi
+pcompois2 <- function(q, mu, nu) {
+  vapply(seq_along(q), function(i) {
+    if (q[i] < 0) return(0)
+    sum(RTMB::dcompois2(0:q[i], mu[i], nu[i]))
+  }, numeric(1))
+}
+
+qres_compois <- function(object, y, mu, ...) {
+  theta <- get_pars(object)
+  nu <- rep_len(1 / exp(theta[["ln_phi"]]), length(y))
+  mu <- rep_len(mu, length(y))
+  a <- pcompois2(y - 1, mu, nu)
+  b <- pcompois2(y, mu, nu)
+  u <- stats::runif(n = length(y), min = a, max = b)
+  stats::qnorm(u)
+}
+
 ptruncated_nbinom2 <- function(q, mu, phi){
   p <- (stats::pnbinom(q, size = phi, mu = mu) - stats::pnbinom(0, size = phi, mu = mu))/(1 - stats::pnbinom(0, size = phi, mu = mu))
 }
@@ -572,6 +590,7 @@ residuals.sdmTMB <- function(object,
       Gamma    = qres_gamma,
       nbinom2  = qres_nbinom2,
       nbinom1  = qres_nbinom1,
+      compois  = qres_compois,
       censored_nbinom2 = qres_censored_nbinom2,
       censored_nbinom1 = qres_censored_nbinom1,
       truncated_nbinom2  = qres_truncated_nbinom2,

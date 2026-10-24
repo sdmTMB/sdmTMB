@@ -380,3 +380,24 @@ test_that("Non-integer censored_upper bounds are rounded down consistently", {
   }
   expect_equal(as.numeric(gr), fd, tolerance = 1e-5)
 })
+
+test_that("Conway-Maxwell-Poisson deviance is correct", {
+  local_rtmb_backend()
+  set.seed(123)
+  x <- rnorm(50)
+  d <- data.frame(x = x, y = rpois(50, exp(x)))
+
+  # nu = phi = 1 is Poisson
+  m1 <- sdmTMB(y ~ x, family = compois(), spatial = "off", data = d,
+    control = sdmTMBcontrol(map = list(ln_phi = factor(NA)),
+      start = list(ln_phi = 0)))
+  mglm <- glm(y ~ x, family = poisson(), data = d)
+  expect_equal(residuals(m1, type = "deviance"), unname(residuals(mglm)),
+    tolerance = 1e-4)
+  expect_equal(deviance(m1), deviance(mglm), tolerance = 1e-4)
+
+  m <- sdmTMB(y ~ x, family = compois(), spatial = "off", data = d)
+  r <- residuals(m, type = "deviance")
+  expect_true(all(is.finite(r)))
+  expect_equal(deviance(m), sum(r^2))
+})
