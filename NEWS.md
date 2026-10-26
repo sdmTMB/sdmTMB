@@ -3,6 +3,12 @@
 * Add the `compois()` Conway-Maxwell-Poisson family, parameterized by its
   mean, for underdispersed (or overdispersed) counts.
 
+* `dharma_residuals()` now passes the mean of the simulations as the
+  predicted response to DHARMa by default rather than `fitted()`. With
+  `type = "mle-mvn"` simulations, `fitted()` conditions on the random effect
+  modes rather than the sampled draw, which made `DHARMa::testDispersion()`
+  indicate underdispersion for correct models. #554
+
 * `sdmTMB()` now warns about non-integer responses for count families
   including the positive component of delta models.
 
