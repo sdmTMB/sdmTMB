@@ -237,29 +237,39 @@ test_that("Censored Poisson deviance residuals are correct", {
   }
 })
 
+# Refit `m` with the parameters `pars` fixed at their values in `object`
+refit_fixed <- function(m, object, pars) {
+  control <- m$control
+  control$start[pars] <- object$parlist[pars]
+  control$map[pars] <- lapply(object$parlist[pars],
+    function(x) factor(rep(NA, length(x))))
+  suppressMessages(update(m, control = control))
+}
+
 test_that("compare_deviance() holds shape parameters fixed", {
+  skip_on_ci()
+  skip_on_cran()
   set.seed(1)
   d <- data.frame(x = rnorm(300))
   d$y <- rnbinom(300, size = 1.5, mu = exp(1 + 0.8 * d$x))
   fit <- sdmTMB(y ~ x, data = d, spatial = "off", family = nbinom2())
   fit0 <- sdmTMB(y ~ 1, data = d, spatial = "off", family = nbinom2())
   expect_message(out <- compare_deviance(fit, fit0), "phi")
-  expect_equal(attr(out, "reduced")$parlist$ln_phi, fit$parlist$ln_phi)
+  expect_equal(attr(out, "fixed")$ln_phi, fit$parlist$ln_phi)
 
   # Matches a GLM with theta fixed at the full model's estimate:
   skip_if_not_installed("MASS")
   m <- MASS::glm.nb(y ~ x, data = d)
   m0 <- glm(y ~ 1, family = MASS::negative.binomial(m$theta), data = d)
-  expect_equal(out$deviance, deviance(m), tolerance = 1e-4)
-  expect_equal(out$deviance_reduced, deviance(m0), tolerance = 1e-4)
-  expect_equal(out$deviance_explained, 1 - deviance(m) / deviance(m0),
+  expect_equal(out$deviance, c(deviance(m), deviance(m0)), tolerance = 1e-4)
+  expect_equal(out$deviance_explained, c(1 - deviance(m) / deviance(m0), 0),
     tolerance = 1e-4)
 
   # No refit needed when the deviance depends only on the mean:
   fit_p <- sdmTMB(y ~ x, data = d, spatial = "off", family = poisson())
   fit_p0 <- sdmTMB(y ~ 1, data = d, spatial = "off", family = poisson())
   expect_no_message(out <- compare_deviance(fit_p, fit_p0))
-  expect_equal(out$deviance_reduced, deviance(fit_p0))
+  expect_equal(out$deviance[2], deviance(fit_p0))
 
   expect_error(compare_deviance(fit_p, fit0), "same family")
   d$y2 <- d$y + 1L
@@ -267,19 +277,66 @@ test_that("compare_deviance() holds shape parameters fixed", {
   expect_error(compare_deviance(fit, fit_y2), "same response")
 })
 
+test_that("compare_deviance() handles a sequence of models", {
+  skip_on_ci()
+  skip_on_cran()
+  set.seed(1)
+  d <- data.frame(x1 = rnorm(300), x2 = rnorm(300))
+  d$y <- rpois(300, exp(1 + 0.5 * d$x1 + 0.3 * d$x2))
+  fit2 <- sdmTMB(y ~ x1 + x2, data = d, spatial = "off", family = poisson())
+  fit1 <- sdmTMB(y ~ x1, data = d, spatial = "off", family = poisson())
+  fit0 <- sdmTMB(y ~ 1, data = d, spatial = "off", family = poisson())
+  out <- compare_deviance(fit2, x1 = fit1, fit0)
+  expect_equal(out$model, c("fit2", "x1", "fit0"))
+  expect_equal(out$deviance, c(deviance(fit2), deviance(fit1), deviance(fit0)))
+  expect_equal(out$deviance_explained,
+    1 - out$deviance / deviance(fit0))
+  expect_equal(out$gain, c(diff(-out$deviance_explained), NA))
+  # Matches separate pairwise comparisons against the same reduced model:
+  expect_equal(out$deviance_explained[2],
+    compare_deviance(fit1, fit0)$deviance_explained[1])
+  expect_error(compare_deviance(fit2), "at least two")
+
+  # Shape parameters are fixed in every model after the first:
+  fit2 <- sdmTMB(y ~ x1 + x2, data = d, spatial = "off", family = nbinom2())
+  fit1 <- sdmTMB(y ~ x1, data = d, spatial = "off", family = nbinom2())
+  fit0 <- sdmTMB(y ~ 1, data = d, spatial = "off", family = nbinom2())
+  expect_message(out <- compare_deviance(fit2, fit1, fit0), "phi")
+  expect_equal(out$deviance[2:3], c(
+    deviance(refit_fixed(fit1, fit2, "ln_phi")),
+    deviance(refit_fixed(fit0, fit2, "ln_phi"))
+  ))
+
+  # Models after the first can be unfitted:
+  fit1_u <- update(fit1, do_fit = FALSE)
+  fit0_u <- update(fit0, do_fit = FALSE)
+  out_u <- suppressMessages(compare_deviance(fit2, fit1_u, fit0_u))
+  expect_equal(out_u$deviance, out$deviance, tolerance = 1e-6)
+  expect_error(compare_deviance(fit1_u, fit0), "must be a fitted model")
+  fit_p <- sdmTMB(y ~ x1, data = d, spatial = "off", family = poisson())
+  fit_p0 <- sdmTMB(y ~ 1, data = d, spatial = "off", family = poisson())
+  expect_equal(
+    compare_deviance(fit_p, update(fit_p0, do_fit = FALSE))$deviance,
+    compare_deviance(fit_p, fit_p0)$deviance
+  )
+  expect_error(compare_deviance(fit2, d), "sdmTMB")
+})
+
 test_that("compare_deviance() holds Tweedie p fixed", {
+  skip_on_cran()
   fit <- sdmTMB(density ~ depth_scaled + depth_scaled2,
     data = pcod_2011, spatial = "off", family = tweedie())
   fit0 <- sdmTMB(density ~ 1,
     data = pcod_2011, spatial = "off", family = tweedie())
   expect_message(out <- compare_deviance(fit, fit0), "Tweedie p")
-  reduced <- attr(out, "reduced")
-  expect_equal(reduced$parlist$thetaf, fit$parlist$thetaf)
+  reduced <- refit_fixed(fit0, fit, "thetaf")
   expect_false(isTRUE(all.equal(reduced$parlist$ln_phi, fit$parlist$ln_phi)))
-  expect_equal(out$deviance_reduced, deviance(reduced))
+  expect_equal(out$deviance[2], deviance(reduced))
+  expect_false(isTRUE(all.equal(out$deviance[2], deviance(fit0))))
 })
 
 test_that("Deviance includes weights, NB1 holds phi fixed, and signs are kept", {
+  skip_on_cran()
   # Deviance residuals at parameter vector `p` of an unfitted model
   devresid_at <- function(fit, p) {
     obj <- fit$tmb_obj
@@ -348,6 +405,7 @@ test_that("Deviance includes weights, NB1 holds phi fixed, and signs are kept", 
 })
 
 test_that("compare_deviance() requires matching weights and censoring bounds", {
+  skip_on_cran()
   set.seed(1)
   d <- data.frame(y = rpois(30, 3))
   fit <- sdmTMB(y ~ 1, data = d, family = poisson(), spatial = "off")
@@ -358,6 +416,7 @@ test_that("compare_deviance() requires matching weights and censoring bounds", {
 })
 
 test_that("Non-integer censored_upper bounds are rounded down consistently", {
+  skip_on_cran()
   d <- data.frame(y = c(1, 3, 2, 4, 1))
   upr <- c(2.5, 3, 2, 4, 1)
   fit <- sdmTMB(y ~ 1, data = d, family = censored_poisson(), spatial = "off",
@@ -382,6 +441,7 @@ test_that("Non-integer censored_upper bounds are rounded down consistently", {
 })
 
 test_that("Conway-Maxwell-Poisson deviance is correct", {
+  skip_on_cran()
   local_rtmb_backend()
   set.seed(123)
   x <- rnorm(50)

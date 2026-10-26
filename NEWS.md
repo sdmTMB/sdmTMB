@@ -1,5 +1,14 @@
 # sdmTMB (development version)
 
+* `compare_deviance()` now accepts a sequence of models, ordered from most to
+  least complex, and reports the deviance explained by each relative to the
+  last model plus the gain over the next simpler model (e.g., the gain from
+  adding a spatial random field). The output now has one row per model
+  (columns `model`, `deviance`, `deviance_explained`, `gain`), and the
+  refitted reduced model is no longer returned as an attribute. Models after
+  the first can be set up with `do_fit = FALSE` to avoid fitting them twice,
+  and refits are warm started from each model's estimates.
+
 * Add the `compois()` Conway-Maxwell-Poisson family, parameterized by its
   mean, for underdispersed (or overdispersed) counts.
 

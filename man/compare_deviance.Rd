@@ -2,88 +2,62 @@
 % Please edit documentation in R/compare-deviance.R
 \name{compare_deviance}
 \alias{compare_deviance}
-\title{Compare deviance between two models}
+\title{Compare deviance among models}
 \usage{
-compare_deviance(object, reduced)
+compare_deviance(object, ...)
 }
 \arguments{
-\item{object}{Output from \code{\link[=sdmTMB]{sdmTMB()}}. The model of interest. Its shape
-parameters (see Details) are used for both models.}
+\item{object}{Output from \code{\link[=sdmTMB]{sdmTMB()}}. The most complex model. Its shape
+parameters (see Details) are used for all models.}
 
-\item{reduced}{Output from \code{\link[=sdmTMB]{sdmTMB()}} fit to the same response with the
-same family. For a pseudo-\eqn{R^2}, an intercept-only model with no
-random effects or random fields (see Details).}
+\item{...}{Other \code{\link[=sdmTMB]{sdmTMB()}} models fit to the same response with the same
+family, ordered from most to least complex. The last is the reduced model,
+usually intercept-only with no random effects or random fields. Name the
+arguments to label the output rows. Names are arbitrary and only to
+help reading the output. These models can be set up with
+\code{do_fit = FALSE} and are then fit here. Alternatively, they can be fit
+first, in which case they are refit (if needed, see below) starting
+from the previously estimated parameter values for speed.}
 }
 \value{
-A data frame with the deviance of each model, their difference
-(\code{reduced} minus \code{object}), and the proportion of the deviance of
-\code{reduced} explained by \code{object}. The refitted \code{reduced} model is
-included as attribute \code{"reduced"}, and the fixed parameter values
-(on their internal scale) as attribute \code{"fixed"}.
+A data frame with one row per model with columns \code{model},
+\code{deviance}, \code{deviance_explained} (relative to the last model), and \code{gain}
+(over the next simpler model). Any fixed shape parameter values (on their
+internal scale) are in attribute \code{"fixed"}.
 }
 \description{
-Calculates the proportion of deviance explained by a model relative to a
-simpler model, usually an intercept-only model. This is a pseudo-\eqn{R^2}.
-Any parameters that the deviance depends on, other than the mean, are held
-fixed at their values from the first model.
+Calculates the proportion of deviance explained by one or more models
+relative to a reduced model (a pseudo-\eqn{R^2}), and the gain from each
+added term or component, such as a spatial random field.
 }
 \details{
-The proportion of deviance explained, \eqn{1 - D / D_0}, is a common
-pseudo-\eqn{R^2} for generalized linear models (Cameron and Windmeijer
-1997). It is the proportion of the Kullback-Leibler divergence between the
-data and the null model that the fitted model removes. It reduces to the
-usual \eqn{R^2} for a Gaussian linear model and is the "deviance explained"
-reported by \pkg{mgcv}.
+Deviance explained, \eqn{1 - D / D_0}, is a common pseudo-\eqn{R^2} for
+generalized linear models (Cameron and Windmeijer 1997) and is what
+\pkg{mgcv} reports. It reduces to \eqn{R^2} for a Gaussian linear model.
 
-\strong{Shape parameters.} The deviance is twice the log-likelihood difference
-between a saturated model and the fitted model. For some families the
-saturated model, and hence the deviance, depends on parameters other than
-the mean:
-\itemize{
-\item negative binomial families: the dispersion parameter \code{phi},
-\item \code{\link[=tweedie]{tweedie()}}: the power parameter \code{p} (but not \code{phi}),
-\item \code{\link[=lognormal]{lognormal()}}: \code{phi} (through the bias correction to the mean),
-\item \code{\link[=gengamma]{gengamma()}}: \code{phi} and \code{Q}.
-}
+\strong{Sequences of models.} \code{gain} is the increase in deviance explained over
+the next simpler model. Like sequential (type I) sums of squares, it depends
+on order: a spatial field added after covariates usually gains less than one
+added to an intercept-only model, since both can explain the same spatial
+pattern.
 
-If these parameters are estimated separately for each model, the two
-deviances are measured against different saturated models and their ratio
-is not meaningful. A simpler model typically estimates more overdispersion
-(e.g., a smaller NB2 \code{phi}), which lowers its deviance and understates the
-deviance explained by the more complex model. The naive ratio can even be
-negative.
+\strong{Shape parameters.} For some families, the deviance depends on parameters
+other than the mean: \code{phi} for negative binomial, \code{\link[=compois]{compois()}}, and
+\code{\link[=lognormal]{lognormal()}}; \code{p} for \code{\link[=tweedie]{tweedie()}}; and \code{phi} and \code{Q} for \code{\link[=gengamma]{gengamma()}}.
+Deviances computed with different values of these are not comparable, so
+the other models are refit with them fixed at their values in \code{object}, as
+\pkg{mgcv} does for its null deviance. Previously fit models are refit
+starting from their estimates for speed. Reordering the models changes the
+answer because it changes the comparisons.
 
-This function therefore refits \code{reduced} with these parameters fixed at the
-values estimated in \code{object}. This matches how \pkg{mgcv} computes the null
-deviance for its negative binomial and Tweedie families. Families whose
-deviance depends only on the mean (e.g., \code{\link[=poisson]{poisson()}}, \code{\link[=binomial]{binomial()}},
-\code{\link[=Gamma]{Gamma()}}, \code{\link[=gaussian]{gaussian()}}) need no refit. Because \code{object} supplies these
-parameters, swapping the arguments gives a different answer.
-
-\strong{Random effects and random fields.} For models with random effects,
-including spatial and spatiotemporal random fields, the deviance is
-conditional on the predicted random effects. The deviance explained is
-therefore a conditional pseudo-\eqn{R^2}: the in-sample variation captured
-by the fixed effects and the predicted random effects together, similar in
-spirit to the conditional \eqn{R^2} for mixed models. It is a reasonable
-summary of in-sample fit, but note that:
-\itemize{
-\item Like \eqn{R^2}, it does not penalize complexity. More flexible random
-fields (e.g., adding spatiotemporal fields or a finer mesh) almost always
-increase it, and a sufficiently flexible field can approach 1. Do not use
-it to choose among random effect structures, random field structures, or
-meshes. Use \code{\link[=cAIC]{cAIC()}} (the conditional likelihood with a penalty for
-effective degrees of freedom), \code{\link[=AIC]{AIC()}}, or \code{\link[=sdmTMB_cv]{sdmTMB_cv()}} instead.
-\item It describes fit to the observed data, not predictive performance for new
-locations or times.
-\item \code{reduced} should not include random effects or random fields. Shape
-parameters such as \code{phi} also determine how variation is partitioned
-between random effects and observation error, so fixing them in a
-\code{reduced} model that has random effects changes its random effect
-estimates and makes the result hard to interpret.
-\item The difference in deviance does not follow a chi-squared distribution and
-is not a likelihood-ratio test.
-}
+\strong{Random effects and random fields.} The deviance is conditional on the
+predicted random effects, so deviance explained measures in-sample fit of
+the fixed and random effects together. Because it does not penalize
+complexity, more flexible fields almost always increase it. Do not use it to
+choose among random effect structures or meshes; use \code{\link[=cAIC]{cAIC()}}, \code{\link[=AIC]{AIC()}}, or
+\code{\link[=sdmTMB_cv]{sdmTMB_cv()}} instead. For families with shape parameters, fixing \code{phi} can
+shift variation between random effects and observation error in refit
+models, so gains from random effects are approximate.
 
 For delta models, the deviance is summed over both components.
 }
@@ -97,11 +71,18 @@ compare_deviance(fit, fit0)
 # Not comparable, since each model estimates its own Tweedie p:
 1 - deviance(fit) / deviance(fit0)
 
-# Conditional pseudo-R^2 including a spatial random field:
+\donttest{
+# Gain from adding a spatial random field after depth:
 mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
-fit_sp <- sdmTMB(density ~ depth_scaled + depth_scaled2,
-  data = pcod_2011, mesh = mesh, family = tweedie())
-compare_deviance(fit_sp, fit0)
+fit_sp <- update(fit, spatial = "on", mesh = mesh)
+compare_deviance(fit_sp, depth = fit, intercept = fit0)
+
+# Models after the first can be left unfitted
+# with `do_fit = FALSE`, since they are fit here with
+# Tweedie p fixed anyway:
+fit_sp_only <- update(fit0, spatial = "on", mesh = mesh, do_fit = FALSE)
+compare_deviance(fit_sp, spatial = fit_sp_only, intercept = fit0)
+}
 }
 \references{
 Cameron, A. C., and Windmeijer, F. A. G. (1997). An R-squared measure of
