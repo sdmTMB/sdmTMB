@@ -854,8 +854,11 @@ reinitialize <- function(x) {
   }
   if (is_null_pointer(x)) {
     x$tmb_obj$env$beSilent()
+    # retape before fn(): without a cached `L.created.by.newton` (dropped from
+    # saved cross-validation models), TMB's inner newton() evaluates the stale
+    # Hessian pointer before fn() would retape
+    x$tmb_obj$retape(set.defaults = FALSE)
     x$tmb_obj$fn(x$model$par)
-    # x$tmb_obj$retape()
     if ("parlist" %in% names(x) && "last.par.best" %in% names(x)) {
       if (!identical(x$tmb_obj$env$last.par.best, x$last.par.best)) {
         cli_warn(c("Detected a potential issue reloading a saved sdmTMB model.",

@@ -1,5 +1,10 @@
 # sdmTMB (development version)
 
+* Fix a segfault when using `sdmTMB_cv()` fold models (e.g., via
+  `print(cv)`) after running in parallel with a `future::plan()` or after
+  saving and reloading the cross-validation object. Reloaded models are now
+  retaped before being evaluated.
+
 * `compare_deviance()` now accepts a sequence of models, ordered from most to
   least complex, and reports the deviance explained by each relative to the
   last model plus the gain over the next simpler model (e.g., the gain from

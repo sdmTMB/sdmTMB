@@ -931,6 +931,12 @@ test_that("CV fold models skip the joint precision and cached Cholesky factor", 
   expect_false("jointPrecision" %in% names(m$sd_report))
   expect_null(m$tmb_obj$env$L.created.by.newton)
 
+  # serialized fold models (saved or returned from parallel workers) reload
+  # without the cached Cholesky factor instead of segfaulting
+  m2 <- unserialize(serialize(m, NULL))
+  expect_output(print(m2), "Spatial SD")
+  expect_equal(predict(m2)$est, predict(m)$est)
+
   # MVN draws still work
   r <- residuals(m, type = "mle-mvn")
   expect_length(r, nrow(d))
@@ -942,6 +948,7 @@ test_that("CV fold models skip the joint precision and cached Cholesky factor", 
   x <- sdmTMB_cv(density ~ 1, data = d, mesh = mesh, family = tweedie(),
     k_folds = 2, parallel = FALSE, control = sdmTMBcontrol())
   expect_true("jointPrecision" %in% names(x$models[[1]]$sd_report))
+
 })
 
 test_that("Integrated predictive: mle-eb is unchanged and outputs are well formed", {
