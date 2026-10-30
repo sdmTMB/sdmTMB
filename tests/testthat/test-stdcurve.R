@@ -125,6 +125,24 @@ test_that("stdcurve models recover simulated standard curves", {
   expect_equal(mean(sims[, 1] > 0), mean(s$data$Ct > 0), tolerance = 0.15)
   expect_output(print(fit), "stdcurve")
 
+  # simulate(newdata = ) uses each new row's own plate
+  nd <- s$data[c(10:1, 1:5), ] # reordered, with repeats
+  set.seed(3)
+  sims_nd <- simulate(fit, newdata = nd, nsim = 200, type = "mle-eb")
+  expect_equal(dim(sims_nd), c(nrow(nd), 200L))
+  pars <- get_pars(fit)
+  j <- match(nd$plate, fit$tmb_data$stdcurve$plates)
+  eta <- predict(fit, newdata = nd)$est
+  pos_mean <- pars$std_xi[j, 1] + pars$std_xi[j, 2] * eta
+  sim_pos_mean <- apply(sims_nd, 1, function(x) mean(x[x > 0]))
+  expect_lt(max(abs(sim_pos_mean - pos_mean)), 0.15)
+  expect_error(simulate(fit, newdata = nd[, names(nd) != "plate"], nsim = 1),
+    "plate")
+  nd$plate[1] <- "unknown"
+  expect_error(simulate(fit, newdata = nd, nsim = 1), "standards")
+  # concentration predictions don't need plates
+  expect_equal(nrow(predict(fit, newdata = nd[, c("X", "Y")])), nrow(nd))
+
   # fixing a plate SD with map/start
   fit2 <- update(fit, control = sdmTMBcontrol(
     map = list(ln_std_sigma = factor(c(1, 2, NA, 3))),

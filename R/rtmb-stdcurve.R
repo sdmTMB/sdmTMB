@@ -34,30 +34,37 @@
 .stdcurve_tmb_data <- function(family, data) {
   std <- family$standards
   plate_col <- family$plate
-  if (!plate_col %in% names(data)) {
-    cli_abort("`{plate_col}` (the `stdcurve()` plate column) must be a column in `data`.")
-  }
-  if (anyNA(data[[plate_col]])) {
-    cli_abort("`data${plate_col}` must not contain missing values.")
-  }
   plates <- sort(unique(std$plate))
-  field_plate <- as.character(data[[plate_col]])
-  unknown <- setdiff(unique(field_plate), plates)
-  if (length(unknown)) {
-    cli_abort(c("Every plate in `data` must have standards.",
-      "x" = "No standards for plate{?s} {.val {unknown}}."))
-  }
+  plate_i <- .stdcurve_plate_index(data, plate_col, plates)
   if (length(plates) < 2L) {
     cli_abort("`stdcurve()` needs standards from at least 2 plates to estimate plate variation.")
   }
   list(
     detection_log = as.integer(family$detection == "log"),
     plates = plates,
-    plate_i = match(field_plate, plates),
+    plate_i = plate_i,
     std_plate = match(std$plate, plates),
     std_x = log(std$conc),
     std_ct = std$ct
   )
+}
+
+# Plate index (into `plates`, the plates with standards) of each row of
+# `data`, from its `plate_col` column. `what` names the data in messages.
+.stdcurve_plate_index <- function(data, plate_col, plates, what = "data") {
+  if (!plate_col %in% names(data)) {
+    cli_abort("`{plate_col}` (the `stdcurve()` plate column) must be a column in `{what}`.")
+  }
+  plate <- as.character(data[[plate_col]])
+  if (anyNA(plate)) {
+    cli_abort("`{what}${plate_col}` must not contain missing values.")
+  }
+  unknown <- setdiff(unique(plate), plates)
+  if (length(unknown)) {
+    cli_abort(c("Every plate in `{what}` must have standards.",
+      "x" = "No standards for plate{?s} {.val {unknown}}."))
+  }
+  match(plate, plates)
 }
 
 # Starting values from per-plate fits to the standards: Ct on log

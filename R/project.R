@@ -731,6 +731,11 @@ move_proj_to_tmbdat <- function(x, object, newdata, called_by_simulate = FALSE, 
   x$Zt_list <- x$Zt_list_proj
   x$offset_i <- x$proj_offset_i
   x$obs_family_id <- x$proj_family_id
+  # eDNA: simulated rows use the plate curves of their own plates
+  if (!is.null(x$stdcurve)) {
+    x$stdcurve$plate_i <- .stdcurve_plate_index(newdata, object$family$plate,
+      x$stdcurve$plates, what = "newdata")
+  }
   # simulation runs the fitting path, so it needs the projected covariate field
   x$covariate_diffusion$covariate_vertex_time <-
     x$covariate_diffusion$proj_covariate_vertex_time
