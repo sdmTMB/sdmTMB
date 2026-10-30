@@ -165,6 +165,27 @@ test_that("stdcurve detection on the log scale works", {
   expect_equal(mu, s$hyper$mu, tolerance = 0.3)
 })
 
+test_that("stdcurve cross-validation predicts Ct", {
+  skip_on_cran()
+  s <- sim_stdcurve(n_plates = 6, n_obs = 200)
+  mesh <- make_mesh(s$data, c("X", "Y"), cutoff = 0.15)
+  set.seed(1)
+  cv <- sdmTMB_cv(Ct ~ 1, data = s$data, mesh = mesh,
+    family = stdcurve(standards = s$standards), k_folds = 2)
+  expect_true(all(cv$converged))
+  d <- cv$data
+  # fold predictions are expected Ct on each row's plate, not log concentration
+  for (k in 1:2) {
+    fit_k <- cv$models[[k]]
+    rows <- d$cv_fold == k
+    expect_equal(nrow(fit_k$data), nrow(d)) # all rows, held-out at weight 0
+    expect_equal(d$cv_predicted[rows], fitted(fit_k)[rows])
+  }
+  expect_gt(min(d$cv_predicted), 5)
+  expect_lt(abs(mean(d$Ct - d$cv_predicted)), 2)
+  expect_true(is.finite(cv$sum_loglik))
+})
+
 test_that("stdcurve models check their inputs", {
   skip_on_cran()
   s <- sim_stdcurve(n_plates = 4, n_obs = 100)
