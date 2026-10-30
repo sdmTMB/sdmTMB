@@ -538,8 +538,11 @@ compois <- function(link = "log") {
 #' (`detection = "log"`). The plate coefficients are random effects with
 #' estimated means and standard deviations. They are informed by the
 #' `standards`, for which \eqn{\eta} is the known log concentration, and by the
-#' field samples. See [get_stdcurve()] for the estimates. Needs the RTMB
-#' backend (the default).
+#' field samples. See [get_stdcurve()] for the estimates. Predictions
+#' ([predict.sdmTMB()]) are of log concentration; [fitted.sdmTMB()] and
+#' response residuals are expected Ct values (detection probability times the
+#' mean positive Ct) on each sample's plate. Needs the RTMB backend (the
+#' default).
 #' @references
 #' *eDNA standard curves*:
 #'

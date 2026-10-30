@@ -28,7 +28,12 @@ fitted.sdmTMB <- function(object, ...) {
 
   if (!"offset" %in% names(object))
     cli_abort("It looks like this was fit with an older version of sdmTMB. Try sdmTMB:::update_version(fit).")
-  predict(object, newdata = object$data, type = "response", offset = object$offset)$est
+  est <- predict(object, newdata = object$data, type = "response", offset = object$offset)$est
+  if (!is.null(object$tmb_data$stdcurve)) {
+    # eDNA: the expected Ct, not the latent log concentration
+    est <- .stdcurve_expected_ct(object, est)
+  }
+  est
 }
 
 #' Get fixed-effect coefficients

@@ -639,6 +639,13 @@ residuals.sdmTMB <- function(object,
     } else {
       mu <- linkinv(pred[[est_column]])
     }
+    if (identical(fam, "stdcurve") && type %in% c("response", "pearson")) {
+      # `mu` is log concentration; these residuals are on the Ct scale
+      if (type == "pearson") {
+        cli_abort("Pearson residuals are not implemented for `stdcurve()`.")
+      }
+      mu <- .stdcurve_expected_ct(object, mu)
+    }
   } else if (type == "mvn-laplace") {
     mu <- linkinv(predict(object, nsim = 1L, model = model, offset = object$offset)[, 1L, drop = TRUE])
   } else if (type == "mle-mcmc") {

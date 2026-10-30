@@ -93,6 +93,15 @@ test_that("stdcurve models recover simulated standard curves", {
   r <- residuals(fit, type = "mle-eb")
   expect_length(r, nrow(s$data))
   expect_true(all(is.finite(r)))
+  # response residuals and fitted() are on the Ct scale
+  pars <- get_pars(fit)
+  xi <- pars$std_xi[fit$tmb_data$stdcurve$plate_i, ]
+  ct_hat <- stats::plogis(xi[, 3] + xi[, 4] * exp(p$est)) *
+    (xi[, 1] + xi[, 2] * p$est)
+  expect_equal(fitted(fit), ct_hat)
+  expect_equal(residuals(fit, type = "response"), s$data$Ct - ct_hat)
+  expect_equal(mean(residuals(fit, type = "response")), 0, tolerance = 0.5)
+  expect_error(residuals(fit, type = "pearson"), "Pearson")
   # default mle-mvn: plate coefficients come from the same posterior draw
   # as the linear predictor
   set.seed(1)

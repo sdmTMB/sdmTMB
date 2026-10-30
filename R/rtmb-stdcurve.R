@@ -160,6 +160,20 @@ rtmb_obs_families$stdcurve <- list(
   }
 )
 
+# Expected Ct (detection probability times the mean positive Ct) of each
+# fitted row, given log concentration `eta`, with plate coefficients from
+# `theta` (by default at their modes). Used by `fitted()` and response
+# residuals.
+.stdcurve_expected_ct <- function(object, eta, theta = get_pars(object)) {
+  sc <- object$tmb_data$stdcurve
+  if (length(eta) != length(sc$plate_i)) {
+    cli_abort("`stdcurve()` expected Ct values need one prediction per fitted row.")
+  }
+  xi <- theta$std_xi[sc$plate_i, , drop = FALSE]
+  x_det <- if (isTRUE(sc$detection_log == 1L)) eta else exp(eta)
+  stats::plogis(xi[, 3L] + xi[, 4L] * x_det) * (xi[, 1L] + xi[, 2L] * eta)
+}
+
 #' Get eDNA standard curve estimates
 #'
 #' Extract the estimated PCR plate standard curves from a model fit with the
