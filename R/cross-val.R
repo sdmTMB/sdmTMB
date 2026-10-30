@@ -534,7 +534,7 @@ sdmTMB_cv <- function(
       # eDNA: `est` is log concentration; compare expected Ct (on each
       # validation row's plate) with the observed Ct. Fold models include the
       # validation rows (with zero weight), so `fitted()` covers them.
-      cv_data$cv_predicted <- fitted(object)[validation_index]
+      cv_data$cv_predicted <- stats::fitted(object)[validation_index]
     }
     # Calculate deviance residuals for held-out data
     dev_resids <- tryCatch({

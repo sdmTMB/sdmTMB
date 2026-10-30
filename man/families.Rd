@@ -237,7 +237,7 @@ standard deviation \code{phi}, where \eqn{\eta} is log concentration and
 estimated means and standard deviations. They are informed by the
 \code{standards}, for which \eqn{\eta} is the known log concentration, and by the
 field samples. See \code{\link[=get_stdcurve]{get_stdcurve()}} for the estimates. Predictions
-(\code{\link[=predict.sdmTMB]{predict.sdmTMB()}}) are of log concentration; \code{\link[=fitted.sdmTMB]{fitted.sdmTMB()}} and
+(\code{\link[=predict.sdmTMB]{predict.sdmTMB()}}) are of log concentration; \code{fitted()} and
 response residuals are expected Ct values (detection probability times the
 mean positive Ct) on each sample's plate. Needs the RTMB backend (the
 default).

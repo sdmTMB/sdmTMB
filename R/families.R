@@ -539,7 +539,7 @@ compois <- function(link = "log") {
 #' estimated means and standard deviations. They are informed by the
 #' `standards`, for which \eqn{\eta} is the known log concentration, and by the
 #' field samples. See [get_stdcurve()] for the estimates. Predictions
-#' ([predict.sdmTMB()]) are of log concentration; [fitted.sdmTMB()] and
+#' ([predict.sdmTMB()]) are of log concentration; `fitted()` and
 #' response residuals are expected Ct values (detection probability times the
 #' mean positive Ct) on each sample's plate. Needs the RTMB backend (the
 #' default).
