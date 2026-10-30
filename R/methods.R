@@ -28,12 +28,13 @@ fitted.sdmTMB <- function(object, ...) {
 
   if (!"offset" %in% names(object))
     cli_abort("It looks like this was fit with an older version of sdmTMB. Try sdmTMB:::update_version(fit).")
-  est <- predict(object, newdata = object$data, type = "response", offset = object$offset)$est
   if (!is.null(object$tmb_data$stdcurve)) {
-    # eDNA: the expected Ct, not the latent log concentration
-    est <- .stdcurve_expected_ct(object, est)
+    # eDNA: the expected Ct, not the DNA concentration
+    eta <- predict(object, newdata = object$data, type = "link",
+      offset = object$offset)$est
+    return(.stdcurve_expected_ct(object, eta))
   }
-  est
+  predict(object, newdata = object$data, type = "response", offset = object$offset)$est
 }
 
 #' Get fixed-effect coefficients
@@ -134,7 +135,8 @@ logLik.sdmTMB <- function(object, ...) {
   val <- -object$model$objective
   nobs <- nobs.sdmTMB(object)
   lpb <- names(object$tmb_obj$env$last.par.best)
-  ran <- c("omega_s", "epsilon_st", "zeta_s", "b_rw_t", "RE", "b_smooth", "re_b_pars")
+  ran <- c("omega_s", "epsilon_st", "zeta_s", "b_rw_t", "RE", "b_smooth", "re_b_pars",
+    "std_xi")
   df <- sum(!lpb %in% ran)
   structure(val,
     nobs = nobs, nall = nobs, df = df,

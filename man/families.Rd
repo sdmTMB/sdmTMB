@@ -97,9 +97,9 @@ compois(link = "log")
 stdcurve(
   standards,
   plate = "plate",
-  ct = "Ct",
-  conc = "known_conc_ul",
-  detection = c("linear", "log")
+  ct = "ct",
+  concentration = "concentration",
+  detection = c("concentration", "log_concentration")
 )
 }
 \arguments{
@@ -122,22 +122,22 @@ model. \code{"poisson-link"} for a Poisson-link delta model (Thorson 2018).}
 \item{standards}{For \code{stdcurve()}: a data frame of laboratory standards
 (qPCR reactions with known DNA concentration) used to estimate the
 standard curves. Must contain the columns named by \code{plate}, \code{ct}, and
-\code{conc}.}
+\code{concentration}.}
 
 \item{plate}{For \code{stdcurve()}: name of the column identifying the PCR plate.
 It must be present in both \code{standards} and the \code{data} passed to
 \code{\link[=sdmTMB]{sdmTMB()}}; every plate in \code{data} must also appear in \code{standards}.}
 
-\item{ct}{For \code{stdcurve()}: name of the cycle-threshold column in
+\item{ct}{For \code{stdcurve()}: name of the cycle-threshold (Ct) column in
 \code{standards}. Non-detections can be \code{0} or \code{NA}. (In the field \code{data},
 non-detections must be \code{0}, since \code{NA} responses are treated as missing.)}
 
-\item{conc}{For \code{stdcurve()}: name of the column in \code{standards} with the
-known DNA concentration (e.g., copies per microlitre; > 0).}
+\item{concentration}{For \code{stdcurve()}: name of the column in \code{standards}
+with the known DNA concentration (e.g., copies per microlitre; > 0).}
 
-\item{detection}{For \code{stdcurve()}: scale of DNA concentration in the
-logistic detection model. \code{"linear"} (default) uses concentration,
-\code{"log"} uses log concentration.}
+\item{detection}{For \code{stdcurve()}: whether the logistic detection model is
+linear in DNA concentration (\code{"concentration"}, the default) or in log
+concentration (\code{"log_concentration"}).}
 }
 \value{
 A list with elements common to standard R family objects including \code{family},
@@ -225,22 +225,25 @@ underdispersed (\code{phi < 1}) as well as overdispersed (\code{phi > 1}) counts
 RTMB backend (the default).
 
 The \code{stdcurve} family is for environmental DNA (eDNA) qPCR data, which come
-with a second, laboratory data set of standards. The linear predictor is
-log DNA concentration. The response is the qPCR cycle threshold (Ct), with
-\code{0} meaning no amplification. Each PCR plate \eqn{j} has its own standard
-curve: a logistic detection model,
+with a second, laboratory data set of standards. The response is the qPCR
+cycle threshold (Ct), with \code{0} meaning no amplification. The linear
+predictor \eqn{\eta} is log DNA concentration (a log link). Each PCR plate
+\eqn{j} has its own standard curve: a logistic detection model,
 \eqn{\mathrm{logit}(p) = \xi_{2,j} + \xi_{3,j} f(\eta)}, and a Gaussian model
 of positive Ct values with mean \eqn{\xi_{0,j} + \xi_{1,j} \eta} and
-standard deviation \code{phi}, where \eqn{\eta} is log concentration and
-\eqn{f} is \code{exp()} (\code{detection = "linear"}) or the identity
-(\code{detection = "log"}). The plate coefficients are random effects with
-estimated means and standard deviations. They are informed by the
-\code{standards}, for which \eqn{\eta} is the known log concentration, and by the
-field samples. See \code{\link[=get_stdcurve]{get_stdcurve()}} for the estimates. Predictions
-(\code{\link[=predict.sdmTMB]{predict.sdmTMB()}}) are of log concentration; \code{fitted()} and
-response residuals are expected Ct values (detection probability times the
-mean positive Ct) on each sample's plate. Needs the RTMB backend (the
-default).
+standard deviation \code{phi}, where \eqn{f} is \code{exp()}
+(\code{detection = "concentration"}) or the identity
+(\code{detection = "log_concentration"}). The plate coefficients are random
+effects with estimated means and standard deviations. They are informed by
+the \code{standards}, for which \eqn{\eta} is the known log concentration, and by
+the field samples. See \code{\link[=get_stdcurve]{get_stdcurve()}} for the estimates.
+
+Predictions with \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} are of log concentration
+(\code{type = "link"}) or concentration (\code{type = "response"}), and do not depend
+on plates; derived quantities such as \code{\link[=get_index]{get_index()}} are of concentration.
+\code{fitted()} and response residuals are expected Ct values (detection
+probability times the mean positive Ct) on each sample's plate. Needs the
+RTMB backend (the default).
 }
 \examples{
 student(link = "identity") # estimate df
@@ -273,7 +276,7 @@ delta_gamma_mix()
 delta_lognormal_mix()
 compois(link = "log")
 std <- data.frame(plate = rep(c("a", "b"), each = 3),
-  Ct = c(25, 30, 0, 24, 31, 36), known_conc_ul = rep(c(1000, 10, 0.1), 2))
+  ct = c(25, 30, 0, 24, 31, 36), concentration = rep(c(1000, 10, 0.1), 2))
 stdcurve(standards = std)
 }
 \references{

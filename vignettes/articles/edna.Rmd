@@ -42,10 +42,10 @@ This follows the approach of @liu2026eulachon, who mapped the marine distributio
 The model uses two data sets:
 
 1. the field samples (passed to `data`, as in any sdmTMB model), with a Ct response and a `plate` column, and
-2. the laboratory standards (passed to `stdcurve(standards = )`), with columns `plate`, `Ct`, and `known_conc_ul`.
+2. the laboratory standards (passed to `stdcurve(standards = )`), with columns `plate`, `ct`, and `concentration`.
 
 See the [model description](https://sdmTMB.github.io/sdmTMB/articles/model-description.html) for the equations.
-In brief, the linear predictor is log DNA concentration, and each plate has four coefficients---an intercept and slope for positive Ct values (Gaussian), and an intercept and slope for the probability of detection (logistic)---that are random effects across plates.
+In brief, the linear predictor is log DNA concentration (the family has a log link), and each plate has four coefficients---an intercept and slope for positive Ct values (Gaussian), and an intercept and slope for the probability of detection (logistic)---that are random effects across plates.
 
 # Simulating data
 
@@ -69,12 +69,12 @@ sim_ct <- function(x, j) {
 }
 
 standards <- expand.grid(
-  known_conc_ul = 10^seq(-1, 5),
+  concentration = 10^seq(-1, 5),
   replicate = 1:3,
   plate = plates,
   stringsAsFactors = FALSE
 )
-standards$Ct <- sim_ct(log(standards$known_conc_ul), match(standards$plate, plates))
+standards$ct <- sim_ct(log(standards$concentration), match(standards$plate, plates))
 head(standards)
 ```
 
@@ -97,8 +97,8 @@ samples <- sdmTMB_simulate(
   seed = 123
 )
 samples$plate <- sample(plates, nrow(samples), replace = TRUE)
-samples$Ct <- sim_ct(samples$eta, match(samples$plate, plates))
-mean(samples$Ct == 0) # proportion of non-detections
+samples$ct <- sim_ct(samples$eta, match(samples$plate, plates))
+mean(samples$ct == 0) # proportion of non-detections
 ```
 
 In `data`, non-detections must be `0`; `NA` is treated as a missing observation.
@@ -107,7 +107,7 @@ In `data`, non-detections must be `0`; `NA` is treated as a missing observation.
 
 ```{r fit, message=TRUE}
 fit <- sdmTMB(
-  Ct ~ 1,
+  ct ~ 1,
   data = samples,
   mesh = mesh,
   family = stdcurve(standards = standards)
@@ -173,15 +173,15 @@ The fitted curves for each standard are in the model report, `std_ct_hat` (expec
 r <- fit$tmb_obj$report()
 standards$ct_hat <- r$std_ct_hat
 standards$p_detect <- plogis(r$std_logit_p)
-ggplot(standards, aes(log(known_conc_ul))) +
-  geom_point(aes(y = ifelse(is.na(Ct) | Ct == 0, NA, Ct)), alpha = 0.4) +
+ggplot(standards, aes(log(concentration))) +
+  geom_point(aes(y = ifelse(is.na(ct) | ct == 0, NA, ct)), alpha = 0.4) +
   geom_line(aes(y = ct_hat, group = plate), alpha = 0.3) +
   labs(y = "Ct", x = "log concentration (copies/µl)")
 ```
 
 # Predictions
 
-Predictions are of the linear predictor, log DNA concentration, and don't need a plate:
+Predictions don't need a plate. By default they are on the link scale, log DNA concentration:
 
 ```{r predict}
 p <- predict(fit)
@@ -201,6 +201,13 @@ ggplot(pg, aes(X, Y, fill = est)) +
   scale_fill_viridis_c(name = "log conc.")
 ```
 
+Because the family has a log link, `type = "response"` gives DNA concentration, and derived quantities such as `get_index()` are of concentration (here, summed over the grid cells, each with area 1):
+
+```{r index}
+head(predict(fit, newdata = grid, type = "response"))
+get_index(fit, newdata = grid, area = 1)
+```
+
 # Residuals and simulation
 
 Randomized quantile residuals treat the model as a hurdle: a non-detection is placed uniformly in the probability of non-detection, and a positive Ct by its Gaussian distribution.
@@ -215,13 +222,13 @@ qqline(samples$resid)
 
 ```{r simulate}
 s <- simulate(fit, nsim = 100)
-c(observed = mean(samples$Ct > 0), simulated = mean(s > 0))
+c(observed = mean(samples$ct > 0), simulated = mean(s > 0))
 ```
 
 # Other options
 
-- `stdcurve(detection = "log")` models detection probability on log concentration instead of concentration.
-- Column names other than `plate`, `Ct`, and `known_conc_ul` can be given with the `plate`, `ct`, and `conc` arguments of `stdcurve()`.
+- `stdcurve(detection = "log_concentration")` models detection probability as linear in log concentration instead of concentration.
+- Other column names (e.g., `Ct` from a lab export) can be given with the `plate`, `ct`, and `concentration` arguments of `stdcurve()`.
 - Any of the usual sdmTMB model components (covariates, smoothers, spatiotemporal fields, offsets for, e.g., volume filtered) can be added to the model of log concentration.
 
 # References

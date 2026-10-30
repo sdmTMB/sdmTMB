@@ -284,8 +284,10 @@ qres_gaussian <- function(object, y, mu, ...) {
 # non-detection is uniform on (0, 1 - p); a positive Ct is placed in
 # (1 - p, 1) by its Gaussian CDF. `.par` is the full parameter vector of an
 # `mle-mvn` posterior draw, so the plate coefficients come from the same joint
-# draw as `mu`; otherwise (`mle-eb`) they are at their modes.
+# draw as `mu`; otherwise (`mle-eb`) they are at their modes. `mu` is
+# concentration (log link); the curves are in log concentration.
 qres_stdcurve <- function(object, y, mu, .par = NULL, ...) {
+  eta <- log(mu)
   theta <- if (is.null(.par)) get_pars(object) else
     object$tmb_obj$env$parList(par = .par)
   sc <- object$tmb_data$stdcurve
@@ -294,10 +296,10 @@ qres_stdcurve <- function(object, y, mu, .par = NULL, ...) {
   }
   xi <- theta$std_xi[sc$plate_i, , drop = FALSE]
   phi <- exp(theta[["ln_phi"]])
-  x_det <- if (isTRUE(sc$detection_log == 1L)) mu else exp(mu)
+  x_det <- if (isTRUE(sc$detection_log == 1L)) eta else mu
   p <- stats::plogis(xi[, 3L] + xi[, 4L] * x_det)
   u <- ifelse(y > 0,
-    (1 - p) + p * stats::pnorm(y, xi[, 1L] + xi[, 2L] * mu, phi),
+    (1 - p) + p * stats::pnorm(y, xi[, 1L] + xi[, 2L] * eta, phi),
     stats::runif(length(y), 0, 1 - p))
   stats::qnorm(u)
 }
@@ -640,11 +642,11 @@ residuals.sdmTMB <- function(object,
       mu <- linkinv(pred[[est_column]])
     }
     if (identical(fam, "stdcurve") && type %in% c("response", "pearson")) {
-      # `mu` is log concentration; these residuals are on the Ct scale
+      # `mu` is concentration; these residuals are on the Ct scale
       if (type == "pearson") {
         cli_abort("Pearson residuals are not implemented for `stdcurve()`.")
       }
-      mu <- .stdcurve_expected_ct(object, mu)
+      mu <- .stdcurve_expected_ct(object, log(mu))
     }
   } else if (type == "mvn-laplace") {
     mu <- linkinv(predict(object, nsim = 1L, model = model, offset = object$offset)[, 1L, drop = TRUE])

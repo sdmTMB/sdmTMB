@@ -1,12 +1,12 @@
 # eDNA standard curve (`stdcurve()`) models
 
 sim_stdcurve <- function(seed = 1, n_plates = 20, n_obs = 400,
-                         detection = c("linear", "log")) {
+                         detection = c("concentration", "log_concentration")) {
   detection <- match.arg(detection)
   set.seed(seed)
   plates <- paste0("p", seq_len(n_plates))
-  f <- function(x) if (detection == "log") x else exp(x)
-  hyper <- if (detection == "linear") {
+  f <- function(x) if (detection == "log_concentration") x else exp(x)
+  hyper <- if (detection == "concentration") {
     list(mu = c(38, -1.45, -1, 0.5), sigma = c(0.6, 0.05, 0.3, 0.1))
   } else {
     list(mu = c(38, -1.45, 1, 1.5), sigma = c(0.6, 0.05, 0.3, 0.2))
@@ -21,13 +21,13 @@ sim_stdcurve <- function(seed = 1, n_plates = 20, n_obs = 400,
       stats::rnorm(length(x), xi[j, 1] + xi[j, 2] * x, phi)
   }
   standards <- expand.grid(
-    known_conc_ul = 10^seq(-1, 5), replicate = 1:3, plate = plates,
+    concentration = 10^seq(-1, 5), replicate = 1:3, plate = plates,
     stringsAsFactors = FALSE
   )
   j <- match(standards$plate, plates)
-  standards$Ct <- sim_ct(log(standards$known_conc_ul), j)
+  standards$ct <- sim_ct(log(standards$concentration), j)
   # some non-detections recorded as NA, as in lab output
-  standards$Ct[standards$Ct == 0][1:3] <- NA
+  standards$ct[standards$ct == 0][1:3] <- NA
 
   predictor_dat <- data.frame(X = stats::runif(n_obs, 0, 1),
     Y = stats::runif(n_obs, 0, 1))
@@ -36,35 +36,37 @@ sim_stdcurve <- function(seed = 1, n_plates = 20, n_obs = 400,
     family = gaussian(), range = 0.5, sigma_O = 0.5, phi = 0.01, B = 1,
     seed = seed)
   sim$plate <- sample(plates, n_obs, replace = TRUE)
-  sim$Ct <- sim_ct(sim$eta, match(sim$plate, plates))
+  sim$ct <- sim_ct(sim$eta, match(sim$plate, plates))
   list(data = sim, standards = standards, mesh = mesh, xi = xi,
     hyper = hyper, phi = phi, plates = plates)
 }
 
 test_that("stdcurve() validates the standards", {
-  std <- data.frame(plate = c("a", "b"), Ct = c(30, 0), known_conc_ul = c(1, 2))
+  std <- data.frame(plate = c("a", "b"), ct = c(30, 0), concentration = c(1, 2))
   expect_s3_class(stdcurve(std), "family")
   expect_identical(stdcurve(std)$family, "stdcurve")
+  expect_identical(stdcurve(std)$link, "log")
   expect_error(stdcurve(), "data frame")
   expect_error(stdcurve(std[, -1]), "plate")
-  expect_error(stdcurve(std[, -2]), "Ct")
-  expect_error(stdcurve(std[, -3]), "known_conc_ul")
-  std$known_conc_ul[1] <- 0
+  expect_error(stdcurve(std[, -2]), "ct")
+  expect_error(stdcurve(std[, -3]), "concentration")
+  expect_error(stdcurve(std, detection = "linear"), "should be one of")
+  std$concentration[1] <- 0
   expect_error(stdcurve(std), "> 0")
-  std$known_conc_ul[1] <- 1
-  std$Ct[1] <- -1
+  std$concentration[1] <- 1
+  std$ct[1] <- -1
   expect_error(stdcurve(std), ">= 0")
-  names(std) <- c("pl", "ct", "conc")
-  std$ct[1] <- 1
-  expect_s3_class(stdcurve(std, plate = "pl", ct = "ct", conc = "conc"),
-    "family")
+  names(std) <- c("pl", "Ct", "conc_ul")
+  std$Ct[1] <- 1
+  expect_s3_class(stdcurve(std, plate = "pl", ct = "Ct",
+    concentration = "conc_ul"), "family")
 })
 
 test_that("stdcurve models recover simulated standard curves", {
   skip_on_cran()
   local_rtmb_backend()
   s <- sim_stdcurve()
-  fit <- sdmTMB(Ct ~ 1, data = s$data, mesh = s$mesh,
+  fit <- sdmTMB(ct ~ 1, data = s$data, mesh = s$mesh,
     family = stdcurve(standards = s$standards))
   expect_true(all(unlist(sanity(fit, silent = TRUE)[c("hessian_ok",
     "eigen_values_ok", "nlminb_ok")])))
@@ -91,6 +93,18 @@ test_that("stdcurve models recover simulated standard curves", {
   expect_equal(stats::cor(p$est, s$data$eta), 1, tolerance = 0.1)
   nd <- data.frame(X = c(0.2, 0.5), Y = c(0.3, 0.5))
   expect_equal(nrow(predict(fit, newdata = nd)), 2L)
+  # log link: response-scale predictions are DNA concentration
+  expect_equal(predict(fit, newdata = nd, type = "response")$est,
+    exp(predict(fit, newdata = nd)$est))
+  nd$year <- 1L
+  ind <- get_index(fit, newdata = nd, area = 1)
+  expect_equal(ind$est, sum(exp(predict(fit, newdata = nd)$est)),
+    tolerance = 0.01)
+  # logLik()/AIC(): plate random effects are not parameters
+  df <- attr(logLik(fit), "df")
+  expect_equal(df, length(fit$model$par))
+  expect_equal(df, 1L + 2L + 1L + 4L + 4L) # b_j, field, phi, std_mu, sigma
+  expect_equal(AIC(fit), -2 * as.numeric(logLik(fit)) + 2 * df)
   r <- residuals(fit, type = "mle-eb")
   expect_length(r, nrow(s$data))
   expect_true(all(is.finite(r)))
@@ -100,7 +114,7 @@ test_that("stdcurve models recover simulated standard curves", {
   ct_hat <- stats::plogis(xi[, 3] + xi[, 4] * exp(p$est)) *
     (xi[, 1] + xi[, 2] * p$est)
   expect_equal(fitted(fit), ct_hat)
-  expect_equal(residuals(fit, type = "response"), s$data$Ct - ct_hat)
+  expect_equal(residuals(fit, type = "response"), s$data$ct - ct_hat)
   expect_equal(mean(residuals(fit, type = "response")), 0, tolerance = 0.5)
   expect_error(residuals(fit, type = "pearson"), "Pearson")
   # default mle-mvn: plate coefficients come from the same posterior draw
@@ -111,8 +125,8 @@ test_that("stdcurve models recover simulated standard curves", {
   expect_equal(stats::sd(r_mvn), 1, tolerance = 0.15)
   set.seed(1)
   draw <- .one_sample_posterior(fit)
-  mu <- predict(fit, newdata = fit$data, mcmc_samples = matrix(draw, ncol = 1L),
-    nsim = 1L, offset = fit$offset)[, 1L]
+  mu <- exp(predict(fit, newdata = fit$data, # concentration (log link)
+    mcmc_samples = matrix(draw, ncol = 1L), nsim = 1L, offset = fit$offset)[, 1L])
   y <- fit$response[, 1L]
   r_draw <- qres_stdcurve(fit, y, mu, .par = draw)
   expect_equal(r_mvn, r_draw)
@@ -123,7 +137,7 @@ test_that("stdcurve models recover simulated standard curves", {
   set.seed(1)
   sims <- simulate(fit, nsim = 2)
   expect_equal(dim(sims), c(nrow(s$data), 2L))
-  expect_equal(mean(sims[, 1] > 0), mean(s$data$Ct > 0), tolerance = 0.15)
+  expect_equal(mean(sims[, 1] > 0), mean(s$data$ct > 0), tolerance = 0.15)
   expect_output(print(fit), "stdcurve")
 
   # simulate(newdata = ) uses each new row's own plate
@@ -157,9 +171,9 @@ test_that("stdcurve models recover simulated standard curves", {
 test_that("stdcurve detection on the log scale works", {
   skip_on_cran()
   local_rtmb_backend()
-  s <- sim_stdcurve(seed = 2, detection = "log")
-  fit <- sdmTMB(Ct ~ 1, data = s$data, mesh = s$mesh,
-    family = stdcurve(standards = s$standards, detection = "log"))
+  s <- sim_stdcurve(seed = 2, detection = "log_concentration")
+  fit <- sdmTMB(ct ~ 1, data = s$data, mesh = s$mesh,
+    family = stdcurve(standards = s$standards, detection = "log_concentration"))
   b <- tidy(fit)
   expect_equal(b$estimate[b$term == "(Intercept)"], 1, tolerance = 0.15)
   sc <- get_stdcurve(fit)
@@ -173,7 +187,7 @@ test_that("stdcurve cross-validation predicts Ct", {
   s <- sim_stdcurve(n_plates = 6, n_obs = 200)
   mesh <- make_mesh(s$data, c("X", "Y"), cutoff = 0.15)
   set.seed(1)
-  cv <- sdmTMB_cv(Ct ~ 1, data = s$data, mesh = mesh,
+  cv <- sdmTMB_cv(ct ~ 1, data = s$data, mesh = mesh,
     family = stdcurve(standards = s$standards), k_folds = 2)
   expect_true(all(cv$converged))
   d <- cv$data
@@ -185,7 +199,7 @@ test_that("stdcurve cross-validation predicts Ct", {
     expect_equal(d$cv_predicted[rows], fitted(fit_k)[rows])
   }
   expect_gt(min(d$cv_predicted), 5)
-  expect_lt(abs(mean(d$Ct - d$cv_predicted)), 2)
+  expect_lt(abs(mean(d$ct - d$cv_predicted)), 2)
   expect_true(is.finite(cv$sum_loglik))
 })
 
@@ -195,23 +209,23 @@ test_that("stdcurve models check their inputs", {
   s <- sim_stdcurve(n_plates = 4, n_obs = 100)
   fam <- stdcurve(standards = s$standards)
   mesh <- make_mesh(s$data, c("X", "Y"), cutoff = 0.2)
-  expect_error(sdmTMB(Ct ~ 1, data = s$data[, names(s$data) != "plate"],
+  expect_error(sdmTMB(ct ~ 1, data = s$data[, names(s$data) != "plate"],
     mesh = mesh, family = fam), "plate")
   d <- s$data
   d$plate[1] <- "unknown"
-  expect_error(sdmTMB(Ct ~ 1, data = d, mesh = mesh, family = fam),
+  expect_error(sdmTMB(ct ~ 1, data = d, mesh = mesh, family = fam),
     "standards")
   d <- s$data
-  d$Ct[1] <- -1
-  expect_error(sdmTMB(Ct ~ 1, data = d, mesh = mesh, family = fam), ">= 0")
-  expect_error(sdmTMB(Ct ~ 1, data = s$data, mesh = mesh, family = fam,
+  d$ct[1] <- -1
+  expect_error(sdmTMB(ct ~ 1, data = d, mesh = mesh, family = fam), "< 0")
+  expect_error(sdmTMB(ct ~ 1, data = s$data, mesh = mesh, family = fam,
     control = sdmTMBcontrol(backend = "tmb")), "rtmb")
   one <- stdcurve(standards = s$standards[s$standards$plate == "p1", ])
   d <- s$data[s$data$plate == "p1", ]
-  expect_error(sdmTMB(Ct ~ 1, data = d, spatial = "off", family = one),
+  expect_error(sdmTMB(ct ~ 1, data = d, spatial = "off", family = one),
     "at least 2 plates")
-  expect_error(sdmTMB(Ct ~ 1, data = s$data, mesh = mesh, family = fam,
+  expect_error(sdmTMB(ct ~ 1, data = s$data, mesh = mesh, family = fam,
     dispformula = ~ X), "dispformula")
-  expect_error(get_stdcurve(sdmTMB(Ct ~ 1, data = s$data, spatial = "off")),
+  expect_error(get_stdcurve(sdmTMB(ct ~ 1, data = s$data, spatial = "off")),
     "stdcurve")
 })

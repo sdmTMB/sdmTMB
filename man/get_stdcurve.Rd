@@ -26,9 +26,10 @@ coefficient across plates, with confidence intervals.
 }
 
 Positive Ct values have mean \code{ct_intercept + ct_slope * log(concentration)};
-the logit detection probability is \code{det_intercept + det_slope * f(conc)},
-where \code{f()} is concentration (\code{detection = "linear"}) or log concentration
-(\code{detection = "log"}).
+the logit detection probability is
+\code{det_intercept + det_slope * f(concentration)}, where \code{f()} is the identity
+(\code{detection = "concentration"}) or \code{log()}
+(\code{detection = "log_concentration"}).
 }
 \description{
 Extract the estimated PCR plate standard curves from a model fit with the

@@ -877,7 +877,7 @@ Quantitative PCR (qPCR) measures DNA through the cycle threshold (Ct), the PCR c
 Converting Ct to DNA concentration needs a standard curve, estimated from laboratory reactions of known concentration ("standards") run on the same PCR plates as the field samples.
 The `stdcurve()` family fits the standard curves and the spatial model jointly, following @liu2026eulachon.
 
-The linear predictor $\eta$ is the log DNA concentration of a sample.
+The linear predictor $\eta$ is the log DNA concentration of a sample (the family uses a log link, so response-scale predictions and indexes are of concentration).
 For a sample (field sample or standard) on PCR plate $j$, with $y = 0$ indicating no amplification,
 
 $$
@@ -887,7 +887,7 @@ y \mid y > 0 &\sim \operatorname{Normal} \left( \xi_{0,j} + \xi_{1,j} \eta, \phi
 \end{aligned}
 $$
 
-where $f(\eta) = e^\eta$ (concentration; `detection = "linear"`, the default) or $f(\eta) = \eta$ (log concentration; `detection = "log"`).
+where $f(\eta) = e^\eta$ (`detection = "concentration"`, the default) or $f(\eta) = \eta$ (`detection = "log_concentration"`).
 For standards, $\eta$ is the known log concentration; for field samples it is the usual sdmTMB linear predictor (main effects, random fields, etc.).
 The plate coefficients are random effects,
 
@@ -900,10 +900,10 @@ The standards are what make the $\xi$ (and their hyperparameters) identifiable, 
 
 ```r
 sdmTMB(
-  Ct ~ 1,
+  ct ~ 1,
   data = field_samples, # includes a `plate` column
   mesh = mesh,
-  family = stdcurve(standards = lab_standards) # plate, Ct, known_conc_ul
+  family = stdcurve(standards = lab_standards) # plate, ct, concentration
 )
 ```
 

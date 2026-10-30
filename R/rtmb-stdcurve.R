@@ -3,7 +3,8 @@
 # A `stdcurve()` model has two data sets that share parameters:
 #
 # - field samples (`data`): qPCR cycle thresholds (Ct; 0 = no detection)
-#   whose latent log DNA concentration is the usual sdmTMB linear predictor;
+#   whose latent log DNA concentration is the usual sdmTMB linear predictor
+#   (a log link, so the response-scale mean is concentration);
 # - laboratory standards (`stdcurve(standards = )`): Ct values of reactions
 #   with known DNA concentration.
 #
@@ -16,8 +17,8 @@
 #   4. detection slope     /
 #
 # where x is log concentration (known for standards, the linear predictor for
-# field samples) and f() is exp() (`detection = "linear"`) or the identity
-# (`detection = "log"`). Each column is Normal(std_mu[k], exp(ln_std_sigma[k]))
+# field samples) and f() is exp() (`detection = "concentration"`) or the
+# identity (`detection = "log_concentration"`). Each column is Normal(std_mu[k], exp(ln_std_sigma[k]))
 # across plates. `phi` (`ln_phi`) is shared by standards and field samples.
 #
 # This is RTMB only: the R side (`.stdcurve_tmb_data()`) adds a `stdcurve`
@@ -40,7 +41,7 @@
     cli_abort("`stdcurve()` needs standards from at least 2 plates to estimate plate variation.")
   }
   list(
-    detection_log = as.integer(family$detection == "log"),
+    detection_log = as.integer(family$detection == "log_concentration"),
     plates = plates,
     plate_i = plate_i,
     std_plate = match(std$plate, plates),
@@ -140,30 +141,30 @@ rtmb_stdcurve_nll <- function(par, phi, prepared) {
   )
 }
 
-# Field-sample observation family. `mu` is log DNA concentration (identity
-# link); `s$xi` holds each row's plate coefficients.
+# Field-sample observation family. With the log link, `mu` is DNA
+# concentration; the curves are in log concentration, the linear predictor
+# `s$eta`. `s$xi` holds each row's plate coefficients.
+rtmb_stdcurve_logit_p <- function(s) {
+  s$xi[, 3L] + s$xi[, 4L] * rtmb_stdcurve_detection_x(s$eta, s$detection_log)
+}
+
 rtmb_obs_families$stdcurve <- list(
   logpdf = function(y, mu, s) {
     present <- as.numeric(y > 0)
-    logit_p <- s$xi[, 3L] + s$xi[, 4L] *
-      rtmb_stdcurve_detection_x(mu, s$detection_log)
-    ld <- RTMB::dbinom_robust(present, 1, logit_p, log = TRUE)
+    ld <- RTMB::dbinom_robust(present, 1, rtmb_stdcurve_logit_p(s), log = TRUE)
     # Non-detections have no Ct; the Gaussian term is finite and multiplied
     # by 0 for them, so no branching on AD values is needed.
-    ld + present * RTMB::dnorm(y, s$xi[, 1L] + s$xi[, 2L] * mu, s$phi,
+    ld + present * RTMB::dnorm(y, s$xi[, 1L] + s$xi[, 2L] * s$eta, s$phi,
       log = TRUE)
   },
   mean = function(mu, s) {
-    RTMB::plogis(s$xi[, 3L] + s$xi[, 4L] *
-      rtmb_stdcurve_detection_x(mu, s$detection_log)) *
-      (s$xi[, 1L] + s$xi[, 2L] * mu)
+    RTMB::plogis(rtmb_stdcurve_logit_p(s)) * (s$xi[, 1L] + s$xi[, 2L] * s$eta)
   },
   simulate = function(mu, s) {
     n <- length(mu)
-    p <- stats::plogis(s$xi[, 3L] + s$xi[, 4L] *
-      rtmb_stdcurve_detection_x(mu, s$detection_log))
-    stats::rbinom(n, 1, p) * stats::rnorm(n, s$xi[, 1L] + s$xi[, 2L] * mu,
-      s$phi)
+    p <- stats::plogis(rtmb_stdcurve_logit_p(s))
+    stats::rbinom(n, 1, p) *
+      stats::rnorm(n, s$xi[, 1L] + s$xi[, 2L] * s$eta, s$phi)
   }
 )
 
@@ -199,9 +200,10 @@ rtmb_obs_families$stdcurve <- list(
 #'   coefficient across plates, with confidence intervals.
 #'
 #' Positive Ct values have mean `ct_intercept + ct_slope * log(concentration)`;
-#' the logit detection probability is `det_intercept + det_slope * f(conc)`,
-#' where `f()` is concentration (`detection = "linear"`) or log concentration
-#' (`detection = "log"`).
+#' the logit detection probability is
+#' `det_intercept + det_slope * f(concentration)`, where `f()` is the identity
+#' (`detection = "concentration"`) or `log()`
+#' (`detection = "log_concentration"`).
 #' @export
 #' @examples
 #' \dontrun{

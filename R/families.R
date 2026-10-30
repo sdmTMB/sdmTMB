@@ -513,36 +513,39 @@ compois <- function(link = "log") {
 #' @param standards For `stdcurve()`: a data frame of laboratory standards
 #'   (qPCR reactions with known DNA concentration) used to estimate the
 #'   standard curves. Must contain the columns named by `plate`, `ct`, and
-#'   `conc`.
+#'   `concentration`.
 #' @param plate For `stdcurve()`: name of the column identifying the PCR plate.
 #'   It must be present in both `standards` and the `data` passed to
 #'   [sdmTMB()]; every plate in `data` must also appear in `standards`.
-#' @param ct For `stdcurve()`: name of the cycle-threshold column in
+#' @param ct For `stdcurve()`: name of the cycle-threshold (Ct) column in
 #'   `standards`. Non-detections can be `0` or `NA`. (In the field `data`,
 #'   non-detections must be `0`, since `NA` responses are treated as missing.)
-#' @param conc For `stdcurve()`: name of the column in `standards` with the
-#'   known DNA concentration (e.g., copies per microlitre; > 0).
-#' @param detection For `stdcurve()`: scale of DNA concentration in the
-#'   logistic detection model. `"linear"` (default) uses concentration,
-#'   `"log"` uses log concentration.
+#' @param concentration For `stdcurve()`: name of the column in `standards`
+#'   with the known DNA concentration (e.g., copies per microlitre; > 0).
+#' @param detection For `stdcurve()`: whether the logistic detection model is
+#'   linear in DNA concentration (`"concentration"`, the default) or in log
+#'   concentration (`"log_concentration"`).
 #' @details
 #' The `stdcurve` family is for environmental DNA (eDNA) qPCR data, which come
-#' with a second, laboratory data set of standards. The linear predictor is
-#' log DNA concentration. The response is the qPCR cycle threshold (Ct), with
-#' `0` meaning no amplification. Each PCR plate \eqn{j} has its own standard
-#' curve: a logistic detection model,
+#' with a second, laboratory data set of standards. The response is the qPCR
+#' cycle threshold (Ct), with `0` meaning no amplification. The linear
+#' predictor \eqn{\eta} is log DNA concentration (a log link). Each PCR plate
+#' \eqn{j} has its own standard curve: a logistic detection model,
 #' \eqn{\mathrm{logit}(p) = \xi_{2,j} + \xi_{3,j} f(\eta)}, and a Gaussian model
 #' of positive Ct values with mean \eqn{\xi_{0,j} + \xi_{1,j} \eta} and
-#' standard deviation `phi`, where \eqn{\eta} is log concentration and
-#' \eqn{f} is `exp()` (`detection = "linear"`) or the identity
-#' (`detection = "log"`). The plate coefficients are random effects with
-#' estimated means and standard deviations. They are informed by the
-#' `standards`, for which \eqn{\eta} is the known log concentration, and by the
-#' field samples. See [get_stdcurve()] for the estimates. Predictions
-#' ([predict.sdmTMB()]) are of log concentration; `fitted()` and
-#' response residuals are expected Ct values (detection probability times the
-#' mean positive Ct) on each sample's plate. Needs the RTMB backend (the
-#' default).
+#' standard deviation `phi`, where \eqn{f} is `exp()`
+#' (`detection = "concentration"`) or the identity
+#' (`detection = "log_concentration"`). The plate coefficients are random
+#' effects with estimated means and standard deviations. They are informed by
+#' the `standards`, for which \eqn{\eta} is the known log concentration, and by
+#' the field samples. See [get_stdcurve()] for the estimates.
+#'
+#' Predictions with [predict.sdmTMB()] are of log concentration
+#' (`type = "link"`) or concentration (`type = "response"`), and do not depend
+#' on plates; derived quantities such as [get_index()] are of concentration.
+#' `fitted()` and response residuals are expected Ct values (detection
+#' probability times the mean positive Ct) on each sample's plate. Needs the
+#' RTMB backend (the default).
 #' @references
 #' *eDNA standard curves*:
 #'
@@ -554,18 +557,18 @@ compois <- function(link = "log") {
 #' @export
 #' @examples
 #' std <- data.frame(plate = rep(c("a", "b"), each = 3),
-#'   Ct = c(25, 30, 0, 24, 31, 36), known_conc_ul = rep(c(1000, 10, 0.1), 2))
+#'   ct = c(25, 30, 0, 24, 31, 36), concentration = rep(c(1000, 10, 0.1), 2))
 #' stdcurve(standards = std)
 #' @rdname families
 #' @order 29
-stdcurve <- function(standards, plate = "plate", ct = "Ct",
-                     conc = "known_conc_ul",
-                     detection = c("linear", "log")) {
+stdcurve <- function(standards, plate = "plate", ct = "ct",
+                     concentration = "concentration",
+                     detection = c("concentration", "log_concentration")) {
   detection <- match.arg(detection)
   if (missing(standards) || !is.data.frame(standards)) {
     cli_abort("`standards` must be a data frame of laboratory standards.")
   }
-  for (arg in c("plate", "ct", "conc")) {
+  for (arg in c("plate", "ct", "concentration")) {
     col <- get(arg)
     if (!is.character(col) || length(col) != 1L) {
       cli_abort("`{arg}` must be a single column name.")
@@ -577,16 +580,17 @@ stdcurve <- function(standards, plate = "plate", ct = "Ct",
   if (anyNA(standards[[plate]])) {
     cli_abort("`standards${plate}` must not contain missing values.")
   }
-  x <- standards[[conc]]
+  x <- standards[[concentration]]
   if (!is.numeric(x) || anyNA(x) || any(!is.finite(x)) || any(x <= 0)) {
-    cli_abort("`standards${conc}` must be finite and > 0.")
+    cli_abort("`standards${concentration}` must be finite and > 0.")
   }
   y <- standards[[ct]]
   if (!is.numeric(y) || any(y < 0, na.rm = TRUE)) {
     cli_abort("`standards${ct}` must be numeric and >= 0 (0 or NA for non-detections).")
   }
-  stats <- stats::make.link("identity")
-  out <- c(list(family = "stdcurve", link = "identity",
+  # The linear predictor is log concentration
+  stats <- stats::make.link("log")
+  out <- c(list(family = "stdcurve", link = "log",
     standards = data.frame(plate = as.character(standards[[plate]]),
       ct = ifelse(is.na(y), 0, y), conc = x, stringsAsFactors = FALSE),
     plate = plate, detection = detection), stats)
