@@ -100,6 +100,8 @@ package for the function \code{predict_mle_mcmc()}, which can generate the MCMC
 samples to pass to the \code{mcmc_samples} argument. Ideally MCMC is run until
 convergence and then the last iteration can be used for residuals.
 The defaults may not be sufficient for many models.
+Because \code{mcmc_samples} holds only the linear predictor, the plate
+coefficients of a \code{\link[=stdcurve]{stdcurve()}} model are held at their conditional modes.
 
 \strong{\code{response}}: These are simple observed minus predicted residuals.
 

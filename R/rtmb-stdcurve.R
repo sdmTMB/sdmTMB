@@ -215,10 +215,10 @@ rtmb_obs_families$stdcurve <- list(
 #' * `plates`: one row per plate and coefficient (`ct_intercept`, `ct_slope`,
 #'   `det_intercept`, `det_slope`) with the estimate (conditional mode) and
 #'   standard error.
-#'
-#' Parameters fixed with `sdmTMBcontrol(map = )` have `NA` standard errors.
 #' * `hyper`: the mean (`mu`) and standard deviation (`sigma`) of each
 #'   coefficient across plates, with confidence intervals.
+#'
+#' Parameters fixed with `sdmTMBcontrol(map = )` have `NA` standard errors.
 #'
 #' Positive Ct values have mean `ct_intercept + ct_slope * log(concentration)`;
 #' the logit detection probability is

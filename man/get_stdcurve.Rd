@@ -17,13 +17,11 @@ A list with two data frames:
 \item \code{plates}: one row per plate and coefficient (\code{ct_intercept}, \code{ct_slope},
 \code{det_intercept}, \code{det_slope}) with the estimate (conditional mode) and
 standard error.
-}
-
-Parameters fixed with \code{sdmTMBcontrol(map = )} have \code{NA} standard errors.
-\itemize{
 \item \code{hyper}: the mean (\code{mu}) and standard deviation (\code{sigma}) of each
 coefficient across plates, with confidence intervals.
 }
+
+Parameters fixed with \code{sdmTMBcontrol(map = )} have \code{NA} standard errors.
 
 Positive Ct values have mean \code{ct_intercept + ct_slope * log(concentration)};
 the logit detection probability is

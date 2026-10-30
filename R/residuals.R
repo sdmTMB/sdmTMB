@@ -479,6 +479,8 @@ qres_gengamma <- function(object, y, mu, ...) {
 #' samples to pass to the `mcmc_samples` argument. Ideally MCMC is run until
 #' convergence and then the last iteration can be used for residuals.
 #' The defaults may not be sufficient for many models.
+#' Because `mcmc_samples` holds only the linear predictor, the plate
+#' coefficients of a [stdcurve()] model are held at their conditional modes.
 #'
 #' **`response`**: These are simple observed minus predicted residuals.
 #'

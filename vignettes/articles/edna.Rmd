@@ -167,12 +167,13 @@ ggplot(d, aes(true, estimate)) +
   facet_wrap(~term, scales = "free")
 ```
 
-The fitted curves for each standard are in the model report, `std_ct_hat` (expected positive Ct) and `std_logit_p` (logit detection probability):
+Positive Ct values on plate $j$ have mean `ct_intercept + ct_slope * log(concentration)`, so we can draw each plate's fitted curve through its standards:
 
 ```{r plot-standards}
-r <- fit$tmb_obj$report()
-standards$ct_hat <- r$std_ct_hat
-standards$p_detect <- plogis(r$std_logit_p)
+# long to wide: a plates x coefficients matrix (one estimate per cell)
+est <- xtabs(estimate ~ plate + term, data = sc$plates)
+j <- standards$plate
+standards$ct_hat <- est[j, "ct_intercept"] + est[j, "ct_slope"] * log(standards$concentration)
 ggplot(standards, aes(log(concentration))) +
   geom_point(aes(y = ifelse(is.na(ct) | ct == 0, NA, ct)), alpha = 0.4) +
   geom_line(aes(y = ct_hat, group = plate), alpha = 0.3) +
