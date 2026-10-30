@@ -530,6 +530,12 @@ sdmTMB_cv <- function(
     }
 
     cv_data$cv_predicted <- predicted$est
+    if (!is.null(object$tmb_data$stdcurve)) {
+      # eDNA: `est` is concentration; compare expected Ct (on each
+      # validation row's plate) with the observed Ct. Fold models include the
+      # validation rows (with zero weight), so `fitted()` covers them.
+      cv_data$cv_predicted <- stats::fitted(object)[validation_index]
+    }
     # Calculate deviance residuals for held-out data
     dev_resids <- tryCatch({
       residuals(object, type = "deviance")

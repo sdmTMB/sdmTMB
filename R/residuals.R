@@ -280,6 +280,29 @@ qres_gaussian <- function(object, y, mu, ...) {
   stats::qnorm(u)
 }
 
+# Hurdle-style randomized quantile residuals for eDNA Ct values: a
+# non-detection is uniform on (0, 1 - p); a positive Ct is placed in
+# (1 - p, 1) by its Gaussian CDF. `.par` is the full parameter vector of an
+# `mle-mvn` posterior draw, so the plate coefficients come from the same joint
+# draw as `mu`; otherwise (`mle-eb`) they are at their modes. `mu` is
+# concentration (log link); the curves are in log concentration.
+qres_stdcurve <- function(object, y, mu, .par = NULL, ...) {
+  eta <- log(mu)
+  theta <- if (is.null(.par)) get_pars(object) else
+    object$tmb_obj$env$parList(par = .par)
+  sc <- object$tmb_data$stdcurve
+  if (length(y) != length(sc$plate_i)) {
+    cli_abort("Residuals for `stdcurve()` need one prediction per fitted row.")
+  }
+  xi <- theta$std_xi[sc$plate_i, , drop = FALSE]
+  phi <- exp(theta[["ln_phi"]])
+  p <- stats::plogis(.stdcurve_logit_p(xi, eta, sc$detection_log))
+  u <- ifelse(y > 0,
+    (1 - p) + p * stats::pnorm(y, .stdcurve_ct_mean(xi, eta), phi),
+    stats::runif(length(y), 0, 1 - p))
+  stats::qnorm(u)
+}
+
 qres_lognormal <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   dispersion <- exp(theta[["ln_phi"]])
@@ -456,6 +479,8 @@ qres_gengamma <- function(object, y, mu, ...) {
 #' samples to pass to the `mcmc_samples` argument. Ideally MCMC is run until
 #' convergence and then the last iteration can be used for residuals.
 #' The defaults may not be sufficient for many models.
+#' Because `mcmc_samples` holds only the linear predictor, the plate
+#' coefficients of a [stdcurve()] model are held at their conditional modes.
 #'
 #' **`response`**: These are simple observed minus predicted residuals.
 #'
@@ -591,6 +616,7 @@ residuals.sdmTMB <- function(object,
       nbinom2  = qres_nbinom2,
       nbinom1  = qres_nbinom1,
       compois  = qres_compois,
+      stdcurve = qres_stdcurve,
       censored_nbinom2 = qres_censored_nbinom2,
       censored_nbinom1 = qres_censored_nbinom1,
       truncated_nbinom2  = qres_truncated_nbinom2,
@@ -615,6 +641,13 @@ residuals.sdmTMB <- function(object,
       mu <- .poisson_link_delta_mu_from_eta(object, model = model, eta1 = pred$est1, eta2 = pred$est2)
     } else {
       mu <- linkinv(pred[[est_column]])
+    }
+    if (identical(fam, "stdcurve") && type %in% c("response", "pearson")) {
+      # `mu` is concentration; these residuals are on the Ct scale
+      if (type == "pearson") {
+        cli_abort("Pearson residuals are not implemented for `stdcurve()`.")
+      }
+      mu <- .stdcurve_expected_ct(object, log(mu))
     }
   } else if (type == "mvn-laplace") {
     mu <- linkinv(predict(object, nsim = 1L, model = model, offset = object$offset)[, 1L, drop = TRUE])
@@ -737,7 +770,12 @@ residuals.sdmTMB <- function(object,
   if (type == "response") {
     if (!prop_binomial) r <- y - mu else r <- y / size - mu
   } else if (type == "mle-eb" || type == "mle-mvn") {
-    r <- res_func(object, y, mu, .n = size, ...)
+    if (identical(fam, "stdcurve") && is.null(qres_func) && type == "mle-mvn") {
+      # plate coefficients from the same posterior draw as `mu`
+      r <- res_func(object, y, mu, .n = size, .par = params, ...)
+    } else {
+      r <- res_func(object, y, mu, .n = size, ...)
+    }
   } else if (type == "mle-mcmc") {
     r <- res_func(object, y, mu, .n = size, ...)
   } else if (type == "pearson") {

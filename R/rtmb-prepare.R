@@ -68,6 +68,11 @@ rtmb_prepare <- function(data) {
     index = list(link = rtmb_code_name(data$link_pred, .valid_link),
       time_include = data$proj_time_include == 1L)
   )
+  # eDNA standard curves (see rtmb-stdcurve.R); NULL otherwise
+  if (!is.null(data$stdcurve)) {
+    prepared$stdcurve <- data$stdcurve
+    prepared$stdcurve$detection_log <- on(data$stdcurve$detection_log)
+  }
   prepared$fit <- rtmb_row_inputs(data, prepared$families, projection = FALSE)
   prepared$obs_groups <- rtmb_obs_groups(data, prepared$families,
     prepared$fit$family_id)
@@ -231,7 +236,8 @@ rtmb_validate <- function(data, prepared, parameters, random, ...) {
     if ("b_j" %in% random) "b_j",
     if ("b_j2" %in% random) "b_j2",
     if (prepared$smooths && "bs" %in% random) "bs",
-    if (prepared$smooths) "b_smooth"
+    if (prepared$smooths) "b_smooth",
+    if (!is.null(prepared$stdcurve)) "std_xi"
   )
   unexpected <- setdiff(random, expected_random)
   if (length(unexpected)) {

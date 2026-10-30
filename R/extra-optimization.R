@@ -112,6 +112,9 @@ fit_first_phase <- function(tmb_data, tmb_params, tmb_map, profile, backend,
   out <- obj$env$parList(opt$par) # no random effects in this phase
   # phase-one threshold estimates often cause optimization problems
   out$b_threshold <- tmb_params$b_threshold
+  # eDNA plate effects are fixed in this phase, so their SDs shrink toward 0;
+  # restart those at their defaults (a start at 0 SD can get stuck there)
+  if (!is.null(tmb_params$ln_std_sigma)) out$ln_std_sigma <- tmb_params$ln_std_sigma
   out
 }
 

@@ -871,6 +871,45 @@ Code defined [within sdmTMB](https://github.com/sdmTMB/sdmTMB/blob/18a39eabc111e
 
 Example: `family = student(link = "identity", df = 7)`
 
+## eDNA qPCR cycle thresholds with standard curves
+
+Quantitative PCR (qPCR) measures DNA through the cycle threshold (Ct), the PCR cycle at which amplification is detected; lower Ct values mean more DNA, and some reactions never amplify.
+Converting Ct to DNA concentration needs a standard curve, estimated from laboratory reactions of known concentration ("standards") run on the same PCR plates as the field samples.
+The `stdcurve()` family fits the standard curves and the spatial model jointly, following @liu2026eulachon.
+
+The linear predictor $\eta$ is the log DNA concentration of a sample (the family uses a log link, so response-scale predictions and indexes are of concentration).
+For a sample (field sample or standard) on PCR plate $j$, with $y = 0$ indicating no amplification,
+
+$$
+\begin{aligned}
+\Pr(y > 0) &= \operatorname{logit}^{-1} \left( \xi_{3,j} + \xi_{4,j} f(\eta) \right),\\
+y \mid y > 0 &\sim \operatorname{Normal} \left( \xi_{1,j} + \xi_{2,j} \eta, \phi^2 \right),
+\end{aligned}
+$$
+
+where $f(\eta) = e^\eta$ (`detection = "concentration"`, the default) or $f(\eta) = \eta$ (`detection = "log_concentration"`).
+For standards, $\eta$ is the known log concentration; for field samples it is the usual sdmTMB linear predictor (main effects, random fields, etc.).
+The plate coefficients are random effects,
+
+$$
+\xi_{k,j} \sim \operatorname{Normal} \left( \mu_{\xi_k}, \sigma_{\xi_k}^2 \right), \quad k = 1, \ldots, 4,
+$$
+
+independently across $k$, and $\phi$ is shared by the standards and field samples.
+The standards are what make the $\xi$ (and their hyperparameters) identifiable, so `stdcurve()` takes them as a second data frame:
+
+```r
+sdmTMB(
+  ct ~ 1,
+  data = field_samples, # includes a `plate` column
+  mesh = mesh,
+  family = stdcurve(standards = lab_standards) # plate, ct, concentration
+)
+```
+
+Estimates of the plate curves and their hyperparameters are available with `get_stdcurve()`.
+This family needs the RTMB backend (the default).
+
 # Delta models
 
 sdmTMB allows for several different kinds of delta (also known as hurdle) models. These families are implemented by specifying the family as a delta distribution. For example:

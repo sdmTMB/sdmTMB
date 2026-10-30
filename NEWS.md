@@ -1,5 +1,12 @@
 # sdmTMB (development version)
 
+* Add the `stdcurve()` family for environmental DNA (eDNA) qPCR data. The
+  model jointly estimates PCR plate standard curves (hierarchical across
+  plates) from a laboratory data set of standards, passed with
+  `stdcurve(standards = )`, and the spatial model of log DNA concentration
+  from the field samples. Plate estimates are available with
+  `get_stdcurve()`. RTMB backend only. See the new eDNA article.
+
 * Fix a segfault when using `sdmTMB_cv()` fold models (e.g., via
   `print(cv)`) after running in parallel with a `future::plan()` or after
   saving and reloading the cross-validation object. Reloaded models are now

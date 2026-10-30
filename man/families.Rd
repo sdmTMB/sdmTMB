@@ -30,6 +30,7 @@
 \alias{delta_gamma_mix}
 \alias{delta_lognormal_mix}
 \alias{compois}
+\alias{stdcurve}
 \title{Additional families}
 \usage{
 student(link = "identity", df = NULL)
@@ -92,6 +93,14 @@ delta_lognormal_mix(
 )
 
 compois(link = "log")
+
+stdcurve(
+  standards,
+  plate = "plate",
+  ct = "ct",
+  concentration = "concentration",
+  detection = c("concentration", "log_concentration")
+)
 }
 \arguments{
 \item{link}{Link.}
@@ -109,6 +118,26 @@ for \code{type = "standard"} and \code{"log"} for \code{type = "poisson-link"}.}
 
 \item{type}{Delta/hurdle family type. \code{"standard"} for a classic hurdle
 model. \code{"poisson-link"} for a Poisson-link delta model (Thorson 2018).}
+
+\item{standards}{For \code{stdcurve()}: a data frame of laboratory standards
+(qPCR reactions with known DNA concentration) used to estimate the
+standard curves. Must contain the columns named by \code{plate}, \code{ct}, and
+\code{concentration}.}
+
+\item{plate}{For \code{stdcurve()}: name of the column identifying the PCR plate.
+It must be present in both \code{standards} and the \code{data} passed to
+\code{\link[=sdmTMB]{sdmTMB()}}; every plate in \code{data} must also appear in \code{standards}.}
+
+\item{ct}{For \code{stdcurve()}: name of the cycle-threshold (Ct) column in
+\code{standards}. Non-detections can be \code{0} or \code{NA}. (In the field \code{data},
+non-detections must be \code{0}, since \code{NA} responses are treated as missing.)}
+
+\item{concentration}{For \code{stdcurve()}: name of the column in \code{standards}
+with the known DNA concentration (e.g., copies per microlitre; > 0).}
+
+\item{detection}{For \code{stdcurve()}: whether the logistic detection model is
+linear in DNA concentration (\code{"concentration"}, the default) or in log
+concentration (\code{"log_concentration"}).}
 }
 \value{
 A list with elements common to standard R family objects including \code{family},
@@ -194,6 +223,37 @@ parameterized by its mean (Huang 2017), as in \pkg{glmmTMB}. It can model
 underdispersed (\code{phi < 1}) as well as overdispersed (\code{phi > 1}) counts, where
 \code{phi} = \code{1/nu} and the variance is approximately \code{mu * phi}. It needs the
 RTMB backend (the default).
+
+The \code{stdcurve} family is for environmental DNA (eDNA) qPCR data, which come
+with a second, laboratory data set of standards. The response is the qPCR
+cycle threshold (Ct), with \code{0} meaning no amplification. The linear
+predictor \eqn{\eta} is log DNA concentration (a log link). Each PCR plate
+\eqn{j} has its own standard curve: a logistic detection model,
+\eqn{\mathrm{logit}(p) = \xi_{3,j} + \xi_{4,j} f(\eta)}, and a Gaussian model
+of positive Ct values with mean \eqn{\xi_{1,j} + \xi_{2,j} \eta} and
+standard deviation \code{phi}, where \eqn{f} is \code{exp()}
+(\code{detection = "concentration"}) or the identity
+(\code{detection = "log_concentration"}). The plate coefficients are independent
+normal random effects (no correlation among a plate's coefficients) with
+estimated means and standard deviations. They are informed by the
+\code{standards}, for which \eqn{\eta} is the known log concentration, and by
+the field samples. See \code{\link[=get_stdcurve]{get_stdcurve()}} for the estimates.
+
+The among-plate standard deviations (\code{ln_std_sigma}; in the order Ct
+intercept, Ct slope, detection intercept, detection slope) need standards
+from several plates to be estimated. With few plates, the detection
+standard deviations can collapse toward zero, which \code{\link[=sanity]{sanity()}} flags. One
+can then be fixed at a small value with
+\code{sdmTMBcontrol(map = list(ln_std_sigma = factor(c(1, 2, NA, 3))))} and a
+matching \code{start} value.
+
+Predictions with \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} are of log concentration
+(\code{type = "link"}) or concentration (\code{type = "response"}), and do not depend
+on plates; derived quantities such as \code{\link[=get_index]{get_index()}} are of concentration.
+\code{fitted()} and response residuals are expected Ct values (detection
+probability times the mean positive Ct) on each sample's plate. Deviance
+and Pearson residuals are not available. Needs the RTMB backend (the
+default).
 }
 \examples{
 student(link = "identity") # estimate df
@@ -225,6 +285,9 @@ delta_truncated_nbinom1()
 delta_gamma_mix()
 delta_lognormal_mix()
 compois(link = "log")
+std <- data.frame(plate = rep(c("a", "b"), each = 3),
+  ct = c(25, 30, 0, 24, 31, 36), concentration = rep(c(1000, 10, 0.1), 2))
+stdcurve(standards = std)
 }
 \references{
 \emph{Generalized gamma family}:
@@ -276,4 +339,12 @@ Journal of Fisheries and Aquatic Sciences, 75(9), 1369-1382.
 Huang, A. 2017. Mean-parametrized Conway–Maxwell–Poisson regression models
 for dispersed counts. Statistical Modelling 17(6): 359–380.
 \doi{10.1177/1471082X17697749}
+
+\emph{eDNA standard curves}:
+
+Liu, O.R., Shelton, A.O., Ramón-Laca, A., Nichols, K.M., Ward, E.J.,
+Phillips, E.M., Zamon, J.E., Wells, A., and Kelly, R.P. 2026. Mapping the
+marine distribution of eulachon (\emph{Thaleichthys pacificus}) in the Northeast
+Pacific using environmental DNA. Communications Biology 9: 465.
+\doi{10.1038/s42003-026-09733-5}
 }

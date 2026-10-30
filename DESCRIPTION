@@ -46,6 +46,8 @@ Authors@R: c(
            comment = "mgcv: smoother prediction"),
     person("Paul-Christian", "Bürkner", role = c("ctb", "cph"),
            comment = "brms: smoother matrix parsing"),
+    person("Owen", "Liu", role = c("ctb"),
+           comment = c(ORCID = "0000-0002-9735-3384", "eDNA models")),
     person(paste("His Majesty the King in Right of Canada, as represented by",
            "the Minister of the Department of Fisheries and Oceans"),
            role = "cph")

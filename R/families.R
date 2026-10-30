@@ -510,6 +510,103 @@ compois <- function(link = "log") {
   add_to_family(x)
 }
 
+#' @param standards For `stdcurve()`: a data frame of laboratory standards
+#'   (qPCR reactions with known DNA concentration) used to estimate the
+#'   standard curves. Must contain the columns named by `plate`, `ct`, and
+#'   `concentration`.
+#' @param plate For `stdcurve()`: name of the column identifying the PCR plate.
+#'   It must be present in both `standards` and the `data` passed to
+#'   [sdmTMB()]; every plate in `data` must also appear in `standards`.
+#' @param ct For `stdcurve()`: name of the cycle-threshold (Ct) column in
+#'   `standards`. Non-detections can be `0` or `NA`. (In the field `data`,
+#'   non-detections must be `0`, since `NA` responses are treated as missing.)
+#' @param concentration For `stdcurve()`: name of the column in `standards`
+#'   with the known DNA concentration (e.g., copies per microlitre; > 0).
+#' @param detection For `stdcurve()`: whether the logistic detection model is
+#'   linear in DNA concentration (`"concentration"`, the default) or in log
+#'   concentration (`"log_concentration"`).
+#' @details
+#' The `stdcurve` family is for environmental DNA (eDNA) qPCR data, which come
+#' with a second, laboratory data set of standards. The response is the qPCR
+#' cycle threshold (Ct), with `0` meaning no amplification. The linear
+#' predictor \eqn{\eta} is log DNA concentration (a log link). Each PCR plate
+#' \eqn{j} has its own standard curve: a logistic detection model,
+#' \eqn{\mathrm{logit}(p) = \xi_{3,j} + \xi_{4,j} f(\eta)}, and a Gaussian model
+#' of positive Ct values with mean \eqn{\xi_{1,j} + \xi_{2,j} \eta} and
+#' standard deviation `phi`, where \eqn{f} is `exp()`
+#' (`detection = "concentration"`) or the identity
+#' (`detection = "log_concentration"`). The plate coefficients are independent
+#' normal random effects (no correlation among a plate's coefficients) with
+#' estimated means and standard deviations. They are informed by the
+#' `standards`, for which \eqn{\eta} is the known log concentration, and by
+#' the field samples. See [get_stdcurve()] for the estimates.
+#'
+#' The among-plate standard deviations (`ln_std_sigma`; in the order Ct
+#' intercept, Ct slope, detection intercept, detection slope) need standards
+#' from several plates to be estimated. With few plates, the detection
+#' standard deviations can collapse toward zero, which [sanity()] flags. One
+#' can then be fixed at a small value with
+#' `sdmTMBcontrol(map = list(ln_std_sigma = factor(c(1, 2, NA, 3))))` and a
+#' matching `start` value.
+#'
+#' Predictions with [predict.sdmTMB()] are of log concentration
+#' (`type = "link"`) or concentration (`type = "response"`), and do not depend
+#' on plates; derived quantities such as [get_index()] are of concentration.
+#' `fitted()` and response residuals are expected Ct values (detection
+#' probability times the mean positive Ct) on each sample's plate. Deviance
+#' and Pearson residuals are not available. Needs the RTMB backend (the
+#' default).
+#' @references
+#' *eDNA standard curves*:
+#'
+#' Liu, O.R., Shelton, A.O., Ramón-Laca, A., Nichols, K.M., Ward, E.J.,
+#' Phillips, E.M., Zamon, J.E., Wells, A., and Kelly, R.P. 2026. Mapping the
+#' marine distribution of eulachon (*Thaleichthys pacificus*) in the Northeast
+#' Pacific using environmental DNA. Communications Biology 9: 465.
+#' \doi{10.1038/s42003-026-09733-5}
+#' @export
+#' @examples
+#' std <- data.frame(plate = rep(c("a", "b"), each = 3),
+#'   ct = c(25, 30, 0, 24, 31, 36), concentration = rep(c(1000, 10, 0.1), 2))
+#' stdcurve(standards = std)
+#' @rdname families
+#' @order 29
+stdcurve <- function(standards, plate = "plate", ct = "ct",
+                     concentration = "concentration",
+                     detection = c("concentration", "log_concentration")) {
+  detection <- match.arg(detection)
+  if (missing(standards) || !is.data.frame(standards)) {
+    cli_abort("`standards` must be a data frame of laboratory standards.")
+  }
+  for (arg in c("plate", "ct", "concentration")) {
+    col <- get(arg)
+    if (!is.character(col) || length(col) != 1L) {
+      cli_abort("`{arg}` must be a single column name.")
+    }
+    if (!col %in% names(standards)) {
+      cli_abort("`{col}` (`{arg}`) must be a column in `standards`.")
+    }
+  }
+  if (anyNA(standards[[plate]])) {
+    cli_abort("`standards${plate}` must not contain missing values.")
+  }
+  x <- standards[[concentration]]
+  if (!is.numeric(x) || anyNA(x) || any(!is.finite(x)) || any(x <= 0)) {
+    cli_abort("`standards${concentration}` must be finite and > 0.")
+  }
+  y <- standards[[ct]]
+  if (!is.numeric(y) || any(y < 0, na.rm = TRUE)) {
+    cli_abort("`standards${ct}` must be numeric and >= 0 (0 or NA for non-detections).")
+  }
+  # The linear predictor is log concentration
+  stats <- stats::make.link("log")
+  out <- c(list(family = "stdcurve", link = "log",
+    standards = data.frame(plate = as.character(standards[[plate]]),
+      ct = ifelse(is.na(y), 0, y), conc = x, stringsAsFactors = FALSE),
+    plate = plate, detection = detection), stats)
+  add_to_family(out)
+}
+
 #' @param link1 Link for first part of delta/hurdle model. Defaults to `"logit"`
 #'  for `type = "standard"` and `"log"` for `type = "poisson-link"`.
 #' @param link2 Link for second part of delta/hurdle model.

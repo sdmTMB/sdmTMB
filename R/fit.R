@@ -738,6 +738,12 @@ sdmTMB <- function(
       cli_abort("`dispformula` is not supported for truncated negative-binomial families yet.")
     }
   }
+  # eDNA standard curves: lab standards and plate indices (rtmb-stdcurve.R)
+  stdcurve_data <- NULL
+  if ("stdcurve" %in% family_spec$components$family_name) {
+    stdcurve_data <- .stdcurve_tmb_data(family, data, is_multi_family,
+      has_dispformula)
+  }
 
   if ((!is.null(predict_args) || !is.null(index_args)) && isFALSE(do_index)) {
     cli_abort(c(
@@ -1016,7 +1022,8 @@ sdmTMB <- function(
   # FIXME parallel setup here?
 
   rtmb_only <- intersect(family_spec$components$family_name, c("censored_nbinom1",
-    "censored_nbinom2", "censored_binomial", "censored_betabinomial", "compois"))
+    "censored_nbinom2", "censored_binomial", "censored_betabinomial", "compois",
+    "stdcurve"))
   if (length(rtmb_only) && backend != "rtmb") {
     cli_abort("`{rtmb_only[[1]]}()` needs `sdmTMBcontrol(backend = \"rtmb\")`.")
   }
@@ -1511,6 +1518,7 @@ sdmTMB <- function(
   # R functions, so RTMB only; kept in the data list so every rebuilt
   # objective (prediction, index, simulation, saved fits) includes them
   tmb_data$priors_custom <- priors_custom
+  tmb_data$stdcurve <- stdcurve_data
   tmb_data <- c(tmb_data, family_tmb)
   tmb_data$poisson_link_delta <- as.integer(fit_poisson_link_delta)
   b_thresh <- matrix(0, 2L, n_m)
@@ -1561,9 +1569,15 @@ sdmTMB <- function(
     temp <- mgcv::gam(formula = formula[[1]], data = data, family = fam)
     tmb_params$b_j <- stats::coef(temp)
   }
+  if (!is.null(stdcurve_data)) {
+    tmb_params <- .stdcurve_start(tmb_params, stdcurve_data, y_i, X_ij[[1]])
+  }
 
   # Map off parameters not needed
   tmb_map <- map_all_params(tmb_params)
+  if (!is.null(stdcurve_data)) {
+    tmb_map <- unmap(tmb_map, c("std_xi", "std_mu", "ln_std_sigma"))
+  }
   tmb_map$b_j <- NULL
   if (!is_multi_family && has_dispformula) {
     tmb_map <- unmap(tmb_map, "b_disp_k")
@@ -1650,6 +1664,7 @@ sdmTMB <- function(
     tmb_random <- c(tmb_random, "b_smooth") # smooth random effects
     tmb_map <- unmap(tmb_map, c("b_smooth", "ln_smooth_sigma", "bs"))
   }
+  if (!is.null(stdcurve_data)) tmb_random <- c(tmb_random, "std_xi")
 
   if (!is.null(previous_fit)) {
     tmb_params <- previous_fit$tmb_obj$env$parList()

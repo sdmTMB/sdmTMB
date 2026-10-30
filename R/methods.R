@@ -28,6 +28,12 @@ fitted.sdmTMB <- function(object, ...) {
 
   if (!"offset" %in% names(object))
     cli_abort("It looks like this was fit with an older version of sdmTMB. Try sdmTMB:::update_version(fit).")
+  if (!is.null(object$tmb_data$stdcurve)) {
+    # eDNA: the expected Ct, not the DNA concentration
+    eta <- predict(object, newdata = object$data, type = "link",
+      offset = object$offset)$est
+    return(.stdcurve_expected_ct(object, eta))
+  }
   predict(object, newdata = object$data, type = "response", offset = object$offset)$est
 }
 
@@ -129,7 +135,8 @@ logLik.sdmTMB <- function(object, ...) {
   val <- -object$model$objective
   nobs <- nobs.sdmTMB(object)
   lpb <- names(object$tmb_obj$env$last.par.best)
-  ran <- c("omega_s", "epsilon_st", "zeta_s", "b_rw_t", "RE", "b_smooth", "re_b_pars")
+  # REML fixed effects are integrated out but still count as parameters
+  ran <- setdiff(object$tmb_random, c("b_j", "b_j2", "bs"))
   df <- sum(!lpb %in% ran)
   structure(val,
     nobs = nobs, nall = nobs, df = df,
@@ -538,8 +545,8 @@ sigma.sdmTMB <- function(object, ...) {
   family_name <- fam$family
 
   # Gaussian/lognormal have dispersion/scale parameter
-  if (family_name %in% c("gaussian", "lognormal")) {
-    # phi = dispersion parameter from TMB report
+  if (family_name %in% c("gaussian", "lognormal", "stdcurve")) {
+    # phi = dispersion parameter from TMB report (Ct SD for stdcurve)
     tmb_obj <- object$tmb_obj
     sdr <- object$sd_report
 

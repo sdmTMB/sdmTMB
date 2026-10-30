@@ -1,0 +1,235 @@
+---
+title: "Modelling eDNA qPCR data with standard curves"
+bibliography: '../refs.bib'
+csl: '../mee.csl'
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Modelling eDNA qPCR data with standard curves}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+---
+
+```{r setup, echo=FALSE, cache=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  echo = TRUE,
+  error = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 7,
+  fig.asp = 0.618
+)
+```
+
+```{r packages}
+library(sdmTMB)
+library(ggplot2)
+theme_set(theme_light())
+```
+
+# Introduction
+
+Environmental DNA (eDNA) surveys often measure DNA with quantitative PCR (qPCR).
+The response is the cycle threshold (Ct), the PCR cycle at which amplification is detected: lower Ct values mean more DNA, and some reactions never amplify.
+Converting Ct to DNA concentration needs a *standard curve*, estimated from laboratory reactions of known concentration ("standards") run on the same PCR plates as the field samples.
+
+The `stdcurve()` family fits the standard curves and the spatial model together, so uncertainty in the curves carries through to the estimates of DNA concentration.
+This follows the approach of @liu2026eulachon, who mapped the marine distribution of eulachon (*Thaleichthys pacificus*) in the Northeast Pacific from eDNA with a joint model of qPCR standards and spatiotemporal DNA concentration.
+The model uses two data sets:
+
+1. the field samples (passed to `data`, as in any sdmTMB model), with a Ct response and a `plate` column, and
+2. the laboratory standards (passed to `stdcurve(standards = )`), with columns `plate`, `ct`, and `concentration`.
+
+See the [model description](https://sdmTMB.github.io/sdmTMB/articles/model-description.html) for the equations.
+In brief, the linear predictor is log DNA concentration (the family has a log link), and each plate has four coefficients---an intercept and slope for positive Ct values (Gaussian), and an intercept and slope for the probability of detection (logistic)---that are random effects across plates.
+
+# Simulating data
+
+We'll simulate standards for 20 plates, with 3 replicates at each of 7 concentrations.
+
+```{r sim-standards}
+set.seed(123)
+n_plates <- 20
+plates <- paste0("plate", seq_len(n_plates))
+
+# plate coefficients: Ct intercept, Ct slope, detection intercept and slope
+mu <- c(38, -1.45, -1, 0.5)
+sigma <- c(0.6, 0.05, 0.3, 0.1)
+xi <- sapply(1:4, function(k) rnorm(n_plates, mu[k], sigma[k]))
+phi <- 0.3 # SD of positive Ct values
+
+# Ct values for log concentration `x` on plates `j`
+sim_ct <- function(x, j) {
+  p <- plogis(xi[j, 3] + xi[j, 4] * exp(x)) # detection on concentration
+  rbinom(length(x), 1, p) * rnorm(length(x), xi[j, 1] + xi[j, 2] * x, phi)
+}
+
+standards <- expand.grid(
+  concentration = 10^seq(-1, 5),
+  replicate = 1:3,
+  plate = plates,
+  stringsAsFactors = FALSE
+)
+standards$ct <- sim_ct(log(standards$concentration), match(standards$plate, plates))
+head(standards)
+```
+
+Non-detections in the standards can be coded as `0` or `NA`.
+
+Next, the field samples: a spatial field of log DNA concentration observed at 500 locations, each sample analyzed on one of the plates.
+
+```{r sim-samples}
+predictor_dat <- data.frame(X = runif(500), Y = runif(500))
+mesh <- make_mesh(predictor_dat, c("X", "Y"), cutoff = 0.08)
+samples <- sdmTMB_simulate(
+  formula = ~ 1,
+  data = predictor_dat,
+  mesh = mesh,
+  family = gaussian(),
+  range = 0.5,
+  sigma_O = 0.5,
+  phi = 0.01,
+  B = 1, # mean log concentration
+  seed = 123
+)
+samples$plate <- sample(plates, nrow(samples), replace = TRUE)
+samples$ct <- sim_ct(samples$eta, match(samples$plate, plates))
+mean(samples$ct == 0) # proportion of non-detections
+```
+
+In `data`, non-detections must be `0`; `NA` is treated as a missing observation.
+
+# Fitting
+
+```{r fit, message=TRUE}
+fit <- sdmTMB(
+  ct ~ 1,
+  data = samples,
+  mesh = mesh,
+  family = stdcurve(standards = standards)
+)
+fit
+sanity(fit)
+```
+
+Here, `sanity()` flags the standard deviations of the plate coefficients (`ln_std_sigma`).
+Variation among plates in the detection curve is often weakly identified, and its estimate can collapse toward zero, as the detection intercept SD does here:
+
+```{r sd-hyper}
+get_stdcurve(fit)$hyper
+```
+
+If so, that standard deviation can be fixed at a small value with `map` and `start` (the order is Ct intercept, Ct slope, detection intercept, detection slope):
+
+```{r map-sd, message=TRUE}
+fit <- update(fit, control = sdmTMBcontrol(
+  map = list(ln_std_sigma = factor(c(1, 2, NA, 3))),
+  start = list(ln_std_sigma = c(0, -2, log(0.01), -2))
+))
+sanity(fit)
+```
+
+The intercept is the mean log DNA concentration (simulated as 1):
+
+```{r tidy}
+tidy(fit, conf.int = TRUE)
+tidy(fit, effects = "ran_pars", conf.int = TRUE)
+```
+
+The `phi` parameter is the standard deviation of positive Ct values.
+
+# Standard curves
+
+`get_stdcurve()` returns the plate coefficients and their hyperparameters (the means and standard deviations across plates):
+
+```{r get-stdcurve}
+sc <- get_stdcurve(fit)
+sc$hyper
+head(sc$plates)
+```
+
+The estimated plate curves are close to the simulated ones:
+
+```{r plot-plates}
+true <- data.frame(
+  plate = rep(plates, 4),
+  term = rep(c("ct_intercept", "ct_slope", "det_intercept", "det_slope"), each = n_plates),
+  true = c(xi)
+)
+d <- merge(sc$plates, true)
+ggplot(d, aes(true, estimate)) +
+  geom_abline() +
+  geom_pointrange(aes(ymin = estimate - 2 * std.error, ymax = estimate + 2 * std.error)) +
+  facet_wrap(~term, scales = "free")
+```
+
+Positive Ct values on plate $j$ have mean `ct_intercept + ct_slope * log(concentration)`, so we can draw each plate's fitted curve through its standards:
+
+```{r plot-standards}
+# long to wide: a plates x coefficients matrix (one estimate per cell)
+est <- xtabs(estimate ~ plate + term, data = sc$plates)
+j <- standards$plate
+standards$ct_hat <- est[j, "ct_intercept"] + est[j, "ct_slope"] * log(standards$concentration)
+ggplot(standards, aes(log(concentration))) +
+  geom_point(aes(y = ifelse(is.na(ct) | ct == 0, NA, ct)), alpha = 0.4) +
+  geom_line(aes(y = ct_hat, group = plate), alpha = 0.3) +
+  labs(y = "Ct", x = "log concentration (copies/µl)")
+```
+
+# Predictions
+
+Predictions don't need a plate. By default they are on the link scale, log DNA concentration:
+
+```{r predict}
+p <- predict(fit)
+ggplot(p, aes(eta, est)) +
+  geom_point(alpha = 0.4) +
+  geom_abline() +
+  labs(x = "Simulated log concentration", y = "Estimated log concentration")
+```
+
+A prediction grid works as with any other family:
+
+```{r predict-grid}
+grid <- expand.grid(X = seq(0, 1, length.out = 50), Y = seq(0, 1, length.out = 50))
+pg <- predict(fit, newdata = grid)
+ggplot(pg, aes(X, Y, fill = est)) +
+  geom_raster() +
+  scale_fill_viridis_c(name = "log conc.")
+```
+
+Because the family has a log link, `type = "response"` gives DNA concentration, and derived quantities such as `get_index()` are of concentration (here, summed over the grid cells, each with area 1):
+
+```{r index}
+head(predict(fit, newdata = grid, type = "response"))
+get_index(fit, newdata = grid, area = 1)
+```
+
+# Residuals and simulation
+
+Randomized quantile residuals treat the model as a hurdle: a non-detection is placed uniformly in the probability of non-detection, and a positive Ct by its Gaussian distribution.
+
+```{r residuals}
+samples$resid <- residuals(fit, type = "mle-eb")
+qqnorm(samples$resid)
+qqline(samples$resid)
+```
+
+`simulate()` draws new Ct values from the fitted model (conditional on the estimated plate curves):
+
+```{r simulate}
+s <- simulate(fit, nsim = 100)
+c(observed = mean(samples$ct > 0), simulated = mean(s > 0))
+```
+
+# Other options
+
+- `stdcurve(detection = "log_concentration")` models detection probability as linear in log concentration instead of concentration.
+- Other column names (e.g., `Ct` from a lab export) can be given with the `plate`, `ct`, and `concentration` arguments of `stdcurve()`.
+- Any of the usual sdmTMB model components (covariates, smoothers, spatiotemporal fields, offsets for, e.g., volume filtered) can be added to the model of log concentration.
+
+# References

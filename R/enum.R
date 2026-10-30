@@ -24,7 +24,8 @@
   censored_binomial = 20,
   censored_nbinom1 = 21,
   censored_nbinom2 = 22,
-  compois = 23
+  compois = 23,
+  stdcurve = 24
 )
 .valid_link <- c(
   identity = 0,
