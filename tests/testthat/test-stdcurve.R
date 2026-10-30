@@ -62,6 +62,7 @@ test_that("stdcurve() validates the standards", {
 
 test_that("stdcurve models recover simulated standard curves", {
   skip_on_cran()
+  local_rtmb_backend()
   s <- sim_stdcurve()
   fit <- sdmTMB(Ct ~ 1, data = s$data, mesh = s$mesh,
     family = stdcurve(standards = s$standards))
@@ -155,6 +156,7 @@ test_that("stdcurve models recover simulated standard curves", {
 
 test_that("stdcurve detection on the log scale works", {
   skip_on_cran()
+  local_rtmb_backend()
   s <- sim_stdcurve(seed = 2, detection = "log")
   fit <- sdmTMB(Ct ~ 1, data = s$data, mesh = s$mesh,
     family = stdcurve(standards = s$standards, detection = "log"))
@@ -167,6 +169,7 @@ test_that("stdcurve detection on the log scale works", {
 
 test_that("stdcurve cross-validation predicts Ct", {
   skip_on_cran()
+  local_rtmb_backend()
   s <- sim_stdcurve(n_plates = 6, n_obs = 200)
   mesh <- make_mesh(s$data, c("X", "Y"), cutoff = 0.15)
   set.seed(1)
@@ -188,6 +191,7 @@ test_that("stdcurve cross-validation predicts Ct", {
 
 test_that("stdcurve models check their inputs", {
   skip_on_cran()
+  local_rtmb_backend()
   s <- sim_stdcurve(n_plates = 4, n_obs = 100)
   fam <- stdcurve(standards = s$standards)
   mesh <- make_mesh(s$data, c("X", "Y"), cutoff = 0.2)
