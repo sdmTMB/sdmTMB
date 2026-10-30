@@ -538,8 +538,8 @@ sigma.sdmTMB <- function(object, ...) {
   family_name <- fam$family
 
   # Gaussian/lognormal have dispersion/scale parameter
-  if (family_name %in% c("gaussian", "lognormal")) {
-    # phi = dispersion parameter from TMB report
+  if (family_name %in% c("gaussian", "lognormal", "stdcurve")) {
+    # phi = dispersion parameter from TMB report (Ct SD for stdcurve)
     tmb_obj <- object$tmb_obj
     sdr <- object$sd_report
 

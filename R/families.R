@@ -510,6 +510,86 @@ compois <- function(link = "log") {
   add_to_family(x)
 }
 
+#' @param standards For `stdcurve()`: a data frame of laboratory standards
+#'   (qPCR reactions with known DNA concentration) used to estimate the
+#'   standard curves. Must contain the columns named by `plate`, `ct`, and
+#'   `conc`.
+#' @param plate For `stdcurve()`: name of the column identifying the PCR plate.
+#'   It must be present in both `standards` and the `data` passed to
+#'   [sdmTMB()]; every plate in `data` must also appear in `standards`.
+#' @param ct For `stdcurve()`: name of the cycle-threshold column in
+#'   `standards`. Non-detections can be `0` or `NA`. (In the field `data`,
+#'   non-detections must be `0`, since `NA` responses are treated as missing.)
+#' @param conc For `stdcurve()`: name of the column in `standards` with the
+#'   known DNA concentration (e.g., copies per microlitre; > 0).
+#' @param detection For `stdcurve()`: scale of DNA concentration in the
+#'   logistic detection model. `"linear"` (default) uses concentration,
+#'   `"log"` uses log concentration.
+#' @details
+#' The `stdcurve` family is for environmental DNA (eDNA) qPCR data, which come
+#' with a second, laboratory data set of standards. The linear predictor is
+#' log DNA concentration. The response is the qPCR cycle threshold (Ct), with
+#' `0` meaning no amplification. Each PCR plate \eqn{j} has its own standard
+#' curve: a logistic detection model,
+#' \eqn{\mathrm{logit}(p) = \xi_{2,j} + \xi_{3,j} f(\eta)}, and a Gaussian model
+#' of positive Ct values with mean \eqn{\xi_{0,j} + \xi_{1,j} \eta} and
+#' standard deviation `phi`, where \eqn{\eta} is log concentration and
+#' \eqn{f} is `exp()` (`detection = "linear"`) or the identity
+#' (`detection = "log"`). The plate coefficients are random effects with
+#' estimated means and standard deviations. They are informed by the
+#' `standards`, for which \eqn{\eta} is the known log concentration, and by the
+#' field samples. See [get_stdcurve()] for the estimates. Needs the RTMB
+#' backend (the default).
+#' @references
+#' *eDNA standard curves*:
+#'
+#' Liu, O.R., Shelton, A.O., Ramón-Laca, A., Nichols, K.M., Ward, E.J.,
+#' Phillips, E.M., Zamon, J.E., Wells, A., and Kelly, R.P. 2026. Mapping the
+#' marine distribution of eulachon (*Thaleichthys pacificus*) in the Northeast
+#' Pacific using environmental DNA. Communications Biology 9: 465.
+#' \doi{10.1038/s42003-026-09733-5}
+#' @export
+#' @examples
+#' std <- data.frame(plate = rep(c("a", "b"), each = 3),
+#'   Ct = c(25, 30, 0, 24, 31, 36), known_conc_ul = rep(c(1000, 10, 0.1), 2))
+#' stdcurve(standards = std)
+#' @rdname families
+#' @order 29
+stdcurve <- function(standards, plate = "plate", ct = "Ct",
+                     conc = "known_conc_ul",
+                     detection = c("linear", "log")) {
+  detection <- match.arg(detection)
+  if (missing(standards) || !is.data.frame(standards)) {
+    cli_abort("`standards` must be a data frame of laboratory standards.")
+  }
+  for (arg in c("plate", "ct", "conc")) {
+    col <- get(arg)
+    if (!is.character(col) || length(col) != 1L) {
+      cli_abort("`{arg}` must be a single column name.")
+    }
+    if (!col %in% names(standards)) {
+      cli_abort("`{col}` (`{arg}`) must be a column in `standards`.")
+    }
+  }
+  if (anyNA(standards[[plate]])) {
+    cli_abort("`standards${plate}` must not contain missing values.")
+  }
+  x <- standards[[conc]]
+  if (!is.numeric(x) || anyNA(x) || any(!is.finite(x)) || any(x <= 0)) {
+    cli_abort("`standards${conc}` must be finite and > 0.")
+  }
+  y <- standards[[ct]]
+  if (!is.numeric(y) || any(y < 0, na.rm = TRUE)) {
+    cli_abort("`standards${ct}` must be numeric and >= 0 (0 or NA for non-detections).")
+  }
+  stats <- stats::make.link("identity")
+  out <- c(list(family = "stdcurve", link = "identity",
+    standards = data.frame(plate = as.character(standards[[plate]]),
+      ct = ifelse(is.na(y), 0, y), conc = x, stringsAsFactors = FALSE),
+    plate = plate, detection = detection), stats)
+  add_to_family(out)
+}
+
 #' @param link1 Link for first part of delta/hurdle model. Defaults to `"logit"`
 #'  for `type = "standard"` and `"log"` for `type = "poisson-link"`.
 #' @param link2 Link for second part of delta/hurdle model.

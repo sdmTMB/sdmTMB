@@ -280,6 +280,25 @@ qres_gaussian <- function(object, y, mu, ...) {
   stats::qnorm(u)
 }
 
+# Hurdle-style randomized quantile residuals for eDNA Ct values: a
+# non-detection is uniform on (0, 1 - p); a positive Ct is placed in
+# (1 - p, 1) by its Gaussian CDF. Plate coefficients are at their modes.
+qres_stdcurve <- function(object, y, mu, ...) {
+  theta <- get_pars(object)
+  sc <- object$tmb_data$stdcurve
+  if (length(y) != length(sc$plate_i)) {
+    cli_abort("Residuals for `stdcurve()` need one prediction per fitted row.")
+  }
+  xi <- theta$std_xi[sc$plate_i, , drop = FALSE]
+  phi <- exp(theta[["ln_phi"]])
+  x_det <- if (isTRUE(sc$detection_log == 1L)) mu else exp(mu)
+  p <- stats::plogis(xi[, 3L] + xi[, 4L] * x_det)
+  u <- ifelse(y > 0,
+    (1 - p) + p * stats::pnorm(y, xi[, 1L] + xi[, 2L] * mu, phi),
+    stats::runif(length(y), 0, 1 - p))
+  stats::qnorm(u)
+}
+
 qres_lognormal <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   dispersion <- exp(theta[["ln_phi"]])
@@ -591,6 +610,7 @@ residuals.sdmTMB <- function(object,
       nbinom2  = qres_nbinom2,
       nbinom1  = qres_nbinom1,
       compois  = qres_compois,
+      stdcurve = qres_stdcurve,
       censored_nbinom2 = qres_censored_nbinom2,
       censored_nbinom1 = qres_censored_nbinom1,
       truncated_nbinom2  = qres_truncated_nbinom2,

@@ -94,6 +94,12 @@ rtmb_evaluate <- function(par, prepared) {
   obs <- rtmb_observations(par, theta, prepared, fitted$eta)
   jnll <- effects$nll + sum(obs$jnll_obs) + rtmb_prior_nll(par, theta, prepared) -
     rtmb_custom_log_density(par, theta, prepared)
+  # eDNA standards and plate random effects (rtmb-stdcurve.R)
+  stdcurve <- NULL
+  if (!is.null(prepared$stdcurve)) {
+    stdcurve <- rtmb_stdcurve_nll(par, theta$phi[[1L]], prepared)
+    jnll <- jnll + stdcurve$nll
+  }
   projected <- derived <- NULL
   if (!is.null(prepared$proj)) {
     projected <- rtmb_linear_predictors(par, theta, effects, prepared,
@@ -109,8 +115,13 @@ rtmb_evaluate <- function(par, prepared) {
       jnll <- jnll + derived$nll
     }
   }
-  c(list(jnll = jnll), rtmb_report(par, theta, prepared, effects, fitted, obs,
-    projected, derived, simulating))
+  out <- rtmb_report(par, theta, prepared, effects, fitted, obs,
+    projected, derived, simulating)
+  if (!is.null(stdcurve)) {
+    out$reports <- c(out$reports, stdcurve$reports)
+    out$adreports <- c(out$adreports, stdcurve$adreports)
+  }
+  c(list(jnll = jnll), out)
 }
 
 # Natural-scale parameters, resolved once per evaluation so that fields,

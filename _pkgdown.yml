@@ -19,6 +19,7 @@ articles:
   - articles/multispecies
   - articles/age-composition
   - articles/presence-only
+  - articles/edna
   - articles/areal-sar-car-spde
   - articles/areal-grid-sar-car-spde
 
@@ -112,6 +113,8 @@ reference:
   - censored_binomial
   - censored_betabinomial
   - get_censored_upper
+  - stdcurve
+  - get_stdcurve
   - gamma_mix
   - lognormal_mix
   - nbinom2_mix
