@@ -531,21 +531,31 @@ compois <- function(link = "log") {
 #' cycle threshold (Ct), with `0` meaning no amplification. The linear
 #' predictor \eqn{\eta} is log DNA concentration (a log link). Each PCR plate
 #' \eqn{j} has its own standard curve: a logistic detection model,
-#' \eqn{\mathrm{logit}(p) = \xi_{2,j} + \xi_{3,j} f(\eta)}, and a Gaussian model
-#' of positive Ct values with mean \eqn{\xi_{0,j} + \xi_{1,j} \eta} and
+#' \eqn{\mathrm{logit}(p) = \xi_{3,j} + \xi_{4,j} f(\eta)}, and a Gaussian model
+#' of positive Ct values with mean \eqn{\xi_{1,j} + \xi_{2,j} \eta} and
 #' standard deviation `phi`, where \eqn{f} is `exp()`
 #' (`detection = "concentration"`) or the identity
-#' (`detection = "log_concentration"`). The plate coefficients are random
-#' effects with estimated means and standard deviations. They are informed by
-#' the `standards`, for which \eqn{\eta} is the known log concentration, and by
+#' (`detection = "log_concentration"`). The plate coefficients are independent
+#' normal random effects (no correlation among a plate's coefficients) with
+#' estimated means and standard deviations. They are informed by the
+#' `standards`, for which \eqn{\eta} is the known log concentration, and by
 #' the field samples. See [get_stdcurve()] for the estimates.
+#'
+#' The among-plate standard deviations (`ln_std_sigma`; in the order Ct
+#' intercept, Ct slope, detection intercept, detection slope) need standards
+#' from several plates to be estimated. With few plates, the detection
+#' standard deviations can collapse toward zero, which [sanity()] flags. One
+#' can then be fixed at a small value with
+#' `sdmTMBcontrol(map = list(ln_std_sigma = factor(c(1, 2, NA, 3))))` and a
+#' matching `start` value.
 #'
 #' Predictions with [predict.sdmTMB()] are of log concentration
 #' (`type = "link"`) or concentration (`type = "response"`), and do not depend
 #' on plates; derived quantities such as [get_index()] are of concentration.
 #' `fitted()` and response residuals are expected Ct values (detection
-#' probability times the mean positive Ct) on each sample's plate. Needs the
-#' RTMB backend (the default).
+#' probability times the mean positive Ct) on each sample's plate. Deviance
+#' and Pearson residuals are not available. Needs the RTMB backend (the
+#' default).
 #' @references
 #' *eDNA standard curves*:
 #'

@@ -882,8 +882,8 @@ For a sample (field sample or standard) on PCR plate $j$, with $y = 0$ indicatin
 
 $$
 \begin{aligned}
-\Pr(y > 0) &= \operatorname{logit}^{-1} \left( \xi_{2,j} + \xi_{3,j} f(\eta) \right),\\
-y \mid y > 0 &\sim \operatorname{Normal} \left( \xi_{0,j} + \xi_{1,j} \eta, \phi^2 \right),
+\Pr(y > 0) &= \operatorname{logit}^{-1} \left( \xi_{3,j} + \xi_{4,j} f(\eta) \right),\\
+y \mid y > 0 &\sim \operatorname{Normal} \left( \xi_{1,j} + \xi_{2,j} \eta, \phi^2 \right),
 \end{aligned}
 $$
 
@@ -892,10 +892,10 @@ For standards, $\eta$ is the known log concentration; for field samples it is th
 The plate coefficients are random effects,
 
 $$
-\xi_{k,j} \sim \operatorname{Normal} \left( \mu_{\xi_k}, \sigma_{\xi_k}^2 \right), \quad k = 0, \ldots, 3,
+\xi_{k,j} \sim \operatorname{Normal} \left( \mu_{\xi_k}, \sigma_{\xi_k}^2 \right), \quad k = 1, \ldots, 4,
 $$
 
-and $\phi$ is shared by the standards and field samples.
+independently across $k$, and $\phi$ is shared by the standards and field samples.
 The standards are what make the $\xi$ (and their hyperparameters) identifiable, so `stdcurve()` takes them as a second data frame:
 
 ```r

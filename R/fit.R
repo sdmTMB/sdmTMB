@@ -741,13 +741,8 @@ sdmTMB <- function(
   # eDNA standard curves: lab standards and plate indices (rtmb-stdcurve.R)
   stdcurve_data <- NULL
   if ("stdcurve" %in% family_spec$components$family_name) {
-    if (is_multi_family) {
-      cli_abort("`stdcurve()` is not supported in multi-family models.")
-    }
-    if (has_dispformula) {
-      cli_abort("`dispformula` is not supported with `stdcurve()`.")
-    }
-    stdcurve_data <- .stdcurve_tmb_data(family, data)
+    stdcurve_data <- .stdcurve_tmb_data(family, data, is_multi_family,
+      has_dispformula)
   }
 
   if ((!is.null(predict_args) || !is.null(index_args)) && isFALSE(do_index)) {
@@ -1575,19 +1570,7 @@ sdmTMB <- function(
     tmb_params$b_j <- stats::coef(temp)
   }
   if (!is.null(stdcurve_data)) {
-    tmb_params <- c(tmb_params, .stdcurve_start(stdcurve_data))
-    # Start the latent log concentration where the standard curves put the
-    # observed Ct values: invert the overall mean curve for positives.
-    y_ct <- as.matrix(y_i)[, 1L]
-    if (any(y_ct < 0, na.rm = TRUE)) {
-      cli_abort("`stdcurve()` responses (Ct) must be >= 0, with 0 for non-detections.")
-    }
-    pos <- !is.na(y_ct) & y_ct > 0
-    intercept <- colnames(X_ij[[1]]) == "(Intercept)"
-    if (any(pos) && any(intercept)) {
-      mu <- tmb_params$std_mu
-      tmb_params$b_j[intercept] <- mean((y_ct[pos] - mu[[1]]) / mu[[2]])
-    }
+    tmb_params <- .stdcurve_start(tmb_params, stdcurve_data, y_i, X_ij[[1]])
   }
 
   # Map off parameters not needed

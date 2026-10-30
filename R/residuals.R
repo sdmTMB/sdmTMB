@@ -296,10 +296,9 @@ qres_stdcurve <- function(object, y, mu, .par = NULL, ...) {
   }
   xi <- theta$std_xi[sc$plate_i, , drop = FALSE]
   phi <- exp(theta[["ln_phi"]])
-  x_det <- if (isTRUE(sc$detection_log == 1L)) eta else mu
-  p <- stats::plogis(xi[, 3L] + xi[, 4L] * x_det)
+  p <- stats::plogis(.stdcurve_logit_p(xi, eta, sc$detection_log))
   u <- ifelse(y > 0,
-    (1 - p) + p * stats::pnorm(y, xi[, 1L] + xi[, 2L] * eta, phi),
+    (1 - p) + p * stats::pnorm(y, .stdcurve_ct_mean(xi, eta), phi),
     stats::runif(length(y), 0, 1 - p))
   stats::qnorm(u)
 }

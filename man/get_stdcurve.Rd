@@ -37,7 +37,7 @@ Extract the estimated PCR plate standard curves from a model fit with the
 }
 \examples{
 \dontrun{
-fit <- sdmTMB(Ct ~ 1, data = d, mesh = mesh,
+fit <- sdmTMB(ct ~ 1, data = d, mesh = mesh,
   family = stdcurve(standards = standards))
 get_stdcurve(fit)
 }

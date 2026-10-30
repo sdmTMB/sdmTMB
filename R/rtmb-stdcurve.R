@@ -18,8 +18,10 @@
 #
 # where x is log concentration (known for standards, the linear predictor for
 # field samples) and f() is exp() (`detection = "concentration"`) or the
-# identity (`detection = "log_concentration"`). Each column is Normal(std_mu[k], exp(ln_std_sigma[k]))
-# across plates. `phi` (`ln_phi`) is shared by standards and field samples.
+# identity (`detection = "log_concentration"`). Each column is
+# Normal(std_mu[k], exp(ln_std_sigma[k])) across plates, independently (no
+# correlation among a plate's coefficients). `phi` (`ln_phi`) is shared by
+# standards and field samples.
 #
 # This is RTMB only: the R side (`.stdcurve_tmb_data()`) adds a `stdcurve`
 # list to the C++ data list; `rtmb_prepare()` passes it through; the
@@ -32,7 +34,14 @@
 
 # Data for the standards and the plate index of each field row. `data` is the
 # analysis data after rows with missing values are dropped.
-.stdcurve_tmb_data <- function(family, data) {
+.stdcurve_tmb_data <- function(family, data, multi_family = FALSE,
+                               dispformula = FALSE) {
+  if (multi_family) {
+    cli_abort("`stdcurve()` is not supported in multi-family models.")
+  }
+  if (dispformula) {
+    cli_abort("`dispformula` is not supported with `stdcurve()`.")
+  }
   std <- family$standards
   plate_col <- family$plate
   plates <- sort(unique(std$plate))
@@ -69,8 +78,14 @@
 }
 
 # Starting values from per-plate fits to the standards: Ct on log
-# concentration (positives) and logistic detection.
-.stdcurve_start <- function(sc) {
+# concentration (positives) and logistic detection. The plate parameters are
+# added to `params`, and the intercept of the field linear predictor (`X`
+# columns) starts where the mean curve puts the positive field Ct values `y`.
+.stdcurve_start <- function(params, sc, y, X) {
+  y <- as.matrix(y)[, 1L]
+  if (any(y < 0, na.rm = TRUE)) {
+    cli_abort("`stdcurve()` responses (Ct) must be >= 0, with 0 for non-detections.")
+  }
   f <- function(x) if (sc$detection_log == 1L) x else exp(x)
   pos <- sc$std_ct > 0
   if (sum(pos) < 2L) {
@@ -84,7 +99,8 @@
     unname(stats::lm.fit(cbind(1, sc$std_x[k]), sc$std_ct[k])$coefficients)
   }, numeric(2))
   ct_sd <- apply(per_plate, 1L, stats::sd, na.rm = TRUE)
-  ct_sd[!is.finite(ct_sd) | ct_sd <= 0] <- 0.1 * abs(ct_coef) + 0.01
+  bad <- !is.finite(ct_sd) | ct_sd <= 0
+  ct_sd[bad] <- (0.1 * abs(ct_coef) + 0.01)[bad]
   det <- suppressWarnings(tryCatch(
     stats::glm.fit(cbind(1, f(sc$std_x)), as.numeric(pos),
       family = stats::binomial())$coefficients,
@@ -96,11 +112,16 @@
   det <- pmin(pmax(det, -10), 10)
   # Matrix of plate coefficients (n_plate x 4), hyper means, and log SDs.
   mu <- c(ct_coef, det)
-  list(
-    std_xi = matrix(mu, length(sc$plates), 4L, byrow = TRUE),
-    std_mu = mu,
-    ln_std_sigma = log(c(ct_sd, 0.5, 0.5 * abs(det[2L]) + 0.01))
-  )
+  params$std_xi <- matrix(mu, length(sc$plates), 4L, byrow = TRUE)
+  params$std_mu <- mu
+  params$ln_std_sigma <- log(c(ct_sd, 0.5, 0.5 * abs(det[2L]) + 0.01))
+  # Invert the mean Ct curve for the latent log concentration
+  y_pos <- !is.na(y) & y > 0
+  intercept <- colnames(X) == "(Intercept)"
+  if (any(y_pos) && any(intercept)) {
+    params$b_j[intercept] <- mean((y[y_pos] - mu[[1]]) / mu[[2]])
+  }
+  params
 }
 
 # Plate coefficients for fitted rows `i`, as an n x 4 matrix.
@@ -108,8 +129,13 @@ rtmb_stdcurve_row_xi <- function(par, prepared, i) {
   par$std_xi[prepared$stdcurve$plate_i[i], , drop = FALSE]
 }
 
-rtmb_stdcurve_detection_x <- function(x, detection_log) {
-  if (detection_log) x else exp(x)
+# The plate curves at log concentration `x`, given each row's plate
+# coefficients `xi`: the mean positive Ct and the logit detection probability.
+# Plain arithmetic, so shared by the RTMB likelihood and the R-side methods.
+.stdcurve_ct_mean <- function(xi, x) xi[, 1L] + xi[, 2L] * x
+
+.stdcurve_logit_p <- function(xi, x, detection_log) {
+  xi[, 3L] + xi[, 4L] * (if (detection_log == 1L) x else exp(x))
 }
 
 # Negative log density of the plate random effects and the standards, plus
@@ -123,12 +149,10 @@ rtmb_stdcurve_nll <- function(par, phi, prepared) {
     nll <- nll - sum(RTMB::dnorm(xi[, k], par$std_mu[[k]], std_sigma[[k]],
       log = TRUE))
   }
-  p <- sc$std_plate
-  x <- sc$std_x
+  xi_p <- xi[sc$std_plate, , drop = FALSE]
   present <- as.numeric(sc$std_ct > 0)
-  logit_p <- xi[p, 3L] + xi[p, 4L] *
-    rtmb_stdcurve_detection_x(x, sc$detection_log)
-  ct_hat <- xi[p, 1L] + xi[p, 2L] * x
+  logit_p <- .stdcurve_logit_p(xi_p, sc$std_x, sc$detection_log)
+  ct_hat <- .stdcurve_ct_mean(xi_p, sc$std_x)
   nll <- nll - sum(RTMB::dbinom_robust(present, 1, logit_p, log = TRUE))
   # Positive standards only; data-dependent indexing, not an AD branch.
   pos <- which(present == 1)
@@ -136,35 +160,32 @@ rtmb_stdcurve_nll <- function(par, phi, prepared) {
   list(
     nll = nll,
     reports = list(std_xi = xi, std_mu = par$std_mu, std_sigma = std_sigma,
-      std_ct_hat = ct_hat, std_logit_p = logit_p),
-    adreports = list(std_sigma = std_sigma)
+      std_ct_hat = ct_hat, std_logit_p = logit_p)
   )
 }
 
 # Field-sample observation family. With the log link, `mu` is DNA
 # concentration; the curves are in log concentration, the linear predictor
 # `s$eta`. `s$xi` holds each row's plate coefficients.
-rtmb_stdcurve_logit_p <- function(s) {
-  s$xi[, 3L] + s$xi[, 4L] * rtmb_stdcurve_detection_x(s$eta, s$detection_log)
-}
-
 rtmb_obs_families$stdcurve <- list(
   logpdf = function(y, mu, s) {
     present <- as.numeric(y > 0)
-    ld <- RTMB::dbinom_robust(present, 1, rtmb_stdcurve_logit_p(s), log = TRUE)
+    logit_p <- .stdcurve_logit_p(s$xi, s$eta, s$detection_log)
+    ld <- RTMB::dbinom_robust(present, 1, logit_p, log = TRUE)
     # Non-detections have no Ct; the Gaussian term is finite and multiplied
     # by 0 for them, so no branching on AD values is needed.
-    ld + present * RTMB::dnorm(y, s$xi[, 1L] + s$xi[, 2L] * s$eta, s$phi,
+    ld + present * RTMB::dnorm(y, .stdcurve_ct_mean(s$xi, s$eta), s$phi,
       log = TRUE)
   },
   mean = function(mu, s) {
-    RTMB::plogis(rtmb_stdcurve_logit_p(s)) * (s$xi[, 1L] + s$xi[, 2L] * s$eta)
+    RTMB::plogis(.stdcurve_logit_p(s$xi, s$eta, s$detection_log)) *
+      .stdcurve_ct_mean(s$xi, s$eta)
   },
   simulate = function(mu, s) {
     n <- length(mu)
-    p <- stats::plogis(rtmb_stdcurve_logit_p(s))
-    stats::rbinom(n, 1, p) *
-      stats::rnorm(n, s$xi[, 1L] + s$xi[, 2L] * s$eta, s$phi)
+    p <- stats::plogis(.stdcurve_logit_p(s$xi, s$eta, s$detection_log))
+    stats::rbinom(n, 1, p) * stats::rnorm(n, .stdcurve_ct_mean(s$xi, s$eta),
+      s$phi)
   }
 )
 
@@ -178,8 +199,8 @@ rtmb_obs_families$stdcurve <- list(
     cli_abort("`stdcurve()` expected Ct values need one prediction per fitted row.")
   }
   xi <- theta$std_xi[sc$plate_i, , drop = FALSE]
-  x_det <- if (isTRUE(sc$detection_log == 1L)) eta else exp(eta)
-  stats::plogis(xi[, 3L] + xi[, 4L] * x_det) * (xi[, 1L] + xi[, 2L] * eta)
+  stats::plogis(.stdcurve_logit_p(xi, eta, sc$detection_log)) *
+    .stdcurve_ct_mean(xi, eta)
 }
 
 #' Get eDNA standard curve estimates
@@ -207,7 +228,7 @@ rtmb_obs_families$stdcurve <- list(
 #' @export
 #' @examples
 #' \dontrun{
-#' fit <- sdmTMB(Ct ~ 1, data = d, mesh = mesh,
+#' fit <- sdmTMB(ct ~ 1, data = d, mesh = mesh,
 #'   family = stdcurve(standards = standards))
 #' get_stdcurve(fit)
 #' }
