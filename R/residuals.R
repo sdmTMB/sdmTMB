@@ -282,9 +282,12 @@ qres_gaussian <- function(object, y, mu, ...) {
 
 # Hurdle-style randomized quantile residuals for eDNA Ct values: a
 # non-detection is uniform on (0, 1 - p); a positive Ct is placed in
-# (1 - p, 1) by its Gaussian CDF. Plate coefficients are at their modes.
-qres_stdcurve <- function(object, y, mu, ...) {
-  theta <- get_pars(object)
+# (1 - p, 1) by its Gaussian CDF. `.par` is the full parameter vector of an
+# `mle-mvn` posterior draw, so the plate coefficients come from the same joint
+# draw as `mu`; otherwise (`mle-eb`) they are at their modes.
+qres_stdcurve <- function(object, y, mu, .par = NULL, ...) {
+  theta <- if (is.null(.par)) get_pars(object) else
+    object$tmb_obj$env$parList(par = .par)
   sc <- object$tmb_data$stdcurve
   if (length(y) != length(sc$plate_i)) {
     cli_abort("Residuals for `stdcurve()` need one prediction per fitted row.")
@@ -757,7 +760,12 @@ residuals.sdmTMB <- function(object,
   if (type == "response") {
     if (!prop_binomial) r <- y - mu else r <- y / size - mu
   } else if (type == "mle-eb" || type == "mle-mvn") {
-    r <- res_func(object, y, mu, .n = size, ...)
+    if (identical(fam, "stdcurve") && is.null(qres_func) && type == "mle-mvn") {
+      # plate coefficients from the same posterior draw as `mu`
+      r <- res_func(object, y, mu, .n = size, .par = params, ...)
+    } else {
+      r <- res_func(object, y, mu, .n = size, ...)
+    }
   } else if (type == "mle-mcmc") {
     r <- res_func(object, y, mu, .n = size, ...)
   } else if (type == "pearson") {

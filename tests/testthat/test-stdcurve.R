@@ -93,6 +93,23 @@ test_that("stdcurve models recover simulated standard curves", {
   r <- residuals(fit, type = "mle-eb")
   expect_length(r, nrow(s$data))
   expect_true(all(is.finite(r)))
+  # default mle-mvn: plate coefficients come from the same posterior draw
+  # as the linear predictor
+  set.seed(1)
+  r_mvn <- residuals(fit)
+  expect_true(all(is.finite(r_mvn)))
+  expect_equal(stats::sd(r_mvn), 1, tolerance = 0.15)
+  set.seed(1)
+  draw <- .one_sample_posterior(fit)
+  mu <- predict(fit, newdata = fit$data, mcmc_samples = matrix(draw, ncol = 1L),
+    nsim = 1L, offset = fit$offset)[, 1L]
+  y <- fit$response[, 1L]
+  r_draw <- qres_stdcurve(fit, y, mu, .par = draw)
+  expect_equal(r_mvn, r_draw)
+  set.seed(1)
+  .one_sample_posterior(fit) # same RNG state as above
+  r_mode <- qres_stdcurve(fit, y, mu)
+  expect_false(isTRUE(all.equal(r_draw, r_mode)))
   set.seed(1)
   sims <- simulate(fit, nsim = 2)
   expect_equal(dim(sims), c(nrow(s$data), 2L))
