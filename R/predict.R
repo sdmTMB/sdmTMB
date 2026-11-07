@@ -590,10 +590,7 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
   family_spec <- .object_family_spec(object, caller = "`predict()`")
   multi_family <- family_spec$n_f > 1L
   has_two_components <- family_spec$n_m == 2L
-  is_areal <- object$tmb_data$spatial_model %in% c(1L, 2L)
-  if (!is_areal && is_areal_domain(object$spde)) {
-    is_areal <- TRUE
-  }
+  is_areal <- is_areal_fit(object)
   xy_cols <- NULL
   if (!is_areal) {
     if (!"xy_cols" %in% names(object$spde)) {
