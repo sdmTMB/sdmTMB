@@ -6,6 +6,42 @@
   `newdata` is now required when these functions are given a fitted model,
   including models fit earlier with `do_index = TRUE`.
 
+* Fix threshold terms being matched by substring. A covariate whose name
+  contained `breakpt` or `logistic` (e.g., `logistic_x`) was treated as a
+  threshold term, and combining `breakpt()` with `logistic()` silently
+  dropped one of them. Only `breakpt()` and `logistic()` calls are now
+  threshold terms, and more than one threshold term is an error.
+
+* Fix threshold terms in delta models with a list of formulas. Only the
+  first formula's threshold term was read, so a threshold term in only the
+  second formula was dropped, a threshold term in only the first was also
+  applied to the second, and a different threshold covariate in the second
+  formula was ignored. Every component must now have the same threshold
+  term; otherwise `sdmTMB()` gives an error.
+
+* Fix the refit after `collapse_spatial_variance` or
+  `collapse_spatiotemporal_ar1` collapses a field when rows with missing
+  values were omitted. `weights`, `offset`, and a vector `censored_upper`
+  were not subset to the remaining rows, so they were misaligned with the
+  data (or, for `censored_upper`, the refit failed).
+
+* `multiphase = TRUE` (the default) now respects `control$map` and
+  `control$start`. Previously, the first phase ignored them, so a parameter
+  fixed with `map` but not given a `start` value was fixed at its
+  first-phase estimate rather than 0, and the first phase didn't start from
+  the `start` values. User `start` values still take precedence over
+  first-phase estimates. The first phase also now handles `profile = TRUE`
+  correctly.
+
+* Fix starting values for models with an inverse link (`gaussian()`,
+  `Gamma()`, or `student()`) that include smoothers or random intercepts,
+  which previously failed with an error.
+
+* `sdmTMB()` now gives a clear error when `formula`, `spatial`,
+  `spatiotemporal`, or `share_range` is a list whose length doesn't match
+  the number of model components. Previously, extra elements were silently
+  ignored or the error was cryptic.
+
 * Add `profile_breakpt()` to estimate the cutpoint of a `breakpt()` term by
   profile likelihood, with a confidence interval, and refit the model at the
   best cutpoint. Estimating the cutpoint directly with `sdmTMB()` can stop at
