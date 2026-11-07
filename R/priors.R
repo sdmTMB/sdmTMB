@@ -341,3 +341,55 @@ pc_matern <- function(range_gt, sigma_lt, range_prob = 0.05, sigma_prob = 0.05) 
   x <- c(range_gt, sigma_lt, range_prob, sigma_prob)
   `attr<-`(x, "dist", "pc_matern")
 }
+
+# TMB data for the `b` priors on the `n_b` main-effect coefficients
+b_priors_tmb <- function(priors_b, n_b) {
+  if (nrow(priors_b) == 1L && n_b > 1L) {
+    if (!is.na(priors_b[[1]])) {
+      message("Expanding `b` priors to match model matrix.")
+    }
+    # replicate the single prior (or NA for no prior) for each coefficient
+    dist <- attr(priors_b, "dist")
+    priors_b <- normal(rep(priors_b[1, 1], n_b), rep(priors_b[1, 2], n_b))
+    if (dist == "mvnormal") { # scale is a variance
+      priors_b <- mvnormal(priors_b[, 1], diag(priors_b[, 2], nrow = n_b))
+    }
+  }
+  # n_b may be 0 with a time-varying model and no intercept
+  if (n_b > 0 && !identical(nrow(priors_b), n_b)) {
+    cli_abort("The number of 'b' priors does not match the model matrix.")
+  }
+  if (ncol(priors_b) == 2 && attributes(priors_b)$dist == "normal") {
+    # normal priors passed in by user; change to MVN diagonal matrix
+    # as.numeric() here prevents diag(NA) taking on factor
+    if (length(priors_b[, 2]) == 1L) {
+      if (is.na(priors_b[, 2])) priors_b[, 2] <- 1
+    }
+    priors_b <- mvnormal(location = priors_b[, 1], scale = diag(as.numeric(priors_b[, 2])^2, ncol = nrow(priors_b)))
+  }
+  # priors_b can mix NAs (no prior) and numeric values, so subset Sigma
+  not_na <- which(!is.na(priors_b[, 1]))
+  list(
+    priors_b_n = length(not_na),
+    priors_b_index = not_na - 1L,
+    priors_b_mean = priors_b[not_na, 1],
+    priors_b_Sigma = if (length(not_na)) {
+      as.matrix(as.matrix(priors_b[, -1])[not_na, not_na])
+    } else {
+      diag(2) # TMB can't handle 0-dim matrix
+    }
+  )
+}
+
+# TMB data for the sigma_V (time-varying SD) priors on `n_rw` coefficients;
+# the third column codes the distribution: 0 = gamma, 1 = lognormal
+sigma_V_priors_tmb <- function(priors_sigma_V, n_rw) {
+  out <- priors_sigma_V
+  if (nrow(out) == 1L && n_rw > 1L) {
+    out <- t(replicate(n_rw, out, simplify = "matrix"))
+  }
+  if (nrow(out) != n_rw) {
+    cli_abort("sigma_V (time-varying SD) priors do not match the fitted model.")
+  }
+  cbind(out, as.numeric(identical(attr(priors_sigma_V, "dist"), "lognormal")))
+}

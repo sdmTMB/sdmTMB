@@ -1353,3 +1353,50 @@ plot_nonlocal_kernel <- function(object,
     ylab = ctx$ylab
   )
 }
+
+# The `covariate_diffusion` TMB data slots; `x` is from
+# `.build_nonlocal_tmb_data()` and is NULL without nonlocal terms
+.nonlocal_tmb_slots <- function(x) {
+  out <- list(
+    n_terms = 0L,
+    n_covariates = 0L,
+    covariate_vertex_time = array(0, dim = c(1L, 1L, 1L)),
+    proj_covariate_vertex_time = array(0, dim = c(1L, 1L, 1L)),
+    term_component = integer(0),
+    term_covariate = integer(0),
+    term_start = integer(0)
+  )
+  if (is.null(x)) return(out)
+  out$n_terms <- as.integer(x$n_terms)
+  out$n_covariates <- as.integer(x$n_covariates)
+  out$covariate_vertex_time <- x$covariate_vertex_time
+  out$term_component <- as.integer(x$term_component_id - 1L)
+  out$term_covariate <- as.integer(x$term_covariate_index0)
+  out$term_start <- as.integer(x$term_start)
+  out
+}
+
+# Estimate log_kappaS_nl or log_kappaT_nl only for covariates whose terms use it
+.make_nonlocal_kappa_map <- function(has_component) {
+  out <- seq_along(has_component)
+  out[!as.logical(has_component)] <- NA_integer_
+  factor(out)
+}
+
+# `control$start` and `control$map` entries for the nonlocal kappas need one
+# value per nonlocal covariate
+.validate_nonlocal_control <- function(control, nonlocal_parsed) {
+  n <- nonlocal_parsed$n_covariates %||% 0L
+  cov_text <- if (n > 0L) paste(nonlocal_parsed$covariates, collapse = ", ") else "<none>"
+  for (param_name in c("log_kappaS_nl", "log_kappaT_nl")) {
+    for (control_name in c("start", "map")) {
+      x <- control[[control_name]]
+      if (param_name %in% names(x) && length(x[[param_name]]) != n) {
+        cli_abort(c(
+          paste0("`control$", control_name, "$", param_name, "` must have length ", n, "."),
+          "i" = paste0("Nonlocal covariates (in order): ", cov_text, ".")
+        ))
+      }
+    }
+  }
+}

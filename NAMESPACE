@@ -145,7 +145,10 @@ importFrom(nlme,
   fixef,
   ranef
 )
-importFrom(rlang,.data)
+importFrom(rlang,
+  "%||%",
+  .data
+)
 importFrom(stats,
   Gamma,
   as.formula,
