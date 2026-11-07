@@ -30,7 +30,7 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
     ),
     # A supplied (or stored) nonlocal grid provides its own covariates. The
     # prediction locations therefore need not duplicate those columns.
-    # `.prepare_nonlocal_grid_inputs()` validates an overriding grid below.
+    # `.nonlocal_from_grid()` validates an overriding grid below.
     required_columns = if (is.null(object$nonlocal_formula_parsed) || nonlocal_uses_external_grid) {
       threshold_columns
     } else {
@@ -390,24 +390,13 @@ predict_nonlocal_field <- function(object, tmb_data, nd, proj_mesh,
                                    nonlocal_newdata, nonlocal_uses_external_grid) {
   if (!is.null(nonlocal_newdata)) {
     # override grid: rebuild the field from the supplied nonlocal_newdata
-    override_grid_inputs <- .prepare_nonlocal_grid_inputs(
+    .nonlocal_from_grid(
       grid = nonlocal_newdata,
       nonlocal_formula = object$nonlocal_formula_parsed,
-      mesh = object$spde$mesh,
-      xy_cols = object$spde$xy_cols,
+      spde = object$spde,
       time = object$time,
-      time_df = object$time_lu,
-      full_time_vec = object$time_lu$time_from_data,
+      time_lu = object$time_lu,
       time_indexed = .nonlocal_time_indexed_from_object(object)
-    )
-    .build_nonlocal_tmb_data(
-      nonlocal_formula = object$nonlocal_formula_parsed,
-      data = override_grid_inputs$data,
-      A_st = override_grid_inputs$A_st,
-      A_spatial_index = override_grid_inputs$A_spatial_index,
-      year_i = override_grid_inputs$year_i,
-      n_t = tmb_data$n_t,
-      time_values = object$time_lu$time_from_data
     )$covariate_vertex_time
   } else if (nonlocal_uses_external_grid) {
     # reuse the fitted field: same mesh vertices, all time slices already present

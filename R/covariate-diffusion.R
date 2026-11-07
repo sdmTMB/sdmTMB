@@ -421,14 +421,32 @@ time_lag <- function(x, start = c("stationary", "zero")) {
   )
 }
 
-.prepare_nonlocal_grid_inputs <- function(grid,
-                                                     nonlocal_formula,
-                                                     mesh,
-                                                     xy_cols,
-                                                     time,
-                                                     time_df,
-                                                     full_time_vec,
-                                                     time_indexed = FALSE) {
+# Validate a user-supplied nonlocal grid and build the covariate field from it.
+# Used by `sdmTMB(nonlocal_data = )` and `predict(nonlocal_newdata = )`.
+.nonlocal_from_grid <- function(grid, nonlocal_formula, spde, time, time_lu,
+                                time_indexed = FALSE) {
+  inputs <- .prepare_nonlocal_grid_inputs(
+    grid = grid,
+    nonlocal_formula = nonlocal_formula,
+    mesh = spde$mesh,
+    xy_cols = spde$xy_cols,
+    time = time,
+    time_df = time_lu,
+    time_indexed = time_indexed
+  )
+  .build_nonlocal_tmb_data(
+    nonlocal_formula = nonlocal_formula,
+    data = inputs$data,
+    A_st = inputs$A_st,
+    A_spatial_index = inputs$A_spatial_index,
+    year_i = inputs$year_i,
+    n_t = nrow(time_lu),
+    time_values = time_lu$time_from_data
+  )
+}
+
+.prepare_nonlocal_grid_inputs <- function(grid, nonlocal_formula, mesh, xy_cols,
+                                          time, time_df, time_indexed = FALSE) {
   if (!inherits(grid, "data.frame")) {
     cli_abort("The nonlocal grid data must be `NULL` or a data frame.")
   }
@@ -479,7 +497,7 @@ time_lag <- function(x, start = c("stationary", "zero")) {
     if (!time %in% names(grid)) {
       cli_abort("The nonlocal grid data is missing the time column {.code {time}}.")
     }
-    missing_slices <- setdiff(full_time_vec, grid[[time]])
+    missing_slices <- setdiff(time_df$time_from_data, grid[[time]])
     if (length(missing_slices)) {
       cli_abort(c(
         "The nonlocal grid data does not cover all fitted (+ `extra_time`) time slices.",
@@ -498,8 +516,7 @@ time_lag <- function(x, start = c("stationary", "zero")) {
     data = grid,
     A_st = A_st,
     A_spatial_index = A_spatial_index,
-    year_i = year_i,
-    n_t = nrow(time_df)
+    year_i = year_i
   )
 }
 

@@ -919,16 +919,15 @@ sdmTMB <- function(
   )
   is_areal <- identical(domain$type, "areal")
 
+  # Validate the nonlocal grid early; data-based terms are built further down
   nonlocal_grid_supplied <- !is.null(nonlocal_data_arg)
   if (nonlocal_grid_supplied) {
-    nonlocal_grid_inputs <- .prepare_nonlocal_grid_inputs(
+    nonlocal_parsed <- .nonlocal_from_grid(
       grid = nonlocal_data_arg,
       nonlocal_formula = nonlocal_formula_parsed,
-      mesh = spde$mesh,
-      xy_cols = spde$xy_cols,
+      spde = spde,
       time = time,
-      time_df = time_df,
-      full_time_vec = time_df$time_from_data,
+      time_lu = time_df,
       time_indexed = nonlocal_time_indexed
     )
   }
@@ -1177,15 +1176,17 @@ sdmTMB <- function(
   fit_poisson_link_delta <- identical(family_spec$families$combine_kind[[1]], "poisson_link_delta") &&
     family_spec$n_f == 1L
 
-  nonlocal_parsed <- .build_nonlocal_tmb_data(
-    nonlocal_formula = nonlocal_formula_parsed,
-    data = if (nonlocal_grid_supplied) nonlocal_grid_inputs$data else data,
-    A_st = if (nonlocal_grid_supplied) nonlocal_grid_inputs$A_st else A_st,
-    A_spatial_index = if (nonlocal_grid_supplied) nonlocal_grid_inputs$A_spatial_index else A_spatial_index,
-    year_i = if (nonlocal_grid_supplied) nonlocal_grid_inputs$year_i else year_i_data,
-    n_t = n_t,
-    time_values = time_df$time_from_data
-  )
+  if (!nonlocal_grid_supplied) {
+    nonlocal_parsed <- .build_nonlocal_tmb_data(
+      nonlocal_formula = nonlocal_formula_parsed,
+      data = data,
+      A_st = A_st,
+      A_spatial_index = A_spatial_index,
+      year_i = year_i_data,
+      n_t = n_t,
+      time_values = time_df$time_from_data
+    )
+  }
 
   if (!is.null(nonlocal_parsed)) {
     for (m in seq_len(n_m)) {
