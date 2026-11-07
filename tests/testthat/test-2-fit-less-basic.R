@@ -635,3 +635,12 @@ test_that("Prediction outside fitted coordinates gets warned about #285", {
   nd$Y <- nd$Y * 10
   expect_warning(p <- predict(fit, newdata = nd), regexp = "coordinates")
 })
+
+test_that("previous_fit starts from the previous estimates", {
+  skip_on_cran()
+  fit <- sdmTMB(density ~ depth_scaled, data = pcod_2011, mesh = pcod_mesh_2011,
+    family = tweedie())
+  fit2 <- update(fit, previous_fit = fit)
+  expect_equal(logLik(fit2), logLik(fit))
+  expect_lte(fit2$model$iterations, 2L)
+})

@@ -236,3 +236,14 @@ test_that("simulate() can turn off observation error", {
 #   expect_equal(ncol(sim_2), 100)
 #   expect_lt(max(abs(apply(sim_2,2,mean,na.rm=T) - 5.67)), 0.65)
 # })
+
+test_that("mle-mvn simulation works without random effects", {
+  d <- pcod_2011
+  d$count <- round(d$density)
+  fit <- sdmTMB(count ~ 1, data = d, spatial = "off", family = poisson())
+  expect_null(fit$tmb_random)
+  expect_length(fit$model$par, 1L) # also covers a single-parameter draw
+  expect_identical(dim(simulate(fit, nsim = 2, type = "mle-mvn")), c(nrow(d), 2L))
+  expect_identical(dim(simulate(fit, nsim = 2, type = "mle-mvn",
+    mle_mvn_samples = "single")), c(nrow(d), 2L))
+})
