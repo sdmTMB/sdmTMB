@@ -6,6 +6,16 @@
   `newdata` is now required when these functions are given a fitted model,
   including models fit earlier with `do_index = TRUE`.
 
+* Fix `b` priors in delta models with a list of formulas. The priors were
+  sized from the first component but also applied to the second, which
+  crashed R (TMB backend) or gave an obscure error (RTMB backend) when the
+  second component had fewer coefficients, and silently applied priors to
+  the wrong coefficients when the components had different covariates.
+  Since `b` priors apply to both components, `sdmTMB()` now gives an error
+  unless both components have the same fixed-effect columns. For priors on
+  one component's coefficients, use `sdmTMBpriors(custom = )` with
+  `par$b_j` or `par$b_j2`.
+
 * Fix threshold terms being matched by substring. A covariate whose name
   contained `breakpt` or `logistic` (e.g., `logistic_x`) was treated as a
   threshold term, and combining `breakpt()` with `logistic()` silently

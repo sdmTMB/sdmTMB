@@ -317,3 +317,26 @@ test_that("Lognormal sigma_V priors work", {
     -sum(dgamma(sigma, shape = 1 / 0.5^2, scale = 0.5^2 * 0.2, log = TRUE)),
     tolerance = 1e-6)
 })
+
+test_that("b priors require matching fixed-effect columns in delta list formulas", {
+  # previously crashed (TMB) or errored obscurely (RTMB):
+  expect_error(
+    sdmTMB(list(density ~ depth_scaled + depth_scaled2, density ~ 1),
+      data = pcod_2011, spatial = "off", family = delta_gamma(),
+      priors = sdmTMBpriors(b = normal(c(0, 0, 0), c(1, 1, 1))), do_fit = FALSE),
+    regexp = "same fixed-effect columns"
+  )
+  # previously applied the prior to the wrong covariate in component 2:
+  expect_error(
+    sdmTMB(list(density ~ depth_scaled, density ~ depth_scaled2),
+      data = pcod_2011, spatial = "off", family = delta_gamma(),
+      priors = sdmTMBpriors(b = normal(c(NA, 5), c(NA, 0.01))), do_fit = FALSE),
+    regexp = "same fixed-effect columns"
+  )
+  # matching columns are fine:
+  expect_no_error(
+    sdmTMB(list(density ~ depth_scaled, density ~ depth_scaled),
+      data = pcod_2011, spatial = "off", family = delta_gamma(),
+      priors = sdmTMBpriors(b = normal(c(NA, 5), c(NA, 0.01))), do_fit = FALSE)
+  )
+})

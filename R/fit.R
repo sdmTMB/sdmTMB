@@ -1169,7 +1169,16 @@ sdmTMB <- function(
   .priors <- priors
   .priors$b <- .priors$sigma_V <- NULL # passed in as their own data
   .priors$custom <- .priors$custom_log_jacobian <- NULL # passed separately
-  priors_b_tmb <- b_priors_tmb(priors$b, ncol(X_ij[[1]])) # TODO change hard coded index on X_ij
+  # Both templates apply the `b` priors to `b_j` and `b_j2` alike:
+  if (has_two_components && !all(is.na(priors$b[, 1])) &&
+    !identical(colnames(X_ij[[1]]), colnames(X_ij[[2]]))) {
+    cli_abort(c(
+      "`priors$b` applies to both delta components, so they must have the same fixed-effect columns.",
+      i = "Use the same main-effects formula in both components, or drop the `b` priors.",
+      i = "For priors on one component's coefficients, use `sdmTMBpriors(custom = )` with `par$b_j` or `par$b_j2` (RTMB backend)."
+    ))
+  }
+  priors_b_tmb <- b_priors_tmb(priors$b, ncol(X_ij[[1]]))
 
   A_st <- domain$A_st
   A_spatial_index <- domain$A_spatial_index

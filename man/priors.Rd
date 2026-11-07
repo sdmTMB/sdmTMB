@@ -57,7 +57,11 @@ the parameter has support \verb{-1 < ar1_rho < 1}.}
 \item{tweedie_p}{A \code{normal()} prior for the Tweedie power parameter. Note the
 parameter has support \verb{1 < tweedie_p < 2} so choose a mean appropriately.}
 
-\item{b}{\code{normal()} priors for the main population-level 'beta' effects.}
+\item{b}{\code{normal()} priors for the main population-level 'beta' effects.
+In delta models, the priors apply to both components, so both components
+must then have the same fixed-effect columns. For priors on one
+component's coefficients, use \code{custom} with \code{par$b_j} (first component)
+or \code{par$b_j2} (second component).}
 
 \item{sigma_V}{\code{gamma_cv()} or \code{lognormal_prior()} priors for any
 time-varying parameter SDs. Supply a single prior to apply it to all

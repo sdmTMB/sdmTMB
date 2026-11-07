@@ -59,6 +59,10 @@
 #' @param tweedie_p A `normal()` prior for the Tweedie power parameter. Note the
 #'   parameter has support `1 < tweedie_p < 2` so choose a mean appropriately.
 #' @param b `normal()` priors for the main population-level 'beta' effects.
+#'   In delta models, the priors apply to both components, so both components
+#'   must then have the same fixed-effect columns. For priors on one
+#'   component's coefficients, use `custom` with `par$b_j` (first component)
+#'   or `par$b_j2` (second component).
 #' @param sigma_V `gamma_cv()` or `lognormal_prior()` priors for any
 #'   time-varying parameter SDs. Supply a single prior to apply it to all
 #'   time-varying coefficients or a vector with one element per coefficient
