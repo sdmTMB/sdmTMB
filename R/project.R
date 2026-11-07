@@ -771,8 +771,6 @@ move_proj_to_tmbdat <- function(x, object, newdata, called_by_simulate = FALSE, 
   x$proj_mesh <- Matrix::Matrix(c(0, 0, 2:0), 3, 5) # dummy
   x$proj_Zs <- list()
   x$proj_Xs <- matrix(nrow = 0L, ncol = 0L)
-  x$proj_lon <- 0
-  x$proj_lat <- 0
 
   x
 }

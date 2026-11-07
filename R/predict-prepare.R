@@ -67,13 +67,6 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
   tmb_data$proj_year <- time_index(time_lu, newdata[[object$time]])
   tmb_data$proj_time_include <- as.integer(time_lu$time_from_data %in% newdata[[object$time]])
   tmb_data$proj_family_id <- .family_spec_row_family_id(req$family_spec, newdata) - 1L
-  if (req$is_areal) {
-    tmb_data$proj_lon <- rep(0, nrow(newdata))
-    tmb_data$proj_lat <- rep(0, nrow(newdata))
-  } else {
-    tmb_data$proj_lon <- if (req$xy_cols[[1]] %in% names(newdata)) newdata[[req$xy_cols[[1]]]] else rep(0, nrow(newdata))
-    tmb_data$proj_lat <- if (req$xy_cols[[2]] %in% names(newdata)) newdata[[req$xy_cols[[2]]]] else rep(0, nrow(newdata))
-  }
   tmb_data$calc_se <- as.integer(req$se_fit)
   tmb_data$pop_pred <- as.integer(req$pop_pred)
   tmb_data$exclude_RE <- req$exclude_RE

@@ -1232,8 +1232,6 @@ sdmTMB <- function(
     proj_Zs = list(),
     proj_Xs = matrix(nrow = 0L, ncol = 0L),
     b_smooth_start = sm$b_smooth_start,
-    proj_lon = 0,
-    proj_lat = 0,
     proj_vector = matrix(0),
     do_predict = 0L,
     do_rsr = as.integer(isTRUE(control$get_rsr)),
