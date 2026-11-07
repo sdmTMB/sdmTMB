@@ -175,22 +175,17 @@ predict_spatial_index <- function(object, req, newdata) {
       )
     }
   } else if (!no_spatial || has_nonlocal) {
-    if (requireNamespace("dplyr", quietly = TRUE)) { # faster
-      unique_newdata <- dplyr::distinct(newdata[, req$xy_cols, drop = FALSE])
-    } else {
-      unique_newdata <- unique(newdata[, req$xy_cols, drop = FALSE])
-    }
-    unique_newdata[["sdm_spatial_id"]] <- seq(1, nrow(unique_newdata)) - 1L
-
-    if (requireNamespace("dplyr", quietly = TRUE)) { # much faster
-      newdata <- dplyr::left_join(newdata, unique_newdata, by = req$xy_cols)
-    } else {
-      newdata <- base::merge(newdata, unique_newdata, by = req$xy_cols,
-        all.x = TRUE, all.y = FALSE)
-      newdata <- newdata[order(newdata$sdm_orig_id),, drop = FALSE]
-    }
+    # Unique locations in order of first appearance. Matching each coordinate
+    # and combining the indices gives an exact key; this is about twice as
+    # fast as dplyr::distinct() + left_join().
+    x <- newdata[[req$xy_cols[[1]]]]
+    y <- newdata[[req$xy_cols[[2]]]]
+    ux <- unique(x)
+    key <- match(x, ux) + (match(y, unique(y)) - 1) * length(ux)
+    first <- !duplicated(key)
+    newdata[["sdm_spatial_id"]] <- match(key, key[first]) - 1L
     proj_mesh <- fmesher::fm_basis(object$spde$mesh,
-      loc = as.matrix(unique_newdata[, req$xy_cols, drop = FALSE]))
+      loc = cbind(x[first], y[first]))
   } else {
     proj_mesh <- object$spde$A_st # fake
     if (!all(object$spde$xy_cols %in% names(newdata))) {
