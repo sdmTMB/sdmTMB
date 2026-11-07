@@ -369,6 +369,11 @@ make_time_lu <- function(time_vec_from_data, full_time_vec = sort(unique(time_ve
   lu
 }
 
+# 0-based time index of each element of `x` in a `make_time_lu()` table
+time_index <- function(time_lu, x) {
+  time_lu$year_i[match(x, time_lu$time_from_data)]
+}
+
 check_offset <- function(formula) {
   .check <- any(grepl("^offset$",
     gsub(" ", "", unlist(strsplit(as.character(formula), "\\+")))))

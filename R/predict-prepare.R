@@ -64,7 +64,7 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
     })
   }
   time_lu <- object$time_lu
-  tmb_data$proj_year <- time_lu$year_i[match(newdata[[object$time]], time_lu$time_from_data)]
+  tmb_data$proj_year <- time_index(time_lu, newdata[[object$time]])
   tmb_data$proj_time_include <- as.integer(time_lu$time_from_data %in% newdata[[object$time]])
   tmb_data$proj_family_id <- .family_spec_row_family_id(req$family_spec, newdata) - 1L
   if (req$is_areal) {

@@ -504,7 +504,7 @@ time_lag <- function(x, start = c("stationary", "zero")) {
         "x" = "Missing time slice(s): {.code {paste(missing_slices, collapse = ', ')}}"
       ))
     }
-    year_i <- time_df$year_i[match(grid[[time]], time_df$time_from_data)]
+    year_i <- time_index(time_df, grid[[time]])
   } else {
     year_i <- rep(0L, nrow(grid))
   }

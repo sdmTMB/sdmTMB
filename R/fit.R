@@ -902,7 +902,7 @@ sdmTMB <- function(
 
   time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
   n_t <- nrow(time_df)
-  year_i_data <- time_df$year_i[match(data[[time]], time_df$time_from_data)]
+  year_i_data <- time_index(time_df, data[[time]])
 
   domain <- prepare_spatial_domain(
     mesh = spde,
