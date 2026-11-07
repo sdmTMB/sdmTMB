@@ -896,3 +896,17 @@ test_that("Generalized gamma matches Gamma when Q = sigma", {
   expect_equal(b$b_j[2], 1.8, tolerance = 0.01)
 
 })
+
+test_that("Inverse-link starting values work with smoothers and random intercepts", {
+  skip_on_cran()
+  set.seed(1)
+  d <- pcod_2011
+  d$y <- 1 / (2 + 0.3 * d$depth_scaled) + rnorm(nrow(d), sd = 0.02)
+  d$fyear <- as.factor(d$year)
+  fit <- sdmTMB(y ~ s(depth_scaled), data = d, spatial = "off",
+    family = gaussian(link = "inverse"))
+  expect_true(all(is.finite(fit$model$par)))
+  fit <- sdmTMB(y ~ depth_scaled + (1 | fyear), data = d, spatial = "off",
+    family = gaussian(link = "inverse"))
+  expect_true(all(is.finite(fit$model$par)))
+})
