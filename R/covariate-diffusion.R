@@ -423,13 +423,13 @@ time_lag <- function(x, start = c("stationary", "zero")) {
 
 # Validate a user-supplied nonlocal grid and build the covariate field from it.
 # Used by `sdmTMB(nonlocal_data = )` and `predict(nonlocal_newdata = )`.
-.nonlocal_from_grid <- function(grid, nonlocal_formula, spde, time, time_lu,
+.nonlocal_from_grid <- function(grid, nonlocal_formula, mesh, time, time_lu,
                                 time_indexed = FALSE) {
   inputs <- .prepare_nonlocal_grid_inputs(
     grid = grid,
     nonlocal_formula = nonlocal_formula,
-    mesh = spde$mesh,
-    xy_cols = spde$xy_cols,
+    mesh = mesh$mesh,
+    xy_cols = mesh$xy_cols,
     time = time,
     time_df = time_lu,
     time_indexed = time_indexed

@@ -726,6 +726,10 @@ sdmTMB <- function(
     if (!mesh_missing) mesh <- .subset_mesh_rows(mesh, rows, n)
   }
   data <- droplevels(data) # if data was subset, strips absent factors
+  # Drop columns that older versions of sdmTMB and predict() added, in case the
+  # data came from an earlier fit or prediction
+  data$sdm_x <- data$sdm_y <- data$sdm_orig_id <- data$sdm_spatial_id <- NULL
+  data$sdmTMB_X_ <- data$sdmTMB_Y_ <- NULL
   disp_terms <- stats::terms(dispformula)
   has_dispformula <- length(attr(disp_terms, "term.labels")) > 0L || attr(disp_terms, "intercept") != 1L
 
@@ -757,11 +761,9 @@ sdmTMB <- function(
     }
   }
 
-  if (inherits(formula, "formula")) {
-    formula <- normalize_bar_only_formula(formula)
-  } else {
-    formula <- lapply(formula, normalize_bar_only_formula)
-  }
+  # one formula per component from here on
+  formula <- lapply(.formula_list(formula), normalize_bar_only_formula)
+  if (length(formula) == 1L) formula <- rep(formula, n_m)
 
   if (!missing(spatiotemporal)) {
     if (has_two_components && !is.list(spatiotemporal)) {
@@ -790,21 +792,17 @@ sdmTMB <- function(
   } else {
     spatial <- rep(parse_spatial_arg(spatial), n_m)
   }
-  include_spatial <- "on" %in% spatial
   spatial_user <- spatial  # preserve user's specification before internal modification
 
-  if (!include_spatial && !is.null(spatial_varying)) {
-    # spatial = "off" + SVC: keep SPDE infrastructure alive so SVC fields can
-    # estimate range and marginal SD, but omega_s is omitted from the linear
-    # predictor downstream (see the TMB template).
-    omit_spatial_intercept <- TRUE
-    include_spatial <- TRUE
+  # spatial = "off" + SVC: keep SPDE infrastructure alive so SVC fields can
+  # estimate range and marginal SD, but omega_s is omitted from the linear
+  # predictor downstream (see the TMB template).
+  omit_spatial_intercept <- all(spatial == "off") && !is.null(spatial_varying)
+  if (omit_spatial_intercept) {
     spatial <- rep("on", length(spatial)) # internal only; spatial_user retains "off"
-  } else {
-    omit_spatial_intercept <- FALSE
   }
 
-  no_spatial <- !include_spatial && all(spatiotemporal == "off")
+  no_spatial <- all(spatial == "off") && all(spatiotemporal == "off")
   if (no_spatial && mesh_missing) mesh <- sdmTMB::pcod_mesh_2011 # internal data; fake!
   if (!no_spatial && mesh_missing) {
     cli_abort(c(
@@ -819,7 +817,6 @@ sdmTMB <- function(
   share_range[spatiotemporal == "off"] <- TRUE
   share_range[spatial == "off"] <- TRUE
 
-  spde <- mesh
   if (any(c("epsilon_model", "epsilon_predictor") %in% names(experimental))) {
     cli_abort("`experimental$epsilon_model` and `experimental$epsilon_predictor` have been removed.")
   }
@@ -860,12 +857,7 @@ sdmTMB <- function(
       msg = "Specified `time` column can't be coerced to a numeric value or contains NAs. Please remove any NAs in the time column."
     )
     if (!is.null(extra_time)) { # 320 protect against factor(time), extra_time clash
-      if (!is.list(formula)) {
-        .form <- list(formula)
-      } else {
-        .form <- formula
-      }
-      x <- unlist(lapply(.form, \(x) attr(stats::terms(x), "term.labels")))
+      x <- unlist(lapply(formula, \(x) attr(stats::terms(x), "term.labels")))
       xf <- x[grep("factor\\(", x)]
       if (any(c(grep(time, xf), grep(paste0("^", time, "$"), x)))) {
         cli::cli_warn("Detected potential formula-time column clash. E.g., assuming 'year' is your time column: `formula = ... + factor(year)` combined with `time = 'year'`, and 'extra_time' specified. This can produce a non-identiable model because extra factor levels for the missing time slices will be created. To avoid this, rename your factor time column used in your formula. E.g. create a new column 'year_factor' in your data and use that in the formula. See issue https://github.com/sdmTMB/sdmTMB/issues/320.")
@@ -905,7 +897,7 @@ sdmTMB <- function(
   year_i_data <- time_index(time_df, data[[time]])
 
   domain <- prepare_spatial_domain(
-    mesh = spde,
+    mesh = mesh,
     data = data,
     mesh_missing = mesh_missing,
     share_range = share_range,
@@ -925,7 +917,7 @@ sdmTMB <- function(
     nonlocal_parsed <- .nonlocal_from_grid(
       grid = nonlocal_data_arg,
       nonlocal_formula = nonlocal_formula_parsed,
-      spde = spde,
+      mesh = mesh,
       time = time,
       time_lu = time_df,
       time_indexed = nonlocal_time_indexed
@@ -935,7 +927,7 @@ sdmTMB <- function(
   # Covariate diffusion also maps observations to the mesh by row
   uses_mesh_rows <- !no_spatial || !is.null(nonlocal_formula_parsed)
   if (uses_mesh_rows && !is_areal) {
-    if (!identical(nrow(spde$loc_xy), nrow(data))) {
+    if (!identical(nrow(mesh$loc_xy), nrow(data))) {
       msg <- c(
         "Number of x-y coordinates in `mesh` does not match `nrow(data)`.",
         "Is it possible you passed a different data frame to `make_mesh()` and `sdmTMB()`?" # discussion 137
@@ -954,7 +946,7 @@ sdmTMB <- function(
   }
   if (is.null(censored_upper)) censored_upper <- Inf
 
-  original_formula <- if (inherits(formula, "formula")) replicate(n_m, list(formula)) else formula
+  original_formula <- formula
   thresh <- parse_thresholds(original_formula, data)
   formula <- thresh$formulas
 
@@ -1311,7 +1303,7 @@ sdmTMB <- function(
     ln_tau_Z = matrix(0, n_z, n_m),
     ln_tau_E = rep(0, n_m),
     ln_kappa = matrix(0, 2L, n_m),
-    log_kappaS_nl = .nonlocal_log_kappaS_start(spde$loc_xy, nonlocal_tmb$n_covariates),
+    log_kappaS_nl = .nonlocal_log_kappaS_start(mesh$loc_xy, nonlocal_tmb$n_covariates),
     log_kappaT_nl = numeric(nonlocal_tmb$n_covariates),
     thetaf = family_params$thetaf,
     ln_student_df = family_params$ln_student_df,
@@ -1464,9 +1456,6 @@ sdmTMB <- function(
     cli_abort(msg)
   }
 
-  data$sdm_x <- data$sdm_y <- data$sdm_orig_id <- data$sdm_spatial_id <- NULL
-  data$sdmTMB_X_ <- data$sdmTMB_Y_ <- NULL
-
   for (nm in names(control$map)) cli_inform(c(i = paste0("Fixing or mirroring `", nm, "`")))
   tmb_map[names(control$map)] <- control$map
 
@@ -1485,7 +1474,7 @@ sdmTMB <- function(
   if (control$multiphase && is.null(previous_fit) && do_fit) {
     tmb_params <- fit_first_phase(tmb_data, tmb_params, tmb_map,
       profile = control$profile, backend = backend, lower = control$lower, upper = control$upper,
-      mesh = if (is_areal) NULL else spde$mesh, nlminb_control = .control,
+      mesh = if (is_areal) NULL else mesh$mesh, nlminb_control = .control,
       silent = silent, suppress_warnings = isTRUE(control$suppress_nlminb_warnings))
     tmb_params[names(control$start)] <- control$start
   }
@@ -1494,7 +1483,7 @@ sdmTMB <- function(
     list(
       data = data,
       offset = offset,
-      spde = spde,
+      spde = mesh,
       formula = original_formula,
       dispformula = dispformula,
       has_dispformula = has_dispformula,
@@ -1556,7 +1545,7 @@ sdmTMB <- function(
   )
   lim <- set_limits(tmb_obj,
     lower = control$lower, upper = control$upper,
-    mesh = if (is_areal) NULL else spde$mesh,
+    mesh = if (is_areal) NULL else mesh$mesh,
     spatial_model = tmb_data$spatial_model,
     silent = FALSE
   )

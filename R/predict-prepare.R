@@ -386,7 +386,7 @@ predict_nonlocal_field <- function(object, tmb_data, nd, proj_mesh,
     .nonlocal_from_grid(
       grid = nonlocal_newdata,
       nonlocal_formula = object$nonlocal_formula_parsed,
-      spde = object$spde,
+      mesh = object$spde,
       time = object$time,
       time_lu = object$time_lu,
       time_indexed = .nonlocal_time_indexed_from_object(object)
