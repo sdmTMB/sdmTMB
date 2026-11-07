@@ -13,19 +13,9 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
   spatial <- predict_spatial_index(object, req, newdata)
   newdata <- spatial$newdata
 
-  if (length(object$formula) == 1L) {
-    # this formula has breakpt() etc. in it:
-    thresh <- list(check_and_parse_thresh_params(object$formula[[1]], newdata))
-    formula <- list(thresh[[1]]$formula) # this one does not
-  } else {
-    thresh <- list(check_and_parse_thresh_params(object$formula[[1]], newdata),
-      check_and_parse_thresh_params(object$formula[[2]], newdata))
-    formula <- list(thresh[[1]]$formula, thresh[[2]]$formula)
-  }
-  threshold_columns <- unique(unlist(
-    lapply(thresh, `[[`, "threshold_parameter"),
-    use.names = FALSE
-  ))
+  thresh <- parse_thresholds(object$formula, newdata)
+  formula <- thresh$formulas
+  threshold_columns <- thresh$threshold_parameter
 
   response <- get_response(object$formula[[1]])
   if (!response %in% names(newdata)) newdata[[response]] <- 0 # fake for model.matrix
@@ -59,7 +49,7 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
 
   n <- nrow(proj_X_ij[[1]])
   tmb_data$proj_offset_i <- predict_offset(req, object, n)
-  tmb_data$proj_X_threshold <- thresh[[1]]$X_threshold # TODO DELTA HARDCODED TO 1
+  tmb_data$proj_X_threshold <- thresh$X_threshold
   tmb_data$area_i <- rep(1, n)
   tmb_data$proj_mesh <- spatial$proj_mesh
   tmb_data$proj_X_ij <- proj_X_ij

@@ -124,3 +124,36 @@ test_that("A linear threshold *delta* model fits", {
   expect_equal(t1$std.error, td1$std.error, tolerance = 1e-3)
   expect_equal(t2$std.error, td2$std.error, tolerance = 1e-3)
 })
+
+test_that("Threshold terms are matched by function name, not substring", {
+  d <- pcod_2011
+  d$logistic_x <- d$depth_scaled
+  fit <- sdmTMB(density ~ logistic_x, data = d, spatial = "off",
+    family = tweedie(), do_fit = FALSE)
+  expect_identical(fit$tmb_data$threshold_func, 0L)
+  expect_true("logistic_x" %in% colnames(fit$tmb_data$X_ij[[1]]))
+
+  expect_error(
+    sdmTMB(density ~ breakpt(depth_scaled) + logistic(depth_scaled2), data = pcod_2011,
+      spatial = "off", family = tweedie(), do_fit = FALSE),
+    "single"
+  )
+})
+
+test_that("Delta list formulas must share one threshold term", {
+  fit_list <- function(f) {
+    sdmTMB(f, data = pcod_2011, spatial = "off", family = delta_gamma(),
+      do_fit = FALSE)
+  }
+  expect_error(fit_list(list(density ~ 1, density ~ breakpt(depth_scaled))),
+    "same threshold term")
+  expect_error(fit_list(list(density ~ breakpt(depth_scaled), density ~ 1)),
+    "same threshold term")
+  expect_error(fit_list(list(density ~ breakpt(depth_scaled),
+    density ~ breakpt(depth_scaled2))), "same threshold term")
+
+  fit <- fit_list(list(density ~ breakpt(depth_scaled), density ~ depth_scaled2 + breakpt(depth_scaled)))
+  expect_identical(fit$tmb_data$threshold_func, 1L)
+  expect_identical(dim(fit$tmb_params$b_threshold), c(2L, 2L))
+  expect_true("depth_scaled2" %in% colnames(fit$tmb_data$X_ij[[2]]))
+})

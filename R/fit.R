@@ -1043,23 +1043,9 @@ sdmTMB <- function(
   }
   if (is.null(upr)) upr <- Inf
 
-  # thresholds not yet enabled for delta model, where formula is a list
-  if (inherits(formula, "formula")) {
-    original_formula <- replicate(n_m, list(formula))
-    thresh <- list(check_and_parse_thresh_params(formula, data))
-    if (has_two_components) {
-      formula <- list(thresh[[1]]$formula, thresh[[1]]$formula)
-    } else {
-      formula <- list(thresh[[1]]$formula)
-    }
-  } else {
-    original_formula <- formula
-    thresh <- list(
-      check_and_parse_thresh_params(formula[[1]], data),
-      check_and_parse_thresh_params(formula[[2]], data)
-    )
-    formula <- list(thresh[[1]]$formula, thresh[[2]]$formula)
-  }
+  original_formula <- if (inherits(formula, "formula")) replicate(n_m, list(formula)) else formula
+  thresh <- parse_thresholds(original_formula, data)
+  formula <- thresh$formulas
 
   if (is.character(offset)) {
     offset <- data[[offset]]
@@ -1503,9 +1489,9 @@ sdmTMB <- function(
     spatial_only = as.integer(spatial_only),
     spatial_covariate = as.integer(!is.null(spatial_varying)),
     calc_quadratic_range = as.integer(quadratic_roots),
-    X_threshold = thresh[[1]]$X_threshold, # TODO: don't hardcode index thresh[[1]]
+    X_threshold = thresh$X_threshold,
     proj_X_threshold = 0, # dummy
-    threshold_func = thresh[[1]]$threshold_func, # TODO: don't hardcode index thresh[[1]]
+    threshold_func = thresh$threshold_func,
     has_smooths = as.integer(sm$has_smooths),
     has_dispersion_model = as.integer(has_dispformula),
     upr = upr,
@@ -1528,8 +1514,6 @@ sdmTMB <- function(
   tmb_data$priors_custom <- priors_custom
   tmb_data <- c(tmb_data, family_tmb)
   tmb_data$poisson_link_delta <- as.integer(fit_poisson_link_delta)
-  b_thresh <- matrix(0, 2L, n_m)
-  if (thresh[[1]]$threshold_func == 2L) b_thresh <- matrix(0, 3L, n_m) # logistic #TODO: change hard coding on index of thresh[[1]]
   family_params <- .family_parameter_values(
     family_spec,
     estimate_student_df = estimate_student_df,
@@ -1566,7 +1550,7 @@ sdmTMB <- function(
     omega_s = matrix(0, if (!omit_spatial_intercept) n_s else 0L, n_m),
     zeta_s = array(0, dim = c(n_s, n_z, n_m)),
     epsilon_st = array(0, dim = c(n_s, tmb_data$n_t, n_m)),
-    b_threshold = if (thresh[[1]]$threshold_func == 2L) matrix(0, 3L, n_m) else matrix(0, 2L, n_m),
+    b_threshold = if (thresh$threshold_func == 2L) matrix(0, 3L, n_m) else matrix(0, 2L, n_m),
     b_smooth = if (sm$has_smooths) matrix(0, sum(sm$sm_dims), n_m) else array(0),
     ln_smooth_sigma = if (sm$has_smooths) matrix(0, length(sm$sm_dims), n_m) else array(0)
   )
@@ -1599,7 +1583,7 @@ sdmTMB <- function(
     has_dispformula = has_dispformula,
     estimate_student_df = estimate_student_df
   )
-  if (!is.null(thresh[[1]]$threshold_parameter)) tmb_map$b_threshold <- NULL
+  if (!is.null(thresh$threshold_parameter)) tmb_map$b_threshold <- NULL
 
   if (multiphase && is.null(previous_fit) && do_fit) {
     tmb_params <- fit_first_phase(tmb_data, tmb_params, tmb_map,
@@ -1852,8 +1836,8 @@ sdmTMB <- function(
       has_dispformula = has_dispformula,
       split_formula = split_formula,
       time_varying = time_varying,
-      threshold_parameter = thresh[[1]]$threshold_parameter,
-      threshold_function = thresh[[1]]$threshold_func,
+      threshold_parameter = thresh$threshold_parameter,
+      threshold_function = thresh$threshold_func,
       time = time,
       time_lu = time_df,
       # Keep the public field faithful to the user's input. Internal code uses

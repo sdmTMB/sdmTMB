@@ -355,59 +355,55 @@ check_offset <- function(formula) {
     cli_abort("Contains offset in formula. This is deprecated. Please use the `offset` argument.")
 }
 
-check_and_parse_thresh_params <- function(formula, data) {
-  terms <- stats::terms(formula)
-  terms_labels <- attr(terms, "term.labels")
-  if (any(grepl("linear_thresh", terms_labels)) && any(grepl("logistic_thresh", terms_labels))) {
-    cli_abort("Please include only a linear (`breakpt`) *or* a logistic threshold.")
+# Find and drop a single `breakpt()` or `logistic()` term from one formula
+parse_threshold_term <- function(formula) {
+  labels <- attr(stats::terms(formula), "term.labels")
+  is_thresh <- grepl("^(breakpt|logistic)\\(", labels)
+  if (sum(is_thresh) > 1L) {
+    cli_abort("Please include only a single `breakpt()` or `logistic()` threshold term.")
   }
-  if (sum(grepl("linear_thresh", terms_labels)) > 1 || sum(grepl("logistic_thresh", terms_labels)) > 1) {
-    cli_abort("Please include only a *single* threshold variable.")
-  }
-  threshold_parameter <- NULL
-  if (any(grepl("breakpt", terms_labels))) {
-    out <- parse_threshold_formula(formula, "breakpt", terms_labels)
-    threshold_parameter <- out$threshold_parameter
-    formula <- out$formula
-    threshold_function <- "linear"
-  }
-  if (any(grepl("logistic", terms_labels))) {
-    out <- parse_threshold_formula(formula, "logistic", terms_labels)
-    threshold_parameter <- out$threshold_parameter
-    formula <- out$formula
-    threshold_function <- "logistic"
-  }
-  if (!is.null(threshold_parameter)) {
-    if (length(threshold_parameter) > 1) {
-      cli_abort("`threshold_parameter` must be a single variable name.")
-    }
-    if (!threshold_parameter %in% names(data)) {
-      cli_abort("`threshold_parameter` is not a column in the `data` data frame.")
-    }
-  }
-
-  if (is.null(threshold_parameter)) {
-    X_threshold <- rep(0, nrow(data)) # just placeholder
-    threshold_func <- 0L
-  } else {
-    X_threshold <- data[, names(data) == threshold_parameter, drop = TRUE]
-    # indexed 1, 2 because 0 will tell TMB not to estimate this:
-    threshold_func <- match(threshold_function, c("linear", "logistic"))
-  }
-  X_threshold <- as.numeric(unlist(X_threshold))
+  if (!any(is_thresh)) return(list(formula = formula, term = NULL))
+  term <- labels[is_thresh]
   list(
-    formula = formula, threshold_parameter = threshold_parameter,
-    threshold_func = threshold_func, X_threshold = X_threshold
+    formula = stats::update(formula, paste("~ . -", term)),
+    term = term,
+    type = sub("\\(.*$", "", term),
+    parameter = sub("^[a-z]+\\((.*)\\)$", "\\1", term)
   )
 }
 
-parse_threshold_formula <- function(formula, thresh_type_short = "lin_thresh",
-  terms_labels) {
-  which_thresh <- grep(thresh_type_short, terms_labels)
-  temp <- gsub(paste0("^", thresh_type_short, "\\("), "", terms_labels[which_thresh])
-  threshold_parameter <- gsub("\\)$", "", temp)
-  formula <- stats::update(formula, paste("~ . -", terms_labels[which_thresh]))
-  list(formula = formula, threshold_parameter = threshold_parameter)
+# Parse the threshold term of every model component. Components share one
+# threshold covariate and type (with separate `b_threshold` columns), so every
+# formula must have the same threshold term or none.
+parse_thresholds <- function(formulas, data) {
+  parsed <- lapply(formulas, parse_threshold_term)
+  terms <- vapply(parsed, function(x) if (is.null(x$term)) "" else x$term, character(1L))
+  if (length(unique(terms)) > 1L) {
+    cli_abort(c(
+      "All delta model components must have the same threshold term (or none).",
+      i = "Include the same `breakpt()` or `logistic()` term in every formula, or use a single formula."
+    ))
+  }
+  p <- parsed[[1L]]
+  if (is.null(p$term)) {
+    threshold_parameter <- NULL
+    X_threshold <- rep(0, nrow(data)) # placeholder
+    threshold_func <- 0L
+  } else {
+    threshold_parameter <- p$parameter
+    if (!threshold_parameter %in% names(data)) {
+      cli_abort("Threshold variable `{threshold_parameter}` is not a column in `data`.")
+    }
+    X_threshold <- as.numeric(data[[threshold_parameter]])
+    # 1 or 2; 0 tells TMB there is no threshold:
+    threshold_func <- match(p$type, c("breakpt", "logistic"))
+  }
+  list(
+    formulas = lapply(parsed, `[[`, "formula"),
+    threshold_parameter = threshold_parameter,
+    threshold_func = threshold_func,
+    X_threshold = X_threshold
+  )
 }
 
 expand_time <- function(df, time_slices, time_column, weights, offset, upr) {
