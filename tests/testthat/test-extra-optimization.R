@@ -91,3 +91,23 @@ test_that("sdmTMBcontrol() stores suppress_nlminb_warnings", {
   expect_true(sdmTMBcontrol()$suppress_nlminb_warnings)
   expect_false(sdmTMBcontrol(suppress_nlminb_warnings = FALSE)$suppress_nlminb_warnings)
 })
+
+test_that("Phase 1 respects the user map and start", {
+  skip_on_cran()
+  m <- list(b_j = factor(c(1, NA)))
+  fit <- sdmTMB(density ~ depth_scaled, data = pcod_2011, mesh = pcod_mesh_2011,
+    family = tweedie(), control = sdmTMBcontrol(map = m))
+  expect_equal(fit$parlist$b_j[2], 0)
+
+  fit <- sdmTMB(density ~ depth_scaled, data = pcod_2011, mesh = pcod_mesh_2011,
+    family = tweedie(), control = sdmTMBcontrol(map = m, start = list(b_j = c(0, -0.2))))
+  expect_equal(fit$parlist$b_j[2], -0.2)
+})
+
+test_that("Phase 1 runs with profile = TRUE", {
+  skip_on_cran()
+  fit <- sdmTMB(density ~ depth_scaled, data = pcod_2011, mesh = pcod_mesh_2011,
+    family = tweedie(), control = sdmTMBcontrol(profile = TRUE))
+  expect_identical(fit$control$profile, "b_j")
+  expect_true(all(is.finite(fit$model$par)))
+})

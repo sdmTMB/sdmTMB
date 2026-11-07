@@ -95,6 +95,14 @@ fit_first_phase <- function(tmb_data, tmb_params, tmb_map, profile, backend,
   # Custom priors may refer to fields that are off in this phase, so they're
   # left out; this phase only finds starting values.
   tmb_data$priors_custom <- NULL
+  # estimate only the fixed effects and family parameters (as mapped in
+  # `tmb_map`); hold everything else at its starting value
+  phase1_pars <- c("b_j", "b_j2", "b_disp_k", "thetaf", "ln_student_df",
+    "gengamma_Q", "psi", "ln_phi", "b_threshold")
+  tmb_map <- tmb_map[!duplicated(names(tmb_map))]
+  for (p in setdiff(names(tmb_params), phase1_pars)) {
+    tmb_map[[p]] <- factor(rep(NA, length(tmb_params[[p]])))
+  }
   obj <- make_sdmTMB_adfun(data = tmb_data, parameters = tmb_params,
     profile = profile, map = tmb_map, backend = backend, silent = silent)
   lim <- set_limits(obj, lower = lower, upper = upper, mesh = mesh,

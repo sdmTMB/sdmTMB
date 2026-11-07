@@ -1589,13 +1589,6 @@ sdmTMB <- function(
   )
   if (!is.null(thresh$threshold_parameter)) tmb_map$b_threshold <- NULL
 
-  if (multiphase && is.null(previous_fit) && do_fit) {
-    tmb_params <- fit_first_phase(tmb_data, tmb_params, tmb_map,
-      profile = control$profile, backend = backend, lower = lower, upper = upper,
-      mesh = if (is_areal) NULL else spde$mesh, nlminb_control = .control,
-      silent = silent, suppress_warnings = isTRUE(suppress_nlminb_warnings))
-  }
-
   tmb_map$log_kappaS_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_spatial)
   tmb_map$log_kappaT_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_temporal)
 
@@ -1820,14 +1813,19 @@ sdmTMB <- function(
   }
 
   if (isTRUE(control$profile)) {
-    prof <- c("b_j")
-    if (has_two_components) prof <- c(prof, "b_j2")
-    control$profile <- prof
-  } else if (is.character(control$profile)) {
-    prof <- control$profile
-    control$profile <- prof
-  } else {
+    control$profile <- if (has_two_components) c("b_j", "b_j2") else "b_j"
+  } else if (!is.character(control$profile)) {
     control$profile <- NULL
+  }
+
+  # Phase 1 runs on the full map and starting values, so user `map` and
+  # `start` are respected; the user's `start` values always win
+  if (multiphase && is.null(previous_fit) && do_fit) {
+    tmb_params <- fit_first_phase(tmb_data, tmb_params, tmb_map,
+      profile = control$profile, backend = backend, lower = lower, upper = upper,
+      mesh = if (is_areal) NULL else spde$mesh, nlminb_control = .control,
+      silent = silent, suppress_warnings = isTRUE(suppress_nlminb_warnings))
+    tmb_params[names(start)] <- start
   }
 
   out_structure <- structure(
