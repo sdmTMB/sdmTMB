@@ -1013,7 +1013,6 @@ sdmTMB <- function(
         "To use the ordinary spatial field as the reference-level field instead (same resulting model), set `spatial = \"on\"`."
       ))
     }
-    spatial_varying <- colnames(z_i)
     svc_design$spec$columns <- colnames(z_i)
   } else {
     z_i <- matrix(0, nrow(data), 0L)
@@ -1021,6 +1020,9 @@ sdmTMB <- function(
     svc_omega_is_intercept <- FALSE
   }
   n_z <- ncol(z_i)
+  # `~ 1` with `spatial = "on"` leaves no SVC columns, so no SVC fields
+  has_svc <- n_z > 0L
+  svc_cols <- if (has_svc) colnames(z_i)
 
   if (any(grepl("offset\\(", formula))) {
     cli_abort("Detected `offset()` in formula. Offsets in sdmTMB must be specified via the `offset` argument.")
@@ -1277,7 +1279,7 @@ sdmTMB <- function(
     link_pred = family_tmb$link_code[1L, 1L],
     size = c(size),
     spatial_only = as.integer(spatiotemporal == "off"),
-    spatial_covariate = as.integer(!is.null(spatial_varying)),
+    spatial_covariate = as.integer(has_svc),
     calc_quadratic_range = as.integer(control$quadratic_roots),
     X_threshold = thresh$X_threshold,
     proj_X_threshold = 0, # dummy
@@ -1370,7 +1372,7 @@ sdmTMB <- function(
     tmb_random <- c(tmb_random, "epsilon_st")
     tmb_map <- unmap(tmb_map, c("ln_tau_E", "epsilon_st"))
   }
-  if (!is.null(spatial_varying)) {
+  if (has_svc) {
     tmb_random <- c(tmb_random, "zeta_s")
     tmb_map <- unmap(tmb_map, c("zeta_s", "ln_tau_Z"))
   }
@@ -1409,13 +1411,13 @@ sdmTMB <- function(
   }
 
   # SVC fields use the spatial range of every component:
-  kappa_spatial <- if (is.null(spatial_varying)) spatial else rep("on", n_m)
+  kappa_spatial <- if (has_svc) rep("on", n_m) else spatial
   tmb_map$ln_kappa <- get_kappa_map(n_m = n_m, spatial = kappa_spatial, spatiotemporal = spatiotemporal, share_range = share_range)
   if (is_areal) {
     tmb_map$ln_kappa <- factor(rep(NA_integer_, length(tmb_params$ln_kappa)))
     areal_field_active <- any(spatial == "on" & !omit_spatial_intercept) ||
       !all(spatiotemporal == "off") ||
-      !is.null(spatial_varying)
+      has_svc
     if (areal_field_active) {
       tmb_map <- unmap(tmb_map, "logit_rho_sar")
     }
@@ -1519,7 +1521,7 @@ sdmTMB <- function(
       tmb_random = tmb_random,
       reml_random = reml_random,
       backend = backend,
-      spatial_varying = spatial_varying,
+      spatial_varying = svc_cols,
       nonlocal_formula = nonlocal_formula,
       nonlocal_formula_parsed = nonlocal_formula_parsed,
       nonlocal_parsed = nonlocal_parsed,
