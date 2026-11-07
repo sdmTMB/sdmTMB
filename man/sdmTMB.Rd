@@ -231,19 +231,10 @@ fitting (\code{FALSE})?}
 \item{experimental}{A named list for esoteric or in-development options. Here
 be dragons.}
 
-\item{do_index}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} Do index
-standardization calculations while fitting? Instead, fit the model and
-then pass the fitted model and \code{newdata} directly to \code{\link[=get_index]{get_index()}},
-\code{\link[=get_cog]{get_cog()}}, \code{\link[=get_eao]{get_eao()}}, or \code{\link[=get_weighted_average]{get_weighted_average()}}. If \code{TRUE}, then
-\code{predict_args} must have a \code{newdata} element supplied and \code{area} can be
-supplied to \code{index_args}.}
-
-\item{predict_args}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} A list of arguments
-to pass to \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} \strong{if} \code{do_index = TRUE}.}
-
-\item{index_args}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} A list of arguments to
-pass to \code{\link[=get_index]{get_index()}} \strong{if} \code{do_index = TRUE}. Currently, \code{area} and
-\code{derived_link} are supported.}
+\item{do_index, predict_args, index_args}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#defunct}{\figure{lifecycle-defunct.svg}{options: alt='[Defunct]'}}}{\strong{[Defunct]}}
+Index calculations while fitting are no longer supported. Instead, fit the
+model and then pass it with \code{newdata} directly to \code{\link[=get_index]{get_index()}},
+\code{\link[=get_cog]{get_cog()}}, \code{\link[=get_eao]{get_eao()}}, or \code{\link[=get_weighted_average]{get_weighted_average()}}.}
 }
 \value{
 An object (list) of class \code{sdmTMB}. Useful elements include:

@@ -86,8 +86,7 @@ accepted (not for \code{get_index_split()}).}
 over, usually a grid covering the area of interest replicated for each
 time step (see \code{\link[=replicate_df]{replicate_df()}}). Same requirements as \code{newdata} in
 \code{\link[=predict.sdmTMB]{predict.sdmTMB()}}. Results are returned only for time steps in
-\code{newdata}. Required unless \code{obj} is legacy prediction output or was fitted
-with the deprecated \code{do_index = TRUE}.}
+\code{newdata}. Required unless \code{obj} is legacy prediction output.}
 
 \item{bias_correct}{Logical: apply bias correction? Predictions plugged in
 at the estimated random effects can be biased once transformed to the

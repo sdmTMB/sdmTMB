@@ -958,30 +958,6 @@ test_that("multi-family sdmTMB_cv guard fails before any fitting", {
   )
 })
 
-test_that("multi-family do_index guard fails before fit setup continues", {
-  dat <- data.frame(
-    y = c(1.2, 0, 2.4, 3.1),
-    x = c(-1, -0.3, 0.4, 1),
-    dist = c("gauss", "delta", "delta", "gauss")
-  )
-
-  expect_error(
-    sdmTMB(
-      y ~ x,
-      data = dat,
-      spatial = "off",
-      spatiotemporal = "off",
-      family = list(gauss = gaussian(), delta = delta_gamma()),
-      distribution_column = "dist",
-      do_index = TRUE,
-      do_fit = FALSE,
-      predict_args = list(newdata = dat),
-      index_args = list(area = 1)
-    ),
-    regexp = "not yet supported"
-  )
-})
-
 test_that("named single-family list gaussian matches ordinary gaussian fit", {
   set.seed(11)
   x <- seq(-1, 1, length.out = 40)

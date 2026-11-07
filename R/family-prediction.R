@@ -41,14 +41,8 @@
 .object_par <- function(object, name) {
   if (!is.null(object$parlist)) {
     object$parlist[[name]]
-  } else if (!is.null(object$tmb_obj)) {
-    get_pars(object)[[name]]
   } else {
-    # `sdmTMB(do_index = TRUE)` builds the projection data before it creates
-    # the fitted objective. The initial parameter list is sufficient for this
-    # data-only prediction step, and avoids trying to call `parList()` on a
-    # not-yet-created objective (particularly for the RTMB backend).
-    object$tmb_params[[name]]
+    get_pars(object)[[name]]
   }
 }
 

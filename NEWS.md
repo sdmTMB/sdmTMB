@@ -1,5 +1,11 @@
 # sdmTMB (development version)
 
+* `sdmTMB(do_index = TRUE)`, and its `predict_args` and `index_args`, are now
+  defunct and give an error. Fit the model and then pass it with `newdata` to
+  `get_index()`, `get_cog()`, `get_eao()`, or `get_weighted_average()`.
+  `newdata` is now required when these functions are given a fitted model,
+  including models fit earlier with `do_index = TRUE`.
+
 * Add `profile_breakpt()` to estimate the cutpoint of a `breakpt()` term by
   profile likelihood, with a confidence interval, and refit the model at the
   best cutpoint. Estimating the cutpoint directly with `sdmTMB()` can stop at

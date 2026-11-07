@@ -178,17 +178,10 @@ NULL
 #'   fitting (`FALSE`)?
 #' @param experimental A named list for esoteric or in-development options. Here
 #'   be dragons.
-#' @param do_index `r lifecycle::badge("deprecated")` Do index
-#'   standardization calculations while fitting? Instead, fit the model and
-#'   then pass the fitted model and `newdata` directly to [get_index()],
-#'   [get_cog()], [get_eao()], or [get_weighted_average()]. If `TRUE`, then
-#'   `predict_args` must have a `newdata` element supplied and `area` can be
-#'   supplied to `index_args`.
-#' @param predict_args `r lifecycle::badge("deprecated")` A list of arguments
-#'   to pass to [predict.sdmTMB()] **if** `do_index = TRUE`.
-#' @param index_args `r lifecycle::badge("deprecated")` A list of arguments to
-#'   pass to [get_index()] **if** `do_index = TRUE`. Currently, `area` and
-#'   `derived_link` are supported.
+#' @param do_index,predict_args,index_args `r lifecycle::badge("defunct")`
+#'   Index calculations while fitting are no longer supported. Instead, fit the
+#'   model and then pass it with `newdata` directly to [get_index()],
+#'   [get_cog()], [get_eao()], or [get_weighted_average()].
 #' @importFrom methods as is
 #' @importFrom cli cli_abort cli_warn cli_inform
 #' @importFrom mgcv s t2
@@ -753,17 +746,8 @@ sdmTMB <- function(
     }
   }
 
-  if ((!is.null(predict_args) || !is.null(index_args)) && isFALSE(do_index)) {
-    cli_abort(c(
-      "`predict_args` and/or `index_args` were set but `do_index` was FALSE.",
-      "`do_index` must be TRUE for these arguments to take effect."
-    ))
-  }
-  if (do_index && .family_spec_is_multi_family(family_spec)) {
-    cli_abort("`do_index = TRUE` is not yet supported for multi-family models.")
-  }
-  if (isTRUE(do_index)) {
-    lifecycle::deprecate_soft(
+  if (!isFALSE(do_index) || !is.null(predict_args) || !is.null(index_args)) {
+    lifecycle::deprecate_stop(
       "1.2.0",
       "sdmTMB(do_index = )",
       details = paste(
@@ -1570,44 +1554,6 @@ sdmTMB <- function(
     ),
     class = "sdmTMB"
   )
-
-  if (do_index) {
-    args <- list(object = out_structure, return_tmb_data = TRUE)
-    args <- c(args, predict_args)
-    if (!"newdata" %in% names(predict_args)) {
-      cli_warn("`newdata` must be supplied if `do_index = TRUE`.")
-    }
-    tmb_data <- do.call(predict.sdmTMB, args)
-    if ("bias_correct" %in% names(index_args)) {
-      cli_warn("`bias_correct` must be done later with `get_index(..., bias_correct = TRUE)`.")
-      index_args$bias_correct <- NULL
-    }
-    if ("derived_link" %in% names(index_args)) {
-      tmb_data$link_pred <- .resolve_link_pred(out_structure, tmb_data, index_args[["derived_link"]])
-      index_args$derived_link <- NULL
-    }
-    if (!"area" %in% names(index_args)) {
-      cli_warn("`area` not supplied to `index_args` but `do_index = TRUE`. Using `area = 1`.")
-      if (is.null(index_args)) index_args <- list()
-      index_args[["area"]] <- 1
-    }
-    if (length(index_args$area) == 1L) {
-      tmb_data$area_i <- rep(index_args[["area"]], length(tmb_data$proj_year)) # proj_year includes padded extra_time! otherwise, crash
-    } else {
-      if (length(index_args$area) != nrow(predict_args[["newdata"]])) {
-        cli_abort("`area` length does not match `nrow(newdata)`.")
-      }
-      tmb_data$area_i <- index_args[["area"]]
-    }
-    tmb_data$calc_index_totals <- 1L
-    tmb_params[["eps_index"]] <- numeric(0) # for bias correction
-    out_structure$do_index <- TRUE
-    do_index_time_missing_from_nd <-
-      out_structure$do_index_time_missing_from_nd <-
-      setdiff(data[[time]], predict_args$newdata[[time]])
-  } else {
-    out_structure$do_index <- FALSE
-  }
 
   tmb_obj <- make_sdmTMB_adfun(
     data = tmb_data, parameters = tmb_params, map = tmb_map,
