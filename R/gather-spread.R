@@ -55,12 +55,6 @@ spread_sims <- function(object, nsim = 200) {
   pars <- pars[pn %in% par_fixed]
   samps <- samps[pn %in% par_fixed, , drop = FALSE]
   pn <- pn[pn %in% par_fixed]
-  .formula <- object$split_formula[[1]]$form_no_bars # TODO DELTA HARDCODED TO 1!
-  if (isFALSE(object$mgcv)) {
-    fe_names <- colnames(model.matrix(.formula, object$data))
-  } else {
-    fe_names <- colnames(model.matrix(mgcv::gam(.formula, data = object$data)))
-  }
   fe_names <- tidy(object, silent = TRUE)$term
   row.names(samps) <- pn
   row.names(samps)[row.names(samps) == "b_j"] <- fe_names

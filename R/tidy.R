@@ -219,7 +219,6 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   # grab fixed effects:
   .formula <- x$split_formula[[model]]$form_no_bars
   .formula <- remove_s_and_t2(.formula)
-  if (!"mgcv" %in% names(x)) x[["mgcv"]] <- FALSE
   fe_names <- colnames(model.matrix(.formula, x$data))
   if (!is.null(x$nonlocal_parsed)) {
     fe_names <- c(fe_names, x$nonlocal_parsed$term_coef_name)
@@ -725,7 +724,6 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
 
   .formula <- x$split_formula[[model]]$form_no_bars
   .formula <- remove_s_and_t2(.formula)
-  if (!"mgcv" %in% names(x)) x[["mgcv"]] <- FALSE
   fe_names <- colnames(model.matrix(.formula, x$data))
   fe_names <- fe_names[!fe_names == "offset"]
 

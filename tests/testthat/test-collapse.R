@@ -216,7 +216,7 @@ test_that("collapse checks ignore disabled delta fields", {
     collapse_spatial_variance_threshold = 0.01,
     collapse_spatiotemporal_ar1 = FALSE,
     collapse_ar1_threshold = 0.01,
-    delta = TRUE,
+    has_two_components = TRUE,
     silent = TRUE
   )
 
@@ -242,7 +242,7 @@ test_that("collapse checks can disable one delta field", {
     collapse_spatial_variance_threshold = 0.01,
     collapse_spatiotemporal_ar1 = FALSE,
     collapse_ar1_threshold = 0.01,
-    delta = TRUE,
+    has_two_components = TRUE,
     silent = TRUE
   )
 
@@ -275,7 +275,7 @@ test_that("spatiotemporal AR1 collapse respects rho boundaries", {
     collapse_spatial_variance_threshold = 0.01,
     collapse_spatiotemporal_ar1 = TRUE,
     collapse_ar1_threshold = 0.01,
-    delta = FALSE,
+    has_two_components = FALSE,
     silent = TRUE
   )
 
@@ -321,7 +321,7 @@ test_that("spatiotemporal AR1 collapse handles delta components", {
     collapse_spatial_variance_threshold = 0.01,
     collapse_spatiotemporal_ar1 = TRUE,
     collapse_ar1_threshold = 0.01,
-    delta = TRUE,
+    has_two_components = TRUE,
     silent = TRUE
   )
 
@@ -355,7 +355,7 @@ test_that("variance collapse takes precedence over AR1 collapse", {
     collapse_spatial_variance_threshold = 0.01,
     collapse_spatiotemporal_ar1 = TRUE,
     collapse_ar1_threshold = 0.01,
-    delta = FALSE,
+    has_two_components = FALSE,
     silent = TRUE
   )
 
@@ -379,7 +379,7 @@ test_that("spatiotemporal AR1 collapse ignores unavailable rho estimates", {
     collapse_spatial_variance_threshold = 0.01,
     collapse_spatiotemporal_ar1 = TRUE,
     collapse_ar1_threshold = 0.01,
-    delta = TRUE,
+    has_two_components = TRUE,
     silent = TRUE
   )
 

@@ -677,13 +677,15 @@ sdmTMB <- function(
     do_index = FALSE,
     predict_args = NULL,
     index_args = NULL) {
+  assert_that(class(formula) %in% c("formula", "list"))
+  assert_that(inherits(data, "data.frame"))
+  if (!is.null(time)) assert_that(is.character(time))
   nonlocal_data_arg <- nonlocal_data
   mesh_missing <- missing(mesh) || is.null(mesh)
   spatial_model <- match.arg(tolower(spatial_model[1L]), c("spde", "sar", "car"))
   if (mesh_missing && spatial_model %in% c("sar", "car")) {
     cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain supplied to `mesh`.")
   }
-  is_areal <- spatial_model %in% c("sar", "car")
   if (!inherits(dispformula, "formula") || length(dispformula) != 2L) {
     cli_abort("`dispformula` must be a one-sided formula such as `~ 1`.")
   }
@@ -858,12 +860,6 @@ sdmTMB <- function(
   share_range[spatial == "off"] <- TRUE
 
   spde <- mesh
-  if (!mesh_missing && spatial_model == "spde" && is_areal_domain(spde)) {
-    cli_abort("`spatial_model = \"spde\"` requires an SPDE mesh from `make_mesh()`. Use `spatial_model = \"sar\"` or `\"car\"` with an areal domain.")
-  }
-  if (!mesh_missing && spatial_model %in% c("sar", "car") && !is_areal_domain(spde)) {
-    cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain from `make_areal_domain()`.")
-  }
   if (any(c("epsilon_model", "epsilon_predictor") %in% names(experimental))) {
     cli_abort("`experimental$epsilon_model` and `experimental$epsilon_predictor` have been removed.")
   }
@@ -918,19 +914,7 @@ sdmTMB <- function(
   assert_that(is.list(priors))
   priors_custom <- custom_prior_spec(priors, backend)
   assert_that(is.list(.control))
-  if (!is.null(time)) assert_that(is.character(time))
-  if (is_areal) {
-    assert_that(inherits(spde, "sdmTMBareal"))
-  } else {
-    assert_that(inherits(spde, "sdmTMBmesh"))
-  }
-  assert_that(class(formula) %in% c("formula", "list"))
-  assert_that(inherits(data, "data.frame"))
   time_varying_type <- match.arg(time_varying_type)
-  # if (!is.null(map) && length(map) != length(start)) {
-  #   cli_warn(c("`length(map) != length(start)`.",
-  #     "You likely want to specify `start` values if you are setting the `map` argument."))
-  # }
 
   if (!is.null(time)) {
     assert_that(time %in% names(data),
@@ -978,37 +962,11 @@ sdmTMB <- function(
   if (is.null(time)) {
     time <- "_sdmTMB_time"
     data[[time]] <- 0L
-  } else {
-    if (sum(is.na(data[[time]])) > 1) {
-      cli_abort("There is at least one NA value in the time column. Please remove it.")
-    }
-  }
-  if (is.factor(data[[time]])) {
-    if (length(levels(data[[time]])) > length(unique(data[[time]]))) {
-      cli_abort(
-        "The time column is a factor and there are extra factor levels. ",
-        "Please remove these or turn your time column into an integer."
-      )
-    }
   }
 
   time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
   n_t <- nrow(time_df)
   year_i_data <- time_df$year_i[match(data[[time]], time_df$time_from_data)]
-
-  nonlocal_grid_supplied <- !is.null(nonlocal_data_arg)
-  if (nonlocal_grid_supplied) {
-    nonlocal_grid_inputs <- .prepare_nonlocal_grid_inputs(
-      grid = nonlocal_data_arg,
-      nonlocal_formula = nonlocal_formula_parsed,
-      mesh = spde$mesh,
-      xy_cols = spde$xy_cols,
-      time = time,
-      time_df = time_df,
-      full_time_vec = time_df$time_from_data,
-      time_indexed = nonlocal_time_indexed
-    )
-  }
 
   domain <- prepare_spatial_domain(
     mesh = spde,
@@ -1024,6 +982,20 @@ sdmTMB <- function(
     sar_weight_style = sar_weight_style
   )
   is_areal <- identical(domain$type, "areal")
+
+  nonlocal_grid_supplied <- !is.null(nonlocal_data_arg)
+  if (nonlocal_grid_supplied) {
+    nonlocal_grid_inputs <- .prepare_nonlocal_grid_inputs(
+      grid = nonlocal_data_arg,
+      nonlocal_formula = nonlocal_formula_parsed,
+      mesh = spde$mesh,
+      xy_cols = spde$xy_cols,
+      time = time,
+      time_df = time_df,
+      full_time_vec = time_df$time_from_data,
+      time_indexed = nonlocal_time_indexed
+    )
+  }
 
   # Covariate diffusion also maps observations to the mesh by row
   uses_mesh_rows <- !no_spatial || !is.null(nonlocal_formula_parsed)
@@ -1118,7 +1090,6 @@ sdmTMB <- function(
   if (any(grepl("offset\\(", formula))) {
     cli_abort("Detected `offset()` in formula. Offsets in sdmTMB must be specified via the `offset` argument.")
   }
-  contains_offset <- check_offset(formula[[1]]) # deprecated check
 
   # the default `~ 1` is created in this frame; don't capture (and serialize) it
   if (identical(environment(dispformula), environment())) {
@@ -1134,7 +1105,7 @@ sdmTMB <- function(
   sm <- list()
 
   for (ii in seq_along(formula)) {
-    contains_offset <- check_offset(formula[[ii]])
+    check_offset(formula[[ii]])
 
     # RE_names is either the names of the groups OR a character w/length 0 if none exist
     # anything in a list here needs to be saved for tmb data
@@ -1159,7 +1130,6 @@ sdmTMB <- function(
     mt[[ii]] <- attr(mf[[ii]], "terms")
     # parse everything mgcv + smoothers:
     sm[[ii]] <- parse_smoothers(formula = formula_no_bars, data = data, knots = knots)
-    sm[[ii]]$split_formula <- split_formula
     sm[[ii]]$formula_no_sm <- formula_no_sm
     sm[[ii]]$formula_no_bars <- formula_no_bars
     sm[[ii]]$formula_no_bars_no_sm <- formula_no_bars_no_sm
@@ -1408,10 +1378,6 @@ sdmTMB <- function(
     term_start = nonlocal_term_start
   )
 
-  # TODO: make this cleaner
-  X_ij_list <- list()
-  for (i in seq_len(n_m)) X_ij_list[[i]] <- X_ij[[i]]
-
   random_walk <- if (!is.null(time_varying)) {
     switch(time_varying_type,
       rw = 1L,
@@ -1439,7 +1405,7 @@ sdmTMB <- function(
     ar1_fields = ar1_fields,
     simulate_t = rep(1L, n_t),
     rw_fields = rw_fields,
-    X_ij = X_ij_list,
+    X_ij = X_ij,
     Xdisp_ij = Xdisp_ij,
     X_rw_ik = X_rw_ik,
     Zs = sm$Zs, # optional smoother basis function matrices
@@ -1594,7 +1560,6 @@ sdmTMB <- function(
     has_dispformula = has_dispformula,
     estimate_student_df = estimate_student_df
   )
-  if (!is.null(thresh$threshold_parameter)) tmb_map$b_threshold <- NULL
 
   tmb_map$log_kappaS_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_spatial)
   tmb_map$log_kappaT_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_temporal)
@@ -1715,14 +1680,8 @@ sdmTMB <- function(
     tmb_params[[names(start)[i]]] <- start[[i]]
   }
 
-  if (!is.matrix(tmb_params[["ln_kappa"]]) && "ln_kappa" %in% names(start)) {
-    msg <- c(
-      "Note that `ln_kappa` must be a matrix of nrow 2 and ncol models (regular=1, delta=2).",
-      "It should be the same value in each row if `share_range = TRUE`."
-    )
-    cli_abort(msg)
-  }
-  if (nrow(tmb_params[["ln_kappa"]]) != 2L && "ln_kappa" %in% names(start)) {
+  if ("ln_kappa" %in% names(start) &&
+      (!is.matrix(tmb_params[["ln_kappa"]]) || nrow(tmb_params[["ln_kappa"]]) != 2L)) {
     msg <- c(
       "Note that `ln_kappa` must be a matrix of nrow 2 and ncol models (regular=1, delta=2).",
       "It should be the same value in each row if `share_range = TRUE`."
@@ -1802,10 +1761,6 @@ sdmTMB <- function(
 
   for (i in seq_along(map)) { # user supplied
     cli_inform(c(i = paste0("Fixing or mirroring `", names(map)[i], "`")))
-    # ,
-    #   "` at specified starting value(s) of:"),
-    #   paste0("  ",
-    #     paste(round(tmb_params[[names(map)[i]]], 3), collapse = ", "))))
   }
   tmb_map <- c(map, tmb_map) # add user-supplied mapping
 
@@ -2044,12 +1999,7 @@ sdmTMB <- function(
     bad_eig = conv$bad_eig,
     pos_def_hessian = sd_report$pdHess
   ))
-  out <- `class<-`(out, "sdmTMB")
-  # if (out$tmb_data$has_smooths) {
-  #   edf <- suppressMessages(cAIC(out, what = "EDF"))
-  #   out$edf <- edf
-  # }
-  out
+  `class<-`(out, "sdmTMB")
 }
 
 check_bounds <- function(.par, lower, upper) {
@@ -2084,13 +2034,8 @@ check_and_collapse_spatial_fields <- function(
     collapse_spatial_variance_threshold,
     collapse_spatiotemporal_ar1,
     collapse_ar1_threshold,
-    has_two_components = NULL,
-    silent = FALSE,
-    delta = NULL) {
-
-  if (is.null(has_two_components)) {
-    has_two_components <- isTRUE(delta)
-  }
+    has_two_components = FALSE,
+    silent = FALSE) {
 
   do_refit <- FALSE
   spatial_updated <- spatial
@@ -2265,7 +2210,6 @@ set_limits <- function(tmb_obj, lower, upper, mesh = NULL, spatial_model = 0L,
 }
 
 check_spatiotemporal_arg <- function(x, time, .which = 1) {
-  sp_len <- length(x)
   .spatiotemporal <- tolower(as.character(x[[.which]]))
   assert_that(.spatiotemporal %in% c("iid", "ar1", "rw", "off", "true", "false"),
     msg = "`spatiotemporal` argument value not valid"
@@ -2273,7 +2217,7 @@ check_spatiotemporal_arg <- function(x, time, .which = 1) {
   if (.spatiotemporal == "true") .spatiotemporal <- "iid"
   if (.spatiotemporal == "false") .spatiotemporal <- "off"
   .spatiotemporal <- match.arg(tolower(.spatiotemporal), choices = c("iid", "ar1", "rw", "off"))
-  if (is.null(time) && .spatiotemporal != "off" && sp_len >= 1) {
+  if (is.null(time) && .spatiotemporal != "off") {
     cli_abort("`spatiotemporal` is set but the `time` argument is missing.")
   }
   .spatiotemporal
@@ -2281,7 +2225,6 @@ check_spatiotemporal_arg <- function(x, time, .which = 1) {
 
 map_all_params <- function(x) {
   m <- list()
-  nm <- names(x)
   for (i in seq_along(x)) {
     m[[i]] <- factor(rep(NA, length(x[[i]])))
   }

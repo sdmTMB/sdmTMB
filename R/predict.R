@@ -393,7 +393,6 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
     if (return_tmb_data) {
       return(tmb_data)
     }
-    if (!"mgcv" %in% names(object)) object[["mgcv"]] <- FALSE
 
     if (predict_report_only(object, req, return_tmb_object)) {
       # Reports alone need no AD object, which for large grids dominates
