@@ -1372,6 +1372,15 @@ sdmTMB <- function(
     tmb_random <- c(tmb_random, "epsilon_st")
     tmb_map <- unmap(tmb_map, c("ln_tau_E", "epsilon_st"))
   }
+  # a delta model can turn a field off in one component only
+  if (has_two_components && "off" %in% spatiotemporal) {
+    tmb_map$epsilon_st <- map_off_components(tmb_params$epsilon_st, spatiotemporal == "off")
+    tmb_map$ln_tau_E <- map_off_components(tmb_params$ln_tau_E, spatiotemporal == "off")
+  }
+  if (has_two_components && "off" %in% spatial) {
+    tmb_map$omega_s <- map_off_components(tmb_params$omega_s, spatial == "off")
+    tmb_map$ln_tau_O <- map_off_components(tmb_params$ln_tau_O, spatial == "off")
+  }
   if (has_svc) {
     tmb_random <- c(tmb_random, "zeta_s")
     tmb_map <- unmap(tmb_map, c("zeta_s", "ln_tau_Z"))
@@ -1405,11 +1414,6 @@ sdmTMB <- function(
     tmb_map <- unmap(tmb_map, c("b_smooth", "ln_smooth_sigma", "bs"))
   }
 
-  if (!is.null(previous_fit)) {
-    tmb_params <- previous_fit$parlist %||% previous_fit$tmb_params
-    tmb_map <- previous_fit$tmb_map
-  }
-
   # SVC fields use the spatial range of every component:
   kappa_spatial <- if (has_svc) rep("on", n_m) else spatial
   tmb_map$ln_kappa <- get_kappa_map(n_m = n_m, spatial = kappa_spatial, spatiotemporal = spatiotemporal, share_range = share_range)
@@ -1421,6 +1425,30 @@ sdmTMB <- function(
     if (areal_field_active) {
       tmb_map <- unmap(tmb_map, "logit_rho_sar")
     }
+  }
+
+  if (isTRUE(domain$anisotropy == 1L) && has_two_components) {
+    tmb_map$ln_H_input <- factor(c(1, 2, 1, 2)) # share anisotropy as in VAST
+  }
+
+  if (family_spec$n_f == 1L && family$family[[n_m]] %in% rtmb_mixture_families) {
+    p_extreme <- (if (has_two_components) family[[2]]$p_extreme) %||% family$p_extreme
+    tmb_map$log_ratio_mix <- NULL
+    if (is.null(p_extreme)) {
+      tmb_map$logit_p_extreme <- NULL
+    } else {
+      tmb_map$logit_p_extreme <- factor(NA)
+      tmb_params$logit_p_extreme <- stats::qlogis(p_extreme)
+    }
+  }
+
+  if (tmb_data$threshold_func > 0) tmb_map$b_threshold <- NULL
+
+  # `previous_fit` replaces the parameters and map built above; the
+  # user's `control$start` and `control$map` then apply on top
+  if (!is.null(previous_fit)) {
+    tmb_params <- previous_fit$parlist %||% previous_fit$tmb_params
+    tmb_map <- previous_fit$tmb_map
   }
 
   .validate_nonlocal_control(control, nonlocal_parsed)
@@ -1443,32 +1471,6 @@ sdmTMB <- function(
 
   data$sdm_x <- data$sdm_y <- data$sdm_orig_id <- data$sdm_spatial_id <- NULL
   data$sdmTMB_X_ <- data$sdmTMB_Y_ <- NULL
-
-  if (has_two_components && "off" %in% spatiotemporal) {
-    tmb_map$epsilon_st <- map_off_components(tmb_params$epsilon_st, spatiotemporal == "off")
-    tmb_map$ln_tau_E <- map_off_components(tmb_params$ln_tau_E, spatiotemporal == "off")
-  }
-  if (has_two_components && "off" %in% spatial) {
-    tmb_map$omega_s <- map_off_components(tmb_params$omega_s, spatial == "off")
-    tmb_map$ln_tau_O <- map_off_components(tmb_params$ln_tau_O, spatial == "off")
-  }
-
-  if (isTRUE(domain$anisotropy == 1L) && has_two_components) {
-    tmb_map$ln_H_input <- factor(c(1, 2, 1, 2)) # share anisotropy as in VAST
-  }
-
-  if (family_spec$n_f == 1L && family$family[[n_m]] %in% rtmb_mixture_families) {
-    p_extreme <- (if (has_two_components) family[[2]]$p_extreme) %||% family$p_extreme
-    tmb_map$log_ratio_mix <- NULL
-    if (is.null(p_extreme)) {
-      tmb_map$logit_p_extreme <- NULL
-    } else {
-      tmb_map$logit_p_extreme <- factor(NA)
-      tmb_params$logit_p_extreme <- stats::qlogis(p_extreme)
-    }
-  }
-
-  if (tmb_data$threshold_func > 0) tmb_map$b_threshold <- NULL
 
   for (nm in names(control$map)) cli_inform(c(i = paste0("Fixing or mirroring `", nm, "`")))
   tmb_map[names(control$map)] <- control$map
