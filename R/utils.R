@@ -400,6 +400,23 @@ check_component_list <- function(x, n_m, name, vector_ok = FALSE) {
 # Find and drop a single `breakpt()` or `logistic()` term from one formula
 parse_threshold_term <- function(formula) {
   labels <- attr(stats::terms(formula), "term.labels")
+  # Names of the functions called anywhere in an expression
+  call_names <- function(e) {
+    if (!is.call(e)) return(character(0))
+    c(deparse(e[[1L]]), unlist(lapply(as.list(e)[-1L], call_names)))
+  }
+  threshold_fns <- c("breakpt", "logistic")
+  for (label in labels) {
+    e <- str2lang(label)
+    fns <- intersect(call_names(e), threshold_fns)
+    if (!length(fns)) next
+    if (!(deparse(e[[1L]]) %in% threshold_fns && length(e) == 2L && is.name(e[[2L]]))) {
+      cli_abort(c(
+        "`{fns[1]}()` takes a single column name and can't be used in an interaction or transformation.",
+        i = "Found `{label}`. Create any transformed column in the data first."
+      ))
+    }
+  }
   is_thresh <- grepl("^(breakpt|logistic)\\(", labels)
   if (sum(is_thresh) > 1L) {
     cli_abort("Please include only a single `breakpt()` or `logistic()` threshold term.")
@@ -417,7 +434,7 @@ parse_threshold_term <- function(formula) {
 # Parse the threshold term of every model component. Components share one
 # threshold covariate and type (with separate `b_threshold` columns), so every
 # formula must have the same threshold term or none.
-parse_thresholds <- function(formulas, data) {
+parse_thresholds <- function(formulas, data, data_name = "data") {
   parsed <- lapply(formulas, parse_threshold_term)
   terms <- vapply(parsed, function(x) if (is.null(x$term)) "" else x$term, character(1L))
   if (length(unique(terms)) > 1L) {
@@ -434,7 +451,7 @@ parse_thresholds <- function(formulas, data) {
   } else {
     threshold_parameter <- p$parameter
     if (!threshold_parameter %in% names(data)) {
-      cli_abort("Threshold variable `{threshold_parameter}` is not a column in `data`.")
+      cli_abort("Threshold variable `{threshold_parameter}` is not a column in `{data_name}`.")
     }
     X_threshold <- as.numeric(data[[threshold_parameter]])
     # 1 or 2; 0 tells TMB there is no threshold:

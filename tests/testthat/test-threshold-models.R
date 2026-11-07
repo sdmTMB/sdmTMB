@@ -140,6 +140,26 @@ test_that("Threshold terms are matched by function name, not substring", {
   )
 })
 
+test_that("Threshold terms must wrap a single column", {
+  d <- pcod_2011
+  d$f <- factor(d$year %% 2)
+  fit_f <- function(f) {
+    sdmTMB(f, data = d, spatial = "off", family = tweedie(), do_fit = FALSE)
+  }
+  msg <- "single column name"
+  expect_error(fit_f(density ~ breakpt(depth_scaled):f), msg)
+  expect_error(fit_f(density ~ f:breakpt(depth_scaled)), msg)
+  expect_error(fit_f(density ~ breakpt(depth_scaled) * f), msg)
+  expect_error(fit_f(density ~ logistic(log(depth))), msg)
+  expect_error(fit_f(density ~ breakpt(not_a_column)), "not a column in `data`")
+
+  fit <- sdmTMB(density ~ breakpt(depth_scaled), data = pcod_2011,
+    spatial = "off", family = tweedie())
+  nd <- pcod_2011
+  nd$depth_scaled <- NULL
+  expect_error(predict(fit, newdata = nd), "not a column in `newdata`")
+})
+
 test_that("Delta list formulas must share one threshold term", {
   fit_list <- function(f) {
     sdmTMB(f, data = pcod_2011, spatial = "off", family = delta_gamma(),

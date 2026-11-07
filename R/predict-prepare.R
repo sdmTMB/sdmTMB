@@ -13,7 +13,7 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
   spatial <- predict_spatial_index(object, req, newdata)
   newdata <- spatial$newdata
 
-  thresh <- parse_thresholds(object$formula, newdata)
+  thresh <- parse_thresholds(object$formula, newdata, "newdata")
   formula <- thresh$formulas
   threshold_columns <- thresh$threshold_parameter
 
