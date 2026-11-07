@@ -426,3 +426,17 @@ test_that("spatiotemporal AR1 collapse refits and predicts", {
   expect_identical(fit_rw$spatiotemporal, "rw")
   expect_equal(nrow(predict(fit_rw)), nrow(pcod_2011))
 })
+
+test_that("collapse refit keeps row vectors aligned after omitting NA rows", {
+  skip_on_cran()
+  d <- pcod_2011
+  d$depth_scaled[c(3, 10)] <- NA
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  w <- rep(c(1, 2), length.out = nrow(d))
+  fit <- sdmTMB(density ~ depth_scaled, data = d, mesh = mesh, family = tweedie(),
+    weights = w, control = sdmTMBcontrol(collapse_spatial_variance = TRUE,
+      collapse_spatial_variance_threshold = 100))
+  expect_identical(fit$spatial, "off")
+  expect_equal(nrow(fit$data), nrow(d) - 2L)
+  expect_equal(c(fit$tmb_data$weights_i), w[-c(3, 10)])
+})

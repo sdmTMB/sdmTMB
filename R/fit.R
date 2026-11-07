@@ -688,6 +688,10 @@ sdmTMB <- function(
     cli_abort("`dispformula` must be a one-sided formula such as `~ 1`.")
   }
   censored_upper <- .censored_upper_arg(censored_upper, data)
+  # The unfiltered row inputs, for the refit after collapsing spatial fields
+  refit_inputs <- list(data = data, mesh = if (!mesh_missing) mesh, weights = weights,
+    offset = offset, censored_upper = censored_upper, experimental = experimental,
+    control = control)
   # Omit rows with missing values in any variable the model uses, as with
   # `na.action = na.omit` in glm(). Doing this before anything is built from
   # `data` keeps the stored data, mesh rows, and post-fit methods aligned.
@@ -1996,19 +2000,17 @@ sdmTMB <- function(
     if (collapse_result$do_refit) {
       if (!silent) {
         cli_inform(c(
-          "i" = "Refitting model with collapsed spatial field(s) using update()..."
+          "i" = "Refitting model with collapsed spatial field(s)..."
         ))
       }
 
-      updated_call <- update(
-        out_structure,
-        spatial = collapse_result$spatial_arg,
-        spatiotemporal = collapse_result$spatiotemporal_arg,
-        do_fit = TRUE,
-        silent = silent,
-        evaluate = FALSE
-      )
-      return(eval(updated_call, envir = parent.frame()))
+      # Re-run the original call with only the field arguments changed, so
+      # missing-value rows are omitted once, from the original inputs
+      call <- out_structure$call
+      call$spatial <- collapse_result$spatial_arg
+      call$spatiotemporal <- collapse_result$spatiotemporal_arg
+      for (nm in names(refit_inputs)) call[nm] <- list(refit_inputs[[nm]])
+      return(eval(call, envir = parent.frame()))
     }
   }
 
