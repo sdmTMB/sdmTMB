@@ -326,6 +326,27 @@ get_convergence_diagnostics <- function(sd_report) {
   invisible(named_list(final_grads, bad_eig, pdHess))
 }
 
+# Store an optimized objective and its results (sdreport, convergence
+# diagnostics, best parameters) in a fit. Used by sdmTMB() and
+# run_extra_optimization().
+set_fit_results <- function(object, obj, opt, getsd = TRUE, get_joint_precision = FALSE) {
+  sd_report <- if (getsd) sdreport_sdmTMB(obj, getJointPrecision = get_joint_precision)
+  conv <- if (getsd) get_convergence_diagnostics(sd_report)
+  lpb <- obj$env$last.par.best
+  results <- list(
+    tmb_obj = obj,
+    model = opt,
+    sd_report = sd_report,
+    parlist = obj$env$parList(par = lpb),
+    last.par.best = lpb,
+    gradients = conv$final_grads,
+    bad_eig = conv$bad_eig,
+    pos_def_hessian = sd_report$pdHess
+  )
+  object[names(results)] <- results # `[<-` keeps NULL entries
+  object
+}
+
 make_year_i <- function(x) {
   x <- as.integer(as.factor(x))
   x - min(x)

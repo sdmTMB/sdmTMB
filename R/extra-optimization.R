@@ -21,30 +21,20 @@
 run_extra_optimization <- function(object,
   nlminb_loops = 0,
   newton_loops = 1) {
-  new_obj <- object
   # a fresh objective so optimizing doesn't modify `object`'s TMB environment
-  new_obj$tmb_obj <- remake_tmb_obj(object)
+  obj <- remake_tmb_obj(object)
   tmb_opt <- run_nlminb_loops(
-    nlminb_loops = nlminb_loops, opt = object$model, obj = new_obj$tmb_obj,
+    nlminb_loops = nlminb_loops, opt = object$model, obj = obj,
     lower = object$lower, upper = object$upper,
     control = object$nlminb_control, silent = FALSE,
     suppress_warnings = isTRUE(object$control$suppress_nlminb_warnings)
   )
   tmb_opt <- run_newton_loops(
-    newton_loops = newton_loops, opt = tmb_opt, obj = new_obj$tmb_obj,
+    newton_loops = newton_loops, opt = tmb_opt, obj = obj,
     silent = FALSE, lower = object$lower, upper = object$upper
   )
-  new_obj$model <- tmb_opt
-  new_obj$sd_report <- sdreport_sdmTMB(new_obj$tmb_obj,
-    getJointPrecision = "jointPrecision" %in% names(object$sd_report))
-  conv <- get_convergence_diagnostics(new_obj$sd_report)
-  new_obj$gradients <- conv$final_grads
-  new_obj$bad_eig <- conv$bad_eig
-  new_obj$pos_def_hessian <- new_obj$sd_report$pdHess
-  lpb <- new_obj$tmb_obj$env$last.par.best
-  new_obj$parlist <- new_obj$tmb_obj$env$parList(par = lpb)
-  new_obj$last.par.best <- lpb
-  new_obj
+  set_fit_results(object, obj, tmb_opt,
+    get_joint_precision = "jointPrecision" %in% names(object$sd_report))
 }
 
 # Rebuild a fit's TMB objective and evaluate it at the fitted parameters. The

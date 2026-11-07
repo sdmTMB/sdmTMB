@@ -40,9 +40,9 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
   )
 
   iid_re <- predict_iid_re_matrices(object, req, newdata, length(formula))
-  proj_X_ij <- predict_fixed_matrices(object, req, newdata)
+  proj_X_ij <- predict_fixed_matrices(object, newdata)
   proj_Xdisp_ij <- predict_disp_matrix(object, newdata)
-  # TODO DELTA hardcoded to 1:
+  # smoothers are shared by all components (checked when fitting):
   sm <- parse_smoothers(object$smoothers$formula_no_bars, data = object$data,
     newdata = newdata, basis_prev = object$smoothers$basis_out)
   proj_X_rw_ik <- predict_tv_matrix(object, newdata)
@@ -309,30 +309,20 @@ predict_iid_re_matrices <- function(object, req, newdata, n_formula) {
   list(Zt_list = rep(list(Zt), n_formula), new_re = new_re)
 }
 
-# Fixed-effect model matrices, one per linear predictor.
-predict_fixed_matrices <- function(object, req, newdata) {
-  proj_X_ij <- list()
-  for (i in seq_along(object$formula)) {
-    f2 <- remove_s_and_t2(object$split_formula[[i]]$form_no_bars)
-    tt <- stats::terms(f2)
-    attr(tt, "predvars") <- attr(object$terms[[i]], "predvars")
-    Terms <- stats::delete.response(tt)
-    mf <- model.frame(Terms, newdata, xlev = object$xlevels[[i]])
-    proj_X_ij[[i]] <- model.matrix(Terms, mf, contrasts.arg = object$contrasts[[i]])
-  }
-  if (!is.null(object$nonlocal_parsed)) {
-    proj_X_ij[[1]] <- .append_nonlocal_coef_columns(
-      X = proj_X_ij[[1]],
-      coef_names = object$nonlocal_parsed$term_coef_name
+# Fixed-effect model matrices, one per linear predictor, built with each
+# component's fitted terms (with `predvars`), factor levels, and contrasts.
+predict_fixed_matrices <- function(object, newdata) {
+  nl_cols <- object$nonlocal_parsed$term_coef_name
+  lapply(seq_along(object$formula), function(i) {
+    spec <- list(
+      name = "`formula`",
+      terms = stats::delete.response(object$terms[[i]]),
+      xlevels = object$xlevels[[i]],
+      contrasts = object$contrasts[[i]],
+      columns = setdiff(colnames(object$tmb_data$X_ij[[i]]), nl_cols)
     )
-    if (req$has_two_components) {
-      proj_X_ij[[2]] <- .append_nonlocal_coef_columns(
-        X = proj_X_ij[[2]],
-        coef_names = object$nonlocal_parsed$term_coef_name
-      )
-    }
-  }
-  proj_X_ij
+    .append_nonlocal_coef_columns(.apply_design(spec, newdata), nl_cols)
+  })
 }
 
 predict_disp_matrix <- function(object, newdata) {

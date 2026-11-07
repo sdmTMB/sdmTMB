@@ -1101,38 +1101,21 @@ sdmTMB <- function(
   split_formula <- list() # passed to out structure, not TMB
   X_ij <- list() # main effects, passed into TMB
   mf <- list()
-  mt <- list()
-  sm <- list()
 
   for (ii in seq_along(formula)) {
     check_offset(formula[[ii]])
 
-    # RE_names is either the names of the groups OR a character w/length 0 if none exist
-    # anything in a list here needs to be saved for tmb data
+    # random effects parsed into data structures (smoothers removed):
+    split_formula[[ii]] <- parse_formula(remove_s_and_t2(formula[[ii]]), data)
 
-    # smoothers removed, but random effects remain:
-    formula_no_sm <- remove_s_and_t2(formula[ii][[1]])
-    # random effects parsed into data structures:
-    split_formula[[ii]] <- parse_formula(formula_no_sm, data)
-
-    # save formula with no bars (but with smoothers)
-    formula_no_bars <- reformulas::nobars(formula[ii][[1]])
-    formula_no_bars_no_sm <- remove_s_and_t2(formula_no_bars)
-    X_ij[[ii]] <- model.matrix(formula_no_bars_no_sm, data)
-    mf[[ii]] <- model.frame(formula_no_bars_no_sm, data)
+    mf[[ii]] <- model.frame(remove_s_and_t2(reformulas::nobars(formula[[ii]])), data)
+    X_ij[[ii]] <- model.matrix(attr(mf[[ii]], "terms"), mf[[ii]])
     vars <- colnames(mf[[ii]])
     for (g in seq_along(vars)) {
       if (any(is.infinite(mf[[ii]][, g, drop = TRUE]))) {
         cli_abort("Column `{vars[g]}` had an Inf/-Inf value. Please remove this before fitting the model.")
       }
     }
-
-    mt[[ii]] <- attr(mf[[ii]], "terms")
-    # parse everything mgcv + smoothers:
-    sm[[ii]] <- parse_smoothers(formula = formula_no_bars, data = data, knots = knots)
-    sm[[ii]]$formula_no_sm <- formula_no_sm
-    sm[[ii]]$formula_no_bars <- formula_no_bars
-    sm[[ii]]$formula_no_bars_no_sm <- formula_no_bars_no_sm
   }
 
   if (has_two_components) {
@@ -1186,20 +1169,22 @@ sdmTMB <- function(
     if (n_re_groups[i] > 0) var_indx_matrix[seq_along(sd_vec), i] <- sd_vec
   }
 
-  if (has_two_components) {
-    if (any(unlist(lapply(sm, `[[`, "has_smooths")))) {
-      if (original_formula[[1]] != original_formula[[2]]) {
-        msg <- paste0(
-          "For now, if delta models contain smoothers, both components ",
-          "must have the same main-effects formula."
-        )
-        cli_abort(msg)
-      }
-    }
+  has_smooths <- vapply(formula, function(f) {
+    length(get_smooth_terms(all_terms(reformulas::nobars(f)))) > 0L
+  }, logical(1))
+  if (has_two_components && any(has_smooths) &&
+      original_formula[[1]] != original_formula[[2]]) {
+    cli_abort(paste0(
+      "For now, if delta models contain smoothers, both components ",
+      "must have the same main-effects formula."
+    ))
   }
 
-  # always shared; only keep track of one:
-  sm <- sm[[1]]
+  # smoothers are shared by all components, so parse them once:
+  formula_no_bars <- reformulas::nobars(formula[[1]])
+  sm <- parse_smoothers(formula = formula_no_bars, data = data, knots = knots)
+  sm$formula_no_sm <- remove_s_and_t2(formula[[1]])
+  sm$formula_no_bars <- formula_no_bars
 
   y_i <- model.response(mf[[1]], "any")
 
@@ -1841,7 +1826,7 @@ sdmTMB <- function(
       terms = lapply(mf, attr, which = "terms"),
       extra_time = extra_time,
       fitted_time = sort(unique(data[[time]])),
-      xlevels = lapply(seq_along(mf), function(i) stats::.getXlevels(mt[[i]], mf[[i]])),
+      xlevels = lapply(mf, function(x) stats::.getXlevels(attr(x, "terms"), x)),
       call = match.call(expand.dots = TRUE),
       version = utils::packageVersion("sdmTMB"),
       experimental = experimental
@@ -1981,25 +1966,8 @@ sdmTMB <- function(
   )
 
   if (!silent && getsd) cli_inform("running TMB sdreport\n")
-  if (getsd) {
-    sd_report <- sdreport_sdmTMB(tmb_obj, getJointPrecision = get_joint_precision)
-    conv <- get_convergence_diagnostics(sd_report)
-  } else {
-    sd_report <- NULL
-    conv <- NULL
-  }
-
-  out_structure$tmb_obj <- tmb_obj
-  out <- c(out_structure, list(
-    model = tmb_opt,
-    sd_report = sd_report,
-    parlist = tmb_obj$env$parList(par = tmb_obj$env$last.par.best),
-    last.par.best = tmb_obj$env$last.par.best,
-    gradients = conv$final_grads,
-    bad_eig = conv$bad_eig,
-    pos_def_hessian = sd_report$pdHess
-  ))
-  `class<-`(out, "sdmTMB")
+  set_fit_results(out_structure, tmb_obj, tmb_opt, getsd = getsd,
+    get_joint_precision = get_joint_precision)
 }
 
 check_bounds <- function(.par, lower, upper) {
