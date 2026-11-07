@@ -735,6 +735,10 @@ sdmTMB <- function(
   family <- family_spec$family
   has_two_components <- .family_spec_has_two_components(family_spec)
   n_m <- family_spec$n_m
+  check_component_list(formula, n_m, "formula")
+  check_component_list(if (!missing(spatial)) spatial, n_m, "spatial")
+  check_component_list(if (!missing(spatiotemporal)) spatiotemporal, n_m, "spatiotemporal")
+  check_component_list(share_range, n_m, "share_range")
   if (is_multi_family && has_dispformula) {
     cli_abort("`dispformula` is not supported for multi-family models yet. Use `dispformula = ~ 1`.")
   }
@@ -1208,8 +1212,8 @@ sdmTMB <- function(
 
   var_indx_matrix <- matrix(0, nrow = max_re_betas, ncol = length(formula))
   for (i in seq_len(length(formula))) {
-    sd_vec <- split_formula[[ii]]$var_indx_vector
-    if (n_re_groups[ii] > 0) var_indx_matrix[seq_along(sd_vec), i] <- sd_vec
+    sd_vec <- split_formula[[i]]$var_indx_vector
+    if (n_re_groups[i] > 0) var_indx_matrix[seq_along(sd_vec), i] <- sd_vec
   }
 
   if (has_two_components) {

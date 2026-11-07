@@ -355,6 +355,24 @@ check_offset <- function(formula) {
     cli_abort("Contains offset in formula. This is deprecated. Please use the `offset` argument.")
 }
 
+# A list argument (or a vector `share_range`) needs one element per model
+# component (linear predictor)
+check_component_list <- function(x, n_m, name) {
+  if (inherits(x, "formula") || is.null(x)) return(invisible(NULL))
+  if (!is.list(x) && length(x) == 1L) return(invisible(NULL))
+  if (length(x) != n_m) {
+    cli_abort(c(
+      "`{name}` has {length(x)} element{?s}, but the model has {n_m} component{?s}.",
+      i = if (n_m == 1L) {
+        "Supply a single value, or use a delta family for two components."
+      } else {
+        "Supply a single value (shared by all components) or a list with one element per component."
+      }
+    ))
+  }
+  invisible(NULL)
+}
+
 # Find and drop a single `breakpt()` or `logistic()` term from one formula
 parse_threshold_term <- function(formula) {
   labels <- attr(stats::terms(formula), "term.labels")
