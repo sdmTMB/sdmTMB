@@ -89,7 +89,6 @@ fit_first_phase <- function(tmb_data, tmb_params, tmb_map, profile, backend,
   # `tmb_map`); hold everything else at its starting value
   phase1_pars <- c("b_j", "b_j2", "b_disp_k", "thetaf", "ln_student_df",
     "gengamma_Q", "psi", "ln_phi", "b_threshold")
-  tmb_map <- tmb_map[!duplicated(names(tmb_map))]
   for (p in setdiff(names(tmb_params), phase1_pars)) {
     tmb_map[[p]] <- factor(rep(NA, length(tmb_params[[p]])))
   }

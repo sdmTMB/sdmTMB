@@ -378,8 +378,11 @@ check_offset <- function(formula) {
 
 # A list argument (or a vector `share_range`) needs one element per model
 # component (linear predictor)
-check_component_list <- function(x, n_m, name) {
+check_component_list <- function(x, n_m, name, vector_ok = FALSE) {
   if (inherits(x, "formula") || is.null(x)) return(invisible(NULL))
+  if (!vector_ok && !is.list(x) && length(x) > 1L) {
+    cli_abort("`{name}` should be a single value or a list with one element per component.")
+  }
   if (!is.list(x) && length(x) == 1L) return(invisible(NULL))
   if (length(x) != n_m) {
     cli_abort(c(

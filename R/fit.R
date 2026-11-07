@@ -671,6 +671,17 @@ sdmTMB <- function(
     do_index = FALSE,
     predict_args = NULL,
     index_args = NULL) {
+  if (!isFALSE(do_index) || !is.null(predict_args) || !is.null(index_args)) {
+    lifecycle::deprecate_stop(
+      "1.2.0",
+      "sdmTMB(do_index = )",
+      details = paste(
+        "Fit the model and then pass it with `newdata` directly to `get_index()`,",
+        "`get_cog()`, `get_eao()`, or `get_weighted_average()`."
+      )
+    )
+  }
+
   assert_that(class(formula) %in% c("formula", "list"))
   assert_that(inherits(data, "data.frame"))
   if (!is.null(time)) assert_that(is.character(time))
@@ -730,7 +741,7 @@ sdmTMB <- function(
   check_component_list(formula, n_m, "formula")
   check_component_list(if (!missing(spatial)) spatial, n_m, "spatial")
   check_component_list(if (!missing(spatiotemporal)) spatiotemporal, n_m, "spatiotemporal")
-  check_component_list(share_range, n_m, "share_range")
+  check_component_list(share_range, n_m, "share_range", vector_ok = TRUE)
   if (is_multi_family && has_dispformula) {
     cli_abort("`dispformula` is not supported for multi-family models yet. Use `dispformula = ~ 1`.")
   }
@@ -746,32 +757,13 @@ sdmTMB <- function(
     }
   }
 
-  if (!isFALSE(do_index) || !is.null(predict_args) || !is.null(index_args)) {
-    lifecycle::deprecate_stop(
-      "1.2.0",
-      "sdmTMB(do_index = )",
-      details = paste(
-        "Fit the model and then pass it with `newdata` directly to `get_index()`,",
-        "`get_cog()`, `get_eao()`, or `get_weighted_average()`."
-      )
-    )
-  }
-
   if (inherits(formula, "formula")) {
     formula <- normalize_bar_only_formula(formula)
   } else {
     formula <- lapply(formula, normalize_bar_only_formula)
   }
 
-  if (!missing(spatial)) {
-    if (length(spatial) > 1 && !is.list(spatial)) {
-      cli_abort("`spatial` should be a single value or a list")
-    }
-  }
   if (!missing(spatiotemporal)) {
-    if (length(spatiotemporal) > 1 && !is.list(spatiotemporal)) {
-      cli_abort("`spatiotemporal` should be a single value or a list")
-    }
     if (has_two_components && !is.list(spatiotemporal)) {
       spatiotemporal <- rep(spatiotemporal[[1]], 2L)
     }
@@ -952,7 +944,6 @@ sdmTMB <- function(
       cli::cli_abort(msg)
     }
   }
-  # FIXME parallel setup here?
 
   rtmb_only <- intersect(family_spec$components$family_name, c("censored_nbinom1",
     "censored_nbinom2", "censored_binomial", "censored_betabinomial", "compois"))
@@ -1314,8 +1305,8 @@ sdmTMB <- function(
 
   tmb_params <- list(
     ln_H_input = matrix(0, nrow = 2L, ncol = n_m),
-    b_j = rep(0, ncol(X_ij[[1]])), # TODO: verify ok
-    b_j2 = if (has_two_components) rep(0, ncol(X_ij[[2]])) else numeric(0), # TODO: verify ok
+    b_j = rep(0, ncol(X_ij[[1]])),
+    b_j2 = if (has_two_components) rep(0, ncol(X_ij[[2]])) else numeric(0),
     b_disp_k = rep(0, ncol(Xdisp_ij)),
     bs = if (sm$has_smooths) matrix(0, nrow = ncol(sm$Xs), ncol = n_m) else array(0),
     ln_tau_O = rep(0, n_m),
@@ -1324,7 +1315,6 @@ sdmTMB <- function(
     ln_kappa = matrix(0, 2L, n_m),
     log_kappaS_nl = .nonlocal_log_kappaS_start(spde$loc_xy, nonlocal_tmb$n_covariates),
     log_kappaT_nl = numeric(nonlocal_tmb$n_covariates),
-    # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
     thetaf = family_params$thetaf,
     ln_student_df = family_params$ln_student_df,
     gengamma_Q = family_params$gengamma_Q,
@@ -1359,11 +1349,7 @@ sdmTMB <- function(
   # Map off parameters not needed
   tmb_map <- map_all_params(tmb_params)
   tmb_map$b_j <- NULL
-  if (!is_multi_family && has_dispformula) {
-    tmb_map <- unmap(tmb_map, "b_disp_k")
-  } else {
-    tmb_map$b_disp_k <- factor(rep(NA, length(tmb_params$b_disp_k)))
-  }
+  if (!is_multi_family && has_dispformula) tmb_map <- unmap(tmb_map, "b_disp_k")
   if (has_two_components) tmb_map$b_j2 <- NULL
   tmb_map <- .map_family_parameters(
     tmb_map, tmb_params,
@@ -1421,7 +1407,6 @@ sdmTMB <- function(
     tmb_map <- previous_fit$tmb_map
   }
 
-  # this is complex; pulled it out into own function:
   # SVC fields use the spatial range of every component:
   kappa_spatial <- if (is.null(spatial_varying)) spatial else rep("on", n_m)
   tmb_map$ln_kappa <- get_kappa_map(n_m = n_m, spatial = kappa_spatial, spatiotemporal = spatiotemporal, share_range = share_range)
@@ -1465,7 +1450,7 @@ sdmTMB <- function(
     tmb_map$ln_tau_O <- map_off_components(tmb_params$ln_tau_O, spatial == "off")
   }
 
-  if (isTRUE(domain$anisotropy == 1L) && has_two_components && !"ln_H_input" %in% names(control$map)) {
+  if (isTRUE(domain$anisotropy == 1L) && has_two_components) {
     tmb_map$ln_H_input <- factor(c(1, 2, 1, 2)) # share anisotropy as in VAST
   }
 
@@ -1577,8 +1562,6 @@ sdmTMB <- function(
   )
 
   out_structure$tmb_obj <- tmb_obj
-  out_structure$tmb_data <- tmb_data
-  out_structure$tmb_params <- tmb_params
   out_structure$lower <- lim$lower
   out_structure$upper <- lim$upper
 
