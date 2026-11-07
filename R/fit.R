@@ -752,7 +752,7 @@ sdmTMB <- function(
       dispformula <- ~ 1
       has_dispformula <- FALSE
     }
-    if (has_dispformula && disp_family %in% c("truncated_nbinom1", "truncated_nbinom2")) {
+    if (has_dispformula && .family_has(disp_family, "truncated")) {
       cli_abort("`dispformula` is not supported for truncated negative-binomial families yet.")
     }
   }
@@ -944,16 +944,13 @@ sdmTMB <- function(
     }
   }
 
-  rtmb_only <- intersect(family_spec$components$family_name, c("censored_nbinom1",
-    "censored_nbinom2", "censored_binomial", "censored_betabinomial", "compois"))
+  family_names <- unique(family_spec$components$family_name)
+  rtmb_only <- family_names[.family_has(family_names, "needs_rtmb")]
   if (length(rtmb_only) && backend != "rtmb") {
     cli_abort("`{rtmb_only[[1]]}()` needs `sdmTMBcontrol(backend = \"rtmb\")`.")
   }
-  uses_censored <- any(family_spec$components$family_name %in%
-    c("censored_poisson", "censored_nbinom1", "censored_nbinom2",
-      "censored_binomial", "censored_betabinomial"))
-  if (uses_censored) {
-    if (is.null(censored_upper)) cli_abort("`censored_upper` must be supplied to use a censored family.")
+  if (any(.family_has(family_names, "censored")) && is.null(censored_upper)) {
+    cli_abort("`censored_upper` must be supplied to use a censored family.")
   }
   if (is.null(censored_upper)) censored_upper <- Inf
 
@@ -1115,7 +1112,7 @@ sdmTMB <- function(
   if (identical(family$link[1], "log") && min(y_i, na.rm = TRUE) < 0 && !has_two_components) {
     cli_abort("`link = 'log'` but the reponse data include values < 0.")
   }
-  if (!has_two_components && family$family[1] %in% c("truncated_nbinom1", "truncated_nbinom2") &&
+  if (!has_two_components && .family_has(family$family[1], "truncated") &&
     any(y_i < 1, na.rm = TRUE)) {
     cli_abort(c(
       "`{family$family[1]}()` requires a response > 0.",
