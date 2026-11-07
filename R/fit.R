@@ -1646,7 +1646,7 @@ sdmTMB <- function(
     tmb_map$re_cov_pars <- as.factor(tmb_map$re_cov_pars)
   }
   # fixed effects that REML integrates out; logLik() still counts them
-  reml_random <- character(0)
+  reml_random <- NULL
   if (reml) reml_random <- c(reml_random, "b_j")
   if (reml && has_two_components) reml_random <- c(reml_random, "b_j2")
   if (reml && sm$has_smooths) reml_random <- c(reml_random, "bs")

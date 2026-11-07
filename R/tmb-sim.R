@@ -677,7 +677,7 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
     if (type == "mle-mvn") {
       if (mle_mvn_samples == "single") {
         new_par <- .one_sample_posterior(object)
-        new_par <- replicate(nsim, new_par)
+        new_par <- matrix(new_par, nrow = length(new_par), ncol = nsim)
       } else {
         new_par <- .posterior_re_sampler(object)(nsim)
       }
