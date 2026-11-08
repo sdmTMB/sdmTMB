@@ -344,6 +344,7 @@ set_fit_results <- function(object, obj, opt, getsd = TRUE, get_joint_precision 
     pos_def_hessian = sd_report$pdHess
   )
   object[names(results)] <- results # `[<-` keeps NULL entries
+  object["smooth_edf"] <- list(calc_smooth_edf(object))
   object
 }
 

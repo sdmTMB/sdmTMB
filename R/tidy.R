@@ -39,6 +39,18 @@
 #' `time_varying_type = "ar1"`, correlation (`rho_time`) are returned with
 #' `effects = "ran_pars"`.
 #'
+#' For models with penalized smoothers, `effects = "ran_pars"` includes an `edf`
+#' column with the effective degrees of freedom of each smoother (`NA` for
+#' other parameters). As in \pkg{mgcv}, this counts the unpenalized null space
+#' of the smoother (e.g., 1 for the linear component of `s(x)`) plus the
+#' effective number of penalized coefficients, integrating over the fixed and
+#' random effects and conditioning on the variance parameters. With `t2()`, the
+#' smoother's null space is added to its first penalized component so the
+#' components sum to the \pkg{mgcv} term EDF. These are computed when the
+#' model is fit, typically at a small fraction of the fitting time. They differ from
+#' `cAIC(fit, what = "EDF")`, which conditions on the fixed effects and excludes
+#' the null space.
+#'
 #' With `anisotropy = TRUE`, `effects = "ran_pars"` reports `range_min` and
 #' `range_max`, the ranges along the minor and major axes, in place of `range`.
 #' Their geometric mean is `range`. With the RTMB backend, their standard
@@ -575,6 +587,10 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     }
     row.names(ln_sds_df) <- NULL
     if (!"group_name" %in% names(out_re)) out_re$group_name <- rep(NA, nrow(out_re))
+    if (!is.null(x$smooth_edf)) {
+      out_re$edf <- rep(NA_real_, nrow(out_re))
+      ln_sds_df$edf <- as.numeric(x$smooth_edf[, model])
+    }
     out_re <- rbind(out_re, ln_sds_df)
   }
   # optional time-varying random components
@@ -617,6 +633,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     new_names <- c("group_name", "term", "estimate", "std.error")
   }
   if(conf.int) new_names <- c(new_names, "conf.low", "conf.high")
+  new_names <- c(new_names, "edf")
   new_names <- new_names[new_names %in% names(out_re)]
   out_re <- out_re[, new_names]
   # remove group_name if not used for simplicity:

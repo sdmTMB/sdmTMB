@@ -69,6 +69,18 @@ These are on the link scale. Their standard deviation (\code{sigma_V}) and, for
 \code{time_varying_type = "ar1"}, correlation (\code{rho_time}) are returned with
 \code{effects = "ran_pars"}.
 
+For models with penalized smoothers, \code{effects = "ran_pars"} includes an \code{edf}
+column with the effective degrees of freedom of each smoother (\code{NA} for
+other parameters). As in \pkg{mgcv}, this counts the unpenalized null space
+of the smoother (e.g., 1 for the linear component of \code{s(x)}) plus the
+effective number of penalized coefficients, integrating over the fixed and
+random effects and conditioning on the variance parameters. With \code{t2()}, the
+smoother's null space is added to its first penalized component so the
+components sum to the \pkg{mgcv} term EDF. These are computed when the
+model is fit, typically at a small fraction of the fitting time. They differ from
+\code{cAIC(fit, what = "EDF")}, which conditions on the fixed effects and excludes
+the null space.
+
 With \code{anisotropy = TRUE}, \code{effects = "ran_pars"} reports \code{range_min} and
 \code{range_max}, the ranges along the minor and major axes, in place of \code{range}.
 Their geometric mean is \code{range}. With the RTMB backend, their standard

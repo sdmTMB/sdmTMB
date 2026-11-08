@@ -1,5 +1,14 @@
 # sdmTMB (development version)
 
+* Models with penalized smoothers now store the effective degrees of freedom
+  (EDF) of each smoother, calculated as in mgcv, in `fit$smooth_edf`. They're
+  shown in `print()` and in a new `edf` column of `tidy(fit, "ran_pars")`. The
+  calculation reuses the inner-problem Cholesky factor, so it costs roughly one
+  inner Newton step plus two gradient evaluations per linear coefficient.
+  `print(fit, edf = FALSE)` hides them. Unlike `cAIC(fit, what = "EDF")`,
+  these include the smoother's unpenalized null space and integrate over the
+  fixed effects, and so match `mgcv::gam()`.
+
 * Fix `make_mesh()` with `cutoff` and `convex` or `concave`, which built the
   mesh from the boundary only and dropped the data locations. Meshes built with
   these arguments will change. Also fix the documented default `fmesher_func`

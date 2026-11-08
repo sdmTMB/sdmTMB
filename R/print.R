@@ -264,15 +264,7 @@ print_smooth_effects <- function(x, m = 1, edf = NULL, silent = FALSE) {
     colnames(ln_re_sm_mat) <- c("estimate", "std.error")
 
     if (!is.null(edf)) {
-      if (.object_has_two_components(x, caller = "`print()`")) {
-        lp_regex <- paste0("^", m, "LP-s\\(")
-        edf <- edf[grepl(lp_regex, names(edf))]
-      } else {
-        edf <- edf[grepl("^s\\(", names(edf))]
-      }
-      edf <- round(edf, 2)
-      re_sm_mat <- cbind(re_sm_mat, matrix(edf, ncol = 1))
-      colnames(re_sm_mat)[2] <- "EDF"
+      re_sm_mat <- cbind(re_sm_mat, EDF = round(edf[, m], 2L))
     }
   } else {
     re_sm_mat <- NULL
@@ -605,12 +597,8 @@ print_header <- function(x) {
   cat(info$overall_family)
 }
 
-print_one_model <- function(x, m = 1, edf = FALSE, silent = FALSE) {
-  if (edf) {
-    .edf <- suppressMessages(cAIC(x, what = "EDF"))
-  } else {
-    .edf <- NULL
-  }
+print_one_model <- function(x, m = 1, edf = TRUE, silent = FALSE) {
+  .edf <- if (isTRUE(edf)) x$smooth_edf
   info <- print_model_info(x)
   main <- print_main_effects(x, m = m)
   smooth <- print_smooth_effects(x, m = m, edf = .edf, silent = TRUE)
