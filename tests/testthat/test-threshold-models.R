@@ -153,8 +153,13 @@ test_that("Threshold terms must wrap a single column", {
   expect_error(fit_f(density ~ logistic(log(depth))), msg)
   expect_error(fit_f(density ~ breakpt(not_a_column)), "not a column in `data`")
 
+  # fix the cutpoint: estimating it directly isn't reliable (see profile_breakpt())
   fit <- sdmTMB(density ~ breakpt(depth_scaled), data = pcod_2011,
-    spatial = "off", family = tweedie())
+    spatial = "off", family = tweedie(),
+    control = sdmTMBcontrol(
+      start = list(b_threshold = matrix(c(0, 0), 2L)),
+      map = list(b_threshold = factor(c(1L, NA)))
+    ))
   nd <- pcod_2011
   nd$depth_scaled <- NULL
   expect_error(predict(fit, newdata = nd), "not a column in `newdata`")

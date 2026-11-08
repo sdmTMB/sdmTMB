@@ -439,4 +439,27 @@ test_that("collapse refit keeps row vectors aligned after omitting NA rows", {
   expect_identical(fit$spatial, "off")
   expect_equal(nrow(fit$data), nrow(d) - 2L)
   expect_equal(c(fit$tmb_data$weights_i), w[-c(3, 10)])
+  # the stored call keeps the caller's expressions, not the refit's inlined values
+  expect_identical(fit$call$data, quote(d))
+  expect_identical(fit$call$mesh, quote(mesh))
+  expect_identical(fit$call$weights, quote(w))
+  expect_identical(fit$call$spatial, "off")
+  expect_match(capture.output(print(fit)), "^Data: d$", all = FALSE)
+})
+
+test_that("collapse refit works with arguments forwarded through `...`", {
+  skip_on_cran()
+  inner <- function(...) sdmTMB(density ~ depth_scaled, ...)
+  outer <- function(...) inner(...)
+  fit <- local({
+    dl <- pcod_2011
+    ml <- make_mesh(dl, c("X", "Y"), cutoff = 20)
+    fam <- tweedie()
+    ctl <- sdmTMBcontrol(collapse_spatial_variance = TRUE,
+      collapse_spatial_variance_threshold = 100)
+    outer(data = dl, mesh = ml, family = fam, control = ctl)
+  })
+  expect_identical(fit$spatial, "off")
+  expect_equal(nrow(fit$data), nrow(pcod_2011))
+  expect_lt(nchar(deparse1(fit$call)), 500L)
 })

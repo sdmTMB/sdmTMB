@@ -1617,13 +1617,21 @@ sdmTMB <- function(
         ))
       }
 
-      # Re-run the original call with only the field arguments changed, so
-      # missing-value rows are omitted once, from the original inputs
+      # Re-run the original call with only the field arguments changed. The
+      # row inputs go in as values, not the caller's expressions: missing-value
+      # rows are then omitted once, from the original inputs, and the refit
+      # doesn't depend on those expressions resolving in `parent.frame()`
+      # (e.g., `...` forwarded through a wrapper such as profile_breakpt()).
       call <- out_structure$call
       call$spatial <- collapse_result$spatial_arg
       call$spatiotemporal <- collapse_result$spatiotemporal_arg
-      for (nm in names(refit_inputs)) call[nm] <- list(refit_inputs[[nm]])
-      return(eval(call, envir = parent.frame()))
+      refit_call <- call
+      for (nm in names(refit_inputs)) refit_call[nm] <- list(refit_inputs[[nm]])
+      refit <- eval(refit_call, envir = parent.frame())
+      # store the caller's expressions (e.g., `data = d`), not the inlined
+      # values, so print() names the objects and the call stays small
+      refit$call <- call
+      return(refit)
     }
   }
 
