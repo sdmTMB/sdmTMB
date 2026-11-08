@@ -51,6 +51,44 @@ test_that("sanity() runs", {
   expect_false(sanity(x))
 })
 
+test_that("sanity() flags a range too small for the mesh", {
+  skip_on_cran()
+  mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 20)
+  fit <- sdmTMB(density ~ 0 + as.factor(year), data = pcod, mesh = mesh,
+    family = tweedie(), time = "year", spatiotemporal = "iid")
+  r <- tidy(fit, "ran_pars")
+  expect_lt(r$estimate[r$term == "range"][1], 0.5 * stats::median(mesh_edge_lengths(mesh)))
+  expect_message(s <- sanity(fit), regexp = "small relative to the mesh")
+  expect_false(s$range_ok)
+  expect_false(s$all_ok)
+
+  fit <- sdmTMB(density ~ 1, data = pcod_2011, mesh = pcod_mesh_2011,
+    family = tweedie())
+  expect_true(sanity(fit, silent = TRUE)$range_ok)
+})
+
+test_that("sanity() checks anisotropic ranges against the data extent", {
+  skip_on_cran()
+  fit <- sdmTMB(density ~ depth_scaled, data = pcod_2011, mesh = pcod_mesh_2011,
+    family = tweedie(), anisotropy = TRUE)
+  expect_true(sanity(fit, silent = TRUE)$range_ok)
+
+  fit$data$X <- fit$data$X / 1000
+  fit$data$Y <- fit$data$Y / 1000
+  expect_message(s <- sanity(fit), regexp = "looks fairly large")
+  expect_false(s$range_ok)
+})
+
+test_that("mesh_edge_lengths() ignores the outer buffer", {
+  skip_on_cran()
+  inla_mesh <- fmesher::fm_mesh_2d_inla(
+    loc = as.matrix(pcod_2011[, c("X", "Y")]),
+    max.edge = c(30, 300), offset = c(5, 500), cutoff = 20
+  )
+  mesh <- make_mesh(pcod_2011, c("X", "Y"), mesh = inla_mesh)
+  expect_lt(max(mesh_edge_lengths(mesh)), 100)
+})
+
 test_that("sanity() doesn't warn for non-spatial fits without a mesh", {
   skip_on_cran()
   fit <- sdmTMB(present ~ depth_scaled, data = pcod_2011, spatial = "off",

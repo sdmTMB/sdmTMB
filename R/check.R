@@ -266,8 +266,9 @@ sanity <- function(object, big_sd_log10 = 2, gradient_thresh = 0.001, silent = F
     r1 <- diff(range(object$data[[object$spde$xy_cols[1]]]))
     r2 <- diff(range(object$data[[object$spde$xy_cols[2]]]))
     r <- max(r1, r2)
-    if ("range" %in% b$term) {
-      if (max(b$estimate[b$term == "range"]) > r * 1.5) {
+    ranges <- b$estimate[b$term %in% c("range", "range_min", "range_max")]
+    if (length(ranges)) {
+      if (max(ranges) > r * 1.5) {
         msg <- "A `range` parameter looks fairly large (> 1.5 the greatest distance in data)"
         if (!silent) {
           cli::cli_alert_danger(msg)
@@ -281,6 +282,15 @@ sanity <- function(object, big_sd_log10 = 2, gradient_thresh = 0.001, silent = F
         if (nr == 1L) msg <- "Range parameter doesn't look unreasonably large"
         if (nr > 1L) msg <- "Range parameters don't look unreasonably large"
         if (!silent) cli::cli_alert_success(msg)
+      }
+      if (isTRUE(min(ranges) < 0.5 * stats::median(mesh_edge_lengths(object$spde)))) {
+        msg <- "A `range` parameter is small relative to the mesh (< 0.5 the median triangle edge length near the data)"
+        if (!silent) {
+          cli::cli_alert_danger(msg)
+          cli::cli_alert_info("The mesh can't resolve a field this fine: try a finer mesh and check whether the estimates change", wrap = TRUE)
+          cat("\n")
+        }
+        range_ok <- FALSE
       }
     }
   }

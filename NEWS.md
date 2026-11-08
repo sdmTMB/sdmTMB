@@ -5,6 +5,12 @@
   these arguments will change. Also fix the documented default `fmesher_func`
   and a stale error message about `n_knots`.
 
+* `sanity()` now sets `range_ok = FALSE` if a range is less than half the median
+  triangle edge length near the data, since the mesh can't resolve such a field.
+  The existing check for overly large ranges now also applies to `range_min` and
+  `range_max` with `anisotropy = TRUE`, where it was previously skipped. Either
+  can change `all_ok` for existing models.
+
 * `cAIC()` can now compare several models, like `AIC()`: `cAIC(fit1, fit2)`
   returns a data frame with the effective degrees of freedom and cAIC for each
   model. `what` now comes after `...` and must be named, e.g.

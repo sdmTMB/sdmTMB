@@ -219,6 +219,16 @@ binary_search_knots <- function(loc_xy,
   mesh
 }
 
+# edge lengths between vertices that receive data; ignores any outer buffer
+mesh_edge_lengths <- function(spde) {
+  tv <- spde$mesh$graph$tv
+  used <- Matrix::colSums(spde$A_st) > 0
+  e <- rbind(tv[, 1:2], tv[, 2:3], tv[, c(3, 1)])
+  e <- e[used[e[, 1]] & used[e[, 2]], , drop = FALSE]
+  loc <- spde$mesh$loc[, 1:2, drop = FALSE]
+  sqrt(rowSums((loc[e[, 1], , drop = FALSE] - loc[e[, 2], , drop = FALSE])^2))
+}
+
 #' @param x Output from [make_mesh()].
 #' @param ... Passed to [graphics::plot()].
 #'
