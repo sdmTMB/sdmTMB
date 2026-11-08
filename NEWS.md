@@ -5,6 +5,13 @@
   these arguments will change. Also fix the documented default `fmesher_func`
   and a stale error message about `n_knots`.
 
+* `make_mesh()` with `type = "kmeans"` now caps `n_knots` at the number of
+  unique locations, avoiding a `kmeans()` error with repeated locations, and no
+  longer changes the global random seed.
+
+* `make_mesh()` now checks `xy_cols` up front and warns about large negative
+  coordinates as well as large positive ones.
+
 * `sanity()` now sets `range_ok = FALSE` if a range is less than half the median
   triangle edge length near the data, since the mesh can't resolve such a field.
   The existing check for overly large ranges now also applies to `range_min` and

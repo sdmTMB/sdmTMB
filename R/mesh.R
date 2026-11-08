@@ -88,15 +88,27 @@ make_mesh <- function(data, xy_cols,
     cli_abort(msg)
   }
 
+  if (!is.character(xy_cols) || length(xy_cols) != 2L) {
+    cli_abort("`xy_cols` must be a character vector of two column names.")
+  }
+  missing_cols <- setdiff(xy_cols, names(data))
+  if (length(missing_cols)) {
+    cli_abort("Column{?s} {.val {missing_cols}} in `xy_cols` {?is/are} not in `data`.")
+  }
+  non_numeric <- xy_cols[!vapply(xy_cols, function(x) is.numeric(data[[x]]), logical(1L))]
+  if (length(non_numeric)) {
+    cli_abort("Column{?s} {.val {non_numeric}} in `xy_cols` must be numeric.")
+  }
+
   all_x_non_na <- sum(is.na(data[[xy_cols[[1]]]])) == 0L
   all_y_non_na <- sum(is.na(data[[xy_cols[[2]]]])) == 0L
   if (!all_x_non_na || !all_y_non_na) {
-    msg <- c("Some coordinates in `xy_cols` were NA.", "
-      Remove or fix these rows before proceeding.")
+    msg <- c("Some coordinates in `xy_cols` were NA.",
+      "Remove or fix these rows before proceeding.")
     cli_abort(msg)
   }
 
-  if (max(data[[xy_cols[1]]] > 1e4) || max(data[[xy_cols[2]]] > 1e4)) {
+  if (max(abs(data[[xy_cols[1]]])) > 1e4 || max(abs(data[[xy_cols[2]]])) > 1e4) {
     msg <- paste0(
       "The x or y column values are fairly large. ",
       "This can cause estimation problems since the spatial range ",
@@ -130,14 +142,14 @@ make_mesh <- function(data, xy_cols,
 
   if (is.null(mesh)) {
     if (type == "kmeans") {
-      if (n_knots >= nrow(loc_xy)) {
+      n_unique <- nrow(unique(loc_xy))
+      if (n_knots >= n_unique) {
         cli_warn(
-          "Reducing `n_knots` to be one less than the number of data points."
+          "Reducing `n_knots` to be one less than the number of unique locations."
         )
-        n_knots <- nrow(loc_xy) - 1
+        n_knots <- n_unique - 1
       }
-      set.seed(seed)
-      knots <- stats::kmeans(x = loc_xy, centers = n_knots)
+      knots <- with_seed(seed, stats::kmeans(x = loc_xy, centers = n_knots))
       loc_centers <- knots$centers
       if (!is.null(convex) || !is.null(concave)) {
         nch <- fmesher::fm_nonconvex_hull(loc_xy, convex = convex, concave = concave)
@@ -185,6 +197,23 @@ make_mesh <- function(data, xy_cols,
     loc_centers = loc_centers, A_st = A,
     sdm_spatial_id = fake_data$sdm_spatial_id
   ), class = "sdmTMBmesh")}
+
+# like withr::with_seed(): evaluate `code` with a seed, then restore the
+# caller's RNG state (or its absence)
+with_seed <- function(seed, code) {
+  env <- globalenv()
+  had_seed <- exists(".Random.seed", envir = env, inherits = FALSE)
+  if (had_seed) old_seed <- get(".Random.seed", envir = env, inherits = FALSE)
+  on.exit({
+    if (had_seed) {
+      assign(".Random.seed", old_seed, envir = env)
+    } else if (exists(".Random.seed", envir = env, inherits = FALSE)) {
+      rm(".Random.seed", envir = env)
+    }
+  })
+  set.seed(seed)
+  code
+}
 
 binary_search_knots <- function(loc_xy,
                                 n_knots,
