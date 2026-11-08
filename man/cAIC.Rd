@@ -7,10 +7,10 @@
 cAIC(object, ..., what = c("cAIC", "EDF"))
 }
 \arguments{
-\item{object}{Output from \code{\link[=sdmTMB]{sdmTMB()}}.}
+\item{object}{Output from \code{\link[=sdmTMB]{sdmTMB()}} or \code{\link[=profile_breakpt]{profile_breakpt()}}.}
 
-\item{...}{Optionally, more fitted models from \code{\link[=sdmTMB]{sdmTMB()}} to compare, as
-with \code{\link[=AIC]{AIC()}}.}
+\item{...}{Optionally, more fitted models from \code{\link[=sdmTMB]{sdmTMB()}} or
+\code{\link[=profile_breakpt]{profile_breakpt()}} to compare, as with \code{\link[=AIC]{AIC()}}.}
 
 \item{what}{Whether to return the cAIC or the effective degrees of freedom
 (EDF) for each group of random effects. Must be named. \code{"EDF"} is only
@@ -50,6 +50,11 @@ off.
 
 When comparing several models, models without random effects contribute
 their marginal AIC, which is what cAIC reduces to with no random effects.
+
+For output \code{p} from \code{\link[=profile_breakpt]{profile_breakpt()}}, cAIC uses the final fit and counts
+the profiled cutpoint as one more fixed effect, as \code{AIC(p)} does. Use
+\code{cAIC(p)}, not \code{cAIC(p$fit)}: \code{p$fit} holds the cutpoint fixed, so it isn't
+counted. The EDF (\code{what = "EDF"}) are those of \code{p$fit}.
 }
 \examples{
 mesh <- make_mesh(dogfish, c("X", "Y"), cutoff = 15)

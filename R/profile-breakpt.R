@@ -35,6 +35,12 @@
 #' (`estimate$pieces` > 1), the interval includes those cutpoints too. If the
 #' profile is still inside the cutoff at the end of the grid, that end is `NA`.
 #'
+#' The interval is approximate: it treats twice the NLL difference as
+#' chi-squared with 1 degree of freedom. That's reasonable when the slope is
+#' clearly non-zero. As the slope approaches zero, the cutpoint stops being
+#' identified, the profile flattens, and the interval opens up to the ends of
+#' the grid (see Warnings).
+#'
 #' @param formula,... As in [sdmTMB()]. `formula` must include one `breakpt()`
 #'   term. Pass `data`, `mesh`, `family`, and other [sdmTMB()] arguments in
 #'   `...`.
@@ -56,8 +62,9 @@
 #'   of the covariate.
 #' @param tol_coarse Spacing of cutpoints elsewhere within `within`, fine
 #'   enough to find a second minimum. Defaults to 4 times `tol`.
-#' @param max_fits Stop refining after this many profile fits. The search in
-#'   step 3 runs regardless.
+#' @param max_fits Stop refining (step 2) after this many profile fits. It
+#'   doesn't limit the first pass over `cuts` or the search in step 3, so the
+#'   total number of fits can exceed it.
 #' @param level Confidence level for the profile interval, between 0 and 1.
 #' @param final Fit the final model at the best cutpoint? If `FALSE`, returns
 #'   the profile only.
@@ -81,7 +88,8 @@
 #' For AIC, use `AIC(p)` (or `estimate$aic`), where `p` is the output, not
 #' `AIC(p$fit)`: `fit` doesn't count the fixed cutpoint as a parameter.
 #' [logLik()], and so [AIC()] and [BIC()], work on the output, and `AIC(p, m)`
-#' compares it with another model `m`. Standard errors and predictions from
+#' compares it with another model `m`. The same goes for [cAIC()]: use
+#' `cAIC(p)`, not `cAIC(p$fit)`. Standard errors and predictions from
 #' `fit` don't include uncertainty in the cutpoint. See the
 #' [threshold modeling article](https://sdmTMB.github.io/sdmTMB/articles/threshold-models.html)
 #' for an example of predictions that include uncertainty in both the cutpoint
@@ -371,6 +379,11 @@ logLik.breakpt_profile <- function(object, ...) {
   e <- object$estimate
   n <- e$n_below + e$n_above
   structure(-e$nll, nobs = n, nall = n, df = e$k, class = "logLik")
+}
+
+#' @export
+nobs.breakpt_profile <- function(object, ...) {
+  object$estimate$n_below + object$estimate$n_above
 }
 
 #' Plot a break-point profile

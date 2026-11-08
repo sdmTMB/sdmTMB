@@ -2,9 +2,9 @@
 #'
 #' Calculates the conditional Akaike Information criterion (cAIC).
 #'
-#' @param object Output from [sdmTMB()].
-#' @param ... Optionally, more fitted models from [sdmTMB()] to compare, as
-#'   with [AIC()].
+#' @param object Output from [sdmTMB()] or [profile_breakpt()].
+#' @param ... Optionally, more fitted models from [sdmTMB()] or
+#'   [profile_breakpt()] to compare, as with [AIC()].
 #' @param what Whether to return the cAIC or the effective degrees of freedom
 #'   (EDF) for each group of random effects. Must be named. `"EDF"` is only
 #'   available for a single model.
@@ -32,6 +32,11 @@
 #'
 #' When comparing several models, models without random effects contribute
 #' their marginal AIC, which is what cAIC reduces to with no random effects.
+#'
+#' For output `p` from [profile_breakpt()], cAIC uses the final fit and counts
+#' the profiled cutpoint as one more fixed effect, as `AIC(p)` does. Use
+#' `cAIC(p)`, not `cAIC(p$fit)`: `p$fit` holds the cutpoint fixed, so it isn't
+#' counted. The EDF (`what = "EDF"`) are those of `p$fit`.
 #'
 #' @return
 #' For a single model, either the cAIC or the effective degrees of freedom
@@ -99,9 +104,9 @@ cAIC.sdmTMB <- function(object, ..., what = c("cAIC", "EDF")) {
     cli_abort("`what = \"EDF\"` is only available for a single model.")
   }
   objects <- c(list(object), dots)
-  is_fit <- vapply(objects, inherits, logical(1L), what = "sdmTMB")
+  is_fit <- vapply(objects, inherits, logical(1L), what = c("sdmTMB", "breakpt_profile"))
   if (!all(is_fit)) {
-    cli_abort("All objects passed to `cAIC()` must be fitted `sdmTMB()` models.")
+    cli_abort("All objects passed to `cAIC()` must be fitted `sdmTMB()` models or `profile_breakpt()` output.")
   }
   nobs_all <- vapply(objects, stats::nobs, numeric(1L))
   if (length(unique(nobs_all)) > 1L) {
@@ -118,8 +123,23 @@ cAIC.sdmTMB <- function(object, ..., what = c("cAIC", "EDF")) {
   out
 }
 
+# Same code: match.call() in a method sees the generic's call, so row names
+# still come from the caller's arguments
+#' @exportS3Method cAIC breakpt_profile
+cAIC.breakpt_profile <- cAIC.sdmTMB
+
 caic_one <- function(object, what = c("caic", "edf"), table = FALSE) {
   what <- match.arg(what)
+  if (inherits(object, "breakpt_profile")) {
+    if (is.null(object$fit)) {
+      cli_abort("`cAIC()` needs the final fit: use `profile_breakpt(final = TRUE)`.")
+    }
+    out <- caic_one(object$fit, what = what, table = table)
+    if (what == "edf" || is.null(out)) return(out)
+    # the final fit holds the profiled cutpoint fixed; count it, as AIC() does
+    if (table) return(list(cAIC = out$cAIC + 2, df = out$df + 1))
+    return(out + 2)
+  }
   check_fit_version(object)
   .check_family_capability(object, "cAIC")
 
@@ -130,7 +150,7 @@ caic_one <- function(object, what = c("caic", "edf"), table = FALSE) {
   if (is.null(object$tmb_random)) {
     if (table) {
       ## with no random effects, cAIC reduces to the marginal AIC
-      return(list(cAIC = stats::AIC(object), df = length(object$model$par)))
+      return(list(cAIC = stats::AIC(object), df = attr(stats::logLik(object), "df")))
     }
     cli_inform(c("This model has no random effects.", "cAIC and EDF only apply to models with random effects."))
     return(invisible(NULL))
@@ -163,11 +183,11 @@ caic_one <- function(object, what = c("caic", "edf"), table = FALSE) {
     profile = NULL
   )
 
-  par <- obj$env$parList()
-  parDataMode <- obj$env$last.par
-  indx <- obj$env$lrandom()
-  q <- sum(indx)
-  p <- length(object$model$par)
+  # the mode, not `last.par`: that's wherever the objective was last evaluated
+  parDataMode <- object$last.par.best
+  q <- sum(obj$env$lrandom())
+  # fixed effects of `obj`, which includes any profiled ones
+  p <- length(obj$par)
 
   ## Sparse Hessians of the random effects:
   ## joint (Hess) and with data weights set to zero (Hess_new; prior precision of REs)

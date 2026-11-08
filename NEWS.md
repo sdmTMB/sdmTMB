@@ -37,7 +37,13 @@
 * `cAIC()` can now compare several models, like `AIC()`: `cAIC(fit1, fit2)`
   returns a data frame with the effective degrees of freedom and cAIC for each
   model. `what` now comes after `...` and must be named, e.g.
-  `cAIC(fit, what = "EDF")`.
+  `cAIC(fit, what = "EDF")`. `cAIC()` also works on `profile_breakpt()`
+  output, counting the profiled cutpoint as a parameter.
+
+* Fix `cAIC()` with `sdmTMBcontrol(profile = TRUE)`, which left the profiled
+  fixed effects out of the degrees of freedom, and evaluate `cAIC()` at the
+  mode rather than wherever the objective was last evaluated, which could
+  change the result after other calls on the fit.
 
 * Model fits saved with sdmTMB versions before 1.2.0 are no longer supported.
   `predict()`, `residuals()`, `tidy()`, `print()`, `get_index()`, and other

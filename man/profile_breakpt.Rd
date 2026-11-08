@@ -45,8 +45,9 @@ of the covariate.}
 \item{tol_coarse}{Spacing of cutpoints elsewhere within \code{within}, fine
 enough to find a second minimum. Defaults to 4 times \code{tol}.}
 
-\item{max_fits}{Stop refining after this many profile fits. The search in
-step 3 runs regardless.}
+\item{max_fits}{Stop refining (step 2) after this many profile fits. It
+doesn't limit the first pass over \code{cuts} or the search in step 3, so the
+total number of fits can exceed it.}
 
 \item{level}{Confidence level for the profile interval, between 0 and 1.}
 
@@ -75,7 +76,8 @@ not profiled. Call \code{profile_breakpt()} again instead.
 For AIC, use \code{AIC(p)} (or \code{estimate$aic}), where \code{p} is the output, not
 \code{AIC(p$fit)}: \code{fit} doesn't count the fixed cutpoint as a parameter.
 \code{\link[=logLik]{logLik()}}, and so \code{\link[=AIC]{AIC()}} and \code{\link[=BIC]{BIC()}}, work on the output, and \code{AIC(p, m)}
-compares it with another model \code{m}. Standard errors and predictions from
+compares it with another model \code{m}. The same goes for \code{\link[=cAIC]{cAIC()}}: use
+\code{cAIC(p)}, not \code{cAIC(p$fit)}. Standard errors and predictions from
 \code{fit} don't include uncertainty in the cutpoint. See the
 \href{https://sdmTMB.github.io/sdmTMB/articles/threshold-models.html}{threshold modeling article}
 for an example of predictions that include uncertainty in both the cutpoint
@@ -117,6 +119,12 @@ The confidence interval runs from the lowest to the highest cutpoint within
 between grid points. If the profile rises above the cutoff between them
 (\code{estimate$pieces} > 1), the interval includes those cutpoints too. If the
 profile is still inside the cutoff at the end of the grid, that end is \code{NA}.
+
+The interval is approximate: it treats twice the NLL difference as
+chi-squared with 1 degree of freedom. That's reasonable when the slope is
+clearly non-zero. As the slope approaches zero, the cutpoint stops being
+identified, the profile flattens, and the interval opens up to the ends of
+the grid (see Warnings).
 }
 \section{Warnings}{
 
