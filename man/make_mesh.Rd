@@ -72,10 +72,6 @@ Construct an SPDE mesh for use with sdmTMB.
 mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 5, type = "cutoff")
 plot(mesh)
 
-# Using a k-means algorithm to assign vertices:
-mesh <- make_mesh(pcod, c("X", "Y"), n_knots = 50, type = "kmeans")
-plot(mesh)
-
 \donttest{
 # But, it's better to develop more tailored meshes:
 

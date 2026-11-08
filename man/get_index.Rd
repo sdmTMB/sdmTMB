@@ -206,8 +206,8 @@ fitting \code{weights} are not reused automatically.
 if (ggplot2_installed()) {
 library(ggplot2)
 
-# use a small number of knots for this example to make it fast:
-mesh <- make_mesh(pcod, c("X", "Y"), n_knots = 60)
+# use a coarse mesh for this example to make it fast:
+mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 20)
 
 # fit a spatiotemporal model:
 m <- sdmTMB(

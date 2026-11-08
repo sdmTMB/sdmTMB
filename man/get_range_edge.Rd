@@ -80,7 +80,7 @@ closest grid point, especially on coarser grids or for extreme quantiles
 \examples{
 \donttest{
 # Fit a spatiotemporal model
-mesh <- make_mesh(pcod, c("X", "Y"), n_knots = 100)
+mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 15)
 m <- sdmTMB(
   density ~ 0 + as.factor(year),
   data = pcod, mesh = mesh, family = tweedie(link = "log"),
