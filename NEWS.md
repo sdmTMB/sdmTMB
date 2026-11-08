@@ -1,5 +1,10 @@
 # sdmTMB (development version)
 
+* `cAIC()` can now compare several models, like `AIC()`: `cAIC(fit1, fit2)`
+  returns a data frame with the effective degrees of freedom and cAIC for each
+  model. `what` now comes after `...` and must be named, e.g.
+  `cAIC(fit, what = "EDF")`.
+
 * Model fits saved with sdmTMB versions before 1.2.0 are no longer supported.
   `predict()`, `residuals()`, `tidy()`, `print()`, `get_index()`, and other
   methods now give an error asking you to refit.

@@ -49,3 +49,31 @@ test_that("cAIC sparse EDF matches dense calculation in a delta model", {
   cnll <- obj$env$f(par) - obj_new$env$f(par)
   expect_equal(cAIC(fit), 2 * cnll + 2 * (p + q) - 2 * sum(negEDF), tolerance = 1e-8)
 })
+
+test_that("cAIC compares multiple models like AIC", {
+  skip_on_cran()
+  mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 25)
+  fit1 <- sdmTMB(density ~ 1, data = pcod, mesh = mesh, family = tweedie())
+  fit2 <- sdmTMB(density ~ depth_scaled, data = pcod, mesh = mesh,
+    family = tweedie())
+  fit_glm <- sdmTMB(density ~ depth_scaled, data = pcod, spatial = "off",
+    family = tweedie())
+
+  out <- cAIC(fit1, fit2, fit_glm)
+  expect_s3_class(out, "data.frame")
+  expect_identical(names(out), c("df", "cAIC"))
+  expect_identical(row.names(out), c("fit1", "fit2", "fit_glm"))
+  expect_equal(out$cAIC[1:2], c(cAIC(fit1), cAIC(fit2)))
+  expect_equal(out$df[1:2], c(
+    length(fit1$model$par) + sum(cAIC(fit1, what = "EDF")),
+    length(fit2$model$par) + sum(cAIC(fit2, what = "EDF"))
+  ))
+  expect_equal(out$cAIC[3], AIC(fit_glm))
+  expect_equal(out$df[3], length(fit_glm$model$par))
+
+  expect_error(cAIC(fit1, fit2, what = "EDF"), "single model")
+  expect_error(cAIC(fit1, "EDF"), "must now be named")
+  expect_error(cAIC(fit1, list()), "fitted")
+  fit_sub <- update(fit1, data = pcod[-1, ], mesh = make_mesh(pcod[-1, ], c("X", "Y"), cutoff = 25))
+  expect_warning(cAIC(fit1, fit_sub), "same number of observations")
+})

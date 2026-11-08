@@ -3,9 +3,11 @@
 #' Calculates the conditional Akaike Information criterion (cAIC).
 #'
 #' @param object Output from [sdmTMB()].
+#' @param ... Optionally, more fitted models from [sdmTMB()] to compare, as
+#'   with [AIC()].
 #' @param what Whether to return the cAIC or the effective degrees of freedom
-#'   (EDF) for each group of random effects.
-#' @param ... Other arguments for specific methods. Not used.
+#'   (EDF) for each group of random effects. Must be named. `"EDF"` is only
+#'   available for a single model.
 #'
 #' @details cAIC is designed to optimize the expected out-of-sample predictive
 #' performance for new data that share the same random effects as the in-sample
@@ -28,9 +30,15 @@
 #' For models that include profiled fixed effects, these profiles are turned
 #' off.
 #'
+#' When comparing several models, models without random effects contribute
+#' their marginal AIC, which is what cAIC reduces to with no random effects.
+#'
 #' @return
-#' Either the cAIC or the effective degrees of freedom (EDF) by group
-#' of random effects depending on the argument `what`.
+#' For a single model, either the cAIC or the effective degrees of freedom
+#' (EDF) by group of random effects depending on the argument `what`. For
+#' several models, a data frame with a row per model and columns `df` (the
+#' effective degrees of freedom: fixed effects plus total EDF) and `cAIC`, as
+#' with [AIC()].
 #'
 #' @references
 #' **Deriving the general approximation to cAIC used here:**
@@ -61,23 +69,69 @@
 #' cAIC(fit)
 #' cAIC(fit, what = "EDF")
 #' AIC(fit)
+#'
+#' fit2 <- update(fit, catch_weight ~ 1)
+#' cAIC(fit, fit2)
 #' @export
-cAIC <- function(object, what = c("cAIC", "EDF"), ...) {
+cAIC <- function(object, ..., what = c("cAIC", "EDF")) {
   UseMethod("cAIC", object)
 }
 
 #' @exportS3Method
-cAIC.sdmTMB <- function(object, what = c("cAIC", "EDF"), ...) {
-  check_fit_version(object)
-  .check_family_capability(object, "cAIC")
+cAIC.sdmTMB <- function(object, ..., what = c("cAIC", "EDF")) {
+  dots <- list(...)
+  ## Short-lived check: `what` used to be the second argument
+  ## TODO: remove in a future release
+  if (length(dots) && is.character(dots[[1L]])) {
+    cli_abort(c(
+      "`what` must now be named.",
+      i = "For example, use `cAIC(fit, what = \"{dots[[1L]][1L]}\")`."
+    ))
+  }
   what <- tolower(what)
   what <- match.arg(what, choices = c("caic", "edf"))
+
+  if (!length(dots)) {
+    return(caic_one(object, what = what))
+  }
+
+  if (what == "edf") {
+    cli_abort("`what = \"EDF\"` is only available for a single model.")
+  }
+  objects <- c(list(object), dots)
+  is_fit <- vapply(objects, inherits, logical(1L), what = "sdmTMB")
+  if (!all(is_fit)) {
+    cli_abort("All objects passed to `cAIC()` must be fitted `sdmTMB()` models.")
+  }
+  nobs_all <- vapply(objects, stats::nobs, numeric(1L))
+  if (length(unique(nobs_all)) > 1L) {
+    cli_warn("Models are not all fitted to the same number of observations.")
+  }
+  out <- lapply(objects, caic_one, what = "caic", table = TRUE)
+  out <- data.frame(
+    df = vapply(out, `[[`, numeric(1L), "df"),
+    cAIC = vapply(out, `[[`, numeric(1L), "cAIC")
+  )
+  Call <- match.call()
+  Call$what <- NULL
+  row.names(out) <- vapply(as.list(Call)[-1L], deparse1, character(1L))
+  out
+}
+
+caic_one <- function(object, what = c("caic", "edf"), table = FALSE) {
+  what <- match.arg(what)
+  check_fit_version(object)
+  .check_family_capability(object, "cAIC")
 
   if ("edf" %in% names(object) && what == "edf") {
     return(object$edf)
   }
 
   if (is.null(object$tmb_random)) {
+    if (table) {
+      ## with no random effects, cAIC reduces to the marginal AIC
+      return(list(cAIC = stats::AIC(object), df = length(object$model$par)))
+    }
     cli_inform(c("This model has no random effects.", "cAIC and EDF only apply to models with random effects."))
     return(invisible(NULL))
   }
@@ -128,7 +182,9 @@ cAIC.sdmTMB <- function(object, what = c("cAIC", "EDF"), ...) {
   if (what == "caic") {
     jnll <- obj$env$f(parDataMode)
     cnll <- jnll - obj_new$env$f(parDataMode)
-    cAIC_out <- 2 * cnll + 2 * (p + q) - 2 * sum(negEDF)
+    df <- p + q - sum(negEDF)
+    cAIC_out <- 2 * cnll + 2 * df
+    if (table) return(list(cAIC = cAIC_out, df = df))
     return(cAIC_out)
   } else if (what == "edf") {
     ## Figure out group for each random-effect coefficient
