@@ -1555,6 +1555,10 @@ sdmTMB <- function(
   out_structure$upper <- lim$upper
 
   if (!do_fit) {
+    # Starting values stand in for fitted ones, e.g., for predict() with
+    # `mcmc_samples` from sampling this unfit model.
+    out_structure$parlist <- tmb_obj$env$parList(par = tmb_obj$env$par)
+    out_structure$last.par.best <- tmb_obj$env$par
     return(out_structure)
   }
 

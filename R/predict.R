@@ -394,14 +394,10 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
 
   # On RTMB, reports alone need no AD object, which for large grids dominates
   # prediction time and memory.
-  if (predict_report_only(object, req, return_tmb_object)) {
-    new_tmb_obj <- NULL
-    lp <- object$last.par.best
-  } else {
-    objective <- predict_objective(object, tmb_data,
+  lp <- object$last.par.best
+  new_tmb_obj <- if (!predict_report_only(object, req, return_tmb_object)) {
+    predict_objective(object, tmb_data,
       length(unlist(lapply(prep$new_re, `[[`, "rows"))))
-    new_tmb_obj <- objective$obj
-    lp <- objective$lp
   }
   if (req$nsim > 0 || !is.null(req$mcmc_samples)) {
     r <- predict_draw_reports(object, new_tmb_obj, tmb_data, lp, req, prep$new_re)
@@ -444,8 +440,7 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
 # (the fitted ones or draws), which the RTMB backend can evaluate without an
 # AD object.
 predict_report_only <- function(object, req, return_tmb_object) {
-  backend_sdmTMB(object) == "rtmb" && !is.null(object$parlist) &&
-    !is.null(object$last.par.best) && !req$se_fit && !return_tmb_object
+  backend_sdmTMB(object) == "rtmb" && !req$se_fit && !return_tmb_object
 }
 
 # Reports at the parameter list `pars` (equivalently, the parameter vector
@@ -459,13 +454,10 @@ predict_report <- function(obj, tmb_data, pars, x) {
   }
 }
 
-# Build the prediction objective from `tmb_data` and return it with the fitted
-# parameter vector `lp`. Fits saved with `parlist` and `last.par.best` need no
-# live fitted objective; older fits recover parameters from `object$tmb_obj`.
+# Build the prediction objective from `tmb_data`, with `n_new_re` extra
+# `re_b_pars` rows for sampled new levels, at the saved fitted parameters.
 predict_objective <- function(object, tmb_data, n_new_re = 0L) {
-  has_saved_fit <- !is.null(object$parlist) && !is.null(object$last.par.best)
-  if (!has_saved_fit) reinitialize(object)
-  parameters <- if (has_saved_fit) object$parlist else get_pars(object)
+  parameters <- object$parlist
   map <- object$tmb_map
   if (n_new_re > 0L) {
     # Rows for sampled new levels go after the fitted ones and are numbered
@@ -487,21 +479,7 @@ predict_objective <- function(object, tmb_data, n_new_re = 0L) {
     backend = backend_sdmTMB(object),
     silent = TRUE
   )
-  if (has_saved_fit) {
-    lp <- object$last.par.best
-  } else {
-    obj$fn(object$model$par)
-    lp <- obj$env$last.par.best
-    if (n_new_re > 0L) lp <- lp[-new_re_slots(object, obj, n_new_re)]
-  }
-  list(obj = obj, lp = lp) # `lp` excludes any sampled new-level slots
-}
-
-# Positions in `obj`'s parameter vector of the `re_b_pars` rows that
-# predict_objective() added for `n_new_re` sampled new levels.
-new_re_slots <- function(object, obj, n_new_re) {
-  utils::tail(which(names(obj$env$par) == "re_b_pars"),
-    n_new_re * sum(object$tmb_data$n_re_groups > 0))
+  obj
 }
 
 # Draws from N(0, Sigma) for the sampled new levels in `new_re`, given
@@ -565,12 +543,8 @@ predict_visreg <- function(object, newdata, se_fit) {
 predict_request <- function(object, newdata, type, se_fit, re_form,
                             re_form_iid, allow_new_levels, nsim, model,
                             offset, mcmc_samples, sims_var, sample_fe) {
-  if ("version" %in% names(object)) {
-    check_sdmTMB_version(object$version)
-  } else {
-    cli_abort(c("This looks like a very old version of a model fit.",
-        "Re-fit the model before predicting with it."))
-  }
+  check_fit_version(object)
+  check_sdmTMB_version(object$version)
   family_spec <- .object_family_spec(object, caller = "`predict()`")
   has_two_components <- family_spec$n_m == 2L
   is_areal <- is_areal_fit(object)
