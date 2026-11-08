@@ -116,6 +116,9 @@ predict_check_newdata <- function(object, req, newdata, nonlocal_newdata) {
   original_time <- object$time_lu$time_from_data
   new_data_time <- unique(newdata[[object$time]])
 
+  if (anyNA(new_data_time))
+    cli_abort(c("There is at least one NA value in the time column.",
+      "Please remove it."))
   if (!all(new_data_time %in% original_time))
     cli_abort(c("Some new time values were found in `newdata`. ",
       "If you would like to predict on new time values,",
@@ -140,10 +143,6 @@ predict_check_newdata <- function(object, req, newdata, nonlocal_newdata) {
       }
     }
   }
-
-  if (sum(is.na(new_data_time)) > 0)
-    cli_abort(c("There is at least one NA value in the time column.",
-      "Please remove it."))
 
   newdata
 }
@@ -225,6 +224,8 @@ predict_iid_re_matrices <- function(object, req, newdata, n_formula) {
   levels_fit <- lapply(fit_groups, levels)
   new_levels <- list()
   for (g in names(levels_fit)) {
+    # the fitted data may hold non-factor grouping columns, coded as in fitting:
+    if (!req$newdata_supplied) newdata[[g]] <- fit_groups[[g]]
     assert_that(is.factor(newdata[[g]]),
       msg = sprintf("Random effect group column `%s` in newdata is not a factor.", g))
     values_nd <- as.character(newdata[[g]])

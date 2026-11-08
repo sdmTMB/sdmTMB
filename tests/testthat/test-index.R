@@ -150,7 +150,6 @@ test_that("index errors are returned as needed", {
     p1 <- predict(fit, newdata = NULL, return_tmb_object = TRUE),
     "return_tmb_object"
   )
-  expect_error(get_index(p1), "newdata") # missing!
   expect_error(get_index(fit), "newdata` is required")
   expect_error(get_cog(fit), "newdata` is required")
 
