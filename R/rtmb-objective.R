@@ -67,10 +67,13 @@ rtmb_objective <- function(par, prepared, adreport = NULL) {
 # plain numbers. Equivalent to `obj$report()` without building (taping) an AD
 # object, which for large prediction grids dominates time and memory.
 # `deviance = TRUE` also computes deviance residuals (`devresid`), which are
-# otherwise reported as zeros.
-rtmb_report_values <- function(data, par, deviance = FALSE) {
+# otherwise reported as zeros. `likelihood = FALSE` skips the observation
+# densities (reporting `jnll_obs` as zeros; `jnll` then omits them), which
+# prediction does not need.
+rtmb_report_values <- function(data, par, deviance = FALSE, likelihood = TRUE) {
   prepared <- rtmb_prepare(data)
-  prepared$deviance <- deviance
+  prepared$deviance <- deviance && likelihood
+  prepared$likelihood <- likelihood
   rtmb_evaluate(par, prepared)$reports
 }
 

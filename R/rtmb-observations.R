@@ -132,7 +132,7 @@ rtmb_observations <- function(par, theta, prepared, eta) {
         next
       }
       i <- group$observed
-      if (!length(i)) next
+      if (!length(i) || !prepared$likelihood) next
       s <- state(i)
       y <- fit$y[i, m]
       log_density <- spec$logpdf(y, s$mu, s)

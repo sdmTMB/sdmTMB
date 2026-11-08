@@ -394,8 +394,8 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
 
   if (predict_report_only(object, req, return_tmb_object)) {
     # Reports alone need no AD object, which for large grids dominates
-    # prediction time and memory.
-    r <- rtmb_report_values(tmb_data, object$parlist)
+    # prediction time and memory, nor the observation likelihood.
+    r <- rtmb_report_values(tmb_data, object$parlist, likelihood = FALSE)
     new_tmb_obj <- NULL
   } else {
     objective <- predict_objective(object, tmb_data,

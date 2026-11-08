@@ -60,6 +60,7 @@ rtmb_prepare <- function(data) {
     # Reports. Deviance residuals are only computed on request (see
     # rtmb_report_values()), keeping them off fitting and simulation tapes.
     deviance = FALSE,
+    likelihood = TRUE,
     rsr = on(data$do_rsr),
     pop_pred = on(data$pop_pred),
     adreport_projection = on(data$calc_se),
