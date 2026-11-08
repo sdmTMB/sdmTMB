@@ -349,7 +349,7 @@ test_that("Censored Poisson fits", {
   set.seed(1)
 
   predictor_dat <- data.frame(X = runif(300), Y = runif(300))
-  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.2)
+  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.1)
   sim_dat <- sdmTMB_simulate(
     formula = ~1,
     data = predictor_dat,
@@ -460,7 +460,7 @@ test_that("censored_upper accepts a column name", {
   # Random folds stratified by time reorder the data; the bounds must follow.
   cv <- function(...) {
     set.seed(2)
-    sdmTMB_cv(y ~ x, data = d, mesh = make_mesh(d, c("X", "Y"), cutoff = 0.2),
+    sdmTMB_cv(y ~ x, data = d, mesh = make_mesh(d, c("X", "Y"), cutoff = 0.1),
       time = "year", spatial = "off", spatiotemporal = "off",
       family = censored_poisson(), k_folds = 3, predictive = "mle-eb", ...)
   }

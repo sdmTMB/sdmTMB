@@ -178,6 +178,14 @@ make_mesh <- function(data, xy_cols,
   # identical(as.matrix(spde2$g1), as.matrix(spde_inla$param.inla$M1))
   # identical(as.matrix(spde2$g2), as.matrix(spde_inla$param.inla$M2))
   A <- fmesher::fm_basis(mesh, loc = loc_xy)
+  n_outside <- sum(Matrix::rowSums(A) == 0)
+  if (n_outside > 0L) {
+    msg <- c(
+      "{n_outside} of {nrow(loc_xy)} data location{?s} {?is/are} outside the mesh.",
+      "i" = "These observations will have no spatial or spatiotemporal random effect. Use a mesh that covers all of the data."
+    )
+    cli_warn(msg, class = "sdmTMB_mesh_outside_warning")
+  }
 
   fake_data <- data
   fake_data[["sdm_spatial_id"]] <- seq(1, nrow(fake_data))

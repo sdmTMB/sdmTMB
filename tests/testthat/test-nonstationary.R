@@ -1,6 +1,6 @@
 test_that("removed epsilon_model options and vector sigma_E error", {
   d <- data.frame(X = runif(20), Y = runif(20), year = rep(1:2, each = 10))
-  mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.2)
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.1)
   d$y <- rnorm(20)
   d$cov <- d$year
   removed <- list(

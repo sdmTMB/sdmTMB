@@ -252,7 +252,7 @@ test_that("cross-validation refits keep custom priors but scores exclude them", 
   d$fold <- rep(1:2, length.out = nrow(d))
   d$X <- stats::runif(nrow(d))
   d$Y <- stats::runif(nrow(d))
-  mesh <- make_mesh(d, c("X", "Y"), n_knots = 10, type = "kmeans")
+  mesh <- make_mesh(d, c("X", "Y"), n_knots = 30, type = "kmeans")
   cv <- function(priors = sdmTMBpriors()) {
     sdmTMB_cv(y ~ x, data = d, mesh = mesh, spatial = "off", fold_ids = d$fold,
       control = rtmb_ctl(), priors = priors, predictive = "mle-eb",

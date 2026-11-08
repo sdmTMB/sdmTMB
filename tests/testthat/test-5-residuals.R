@@ -21,7 +21,10 @@ test_that("randomized quantile residuals work,", {
 
   set.seed(1)
   predictor_dat <- data.frame(X = runif(2000), Y = runif(2000))
-  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.2)
+  mesh <- suppressWarnings(
+    make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.2),
+    classes = "sdmTMB_mesh_outside_warning"
+  )
 
   sim_dat <- function(family, phi = 0.2, sigma_O = 0.2) {
     set.seed(1)

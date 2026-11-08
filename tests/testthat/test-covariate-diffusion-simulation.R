@@ -10,8 +10,8 @@ make_nl_sim_data <- function() {
   grid
 }
 
-make_nl_sim_mesh <- function(dat) {
-  make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.6)
+make_nl_sim_mesh <- function(dat, cutoff = 0.1) {
+  make_mesh(dat, xy_cols = c("X", "Y"), cutoff = cutoff)
 }
 
 make_nl_sim_grid <- function(mesh, years) {
@@ -262,7 +262,8 @@ test_that("simulated spatial diffusion recovers kappaS reasonably well", {
   dat$x_s <- as.numeric(scale(
     sin(dat$X * 2 * pi) + cos(dat$Y * 2 * pi) + rnorm(nrow(dat), sd = 0.15)
   ))
-  mesh <- make_nl_sim_mesh(dat)
+  # coarse mesh that leaves some grid points outside; expectations tuned to it
+  mesh <- suppressWarnings(make_nl_sim_mesh(dat, cutoff = 0.6), classes = "sdmTMB_mesh_outside_warning")
   grid <- make_nl_sim_grid(mesh, sort(unique(dat$year)))
 
   true_kappa <- 1.3

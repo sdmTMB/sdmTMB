@@ -5,6 +5,12 @@
   these arguments will change. Also fix the documented default `fmesher_func`
   and a stale error message about `n_knots`.
 
+* `make_mesh()` now warns if any data locations fall outside the mesh. Those
+  observations get no spatial or spatiotemporal random effect. This can happen
+  with a supplied `mesh` that doesn't cover the data, but also with coarse
+  meshes from `make_mesh()` itself (e.g., few k-means knots or a large
+  `cutoff`), since the mesh only spans the convex hull of its vertices.
+
 * `make_mesh()` with `type = "kmeans"` now caps `n_knots` at the number of
   unique locations, avoiding a `kmeans()` error with repeated locations, and no
   longer changes the global random seed.

@@ -110,7 +110,7 @@ test_that("RTMB correlated IID effects preserve TMB parameter order", {
   d <- data.frame(x = runif(n), y = runif(n), z = rnorm(n),
     w = rnorm(n), v = rnorm(n), g = factor(rep(1:5, each = 8L)))
   d$response <- rnorm(n)
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 10L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), cutoff = 0.1)
   fit <- sdmTMB(response ~ z + (1 + z + w + v | g), data = d,
     mesh = mesh, spatial = "off", family = gaussian(), do_fit = FALSE)
   p <- fit$tmb_params
@@ -229,7 +229,10 @@ test_that("RTMB REML and profiled fixed effects match TMB", {
   n <- 60L
   d <- data.frame(x = runif(n), y = runif(n), z = rnorm(n))
   d$response <- 0.4 + 0.3 * d$z + rnorm(n, sd = 0.3)
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 15L, type = "kmeans")
+  mesh <- suppressWarnings(
+    make_mesh(d, c("x", "y"), n_knots = 15L, type = "kmeans"),
+    classes = "sdmTMB_mesh_outside_warning"
+  )
   common <- list(formula = response ~ z, data = d, mesh = mesh,
     spatial = "on", spatiotemporal = "off", reml = TRUE)
   cpp <- do.call(sdmTMB, c(common,
@@ -297,7 +300,7 @@ test_that("RTMB gamma prior on time-varying SD matches TMB", {
   d <- data.frame(x = runif(n), y = runif(n),
     z = seq(-2, 2, length.out = n), time = rep(1:3, each = 20L),
     response = rnorm(n))
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 15L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 25L, type = "kmeans")
   priors <- sdmTMBpriors(phi = halfnormal(0, 1),
     sigma_V = gamma_cv(0.5, 0.5),
     threshold_breakpt_slope = normal(0, 1),
@@ -324,7 +327,7 @@ test_that("RTMB combined model matches every TMB report and sdreport row", {
   d <- data.frame(x = runif(n), y = runif(n), z = rnorm(n), w = runif(n),
     v = seq(-2, 2, length.out = n), time = rep(1:3, each = 30L),
     g = factor(rep(1:6, 15L)), response = rnorm(n))
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 15L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), cutoff = 0.1)
   fit <- sdmTMB(response ~ 0 + z + s(w, k = 4) + (1 | g) + breakpt(v),
     data = d, mesh = mesh, time = "time", spatial = "on",
     spatiotemporal = "ar1", spatial_varying = ~ 0 + z,

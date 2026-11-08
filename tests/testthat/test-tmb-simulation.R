@@ -125,7 +125,7 @@ test_that("sdmTMB_simulate can generate time-varying RW effects", {
     X = runif(600), Y = runif(600),
     year = rep(seq_len(60), each = 10)
   )
-  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.3)
+  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.15)
 
   sim_dat <- sdmTMB_simulate(
     formula = ~1,
@@ -161,7 +161,10 @@ test_that("sdmTMB_simulate can generate time-varying AR1 effects", {
     X = runif(800), Y = runif(800),
     year = rep(seq_len(80), each = 10)
   )
-  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.3)
+  mesh <- suppressWarnings(
+    make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.3),
+    classes = "sdmTMB_mesh_outside_warning"
+  )
 
   rho_true <- 0.6
   sigma_v_true <- 0.2
@@ -205,7 +208,10 @@ test_that("sdmTMB_simulate supports multiple AR1 time-varying coefficients", {
     cov1 = rnorm(900),
     cov2 = rnorm(900)
   )
-  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.3)
+  mesh <- suppressWarnings(
+    make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.3),
+    classes = "sdmTMB_mesh_outside_warning"
+  )
 
   sigma_true <- c(0.15, 0.3)
   rho_true <- c(0.4, -0.5)

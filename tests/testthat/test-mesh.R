@@ -9,7 +9,7 @@ test_that("make_mesh returns informative error if some coordinates are NA", {
   expect_error({make_mesh(d, xy_cols = c("x", "y"), cutoff = 1)}, regexp = "NA")
 
   d <- data.frame(x = c(1, runif(10)), y = c(1, runif(10)))
-  mesh <- make_mesh(d, xy_cols = c("x", "y"), cutoff = 1)
+  mesh <- make_mesh(d, xy_cols = c("x", "y"), cutoff = 0.1)
 })
 
 test_that("make_mesh keeps data locations with cutoff and convex", {
@@ -32,6 +32,17 @@ test_that("make_mesh type = 'cutoff_search' finds the requested n_knots", {
     mesh <- make_mesh(pcod, c("X", "Y"), type = "cutoff_search", n_knots = 50)
   )
   expect_identical(mesh$mesh$n, 50L)
+})
+
+test_that("make_mesh warns if data locations fall outside a supplied mesh", {
+  west <- pcod_2011[pcod_2011$X < 450, ]
+  m <- fmesher::fm_rcdt_2d_inla(as.matrix(west[, c("X", "Y")]))
+  expect_warning(
+    make_mesh(pcod_2011, c("X", "Y"), mesh = m),
+    regexp = "outside the mesh",
+    class = "sdmTMB_mesh_outside_warning"
+  )
+  expect_no_warning(make_mesh(west, c("X", "Y"), mesh = m))
 })
 
 test_that("make_mesh kmeans caps n_knots at the number of unique locations", {

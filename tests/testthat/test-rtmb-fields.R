@@ -64,7 +64,10 @@ test_that("RTMB spatial Gaussian fit predicts and simulates", {
   n <- 80L
   d <- data.frame(x = runif(n), y = runif(n), z = rnorm(n))
   d$response <- 0.3 + 0.4 * d$z + rnorm(n, sd = 0.2)
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 20L, type = "kmeans")
+  mesh <- suppressWarnings(
+    make_mesh(d, c("x", "y"), n_knots = 20L, type = "kmeans"),
+    classes = "sdmTMB_mesh_outside_warning"
+  )
   common <- list(formula = response ~ z, data = d, mesh = mesh,
     spatial = "on", spatiotemporal = "off", family = gaussian())
   cpp <- do.call(sdmTMB, c(common,
@@ -195,7 +198,7 @@ test_that("RTMB temporal field simulation retains selected time steps", {
 test_that("RTMB anisotropic fields match every TMB report and sdreport row", {
   d <- rtmb_spatial_data()
   d$response[[5L]] <- NA
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 20L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 30L, type = "kmeans")
   newdata <- d[c(1, 40, 90), ]
   cases <- list(
     ar1 = list(gaussian ~ z, family = gaussian(), time = "time",
@@ -269,7 +272,7 @@ test_that("RTMB barrier fields match TMB", {
 
 test_that("RTMB restricted spatial regression matches TMB", {
   d <- rtmb_spatial_data()
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 20L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 30L, type = "kmeans")
   fit <- sdmTMB(gaussian ~ z, data = d, mesh = mesh, time = "time",
     spatiotemporal = "iid", spatial_varying = ~ 0 + z,
     control = sdmTMBcontrol(get_rsr = TRUE), do_fit = FALSE)
@@ -283,7 +286,10 @@ test_that("RTMB anisotropic and areal fits match TMB", {
   skip_on_cran()
   skip_if_not_installed("igraph")
   d <- rtmb_spatial_data()
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 20L, type = "kmeans")
+  mesh <- suppressWarnings(
+    make_mesh(d, c("x", "y"), n_knots = 20L, type = "kmeans"),
+    classes = "sdmTMB_mesh_outside_warning"
+  )
   areal <- rtmb_areal_data()
   fits <- list(
     anisotropy = function(backend) {

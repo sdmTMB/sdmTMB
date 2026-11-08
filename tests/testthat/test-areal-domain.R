@@ -536,7 +536,7 @@ test_that("spread_sims uses areal field-scale transform when areal flag is set",
     X = stats::runif(60),
     Y = stats::runif(60)
   )
-  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.2)
+  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.1)
   fit_spde <- sdmTMB(
     y ~ x,
     data = dat,

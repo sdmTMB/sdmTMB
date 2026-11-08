@@ -76,7 +76,7 @@ test_that("RTMB basic likelihoods match TMB at fixed parameters", {
 test_that("RTMB matches TMB for other families", {
   skip_on_cran()
   d <- rtmb_family_data(90L, 81)
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 15L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 25L, type = "kmeans")
   d$dist <- rep(c("tw", "bb", "gg"), 30L)
   d$ymix <- ifelse(d$dist == "tw", d$tw,
     ifelse(d$dist == "bb", d$succ, d$hurdle_pos))
@@ -513,7 +513,7 @@ test_that("censored beta-binomial held-out CV rows use the direct sum", {
   set.seed(5)
   n <- 60L
   d <- data.frame(z = rnorm(n), hooks = 100, X = runif(n), Y = runif(n))
-  mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.2)
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.1)
   p <- plogis(-2 + 0.4 * d$z)
   d$y <- rbinom(n, d$hooks, rbeta(n, p * 10, (1 - p) * 10))
   upr <- ifelse(seq_len(n) %% 3 == 0, Inf, d$y)

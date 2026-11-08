@@ -48,7 +48,7 @@ test_that("RTMB fits survive update, extra optimization, and CV", {
   d <- data.frame(x = runif(60L), y = runif(60L), z = rnorm(60L))
   d$response <- 0.3 + 0.5 * d$z + sin(4 * d$x) + cos(4 * d$y) +
     rnorm(60L, sd = 0.2)
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 12L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 20L, type = "kmeans")
   control <- sdmTMBcontrol(backend = "rtmb", multiphase = FALSE)
   fit <- sdmTMB(response ~ z, data = d, mesh = mesh, control = control)
   objective <- fit$model$objective

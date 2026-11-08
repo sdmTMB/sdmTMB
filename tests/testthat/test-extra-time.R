@@ -355,7 +355,7 @@ test_that("make_time_lu works", {
     data = pcod,
     spatial = "off",
     spatiotemporal = "rw",
-    mesh = make_mesh(pcod, c("X", "Y"), cutoff = 40),
+    mesh = make_mesh(pcod, c("X", "Y"), cutoff = 30),
     time = "year",
     family = tweedie(),
     extra_time = 2018:2020

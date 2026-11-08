@@ -11,7 +11,7 @@ rtmb_delta_data <- function(n = 90L, seed = 71) {
 test_that("RTMB binomial, Gamma, and lognormal likelihoods match TMB", {
   d <- rtmb_delta_data()
   d$positive[[4L]] <- NA
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 15L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 25L, type = "kmeans")
   cases <- list(
     list(present ~ z, binomial(), "on"),
     list(present ~ z, binomial(link = "cloglog"), "off"),
@@ -38,7 +38,7 @@ test_that("RTMB delta models match every TMB report and sdreport row", {
   skip_on_cran()
   d <- rtmb_delta_data()
   d$response[[5L]] <- NA
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 15L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 25L, type = "kmeans")
   newdata <- d[c(1, 40, 90), ]
   cases <- list(
     delta_gamma = list(response ~ z + s(w, k = 4) + (1 | g),
@@ -78,7 +78,7 @@ test_that("RTMB delta models match every TMB report and sdreport row", {
 
 test_that("Delta SVC fields have a density without a spatial intercept field", {
   d <- rtmb_delta_data()
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 15L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 25L, type = "kmeans")
   for (backend in c("tmb", "rtmb")) {
     fit <- sdmTMB(response ~ 1, data = d, mesh = mesh, family = delta_gamma(),
       spatial = list("on", "off"), spatial_varying = ~ 0 + w, do_fit = FALSE,
@@ -97,7 +97,7 @@ test_that("RTMB multi-family models match TMB", {
   d$dist <- rep(c("g", "d", "p"), 30L)
   d$y2 <- ifelse(d$dist == "p", rpois(90L, 2),
     ifelse(d$dist == "g", rnorm(90L), d$response))
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 15L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 25L, type = "kmeans")
   newdata <- d[c(1, 2, 3, 90), ]
   fit <- sdmTMB(y2 ~ z, data = d, mesh = mesh, time = "time",
     spatiotemporal = "iid", offset = "off", distribution_column = "dist",
@@ -118,7 +118,7 @@ test_that("RTMB delta fits match TMB estimates, predictions, and draws", {
   mu <- exp(0.5 + 0.3 * d$z + cos(3 * d$y))
   d$response <- ifelse(runif(n) < plogis(0.3 + 0.5 * d$z),
     rgamma(n, 2, 2 / mu), 0)
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 20L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 30L, type = "kmeans")
   for (family in list(delta_gamma(), delta_gamma(type = "poisson-link"))) {
     fit <- function(backend) {
       sdmTMB(response ~ z, data = d, mesh = mesh, family = family,
@@ -156,7 +156,7 @@ test_that("RTMB delta fits match TMB estimates, predictions, and draws", {
 
 test_that("RTMB reports response means when observations are not simulated", {
   d <- rtmb_delta_data()
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 15L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 25L, type = "kmeans")
   cases <- list(
     list(response ~ z, family = delta_gamma(type = "poisson-link")),
     list(response ~ z, family = delta_lognormal()),

@@ -438,7 +438,7 @@ sdmTMB_cv <- function(
       mesh_train <- do.call(make_mesh, mesh_args)
       mesh_args[["data"]] <- data
       mesh_args[["mesh"]] <- mesh_train$mesh
-      mesh <- do.call(make_mesh, mesh_args)
+      mesh <- make_mesh_quietly(mesh_args)
     } else {
       mesh <- spde
     }
@@ -479,7 +479,7 @@ sdmTMB_cv <- function(
         mesh_train <- do.call(make_mesh, mesh_args)
         mesh_args[["data"]] <- data
         mesh_args[["mesh"]] <- mesh_train$mesh
-        mesh <- do.call(make_mesh, mesh_args)
+        mesh <- make_mesh_quietly(mesh_args)
       } else {
         mesh <- spde
       }
@@ -916,4 +916,13 @@ cv_to_waywiser <- function(object,
   points <- sf::st_transform(points, utm_crs)
 
   points
+}
+
+# held-out points can fall outside a mesh built on the training data; that's
+# expected in cross-validation, so don't warn every fold
+make_mesh_quietly <- function(mesh_args) {
+  withCallingHandlers(
+    do.call(make_mesh, mesh_args),
+    sdmTMB_mesh_outside_warning = function(w) invokeRestart("muffleWarning")
+  )
 }
