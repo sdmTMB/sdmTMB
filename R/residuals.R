@@ -608,7 +608,6 @@ residuals.sdmTMB <- function(object,
     res_func <- qres_func
   }
 
-  if (!"offset" %in% names(object)) cli_abort("This model appears to have been fit with an older sdmTMB.")
   if (type %in% c("mle-eb", "response", "pearson")) {
     pred <- predict(object, newdata = object$data, offset = object$offset) # not newdata = NULL
     if (poisson_link_delta) {
@@ -699,7 +698,7 @@ residuals.sdmTMB <- function(object,
         cli_abort("Deviance residuals not implemented for binomial family with size > 1.")
       }
     }
-    if (backend_sdmTMB(object) == "tmb" && !is_delta(object) &&
+    if (object$backend == "tmb" && !is_delta(object) &&
         object$family$family == "nbinom1") {
       cli_abort(c(
         "NB1 deviance residuals are not implemented for the TMB backend.",
@@ -707,7 +706,7 @@ residuals.sdmTMB <- function(object,
       ))
     }
     env <- object$tmb_obj$env
-    report <- if (backend_sdmTMB(object) == "rtmb") {
+    report <- if (object$backend == "rtmb") {
       # Deviance residuals are left off the RTMB tape; evaluate them directly.
       rtmb_report_values(object$tmb_data,
         env$parList(par = env$last.par.best), deviance = TRUE)

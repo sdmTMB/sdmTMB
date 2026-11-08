@@ -59,7 +59,7 @@
 get_prior_parameters <- function(object, random = FALSE) {
   assert_that(inherits(object, "sdmTMB"))
   assert_that(is.logical(random), length(random) == 1L)
-  if (backend_sdmTMB(object) != "rtmb") {
+  if (object$backend != "rtmb") {
     cli_abort("Custom priors need a model fit with `sdmTMBcontrol(backend = \"rtmb\")`.")
   }
   prepared <- rtmb_prepare(object$tmb_data)

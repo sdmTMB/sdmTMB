@@ -27,7 +27,7 @@ test_that("RTMB derived indices match every TMB report and sdreport row", {
     data <- predict(fit, newdata = nd, return_tmb_data = TRUE)
     # Unequal areas and all three derived outputs together.
     data$area_i <- rep(c(2, 4), length.out = nrow(nd))
-    data$proj_vector <- nd$depth
+    data$proj_vector <- as.matrix(nd$depth)
     data$calc_index_totals <- data$calc_weighted_avg <- data$calc_eao <- 1L
     p <- rtmb_test_parameters(fit$tmb_params, fit$tmb_map)
     p$eps_index <- seq(0.1, 0.3, length.out = data$n_t)

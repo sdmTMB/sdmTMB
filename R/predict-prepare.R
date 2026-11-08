@@ -327,51 +327,13 @@ predict_tv_matrix <- function(object, nd) {
 }
 
 # Apply a saved auxiliary design (`spatial_varying`, `time_varying`, or
-# `dispformula`) to the prediction rows. New fits always save the design;
-# only fits from earlier versions reconstruct it.
+# `dispformula`) to the prediction rows.
 predict_design_matrix <- function(object, newdata, which) {
-  if (is.null(object$design_specs)) {
-    return(predict_design_matrix_legacy(object, newdata, which))
-  }
   spec <- object$design_specs[[which]]
   if (is.null(spec)) {
     cli_abort("Internal error: no saved `{which}` design specification.")
   }
   .apply_design(spec, newdata)
-}
-
-# Fallback for fits saved before `design_specs` existed. This rebuilds the
-# design from the stored fitted data under the current session's options, so
-# the original encoding (e.g., contrasts set by `options()` at fit time)
-# cannot always be recovered exactly.
-predict_design_matrix_legacy <- function(object, newdata, which) {
-  formula <- switch(which,
-    spatial_varying = object$spatial_varying_formula,
-    time_varying = object$time_varying,
-    dispformula = object$dispformula
-  )
-  mf_fit <- stats::model.frame(stats::terms(formula), object$data,
-    na.action = stats::na.pass)
-  tt <- attr(mf_fit, "terms") # with `predvars` from the fitted data
-  X_fit <- stats::model.matrix(tt, mf_fit)
-  mf_new <- stats::model.frame(tt, newdata,
-    xlev = stats::.getXlevels(tt, mf_fit), na.action = stats::na.pass)
-  if (anyNA(mf_new)) {
-    cli_abort("NAs are not allowed in variables used by `{which}` in `newdata`.")
-  }
-  X <- stats::model.matrix(tt, mf_new, contrasts.arg = attr(X_fit, "contrasts"))
-  fit_cols <- switch(which,
-    spatial_varying = object$spatial_varying,
-    time_varying = colnames(X_fit),
-    dispformula = colnames(object$tmb_data$Xdisp_ij)
-  )
-  if (!all(fit_cols %in% colnames(X))) {
-    cli_abort(c(
-      "The `{which}` prediction matrix has different columns than the fitted model.",
-      "i" = "Check factor levels, contrasts, and transformed covariates in `newdata`."
-    ))
-  }
-  X[, fit_cols, drop = FALSE]
 }
 
 # Covariate field (vertex x time) for nonlocal (covariate diffusion) terms.

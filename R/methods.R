@@ -26,8 +26,6 @@ nobs.sdmTMB <- function(object, ...) {
 #' @noRd
 fitted.sdmTMB <- function(object, ...) {
 
-  if (!"offset" %in% names(object))
-    cli_abort("It looks like this was fit with an older version of sdmTMB. Please refit the model.")
   predict(object, newdata = object$data, type = "response", offset = object$offset)$est
 }
 
@@ -463,6 +461,7 @@ model.frame.sdmTMB <- function(formula, ...) {
 #' @export
 #' @importFrom stats update
 update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
+  check_fit_version(object)
   call <- object$call
   new_args <- list(...)
 
@@ -498,11 +497,10 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
   # otherwise the backend would re-resolve from the current global option
   if (!"control" %in% names(new_args)) {
     control <- object$control
-    if (!is.list(control)) control <- sdmTMBcontrol(backend = "tmb")
-    control$backend <- backend_sdmTMB(object)
+    control$backend <- object$backend
     call$control <- control
   } else if (is.list(new_args$control) && is.null(new_args$control$backend)) {
-    call$control$backend <- backend_sdmTMB(object)
+    call$control$backend <- object$backend
   }
 
   # evaluate the updated call if requested

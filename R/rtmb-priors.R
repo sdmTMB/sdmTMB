@@ -89,8 +89,8 @@ rtmb_prior_nll <- function(par, theta, prepared) {
     for (k in seq_len(nrow(prior$sigma_V))) {
       if (!anyNA(prior$sigma_V[k, ])) {
         sigma_V <- theta$sigma_V[k, m]
-        # column 3: 0 = gamma, 1 = lognormal (absent in older fits)
-        nll <- nll - if (ncol(prior$sigma_V) > 2L && prior$sigma_V[k, 3L] == 1) {
+        # column 3: 0 = gamma, 1 = lognormal
+        nll <- nll - if (prior$sigma_V[k, 3L] == 1) {
           RTMB::dnorm(log(sigma_V), prior$sigma_V[k, 1L],
             prior$sigma_V[k, 2L], log = TRUE) - log(sigma_V)
         } else {

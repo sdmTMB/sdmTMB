@@ -97,10 +97,4 @@ test_that("Auxiliary prediction designs reuse the fitted encoding", {
   rt$backend <- "rtmb"
   expect_equal(predict(rt, newdata = d[idx, ])$est, p_nd$est, tolerance = 1e-8)
   expect_rtmb_fit_data_matches(fit, as.data.frame(d[idx, ]), info = "design specs")
-
-  # fits saved before `design_specs` reconstruct the designs
-  legacy <- fit
-  legacy$design_specs <- NULL
-  check_rows(legacy, idx)
-  expect_equal(predict(legacy, newdata = d[idx, ])$est, p_nd$est, tolerance = 1e-8)
 })

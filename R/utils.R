@@ -883,21 +883,25 @@ set_delta_model <- function(x, model = c(NA, 1, 2)) {
   x
 }
 
-get_fitted_time <- function(x) {
-  if (!"fitted_time" %in% names(x))
-    cli_abort("Missing 'fitted_time' element in fitted object. Please refit the model with a current version of sdmTMB.")
-  x$fitted_time
+# Fits saved before sdmTMB 1.2.0 lack metadata that methods assume (e.g.,
+# `backend` and `design_specs`), so they need a refit.
+check_fit_version <- function(object) {
+  version <- object$version
+  if (is.null(version) || package_version(version) < "1.2.0") {
+    fitted <- if (is.null(version)) "an old version" else paste("version", version)
+    cli_abort(c(
+      "This model was fit with sdmTMB {fitted}; fits from before 1.2.0 are not supported.",
+      "i" = "Refit the model with the installed sdmTMB version."
+    ))
+  }
 }
 
 reload_model <- function(object) {
-  if (!"parlist" %in% names(object)) {
-    cli_abort("`reload_model()` only works with models fit with sdmTMB 0.5.0.9006 and higher.")
-  }
   # tinyVAST does this to be extra sure... I've found one case where it was needed
   obj <- remake_tmb_obj(object)
+  check_sdmTMB_version(object$version)
   if (abs(obj$fn(object$model$par) - object$model$objective) > 0.01) {
-    cli_abort(c("Model fit is not identical to recorded value:", "
-      something is not working as expected"))
+    cli_abort("Model fit is not identical to recorded value; something is not working as expected.")
   }
   object$tmb_obj <- obj
   object
@@ -912,20 +916,19 @@ reinitialize <- function(x) {
     attributes(x) <- NULL
     identical(x, new("externalptr"))
   }
+  check_fit_version(x)
   if (is_null_pointer(x)) {
-    if ("version" %in% names(x)) check_sdmTMB_version(x$version)
+    check_sdmTMB_version(x$version)
     x$tmb_obj$env$beSilent()
     # retape before fn(): without a cached `L.created.by.newton` (dropped from
     # saved cross-validation models), TMB's inner newton() evaluates the stale
     # Hessian pointer before fn() would retape
     x$tmb_obj$retape(set.defaults = FALSE)
     x$tmb_obj$fn(x$model$par)
-    if ("parlist" %in% names(x) && "last.par.best" %in% names(x)) {
-      if (!identical(x$tmb_obj$env$last.par.best, x$last.par.best)) {
-        cli_warn(c("Detected a potential issue reloading a saved sdmTMB model.",
-          "Please run `fit <- sdmTMB:::reload_model(fit)`,",
-          "where `fit` is your fitted model."))
-      }
+    if (!identical(x$tmb_obj$env$last.par.best, x$last.par.best)) {
+      cli_warn(c("Detected a potential issue reloading a saved sdmTMB model.",
+        "Please run `fit <- sdmTMB:::reload_model(fit)`,",
+        "where `fit` is your fitted model."))
     }
   }
 }

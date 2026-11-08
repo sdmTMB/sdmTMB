@@ -1,5 +1,9 @@
 # sdmTMB (development version)
 
+* Model fits saved with sdmTMB versions before 1.2.0 are no longer supported.
+  `predict()`, `residuals()`, `tidy()`, `print()`, `get_index()`, and other
+  methods now give an error asking you to refit.
+
 * `sdmTMB(do_index = TRUE)`, and its `predict_args` and `index_args`, are now
   defunct and give an error. Fit the model and then pass it with `newdata` to
   `get_index()`, `get_cog()`, `get_eao()`, or `get_weighted_average()`.

@@ -389,10 +389,6 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
     cli::cli_warn("Using PC Matern priors; therefore, anisotropy will be disabled.")
     anisotropy <- FALSE
   }
-  if (!"A_st" %in% names(spde)) {
-    cli::cli_abort("`mesh` was created with an old version of `make_mesh()`.")
-  }
-
   list(
     type = "spde",
     spatial_model = spatial_model,

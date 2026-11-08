@@ -599,14 +599,6 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
   adreport <- c(value_name,
     switch(value_name[[1]], link_total = "total", log_eao = "eao"))
 
-  if (is.null(obj$pred_tmb_data$proj_X_ij) ||
-      is.null(obj$pred_tmb_data$proj_time_include)) {
-    cli_abort(c(
-      "Prediction data needed for index calculation are missing.",
-      "i" = "Use `get_index(fit, newdata = data)` with the current sdmTMB version."
-    ))
-  }
-
   nr1 <- nrow(obj$data)
   nr2 <- nrow(obj$pred_tmb_data$proj_X_ij[[1]])
   if (nr1 != nr2) {
@@ -644,7 +636,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     if (NROW(vector) != nrow(obj$pred_tmb_data$proj_X_ij[[1]])) {
       cli_abort("`vector` should be of the same length as `nrow(newdata)`.")
     }
-    tmb_data$proj_vector <- vector
+    tmb_data$proj_vector <- as.matrix(vector) # one column per variable
     tmb_data$calc_weighted_avg <- 1L
   }
 
@@ -659,7 +651,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     profile = obj$fit_obj$control$profile,
     map = obj$fit_obj$tmb_map,
     random = obj$fit_obj$tmb_random,
-    backend = backend_sdmTMB(obj$fit_obj),
+    backend = obj$fit_obj$backend,
     silent = silent,
     adreport = adreport
   )
@@ -680,7 +672,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       map = obj$fit_obj$tmb_map,
       profile = obj$fit_obj$control$profile,
       random = obj$fit_obj$tmb_random,
-      backend = backend_sdmTMB(obj$fit_obj),
+      backend = obj$fit_obj$backend,
       silent = silent,
       # Ratio quantities (weighted_avg, eao) tag their sums in the template;
       # only the internal inner optimizer uses those tags (lowrank = TRUE)

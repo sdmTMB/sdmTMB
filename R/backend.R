@@ -19,9 +19,6 @@ make_sdmTMB_adfun <- function(data, parameters, map, random = NULL,
     map[removed] <- NULL
     if (!is.null(random)) random <- setdiff(random, removed)
   }
-  # Weighted-average vectors are one per column (x and y for COG); fits
-  # saved before this carry a plain vector
-  if (!is.null(data$proj_vector)) data$proj_vector <- as.matrix(data$proj_vector)
   if (backend == "tmb") {
     # `sdmTMB()` checks this too; this catches rebuilding the objective of a
     # fit with custom priors (e.g., a saved one) using the TMB backend
@@ -45,10 +42,4 @@ sdreport_sdmTMB <- function(obj, ...) {
   backend <- attr(obj, "sdmTMB_backend")
   if (is.null(backend) || backend == "tmb") return(TMB::sdreport(obj, ...))
   RTMB::sdreport(obj, ...)
-}
-
-# Fits saved before backend metadata existed used the C++ TMB model. Once the
-# C++ model is removed, those fits will need a refit instead.
-backend_sdmTMB <- function(object) {
-  if (is.null(object$backend)) "tmb" else object$backend
 }

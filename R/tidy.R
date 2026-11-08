@@ -307,12 +307,6 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
 
   j <- 0
-  expects_range <- !is_areal &&
-    (x$tmb_data$include_spatial[model] || !x$tmb_data$spatial_only[model])
-  if (expects_range && !"log_range" %in% names(est)) {
-    cli_warn("This model was fit with an old version of sdmTMB. Some parameters may not be available to the tidy() method. Re-fit the model with the current version of sdmTMB if you need access to any missing parameters.")
-  }
-
   for (i in name) {
     j <- j + 1
     if (i %in% names(est)) {

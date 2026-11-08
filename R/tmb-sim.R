@@ -425,7 +425,7 @@ simulate_new <- function(formula,
   newobj <- make_sdmTMB_adfun(
     data = tmb_data, map = fit$tmb_map,
     random = fit$tmb_random, parameters = params,
-    backend = backend_sdmTMB(fit)
+    backend = fit$backend
   )
 
   set.seed(seed)
@@ -669,7 +669,7 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
   newobj <- make_sdmTMB_adfun(
     data = tmb_dat, map = object$tmb_map,
     random = object$tmb_random, parameters = object$tmb_obj$env$parList(),
-    backend = backend_sdmTMB(object)
+    backend = object$backend
   )
 
   # params MLE/MVN stuff

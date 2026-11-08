@@ -68,7 +68,7 @@ cAIC <- function(object, what = c("cAIC", "EDF"), ...) {
 
 #' @exportS3Method
 cAIC.sdmTMB <- function(object, what = c("cAIC", "EDF"), ...) {
-
+  check_fit_version(object)
   .check_family_capability(object, "cAIC")
   what <- tolower(what)
   what <- match.arg(what, choices = c("caic", "edf"))
@@ -93,7 +93,7 @@ cAIC.sdmTMB <- function(object, what = c("cAIC", "EDF"), ...) {
       parameters = object$parlist,
       map = object$tmb_map,
       random = object$tmb_random,
-      backend = backend_sdmTMB(object),
+      backend = object$backend,
       profile = NULL #<
     )
   }
@@ -105,7 +105,7 @@ cAIC.sdmTMB <- function(object, what = c("cAIC", "EDF"), ...) {
     parameters = object$parlist,
     map = object$tmb_map,
     random = object$tmb_random,
-    backend = backend_sdmTMB(object),
+    backend = object$backend,
     profile = NULL
   )
 

@@ -303,7 +303,7 @@ project <- function(
     parameters = pars,
     map = map,
     random = object$tmb_random,
-    backend = backend_sdmTMB(object),
+    backend = object$backend,
     silent = TRUE
   )
 

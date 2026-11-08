@@ -440,7 +440,7 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
 # (the fitted ones or draws), which the RTMB backend can evaluate without an
 # AD object.
 predict_report_only <- function(object, req, return_tmb_object) {
-  backend_sdmTMB(object) == "rtmb" && !req$se_fit && !return_tmb_object
+  object$backend == "rtmb" && !req$se_fit && !return_tmb_object
 }
 
 # Reports at the parameter list `pars` (equivalently, the parameter vector
@@ -476,7 +476,7 @@ predict_objective <- function(object, tmb_data, n_new_re = 0L) {
     parameters = parameters,
     map = map,
     random = object$tmb_random,
-    backend = backend_sdmTMB(object),
+    backend = object$backend,
     silent = TRUE
   )
   obj

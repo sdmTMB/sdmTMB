@@ -564,7 +564,7 @@ sdmTMB_cv <- function(
       parameters = get_pars(object),
       map = object$tmb_map,
       random = object$tmb_random,
-      backend = backend_sdmTMB(object),
+      backend = object$backend,
       silent = TRUE
     )
     r <- scoring_obj$report(object$tmb_obj$env$last.par.best)

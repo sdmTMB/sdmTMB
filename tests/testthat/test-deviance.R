@@ -340,7 +340,7 @@ test_that("Deviance includes weights, NB1 holds phi fixed, and signs are kept", 
   # Deviance residuals at parameter vector `p` of an unfitted model
   devresid_at <- function(fit, p) {
     obj <- fit$tmb_obj
-    if (backend_sdmTMB(fit) == "tmb") return(obj$report(p)$devresid)
+    if (fit$backend == "tmb") return(obj$report(p)$devresid)
     rtmb_report_values(fit$tmb_data, obj$env$parList(p),
       deviance = TRUE)$devresid
   }

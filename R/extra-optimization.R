@@ -40,15 +40,13 @@ run_extra_optimization <- function(object,
 # Rebuild a fit's TMB objective and evaluate it at the fitted parameters. The
 # result shares no environment with `object$tmb_obj`.
 remake_tmb_obj <- function(object) {
-  if (is.null(object$parlist)) {
-    cli_abort("This model was fit with an sdmTMB version that is too old; please refit it.")
-  }
+  check_fit_version(object)
   obj <- make_sdmTMB_adfun(
     data = object$tmb_data,
     parameters = object$parlist,
     map = object$tmb_map,
     random = object$tmb_random,
-    backend = backend_sdmTMB(object),
+    backend = object$backend,
     profile = object$control$profile
   )
   if (isTRUE(object$control$normalize) &&

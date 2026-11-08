@@ -118,13 +118,4 @@ test_that("update() keeps the fitted backend and controls", {
   legacy$backend <- NULL
   expect_identical(update(fit, control = legacy)$backend, "rtmb")
 
-  # old objects without backend or control metadata fall back to TMB
-  options(sdmTMB.backend = "rtmb")
-  old <- fit
-  old$backend <- NULL
-  old$control <- NULL
-  expect_identical(update(old, evaluate = FALSE)$control$backend, "tmb")
-  old$control <- fit$control
-  old$control$backend <- NULL
-  expect_identical(update(old, y ~ 1)$backend, "tmb")
 })
