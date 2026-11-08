@@ -392,25 +392,23 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
     return(tmb_data)
   }
 
+  # On RTMB, reports alone need no AD object, which for large grids dominates
+  # prediction time and memory.
   if (predict_report_only(object, req, return_tmb_object)) {
-    # Reports alone need no AD object, which for large grids dominates
-    # prediction time and memory, nor the observation likelihood.
-    r <- rtmb_report_values(tmb_data, object$parlist, likelihood = FALSE)
     new_tmb_obj <- NULL
+    lp <- object$last.par.best
   } else {
     objective <- predict_objective(object, tmb_data,
       length(unlist(lapply(prep$new_re, `[[`, "rows"))))
     new_tmb_obj <- objective$obj
     lp <- objective$lp
-
-    if (req$nsim > 0 || !is.null(req$mcmc_samples)) {
-      r <- predict_draw_reports(object, new_tmb_obj, lp, req, prep$new_re)
-      if (return_tmb_report) return(r)
-      return(predict_draws(r, req, object, tmb_data, prep$nd))
-    }
-
-    r <- new_tmb_obj$report(lp)
   }
+  if (req$nsim > 0 || !is.null(req$mcmc_samples)) {
+    r <- predict_draw_reports(object, new_tmb_obj, tmb_data, lp, req, prep$new_re)
+    if (return_tmb_report) return(r)
+    return(predict_draws(r, req, object, tmb_data, prep$nd))
+  }
+  r <- predict_report(new_tmb_obj, tmb_data, object$parlist, lp)
   if (return_tmb_report) return(r)
   obj <- new_tmb_obj
 
@@ -442,12 +440,23 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
   predict_return(cols, req, object, r, obj, tmb_data, return_tmb_object)
 }
 
-# Whether predictions need only the model's reports at the saved fitted
-# parameters, which the RTMB backend can evaluate without an AD object.
+# Whether predictions need only the model's reports at saved parameter values
+# (the fitted ones or draws), which the RTMB backend can evaluate without an
+# AD object.
 predict_report_only <- function(object, req, return_tmb_object) {
   backend_sdmTMB(object) == "rtmb" && !is.null(object$parlist) &&
-    !req$se_fit && req$nsim == 0 && is.null(req$mcmc_samples) &&
-    !return_tmb_object
+    !is.null(object$last.par.best) && !req$se_fit && !return_tmb_object
+}
+
+# Reports at the parameter list `pars` (equivalently, the parameter vector
+# `x`): from the AD object `obj`, or with plain numbers if `obj` is NULL.
+# Prediction needs no observation likelihood.
+predict_report <- function(obj, tmb_data, pars, x) {
+  if (is.null(obj)) {
+    rtmb_report_values(tmb_data, pars, likelihood = FALSE)
+  } else {
+    obj$report(x)
+  }
 }
 
 # Build the prediction objective from `tmb_data` and return it with the fitted
@@ -495,30 +504,23 @@ new_re_slots <- function(object, obj, n_new_re) {
     n_new_re * sum(object$tmb_data$n_re_groups > 0))
 }
 
-# Fill the sampled new-level slots of each parameter draw (`t_draws`, without
-# the slots) with draws from N(0, Sigma) given that draw's `re_cov_pars`.
-predict_sample_new_re <- function(object, obj, t_draws, new_re) {
+# Draws from N(0, Sigma) for the sampled new levels in `new_re`, given
+# `re_cov_pars`: a matrix with a row per new-level row of `re_b_pars` and a
+# column per component (zero for components without random intercepts).
+predict_new_re_b <- function(object, re_cov_pars, new_re) {
   rows <- unlist(lapply(new_re, `[[`, "rows"))
-  slots <- new_re_slots(object, obj, length(rows))
-  out <- matrix(0, length(obj$env$par), ncol(t_draws))
-  out[-slots, ] <- t_draws
-  has_re <- which(object$tmb_data$n_re_groups > 0)
-  groups <- lapply(has_re, function(m) rtmb_re_groups(object$tmb_data, m))
-  fixed <- obj$env$lfixed()
-  for (i in seq_len(ncol(out))) {
-    re_cov_pars <- obj$env$parList(out[fixed, i])$re_cov_pars
-    b <- matrix(0, length(rows), length(has_re))
-    for (j in seq_along(has_re)) {
-      for (term in new_re) {
-        L <- t(chol(iid_re_covariance(re_cov_pars, groups[[j]][[term$term]], has_re[j])))
-        # one column per level:
-        z <- matrix(stats::rnorm(nrow(L) * term$n_levels), nrow(L))
-        b[match(term$rows, rows), j] <- L %*% z
-      }
+  n_re_groups <- object$tmb_data$n_re_groups
+  b <- matrix(0, length(rows), length(n_re_groups))
+  for (m in which(n_re_groups > 0)) {
+    groups <- rtmb_re_groups(object$tmb_data, m)
+    for (term in new_re) {
+      L <- t(chol(iid_re_covariance(re_cov_pars, groups[[term$term]], m)))
+      # one column per level:
+      z <- matrix(stats::rnorm(nrow(L) * term$n_levels), nrow(L))
+      b[match(term$rows, rows), m] <- L %*% z
     }
-    out[slots, i] <- b
   }
-  out
+  b
 }
 
 # Nonlocal covariate values as named prediction columns.
@@ -760,8 +762,35 @@ predict_terms <- function(x, object, family_spec, row_family_id) {
 
 # Reports for each parameter draw: MCMC samples or draws from the joint
 # precision matrix (or the random effects only, conditional on the fixed
-# effects, if `sample_fe = FALSE`), with any sampled new levels.
-predict_draw_reports <- function(object, obj, lp, req, new_re = list()) {
+# effects, if `sample_fe = FALSE`), with any sampled new levels. Draws are
+# in the fitted parameter layout; `obj` (NULL on RTMB, see predict_report())
+# has the new-level rows after the fitted ones in `re_b_pars`.
+predict_draw_reports <- function(object, obj, tmb_data, lp, req, new_re = list()) {
+  t_draws <- predict_parameter_draws(object, lp, req)
+  last_b <- max(which(names(lp) == "re_b_pars"), 0L)
+  has_re <- object$tmb_data$n_re_groups > 0
+  pars <- lapply(seq_len(ncol(t_draws)), function(i) {
+    object$tmb_obj$env$parList(par = t_draws[, i])
+  })
+  out <- lapply(seq_along(pars), function(i) {
+    x <- t_draws[, i]
+    p <- pars[[i]]
+    if (length(new_re)) {
+      new_b <- predict_new_re_b(object, p$re_cov_pars, new_re)
+      p$re_b_pars <- rbind(p$re_b_pars, new_b)
+      x <- append(x, new_b[, has_re], after = last_b)
+    }
+    predict_report(obj, tmb_data, p, x)
+  })
+  # Response-scale means also depend on `ln_phi` and `psi`, which vary by draw:
+  attr(out, "draw_pars") <- lapply(pars, function(p) {
+    p[intersect(c("ln_phi", "psi"), names(p))]
+  })
+  out
+}
+
+# Parameter draws (parameters x draws) for predict_draw_reports().
+predict_parameter_draws <- function(object, lp, req) {
   nsim <- req$nsim
   if (!is.null(req$mcmc_samples)) {
     t_draws <- req$mcmc_samples
@@ -771,26 +800,17 @@ predict_draw_reports <- function(object, obj, lp, req, new_re = list()) {
       }
       t_draws <- t_draws[, seq(ncol(t_draws) - nsim + 1, ncol(t_draws)), drop = FALSE]
     }
-  } else {
-    if (!"jointPrecision" %in% names(object$sd_report) && !has_no_random_effects(object)) {
-      message("Rerunning TMB::sdreport() with `getJointPrecision = TRUE`.")
-      reinitialize(object)
-      sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
-    } else {
-      sd_report <- object$sd_report
-    }
-    t_draws <- project_historical_draws(lp, sd_report, nsim,
-      sample_fe = req$sample_fe, sample_historical_re = TRUE)
+    return(t_draws)
   }
-  if (length(new_re)) t_draws <- predict_sample_new_re(object, obj, t_draws, new_re)
-  out <- apply(t_draws, 2L, obj$report)
-  # Response-scale means also depend on `ln_phi` and `psi`, which vary by draw:
-  fixed <- obj$env$lfixed()
-  attr(out, "draw_pars") <- lapply(seq_len(ncol(t_draws)), function(i) {
-    pars <- obj$env$parList(t_draws[fixed, i])
-    pars[intersect(c("ln_phi", "psi"), names(pars))]
-  })
-  out
+  if (!"jointPrecision" %in% names(object$sd_report) && !has_no_random_effects(object)) {
+    message("Rerunning TMB::sdreport() with `getJointPrecision = TRUE`.")
+    reinitialize(object)
+    sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
+  } else {
+    sd_report <- object$sd_report
+  }
+  project_historical_draws(lp, sd_report, nsim,
+    sample_fe = req$sample_fe, sample_historical_re = TRUE)
 }
 
 # Matrix of draws (rows x draws) of `sims_var` from the per-draw reports `r`.
