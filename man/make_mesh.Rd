@@ -58,7 +58,7 @@ Distance to extend non-convex hull from data.}
 }
 \value{
 \code{make_mesh()}: A list of class \code{sdmTMBmesh}. The element \code{mesh} is the output
-from \code{fmesher_func} (default is \code{\link[fmesher:fm_mesh_2d_inla]{fmesher::fm_mesh_2d_inla()}}). See
+from \code{fmesher_func} (default is \code{\link[fmesher:fm_rcdt_2d_inla]{fmesher::fm_rcdt_2d_inla()}}). See
 \code{mesh$mesh$n} for the number of vertices.
 
 \code{plot.sdmTMBmesh()}: A plot of the mesh and data points. To make your

@@ -1,5 +1,10 @@
 # sdmTMB (development version)
 
+* Fix `make_mesh()` with `cutoff` and `convex` or `concave`, which built the
+  mesh from the boundary only and dropped the data locations. Meshes built with
+  these arguments will change. Also fix the documented default `fmesher_func`
+  and a stale error message about `n_knots`.
+
 * `cAIC()` can now compare several models, like `AIC()`: `cAIC(fit1, fit2)`
   returns a data frame with the effective degrees of freedom and cAIC for each
   model. `what` now comes after `...` and must be named, e.g.

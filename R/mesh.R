@@ -27,7 +27,7 @@
 #'
 #' @return
 #' `make_mesh()`: A list of class `sdmTMBmesh`. The element `mesh` is the output
-#' from `fmesher_func` (default is [fmesher::fm_mesh_2d_inla()]). See
+#' from `fmesher_func` (default is [fmesher::fm_rcdt_2d_inla()]). See
 #' `mesh$mesh$n` for the number of vertices.
 #'
 #' @export
@@ -109,10 +109,9 @@ make_mesh <- function(data, xy_cols,
   type <- match.arg(type)
   if (!missing(n_knots) && type == "cutoff") {
     msg <- paste0(
-      "`n_knots` specified but `type = 'cutoff'. ",
-      "The default mesh type now uses a `cutoff` ",
-      "intead of the number of knots. You can obtain the previous default ",
-      "mesh type with `type = 'kmeans'`."
+      "`n_knots` specified but `type = 'cutoff'`. ",
+      "Use `cutoff` with `type = 'cutoff'` or use `n_knots` with ",
+      "`type = 'kmeans'`."
       )
     cli_abort(msg)
   }
@@ -149,7 +148,7 @@ make_mesh <- function(data, xy_cols,
     } else if (type == "cutoff") {
       if (!is.null(convex) || !is.null(concave)) {
         nch <- fmesher::fm_nonconvex_hull(loc_xy, convex = convex, concave = concave)
-        mesh <- fmesher_func(loc_centers, refine = list(), cutoff = cutoff, boundary = nch, extend = list(), ...)
+        mesh <- fmesher_func(loc_xy, refine = list(), cutoff = cutoff, boundary = nch, extend = list(), ...)
       } else {
         mesh <- fmesher_func(loc_xy, refine = list(), cutoff = cutoff, extend = list(), ...)
       }
