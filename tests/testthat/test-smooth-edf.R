@@ -22,6 +22,14 @@ test_that("smoother EDF matches mgcv", {
   check(y ~ t2(x, z))
   check(y ~ s(x, bs = "cc") + s(z, bs = "cs"))
   check(count ~ s(x) + s(z, k = 5), family = poisson())
+
+  # finite-difference steps must scale with the design, not the coefficient
+  d$z_big <- d$z * 1e4
+  g <- mgcv::gam(count ~ s(x) + z_big, data = d, family = poisson(), method = "ML")
+  # the optimizer warns about the poorly scaled covariate; the EDF is still right
+  fit <- suppressWarnings(sdmTMB(count ~ s(x) + z_big, data = d,
+    spatial = "off", family = poisson()))
+  expect_equal(edf_by_term(fit), as.numeric(summary(g)$edf), tolerance = 1e-3)
 })
 
 test_that("smoother EDF is stored and shown in print() and tidy()", {
@@ -38,8 +46,6 @@ test_that("smoother EDF is stored and shown in print() and tidy()", {
 
   out <- capture.output(print(fit))
   expect_true(any(grepl("EDF", out)))
-  out <- capture.output(print(fit, edf = FALSE))
-  expect_false(any(grepl("EDF", out)))
 
   fit2 <- sdmTMB(density ~ depth_scaled, data = pcod_2011, spatial = "off",
     family = tweedie())

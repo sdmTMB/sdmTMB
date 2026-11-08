@@ -5,9 +5,10 @@
   shown in `print()` and in a new `edf` column of `tidy(fit, "ran_pars")`. The
   calculation reuses the inner-problem Cholesky factor, so it costs roughly one
   inner Newton step plus two gradient evaluations per linear coefficient.
-  `print(fit, edf = FALSE)` hides them. Unlike `cAIC(fit, what = "EDF")`,
-  these include the smoother's unpenalized null space and integrate over the
-  fixed effects, and so match `mgcv::gam()`.
+  `print()` now always shows them and no longer has an `edf` argument, which
+  previously showed `cAIC(fit, what = "EDF")`. Unlike those values, these
+  include the smoother's unpenalized null space and integrate over the fixed
+  effects, and so match `mgcv::gam()`.
 
 * Fix `make_mesh()` with `cutoff` and `convex` or `concave`, which built the
   mesh from the boundary only and dropped the data locations. Meshes built with

@@ -112,7 +112,7 @@ print_main_effects <- function(x, m = 1) {
   mm
 }
 
-print_smooth_effects <- function(x, m = 1, edf = NULL, silent = FALSE) {
+print_smooth_effects <- function(x, m = 1, silent = FALSE) {
   sr <- x$sd_report
   sr_se <- as.list(sr, "Std. Error")
   sr_est <- as.list(sr, "Estimate")
@@ -263,8 +263,8 @@ print_smooth_effects <- function(x, m = 1, edf = NULL, silent = FALSE) {
     rownames(ln_re_sm_mat) <- ln_sm_names_sds
     colnames(ln_re_sm_mat) <- c("estimate", "std.error")
 
-    if (!is.null(edf)) {
-      re_sm_mat <- cbind(re_sm_mat, EDF = round(edf[, m], 2L))
+    if (!is.null(x$smooth_edf)) {
+      re_sm_mat <- cbind(re_sm_mat, EDF = round(x$smooth_edf[, m], 2L))
     }
   } else {
     re_sm_mat <- NULL
@@ -597,11 +597,10 @@ print_header <- function(x) {
   cat(info$overall_family)
 }
 
-print_one_model <- function(x, m = 1, edf = TRUE, silent = FALSE) {
-  .edf <- if (isTRUE(edf)) x$smooth_edf
+print_one_model <- function(x, m = 1) {
   info <- print_model_info(x)
   main <- print_main_effects(x, m = m)
-  smooth <- print_smooth_effects(x, m = m, edf = .edf, silent = TRUE)
+  smooth <- print_smooth_effects(x, m = m, silent = TRUE)
   # iid_re <- print_iid_re(x, m = m)
   re <- print_int_slope_re(x, m = m)
   tv <- print_time_varying(x, m = m)
@@ -687,11 +686,11 @@ print.sdmTMB <- function(x, ...) {
     section1 <- if (multi_family) "Linear predictor 1" else "Delta/hurdle model 1"
     cat("\n", section1, ": -----------------------------------\n", sep = "")
   }
-  print_one_model(x, 1, ...)
+  print_one_model(x, 1)
   if (delta) {
     section2 <- if (multi_family) "Linear predictor 2" else "Delta/hurdle model 2"
     cat("\n", section2, ": -----------------------------------\n", sep = "")
-    print_one_model(x, 2, ...)
+    print_one_model(x, 2)
   }
   if (multi_family) {
     print_multi_family_summary(x)
