@@ -1,5 +1,16 @@
 # sdmTMB (development version)
 
+* **The C++ TMB backend has been removed; all models use RTMB**, which has been
+  the default since 1.2.0. sdmTMB no longer contains compiled code, so
+  installing it from source no longer needs a C++ compiler, and it installs
+  much faster. Results on the default path don't change.
+  `sdmTMBcontrol(backend = )` and `sdmTMBcontrol(normalize = )` are deprecated
+  and ignored (with a warning), and `options(sdmTMB.backend = "tmb")` is
+  ignored with a warning. Models saved after being fit with the TMB backend
+  can no longer be used and give an error asking you to refit them; models
+  fit with RTMB still load. To compare against the TMB backend, use sdmTMB
+  1.2.0.
+
 * Models with penalized smoothers now store the effective degrees of freedom
   (EDF) of each smoother, calculated as in mgcv, in `fit$smooth_edf`. They're
   shown in `print()` and in a new `edf` column of `tidy(fit, "ran_pars")`. The

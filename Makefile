@@ -43,7 +43,7 @@ readme:
 # Reference-fit regression suite (see reference-fits/README.md)
 REF_CORES=5
 reference-check:
-	$(R) --no-echo -f reference-fits/run.R --args check --backend rtmb --cores $(REF_CORES)
+	$(R) --no-echo -f reference-fits/run.R --args check --cores $(REF_CORES)
 
 reference-record:
 	$(R) --no-echo -f reference-fits/run.R --args record --cores $(REF_CORES)

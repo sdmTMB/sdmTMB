@@ -29,7 +29,7 @@ library(ggplot2)
 ```
 
 `sdmTMBpriors()` has built-in priors for common cases, such as normal priors on the main effects or PC priors on Matérn random fields.
-With the RTMB backend (the default), you can also write your own prior or penalty as an R function.
+You can also write your own prior or penalty as an R function.
 The function can refer to any parameter, transformed parameters, or even combine several of them.
 
 The function is passed to `sdmTMBpriors(custom = ...)`.
@@ -298,6 +298,5 @@ They put a joint prior on the range and standard deviation of each field and tak
 
 ## Limitations
 
-- Custom priors need the RTMB backend.
 - Like the built-in priors, custom priors are part of the model's objective, so they're included in `logLik()` and `AIC()`.
 - The names and shapes of `par` and `theta` are internal and could change in future versions. Check them with `get_prior_parameters()`.

@@ -923,7 +923,7 @@ These remaining parameters include regression coefficients, variance and correla
 We call them the *outer* parameters below because they are optimized in an outer loop, while the random effects are optimized in an inner loop for each candidate set of outer-parameter values.
 TMB and glmmTMB call these 'fixed effects', which includes the variance parameters, not just the regression coefficients.
 With `reml = TRUE`, the regression coefficients are also integrated out, together with the random effects.
-The joint likelihood is written with [RTMB](https://CRAN.R-project.org/package=RTMB) (the default backend; a C++ TMB template can be used instead with `sdmTMBcontrol(backend = "tmb")`), and Template Model Builder (TMB) [@kristensen2016] uses automatic differentiation and the Laplace approximation to integrate over the random effects.
+The joint likelihood is written with [RTMB](https://CRAN.R-project.org/package=RTMB), and Template Model Builder (TMB) [@kristensen2016] uses automatic differentiation and the Laplace approximation to integrate over the random effects.
 This yields an approximation to the marginal log likelihood of the outer parameters and its gradient, and the negative marginal log likelihood is minimized with the non-linear optimization routine `stats::nlminb()` in R [@gay1990; @r2021].
 For given outer-parameter values, the random effects are set to the values that maximize the joint log likelihood (their conditional modes), around which the Laplace approximation is taken [@kristensen2016].
 
