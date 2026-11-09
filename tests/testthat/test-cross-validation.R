@@ -214,14 +214,8 @@ test_that("LFO CV scores delta observations with explicit validation masks", {
 
     scoring_data <- object$tmb_data
     scoring_data$weights_i <- as.numeric(validation)
-    scoring_obj <- TMB::MakeADFun(
-      data = scoring_data,
-      parameters = get_pars(object),
-      map = object$tmb_map,
-      random = object$tmb_random,
-      DLL = "sdmTMB",
-      silent = TRUE
-    )
+    scoring_obj <- make_sdmTMB_adfun(scoring_data, get_pars(object),
+      object$tmb_map, object$tmb_random)
     report <- scoring_obj$report(object$tmb_obj$env$last.par.best)
     expect_equal(report$jnll_obs[!validation], rep(0, sum(!validation)))
   }

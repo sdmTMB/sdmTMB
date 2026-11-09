@@ -20,7 +20,7 @@ rtmb_family_data <- function(n, seed) {
   d
 }
 
-test_that("RTMB basic likelihoods match TMB at fixed parameters", {
+test_that("RTMB basic likelihoods match frozen TMB values", {
   set.seed(103)
   n <- 36L
   x <- seq(-0.8, 0.8, length.out = n)
@@ -44,36 +44,17 @@ test_that("RTMB basic likelihoods match TMB at fixed parameters", {
     d$y[[3L]] <- NA_real_
     common <- list(formula = y ~ x, data = d, spatial = "off",
       family = case$family, weights = weights, offset = offset, do_fit = FALSE)
-    tmb <- do.call(sdmTMB, c(common,
-      list(control = sdmTMBcontrol(multiphase = FALSE, backend = "tmb"))))
-    rtmb <- do.call(sdmTMB, c(common,
-      list(control = sdmTMBcontrol(backend = "rtmb", multiphase = FALSE))))
-    p <- tmb$tmb_obj$par
+    fit <- do.call(sdmTMB, c(common,
+      list(control = sdmTMBcontrol(multiphase = FALSE))))
+    p <- fit$tmb_obj$par
     p[] <- if (is.null(case$par)) p + seq_along(p) * 0.07 else case$par
-    expect_equal(rtmb$tmb_obj$fn(p), tmb$tmb_obj$fn(p), tolerance = 1e-7,
-      info = case$family$family)
-    expect_equal(rtmb$tmb_obj$gr(p), tmb$tmb_obj$gr(p), tolerance = 1e-6,
-      info = case$family$family)
-    expected <- tmb$tmb_obj$report(p)
-    actual <- rtmb$tmb_obj$report(p)
-    # RTMB computes deviance residuals only on request, off the tape.
-    actual$devresid <- rtmb_report_values(rtmb$tmb_data,
-      rtmb$tmb_obj$env$parList(p), deviance = TRUE)$devresid
-    # The TMB template has no NB1 deviance residuals
-    compared <- c("eta_fixed_i", "eta_i", "jnll_obs", "devresid")
-    if (case$family$family == "nbinom1") compared <- setdiff(compared, "devresid")
-    for (name in compared) {
-      expect_equal(actual[[name]], expected[[name]], tolerance = 1e-6,
-        info = paste(case$family$family, name))
-    }
-    if (case$family$family != "poisson") {
-      expect_equal(actual$phi, expected$phi, tolerance = 1e-6,
-        info = case$family$family)
-    }
+    expect_frozen_objective(paste("families basic", case$family$family,
+      case$family$link), fit$tmb_data, fit$tmb_obj$env$parList(p),
+      fit$tmb_map, reports = "devresid")
   }
 })
 
-test_that("RTMB matches TMB for other families", {
+test_that("RTMB matches frozen TMB values for other families", {
   skip_on_cran()
   d <- rtmb_family_data(90L, 81)
   mesh <- make_mesh(d, c("x", "y"), n_knots = 25L, type = "kmeans")
@@ -117,20 +98,21 @@ test_that("RTMB matches TMB for other families", {
     fit <- suppressMessages(do.call(sdmTMB, c(cases[[name]],
       list(data = d, mesh = mesh, do_fit = FALSE))))
     p <- rtmb_test_parameters(fit$tmb_params, fit$tmb_map)
-    expect_rtmb_matches_tmb(fit$tmb_data, p, fit$tmb_map, fit$tmb_random,
-      info = name)
+    expect_frozen_objective(paste("families", name), fit$tmb_data, p,
+      fit$tmb_map, fit$tmb_random)
     if (name %in% project) {
       projection <- predict(fit, newdata = d[c(1, 2, 3, 90), ],
         return_tmb_data = TRUE)
-      expect_rtmb_matches_tmb(projection, p, fit$tmb_map, fit$tmb_random,
-        info = paste(name, "projection"))
+      expect_frozen_objective(paste("families", name, "projection"),
+        projection, p, fit$tmb_map, fit$tmb_random, reports = "proj_eta",
+        objective = FALSE)
     }
   }
 })
 
 # The C++ template once evaluated the censored Poisson CDF with `asDouble()`,
-# holding those terms fixed at the taping point. Compare both backends with a
-# direct calculation away from it.
+# holding those terms fixed at the taping point. Compare with a direct
+# calculation away from it.
 test_that("censored Poisson likelihood is correct away from the taping point", {
   skip_if_not_installed("numDeriv")
   set.seed(81)
@@ -152,14 +134,12 @@ test_that("censored Poisson likelihood is correct away from the taping point", {
         dpois(d$y, lambda, log = TRUE)))
     -sum(ll)
   }
-  for (backend in c("tmb", "rtmb")) {
-    obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
-      fit$tmb_random, backend = backend)
-    for (b in list(c(0.3, 0.2), c(0.6, -0.1))) {
-      expect_equal(obj$fn(b), nll(b), tolerance = 1e-8, info = backend)
-      expect_equal(as.vector(obj$gr(b)), numDeriv::grad(nll, b),
-        tolerance = 1e-6, info = backend)
-    }
+  obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
+    fit$tmb_random)
+  for (b in list(c(0.3, 0.2), c(0.6, -0.1))) {
+    expect_equal(obj$fn(b), nll(b), tolerance = 1e-8)
+    expect_equal(as.vector(obj$gr(b)), numDeriv::grad(nll, b),
+      tolerance = 1e-6)
   }
 })
 
@@ -190,7 +170,7 @@ test_that("censored Poisson log probabilities are stable in the tails", {
   expect_equal(rtmb_dcenspois(cases[, 2], cases[, 1], cases[, 3]),
     apply(cases, 1, function(x) censpois_oracle(x[1], x[2], x[3])[[1]]),
     tolerance = 1e-12)
-  # The same tape at several log means, in both backends.
+  # The same tape at several log means.
   for (k in seq_len(nrow(cases))) {
     lambda <- cases[k, 1]
     L <- cases[k, 2]
@@ -198,15 +178,12 @@ test_that("censored Poisson log probabilities are stable in the tails", {
     fit <- sdmTMB(y ~ 1, offset = "o", data = d, spatial = "off",
       do_fit = FALSE, family = censored_poisson(),
       censored_upper = cases[k, 3])
-    for (backend in c("tmb", "rtmb")) {
-      obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
-        backend = backend)
-      for (b in c(0, 0.3, -0.4)) {
-        expected <- censpois_oracle(lambda * exp(b), L, cases[k, 3])
-        got <- -c(obj$fn(b), obj$gr(b), obj$he(b))
-        expect_lt(max(abs(got - expected) / pmax(1, abs(expected))), 1e-8,
-          label = paste(backend, k, b))
-      }
+    obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map)
+    for (b in c(0, 0.3, -0.4)) {
+      expected <- censpois_oracle(lambda * exp(b), L, cases[k, 3])
+      got <- -c(obj$fn(b), obj$gr(b), obj$he(b))
+      expect_lt(max(abs(got - expected) / pmax(1, abs(expected))), 1e-8,
+        label = paste(k, b))
     }
   }
 })
@@ -224,24 +201,16 @@ test_that("censored Poisson random-effect models are consistent", {
   upr[1:2] <- c(Inf, 85)
   fit <- sdmTMB(y ~ z + (1 | g), data = d, spatial = "off", do_fit = FALSE,
     family = censored_poisson(), censored_upper = upr)
-  fits <- list()
-  for (backend in c("tmb", "rtmb")) {
-    obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
-      fit$tmb_random, backend = backend)
-    for (p in list(obj$par, obj$par + c(0.3, -0.2, -0.5))) {
-      expect_true(is.finite(obj$fn(p)), label = backend)
-      expect_equal(as.vector(obj$gr(p)), numDeriv::grad(obj$fn, p),
-        tolerance = 1e-6, info = backend)
-    }
-    fits[[backend]] <- sdmTMB(y ~ z + (1 | g), data = d, spatial = "off",
-      family = censored_poisson(),
-      censored_upper = upr,
-      control = sdmTMBcontrol(backend = backend))
-    expect_true(fits[[backend]]$sd_report$pdHess, label = backend)
+  obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
+    fit$tmb_random)
+  for (p in list(obj$par, obj$par + c(0.3, -0.2, -0.5))) {
+    expect_true(is.finite(obj$fn(p)))
+    expect_equal(as.vector(obj$gr(p)), numDeriv::grad(obj$fn, p),
+      tolerance = 1e-6)
   }
-  expect_equal(tidy(fits$rtmb), tidy(fits$tmb), tolerance = 1e-6)
-  expect_equal(tidy(fits$rtmb, "ran_pars"), tidy(fits$tmb, "ran_pars"),
-    tolerance = 1e-6)
+  fit <- sdmTMB(y ~ z + (1 | g), data = d, spatial = "off",
+    family = censored_poisson(), censored_upper = upr)
+  expect_true(fit$sd_report$pdHess)
 })
 
 # log P(L <= Y <= U) for a beta-binomial Y by brute force.
@@ -293,7 +262,6 @@ test_that("censored binomial log probabilities match a direct sum", {
 # first row is a right-censored count far above what the model expects, whose
 # complement P(Y < y) rounds to 1.
 test_that("censored binomial observation-level random effects are consistent", {
-  local_rtmb_backend()
   skip_if_not_installed("numDeriv")
   set.seed(3)
   n <- 80L
@@ -317,7 +285,6 @@ test_that("censored binomial observation-level random effects are consistent", {
 })
 
 test_that("censored beta-binomial likelihood and gradient are correct", {
-  local_rtmb_backend()
   skip_if_not_installed("numDeriv")
   set.seed(81)
   n <- 30L
@@ -339,7 +306,7 @@ test_that("censored beta-binomial likelihood and gradient are correct", {
   for (cens_direct in 0:1) {
     fit$tmb_data$cens_direct[] <- cens_direct
     obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
-      fit$tmb_random, backend = "rtmb")
+      fit$tmb_random)
     for (par in list(c(-1.2, 0.2, 1), c(-2, -0.3, 3))) {
       expect_equal(obj$fn(par), nll(par), tolerance = 1e-8, info = cens_direct)
       expect_equal(as.vector(obj$gr(par)), numDeriv::grad(nll, par),
@@ -349,7 +316,6 @@ test_that("censored beta-binomial likelihood and gradient are correct", {
 })
 
 test_that("censored beta-binomial bounds are whole counts", {
-  local_rtmb_backend()
   d <- data.frame(y = c(2, 3, 1, 4, 0, 5, 6), n = c(10, 10, 10, 10, 10, 10, 6))
   # U = 2.5 contains only Y = 2; values within rounding error of an integer
   # are that integer; others are rounded down; Inf and U = n are full support
@@ -367,7 +333,7 @@ test_that("censored beta-binomial bounds are whole counts", {
   for (cens_direct in 0:1) {
     fit$tmb_data$cens_direct[] <- cens_direct
     obj <- make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
-      fit$tmb_random, backend = "rtmb")
+      fit$tmb_random)
     for (par in list(c(0, 0), c(-1.5, 2))) {
       expect_equal(obj$fn(par), nll(par), tolerance = 1e-10, info = cens_direct)
     }
@@ -378,12 +344,11 @@ test_that("censored beta-binomial bounds are whole counts", {
     do_fit = FALSE, family = censored_betabinomial(),
     censored_upper = 2.5)
   obj <- make_sdmTMB_adfun(fit1$tmb_data, fit1$tmb_params, fit1$tmb_map,
-    fit1$tmb_random, backend = "rtmb")
+    fit1$tmb_random)
   expect_equal(obj$fn(c(0, log(2))), log(11), tolerance = 1e-10)
 })
 
 test_that("censored beta-binomial responses must be whole counts", {
-  local_rtmb_backend()
   d <- data.frame(y = c(0.2, 0.3, 0.1, 0.4), n = 10)
   cens_bb <- function(data, upr = rep(Inf, nrow(data)), weights = data$n,
     formula = y ~ 1) {
@@ -429,7 +394,6 @@ test_that("censored_betabinomial() accepts links like betabinomial()", {
 
 # The Laplace gradient needs third derivatives of the censored terms.
 test_that("censored beta-binomial random-effect models are consistent", {
-  local_rtmb_backend()
   skip_if_not_installed("numDeriv")
   set.seed(3)
   n <- 60L
@@ -454,15 +418,9 @@ test_that("censored beta-binomial random-effect models are consistent", {
   expect_equal(tidy(fits$auto), tidy(fits$direct), tolerance = 1e-6)
   expect_equal(tidy(fits$auto, "ran_pars"), tidy(fits$direct, "ran_pars"),
     tolerance = 1e-6)
-  expect_error(sdmTMB(y ~ z, data = d, weights = d$hooks, spatial = "off",
-    family = censored_betabinomial(),
-    censored_upper = upr,
-    control = sdmTMBcontrol(backend = "tmb")),
-    regexp = "backend")
 })
 
 test_that("censored beta-binomial fits sum the shorter side with a precision check", {
-  local_rtmb_backend()
   set.seed(4)
   n <- 100L
   d <- data.frame(z = rnorm(n), hooks = 300)
@@ -498,18 +456,17 @@ test_that("censored beta-binomial fits sum the shorter side with a precision che
   expect_identical(fit1$tmb_data$cens_direct, 0L)
   par <- c(qlogis(1e-4), log(1e6))
   obj <- make_sdmTMB_adfun(fit1$tmb_data, fit1$tmb_params, fit1$tmb_map,
-    fit1$tmb_random, backend = "rtmb")
+    fit1$tmb_random)
   expect_gt(abs(obj$fn(par) - 45.82369), 1)
   expect_identical(check_censored_betabinomial(obj, fit1$tmb_data), 1L)
   fit1$tmb_data$cens_direct <- 1L
   obj <- make_sdmTMB_adfun(fit1$tmb_data, fit1$tmb_params, fit1$tmb_map,
-    fit1$tmb_random, backend = "rtmb")
+    fit1$tmb_random)
   expect_equal(obj$fn(par), 45.82369, tolerance = 1e-6)
 })
 
 test_that("censored beta-binomial held-out CV rows use the direct sum", {
   skip_on_cran()
-  local_rtmb_backend()
   set.seed(5)
   n <- 60L
   d <- data.frame(z = rnorm(n), hooks = 100, X = runif(n), Y = runif(n))
@@ -534,11 +491,11 @@ test_that("censored beta-binomial held-out CV rows use the direct sum", {
     tolerance = 1e-6)
 })
 
-# Observation draws from each backend against closed-form means and
+# Observation draws against closed-form means and
 # variances at fixed parameters, at two linear-predictor values. Tolerances
 # are 5 Monte Carlo standard errors; variance errors use the sample fourth
 # central moment.
-test_that("simulated observations match their distributions in both backends", {
+test_that("simulated observations match their distributions", {
   skip_on_cran()
   n <- 20000L
   d <- data.frame(x = rep(c(0, 1), each = n / 2), trials = 8)
@@ -594,28 +551,25 @@ test_that("simulated observations match their distributions in both backends", {
     family <- case[[1L]]
     d$y <- if (is.null(case$y)) 1 else case$y
     formula <- if (name == "betabinomial") cbind(y, trials - y) ~ x else y ~ x
-    for (backend in c("tmb", "rtmb")) {
-      obj <- suppressMessages(sdmTMB(formula, data = d, family = family,
-        spatial = "off", do_fit = FALSE,
-        control = sdmTMBcontrol(backend = backend)))$tmb_obj
-      values <- utils::modifyList(list(b_j = b_j, ln_phi = log(phi)),
-        as.list(case$par))
-      par <- obj$par
-      for (p in names(values)) par[names(par) == p] <- values[[p]]
-      set.seed(1)
-      y <- obj$simulate(par)$y_i
-      for (x in c(0, 1)) {
-        info <- paste(name, backend, x)
-        yx <- y[d$x == x]
-        eta <- b_j[[1L]] + b_j[[2L]] * x
-        m <- case[[2L]](stats::make.link(family$link)$linkinv(eta))
-        expect_lt(abs(mean(yx) - m[[1L]]), 5 * sd(yx) / sqrt(length(yx)),
-          label = info)
-        if (!is.na(m[[2L]])) {
-          m4 <- mean((yx - mean(yx))^4)
-          expect_lt(abs(var(yx) - m[[2L]]),
-            5 * sqrt((m4 - var(yx)^2) / length(yx)), label = info)
-        }
+    obj <- suppressMessages(sdmTMB(formula, data = d, family = family,
+      spatial = "off", do_fit = FALSE))$tmb_obj
+    values <- utils::modifyList(list(b_j = b_j, ln_phi = log(phi)),
+      as.list(case$par))
+    par <- obj$par
+    for (p in names(values)) par[names(par) == p] <- values[[p]]
+    set.seed(1)
+    y <- obj$simulate(par)$y_i
+    for (x in c(0, 1)) {
+      info <- paste(name, x)
+      yx <- y[d$x == x]
+      eta <- b_j[[1L]] + b_j[[2L]] * x
+      m <- case[[2L]](stats::make.link(family$link)$linkinv(eta))
+      expect_lt(abs(mean(yx) - m[[1L]]), 5 * sd(yx) / sqrt(length(yx)),
+        label = info)
+      if (!is.na(m[[2L]])) {
+        m4 <- mean((yx - mean(yx))^4)
+        expect_lt(abs(var(yx) - m[[2L]]),
+          5 * sqrt((m4 - var(yx)^2) / length(yx)), label = info)
       }
     }
   }
@@ -657,7 +611,6 @@ test_that("RTMB truncated NB draws are finite and match conditional moments", {
 # Right-censored rows include counts far above the mean, whose complement
 # P(Y < y) rounds to 1, and far below it, whose upper tail is close to 1.
 test_that("censored negative binomial likelihood and gradient are correct", {
-  local_rtmb_backend()
   skip_if_not_installed("numDeriv")
   set.seed(4)
   n <- 60L
@@ -756,7 +709,6 @@ test_that("censored NB derivatives remain accurate at extreme dispersions", {
 
 # A Laplace gradient exercises third derivatives of the censored likelihood.
 test_that("censored NB random-effect models have consistent gradients", {
-  local_rtmb_backend()
   skip_if_not_installed("numDeriv")
   set.seed(3)
   n <- 60L

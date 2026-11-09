@@ -31,7 +31,7 @@ test_that("cAIC sparse EDF matches dense calculation in a delta model", {
   tmb_data <- fit$tmb_data
   tmb_data$weights_i[] <- 0
   obj_new <- make_sdmTMB_adfun(tmb_data, fit$parlist, fit$tmb_map,
-    fit$tmb_random, fit$backend, profile = NULL)
+    fit$tmb_random, profile = NULL)
   par <- fit$last.par.best
   H <- as.matrix(obj$env$spHess(par, random = TRUE))
   H_new <- as.matrix(obj_new$env$spHess(par, random = TRUE))

@@ -7,17 +7,11 @@
 test_that("tmbstan samples an RTMB fit and MCMC prediction uses the draws", {
   skip_if_not_installed("tmbstan")
   mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 30)
-  fit <- function(backend) {
-    sdmTMB(present ~ depth_scaled, data = pcod_2011, mesh = mesh,
-      family = binomial(),
-      priors = sdmTMBpriors(matern_s = pc_matern(range_gt = 15, sigma_lt = 5),
-        b = normal(c(0, 0), c(5, 5))),
-      bayesian = TRUE, control = sdmTMBcontrol(backend = backend))
-  }
-  cpp <- fit("tmb")
-  rt <- fit("rtmb")
-  expect_identical(names(rt$tmb_obj$env$last.par.best),
-    names(cpp$tmb_obj$env$last.par.best))
+  rt <- sdmTMB(present ~ depth_scaled, data = pcod_2011, mesh = mesh,
+    family = binomial(),
+    priors = sdmTMBpriors(matern_s = pc_matern(range_gt = 15, sigma_lt = 5),
+      b = normal(c(0, 0), c(5, 5))),
+    bayesian = TRUE)
   # A short smoke run; convergence warnings are expected.
   stan <- suppressWarnings(tmbstan::tmbstan(rt$tmb_obj, chains = 1,
     iter = 100, seed = 1, refresh = 0))

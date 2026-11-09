@@ -92,9 +92,5 @@ test_that("Auxiliary prediction designs reuse the fitted encoding", {
   nd$reg <- factor(c("n", "m", "new"))
   expect_error(predict(fit, newdata = nd), "new levels")
 
-  # the RTMB backend projects the same saved designs
-  rt <- fit
-  rt$backend <- "rtmb"
-  expect_equal(predict(rt, newdata = d[idx, ])$est, p_nd$est, tolerance = 1e-8)
-  expect_rtmb_fit_data_matches(fit, as.data.frame(d[idx, ]), info = "design specs")
+  expect_frozen_fit_data("design", fit, as.data.frame(d[idx, ]), info = "design specs")
 })

@@ -37,7 +37,6 @@ test_that("A linear threshold *delta* model fits", {
   )
   mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.2)
   # seeds were chosen for RTMB draws, which differ from TMB draws
-  sim_ctrl <- sdmTMBcontrol(backend = "rtmb")
   s1 <- sdmTMB_simulate(
     formula = ~ 1 + breakpt(a1),
     data = predictor_dat,
@@ -52,8 +51,7 @@ test_that("A linear threshold *delta* model fits", {
     sigma_O = 0.05,
     seed = 4,
     B = 0,
-    threshold_coefs = c(0.5, 0.3),
-    control = sim_ctrl
+    threshold_coefs = c(0.5, 0.3)
   )
   s2 <- sdmTMB_simulate(
     formula = ~ 1 + breakpt(a1),
@@ -65,8 +63,7 @@ test_that("A linear threshold *delta* model fits", {
     sigma_O = 0.1,
     seed = 4,
     B = 0,
-    threshold_coefs = c(0.3, 0.3),
-    control = sim_ctrl
+    threshold_coefs = c(0.3, 0.3)
   )
 
   plot(predictor_dat$a1, s1$observed)

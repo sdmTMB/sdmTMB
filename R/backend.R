@@ -3,7 +3,7 @@
 # `adreport` optionally names the only ADREPORTs to register (RTMB backend
 # only), so that `sdreport()` skips standard errors the caller won't use.
 make_sdmTMB_adfun <- function(data, parameters, map, random = NULL,
-                              backend = "tmb", profile = NULL,
+                              backend = "rtmb", profile = NULL,
                               silent = TRUE, adreport = NULL, ...) {
   backend <- match.arg(backend, c("tmb", "rtmb"))
   # Parameters of removed experimental epsilon models; fits saved before the

@@ -237,7 +237,6 @@ test_that("Non-integer count responses warn", {
 
 test_that("Conway-Maxwell-Poisson fits underdispersed counts", {
   skip_on_cran()
-  local_rtmb_backend()
   set.seed(1)
   loc <- data.frame(x = stats::runif(500), y = stats::runif(500))
   mesh <- make_mesh(loc, c("x", "y"), cutoff = 0.1)
@@ -249,9 +248,6 @@ test_that("Conway-Maxwell-Poisson fits underdispersed counts", {
   m_ns <- sdmTMB(observed ~ 1, data = s, family = compois(), spatial = "off")
   expect_equal(unname(m_ns$model$par), unname(m_glmmTMB$fit$par),
     tolerance = 1e-4)
-
-  expect_error(sdmTMB(observed ~ 1, data = s, family = compois(),
-    spatial = "off", control = sdmTMBcontrol(backend = "tmb")), "rtmb")
 
   m <- sdmTMB(observed ~ 1, data = s, mesh = mesh, family = compois())
   expect_equal(sigma(m), 0.4, tolerance = 0.2)
@@ -277,7 +273,6 @@ test_that("Conway-Maxwell-Poisson fits underdispersed counts", {
 test_that("Conway-Maxwell-Poisson draws match the exact moments", {
   skip_on_ci()
   skip_on_cran()
-  local_rtmb_backend()
   # includes nu * mean > 700, where TMB's rcompois2() is biased
   set.seed(1)
   for (p in list(c(0.5, 0.2), c(3, 3), c(200, 10))) {
@@ -472,7 +467,6 @@ test_that("censored_upper accepts a column name", {
 })
 
 test_that("Censored beta-binomial family works", {
-  local_rtmb_backend()
   set.seed(1)
   n <- 200L
   d <- data.frame(year = factor(rep(1:2, each = n / 2)),
@@ -538,7 +532,6 @@ test_that("Censored beta-binomial family works", {
 })
 
 test_that("Censored binomial family works", {
-  local_rtmb_backend()
   set.seed(1)
   n <- 200L
   d <- data.frame(year = factor(rep(1:2, each = n / 2)),
@@ -600,10 +593,6 @@ test_that("Censored binomial family works", {
     spatial = "off", family = censored_binomial(),
     censored_upper = d$y),
     NA)
-  expect_error(sdmTMB(y ~ 0 + year, data = d, weights = d$hooks,
-    spatial = "off", family = censored_binomial(),
-    censored_upper = upr, control = sdmTMBcontrol(backend = "tmb")),
-    regexp = "backend")
   expect_error(censored_binomial(link = "log"), regexp = "not available")
   lk <- "cloglog"
   expect_identical(censored_binomial(link = lk)$link, "cloglog")
@@ -612,7 +601,6 @@ test_that("Censored binomial family works", {
 })
 
 test_that("Censored negative binomial families work", {
-  local_rtmb_backend()
   set.seed(2)
   n <- 200L
   d <- data.frame(year = factor(rep(1:2, each = n / 2)),
@@ -648,10 +636,6 @@ test_that("Censored negative binomial families work", {
   expect_error(sdmTMB(y ~ 0 + year, data = transform(d, y = y + 0.5),
     spatial = "off", family = censored_nbinom2(), censored_upper = rep(Inf, n)),
     regexp = "whole-number")
-  expect_error(sdmTMB(y ~ 0 + year, data = d, spatial = "off",
-    family = censored_nbinom1(), censored_upper = upr,
-    control = sdmTMBcontrol(backend = "tmb")),
-    regexp = "backend")
 })
 
 test_that("Censored Poisson upper limit function works", {

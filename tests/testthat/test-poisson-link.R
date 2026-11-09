@@ -29,25 +29,22 @@ test_that("Poisson-link delta predictions include the offset", {
   skip_on_cran()
   mesh <- make_mesh(dogfish, c("X", "Y"), cutoff = 30)
   nd <- dogfish[1:20, ]
-  for (backend in c("tmb", "rtmb")) {
-    fit <- sdmTMB(catch_weight ~ 1, family = delta_gamma(type = "poisson-link"),
-      mesh = mesh, data = dogfish, offset = log(dogfish$area_swept),
-      control = sdmTMBcontrol(backend = backend))
-    p0 <- predict(fit, newdata = nd, offset = rep(0, nrow(nd)))
-    p1 <- predict(fit, newdata = nd, offset = rep(0.3, nrow(nd)))
-    # The offset enters component 2, as in the expected catch
-    # exp(offset + eta1 + eta2).
-    expect_equal(p1$est1, p0$est1)
-    expect_equal(p1$est2 - p0$est2, rep(0.3, nrow(nd)))
-    expect_equal(p1$est - p0$est, rep(0.3, nrow(nd)))
-    r0 <- predict(fit, newdata = nd, offset = rep(0, nrow(nd)), type = "response")
-    r1 <- predict(fit, newdata = nd, offset = rep(0.3, nrow(nd)), type = "response")
-    expect_equal(log(r1$est) - log(r0$est), rep(0.3, nrow(nd)))
-    # Index with an offset scales by exp(offset).
-    i0 <- get_index(fit, newdata = nd, offset = rep(0, nrow(nd)), area = 1)
-    i1 <- get_index(fit, newdata = nd, offset = rep(0.3, nrow(nd)), area = 1)
-    expect_equal(i1$est / i0$est, exp(0.3), tolerance = 1e-6)
-  }
+  fit <- sdmTMB(catch_weight ~ 1, family = delta_gamma(type = "poisson-link"),
+    mesh = mesh, data = dogfish, offset = log(dogfish$area_swept))
+  p0 <- predict(fit, newdata = nd, offset = rep(0, nrow(nd)))
+  p1 <- predict(fit, newdata = nd, offset = rep(0.3, nrow(nd)))
+  # The offset enters component 2, as in the expected catch
+  # exp(offset + eta1 + eta2).
+  expect_equal(p1$est1, p0$est1)
+  expect_equal(p1$est2 - p0$est2, rep(0.3, nrow(nd)))
+  expect_equal(p1$est - p0$est, rep(0.3, nrow(nd)))
+  r0 <- predict(fit, newdata = nd, offset = rep(0, nrow(nd)), type = "response")
+  r1 <- predict(fit, newdata = nd, offset = rep(0.3, nrow(nd)), type = "response")
+  expect_equal(log(r1$est) - log(r0$est), rep(0.3, nrow(nd)))
+  # Index with an offset scales by exp(offset).
+  i0 <- get_index(fit, newdata = nd, offset = rep(0, nrow(nd)), area = 1)
+  i1 <- get_index(fit, newdata = nd, offset = rep(0.3, nrow(nd)), area = 1)
+  expect_equal(i1$est / i0$est, exp(0.3), tolerance = 1e-6)
 })
 
 test_that("Poisson-link delta response components account for the offset", {

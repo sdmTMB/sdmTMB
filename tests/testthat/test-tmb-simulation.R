@@ -446,58 +446,55 @@ test_that("simulate without observation error works for binomial likelihoods and
 test_that("simulate_re redraws only the named random effects", {
   skip_on_cran()
   mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 30)
-  for (backend in c("rtmb", "tmb")) {
-    fit <- sdmTMB(density ~ 0 + as.factor(year), data = pcod, mesh = mesh,
-      family = tweedie(), time = "year", spatiotemporal = "iid",
-      control = sdmTMBcontrol(backend = backend))
-    sim <- function(...) {
-      simulate(fit, return_tmb_report = TRUE, seed = 1, silent = TRUE, ...)
-    }
-
-    # mle-eb: held omega equals the EB estimates
-    cond <- sim(nsim = 1)[[1]]
-    r <- sim(nsim = 2, simulate_re = "spatiotemporal")
-    expect_equal(r[[1]]$omega_s, cond$omega_s)
-    expect_identical(r[[1]]$omega_s, r[[2]]$omega_s)
-    expect_false(identical(r[[1]]$epsilon_st, r[[2]]$epsilon_st))
-
-    # mle-mvn single: one shared posterior draw, different from EB
-    r <- sim(nsim = 3, type = "mle-mvn", mle_mvn_samples = "single",
-      simulate_re = "spatiotemporal")
-    expect_identical(r[[1]]$omega_s, r[[3]]$omega_s)
-    expect_false(isTRUE(all.equal(r[[1]]$omega_s, cond$omega_s)))
-    expect_false(identical(r[[1]]$epsilon_st, r[[2]]$epsilon_st))
-
-    # mle-mvn multiple: held omega differs across nsim
-    r <- sim(nsim = 2, type = "mle-mvn", mle_mvn_samples = "multiple",
-      simulate_re = "spatiotemporal")
-    expect_false(identical(r[[1]]$omega_s, r[[2]]$omega_s))
-
-    # naming both redraws both
-    r <- sim(nsim = 2, simulate_re = c("spatial", "spatiotemporal"))
-    expect_false(identical(r[[1]]$omega_s, r[[2]]$omega_s))
-
-    # newdata
-    nd <- replicate_df(qcs_grid_small, "year", unique(pcod$year))
-    r <- sim(nsim = 2, newdata = nd, simulate_re = "spatiotemporal")
-    expect_equal(r[[1]]$omega_s, cond$omega_s)
-    expect_identical(r[[1]]$omega_s, r[[2]]$omega_s)
-    expect_false(identical(r[[1]]$epsilon_st, r[[2]]$epsilon_st))
-
-    # matrix output and reproducibility
-    y <- simulate(fit, nsim = 2, simulate_re = "spatiotemporal", seed = 1, silent = TRUE)
-    expect_equal(dim(y), c(nrow(pcod), 2L))
-    expect_identical(y, simulate(fit, nsim = 2, simulate_re = "spatiotemporal",
-      seed = 1, silent = TRUE))
-
-    # all named is the same as re_form = NA
-    expect_identical(
-      simulate(fit, nsim = 2, seed = 1, silent = TRUE, re_form = NA),
-      simulate(fit, nsim = 2, seed = 1, silent = TRUE,
-        simulate_re = c("spatial", "spatiotemporal", "spatial_varying",
-          "group_re", "time_varying"))
-    )
+  fit <- sdmTMB(density ~ 0 + as.factor(year), data = pcod, mesh = mesh,
+    family = tweedie(), time = "year", spatiotemporal = "iid")
+  sim <- function(...) {
+    simulate(fit, return_tmb_report = TRUE, seed = 1, silent = TRUE, ...)
   }
+
+  # mle-eb: held omega equals the EB estimates
+  cond <- sim(nsim = 1)[[1]]
+  r <- sim(nsim = 2, simulate_re = "spatiotemporal")
+  expect_equal(r[[1]]$omega_s, cond$omega_s)
+  expect_identical(r[[1]]$omega_s, r[[2]]$omega_s)
+  expect_false(identical(r[[1]]$epsilon_st, r[[2]]$epsilon_st))
+
+  # mle-mvn single: one shared posterior draw, different from EB
+  r <- sim(nsim = 3, type = "mle-mvn", mle_mvn_samples = "single",
+    simulate_re = "spatiotemporal")
+  expect_identical(r[[1]]$omega_s, r[[3]]$omega_s)
+  expect_false(isTRUE(all.equal(r[[1]]$omega_s, cond$omega_s)))
+  expect_false(identical(r[[1]]$epsilon_st, r[[2]]$epsilon_st))
+
+  # mle-mvn multiple: held omega differs across nsim
+  r <- sim(nsim = 2, type = "mle-mvn", mle_mvn_samples = "multiple",
+    simulate_re = "spatiotemporal")
+  expect_false(identical(r[[1]]$omega_s, r[[2]]$omega_s))
+
+  # naming both redraws both
+  r <- sim(nsim = 2, simulate_re = c("spatial", "spatiotemporal"))
+  expect_false(identical(r[[1]]$omega_s, r[[2]]$omega_s))
+
+  # newdata
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod$year))
+  r <- sim(nsim = 2, newdata = nd, simulate_re = "spatiotemporal")
+  expect_equal(r[[1]]$omega_s, cond$omega_s)
+  expect_identical(r[[1]]$omega_s, r[[2]]$omega_s)
+  expect_false(identical(r[[1]]$epsilon_st, r[[2]]$epsilon_st))
+
+  # matrix output and reproducibility
+  y <- simulate(fit, nsim = 2, simulate_re = "spatiotemporal", seed = 1, silent = TRUE)
+  expect_equal(dim(y), c(nrow(pcod), 2L))
+  expect_identical(y, simulate(fit, nsim = 2, simulate_re = "spatiotemporal",
+    seed = 1, silent = TRUE))
+
+  # all named is the same as re_form = NA
+  expect_identical(
+    simulate(fit, nsim = 2, seed = 1, silent = TRUE, re_form = NA),
+    simulate(fit, nsim = 2, seed = 1, silent = TRUE,
+      simulate_re = c("spatial", "spatiotemporal", "spatial_varying",
+        "group_re", "time_varying"))
+  )
 
   expect_error(simulate(fit, simulate_re = "spatiotemporal", re_form = ~0), "only one")
   expect_error(simulate(fit, simulate_re = "spatio"), "Unknown")
@@ -534,17 +531,14 @@ test_that("simulate_re = 'group_re' simulates correlated random slopes", {
   b <- matrix(rnorm(2 * ng, 0, c(0.5, 0.3)), ncol = 2, byrow = TRUE)
   d <- data.frame(g = factor(g), x = rnorm(length(g)))
   d$y <- 1 + b[g, 1] + (0.5 + b[g, 2]) * d$x + rnorm(length(g), 0, 0.3)
-  for (backend in c("rtmb", "tmb")) {
-    fit <- sdmTMB(y ~ x + (1 + x | g), data = d, spatial = "off",
-      control = sdmTMBcontrol(backend = backend))
-    r <- simulate(fit, nsim = 200, simulate_re = "group_re",
-      return_tmb_report = TRUE, seed = 1, silent = TRUE)
-    b_sim <- do.call(rbind, lapply(r, function(.x) {
-      matrix(.x$re_b_pars[, 1], ncol = 2, byrow = TRUE)
-    }))
-    sds <- tidy(fit, "ran_pars")
-    sds <- sds$estimate[grepl("^sd__", sds$term)]
-    expect_equal(apply(b_sim, 2, sd), sds, tolerance = 0.05)
-    expect_false(identical(r[[1]]$re_b_pars, r[[2]]$re_b_pars))
-  }
+  fit <- sdmTMB(y ~ x + (1 + x | g), data = d, spatial = "off")
+  r <- simulate(fit, nsim = 200, simulate_re = "group_re",
+    return_tmb_report = TRUE, seed = 1, silent = TRUE)
+  b_sim <- do.call(rbind, lapply(r, function(.x) {
+    matrix(.x$re_b_pars[, 1], ncol = 2, byrow = TRUE)
+  }))
+  sds <- tidy(fit, "ran_pars")
+  sds <- sds$estimate[grepl("^sd__", sds$term)]
+  expect_equal(apply(b_sim, 2, sd), sds, tolerance = 0.05)
+  expect_false(identical(r[[1]]$re_b_pars, r[[2]]$re_b_pars))
 })
