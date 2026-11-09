@@ -128,6 +128,11 @@ cAIC.sdmTMB <- function(object, ..., what = c("cAIC", "EDF")) {
 #' @exportS3Method cAIC breakpt_profile
 cAIC.breakpt_profile <- cAIC.sdmTMB
 
+# TMB is used only through its internal solveSubset() in caic_one(), which
+# R CMD check does not see; this import declares TMB as used.
+#' @importFrom TMB runExample
+NULL
+
 caic_one <- function(object, what = c("caic", "edf"), table = FALSE) {
   what <- match.arg(what)
   if (inherits(object, "breakpt_profile")) {

@@ -122,6 +122,7 @@ if(getRversion() >= "3.6.0") {
   export(Effect.sdmTMB)
 }
 import(methods)
+importFrom(TMB,runExample)
 importFrom(assertthat,assert_that)
 importFrom(cli,
   cli_abort,

@@ -705,7 +705,7 @@ move_proj_to_tmbdat <- function(x, object, newdata, called_by_simulate = FALSE, 
   x$do_predict <- 0L
   x$year_i <- x$proj_year
   ## x$A_st <- x$proj_mesh
-  ## .cpp uses unique locations in projection but not in fitting:
+  ## the objective uses unique locations in projection but not in fitting:
   xy_cols <- object$spde$xy_cols
   if (!is.null(xy_cols) && all(xy_cols %in% names(newdata))) {
     proj_mesh <- fmesher::fm_basis(object$spde$mesh, loc = as.matrix(newdata[, xy_cols, drop = FALSE]))

@@ -1,7 +1,5 @@
 inst/doc
 .Rproj.user
-*.o
-*.so
 .Rhistory
 prediction-grids/*
 *.rds

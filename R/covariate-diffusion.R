@@ -520,8 +520,8 @@ time_lag <- function(x, start = c("stationary", "zero")) {
   )
 }
 
-# `time_lag(start = )` codes, matching `CovariateDiffusionStart` in
-# `src/covariate-diffusion.h`.
+# `time_lag(start = )` codes: 0 = "zero", 1 = "stationary" (read by
+# `R/rtmb-diffusion.R`).
 .nonlocal_start_code <- function(start) {
   as.integer(match(start, c("zero", "stationary")) - 1L)
 }
