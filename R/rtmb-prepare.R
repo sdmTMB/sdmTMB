@@ -219,7 +219,7 @@ rtmb_smooth_index <- function(data) {
 # Reject untranslated features before RTMB tapes an incomplete model.
 rtmb_validate <- function(data, prepared, parameters, random, ...) {
   if (!all(names(list(...)) %in% c("intern", "inner.control", "ADreport"))) {
-    cli::cli_abort("Additional MakeADFun options are not supported by the RTMB backend yet.")
+    cli::cli_abort("Only `intern`, `inner.control`, and `ADreport` can be passed to `RTMB::MakeADFun()`.")
   }
   # Random parameters must be translated effects. The first multiphase fit
   # integrates none of them.

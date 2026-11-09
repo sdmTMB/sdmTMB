@@ -84,7 +84,7 @@
 }
 
 # Censored binomial and beta-binomial counts, trials, and bounds on the count scale, as
-# exact integers that both backends can use directly. Values within
+# exact integers. Values within
 # floating-point error of an integer (e.g., proportions times trials) are
 # snapped to it. Otherwise counts and trials must be integers. A bound `U`
 # can be any real number and means the integer count `floor(U)`; `NA`

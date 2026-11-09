@@ -111,7 +111,7 @@ profile crosses the interval cutoff, continue until they are at most
 }
 
 Each profile fit starts from the nearest finished fit and skips the extra
-optimization steps and \code{\link[TMB:sdreport]{TMB::sdreport()}} for speed.
+optimization steps and \code{\link[RTMB:sdreport]{RTMB::sdreport()}} for speed.
 Only the final fit runs those.
 
 The confidence interval runs from the lowest to the highest cutpoint within

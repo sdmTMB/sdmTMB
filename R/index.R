@@ -56,7 +56,7 @@
 #'   `list(re_form = NA)` calculates the quantity with the spatial and
 #'   spatiotemporal random fields set to zero, and `list(re_form_iid = NA)`
 #'   does the same for IID random effects.
-#' @param ... Passed to [TMB::sdreport()] or [RTMB::sdreport()].
+#' @param ... Passed to [RTMB::sdreport()].
 #'
 #' @details
 #' For each time step, predictions are converted to the response scale (for
@@ -567,7 +567,7 @@ joint_precision_report <- function(fit, args, par) {
 # and needn't be recomputed (about two gradient evaluations per fixed effect).
 index_sdreport <- function(fit, new_obj, par,
   hessian.fixed = fit_hessian_fixed(fit, new_obj, par), ...) {
-  sdreport_sdmTMB(new_obj, par.fixed = par, hessian.fixed = hessian.fixed, ...)
+  RTMB::sdreport(new_obj, par.fixed = par, hessian.fixed = hessian.fixed, ...)
 }
 
 # The fit's fixed-effect Hessian, or NULL (recompute) unless it verifiably
@@ -651,8 +651,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     profile = obj$fit_obj$control$profile,
     map = obj$fit_obj$tmb_map,
     random = obj$fit_obj$tmb_random,
-    backend = obj$fit_obj$backend,
-    silent = silent,
+      silent = silent,
     adreport = adreport
   )
   # bias correction is done below
@@ -672,8 +671,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       map = obj$fit_obj$tmb_map,
       profile = obj$fit_obj$control$profile,
       random = obj$fit_obj$tmb_random,
-      backend = obj$fit_obj$backend,
-      silent = silent,
+          silent = silent,
       # Ratio quantities (weighted_avg, eao) tag their sums in the template;
       # only the internal inner optimizer uses those tags (lowrank = TRUE)
       # and they are much faster there. The external optimizer is faster for

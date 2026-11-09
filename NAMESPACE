@@ -180,4 +180,3 @@ importFrom(stats,
   update,
   vcov
 )
-useDynLib(sdmTMB, .registration = TRUE)

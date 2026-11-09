@@ -150,8 +150,8 @@ test_that("RTMB reports response means when observations are not simulated", {
     data <- fit$tmb_data
     data$sim_obs <- 0L
     expect_frozen_values(paste("delta response means",
-      paste(case$family$family, collapse = "-"), case$family$type), function(backend) as.vector(make_sdmTMB_adfun(
-        data, p, fit$tmb_map, fit$tmb_random,
-        backend = backend)$simulate()$y_i), tolerance = 1e-7)
+      paste(case$family$family, collapse = "-"), case$family$type),
+      as.vector(make_sdmTMB_adfun(data, p, fit$tmb_map,
+        fit$tmb_random)$simulate()$y_i), tolerance = 1e-7)
   }
 })

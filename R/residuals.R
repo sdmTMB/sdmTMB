@@ -432,7 +432,7 @@ qres_gengamma <- function(object, y, mu, ...) {
 #' distribution. In practice, the sample is obtained based on the mode and
 #' Hessian of the random effects taking advantage of sparsity in the Hessian for
 #' computational efficiency. This is the same sample as `obj$env$MC()`, where
-#' `obj` is the \pkg{TMB} object created with `TMB::MakeADFun()`. See Waagepetersen
+#' `obj` is the object created with `RTMB::MakeADFun()`. See Waagepetersen
 #' (2006) and the description in the source code for the internal \pkg{TMB}
 #' function `TMB:::oneSamplePosterior()`. Residuals are converted to randomized
 #' quantile residuals as described above.
@@ -698,21 +698,10 @@ residuals.sdmTMB <- function(object,
         cli_abort("Deviance residuals not implemented for binomial family with size > 1.")
       }
     }
-    if (object$backend == "tmb" && !is_delta(object) &&
-        object$family$family == "nbinom1") {
-      cli_abort(c(
-        "NB1 deviance residuals are not implemented for the TMB backend.",
-        "i" = "Refit with `sdmTMBcontrol(backend = \"rtmb\")`."
-      ))
-    }
     env <- object$tmb_obj$env
-    report <- if (object$backend == "rtmb") {
-      # Deviance residuals are left off the RTMB tape; evaluate them directly.
-      rtmb_report_values(object$tmb_data,
-        env$parList(par = env$last.par.best), deviance = TRUE)
-    } else {
-      object$tmb_obj$report(env$last.par.best)
-    }
+    # Deviance residuals are left off the tape; evaluate them directly.
+    report <- rtmb_report_values(object$tmb_data,
+      env$parList(par = env$last.par.best), deviance = TRUE)
     resids <- report$devresid[, model, drop = TRUE]
     if (all(resids == 0)) {
       cli_abort("Deviance residuals not implemented for this family.")

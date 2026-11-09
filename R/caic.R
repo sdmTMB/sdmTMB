@@ -167,8 +167,7 @@ caic_one <- function(object, what = c("caic", "edf"), table = FALSE) {
       parameters = object$parlist,
       map = object$tmb_map,
       random = object$tmb_random,
-      backend = object$backend,
-      profile = NULL #<
+          profile = NULL #<
     )
   }
 
@@ -179,8 +178,7 @@ caic_one <- function(object, what = c("caic", "edf"), table = FALSE) {
     parameters = object$parlist,
     map = object$tmb_map,
     random = object$tmb_random,
-    backend = object$backend,
-    profile = NULL
+      profile = NULL
   )
 
   # the mode, not `last.par`: that's wherever the objective was last evaluated

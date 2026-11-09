@@ -118,9 +118,8 @@ vignette for details.}
 (e.g., previously estimated) values. \code{NULL} values indicate that the
 corresponding random effects should be simulated.}
 
-\item{seed}{Seed number. The TMB and RTMB backends (see the \code{backend}
-argument of \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}}, passed via \code{control}) draw random numbers
-differently, so the same seed gives different simulated values with each.}
+\item{seed}{Seed number. Simulated values for a given seed differ from
+those of the removed C++ TMB backend, the default before sdmTMB 1.2.0.}
 
 \item{time_varying}{An optional one-sided formula describing time-varying
 covariates passed through to \code{\link[=sdmTMB]{sdmTMB()}} for building a time-varying random

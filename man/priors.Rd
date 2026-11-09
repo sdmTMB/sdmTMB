@@ -84,7 +84,7 @@ f(x) = 0.95.}
 f(x) is maximized.}
 
 \item{custom}{Optional function of \verb{(par, theta)} returning one or more log
-density contributions (RTMB backend only; see \strong{Custom priors} below).}
+density contributions (see \strong{Custom priors} below).}
 
 \item{custom_log_jacobian}{Optional function of \verb{(par, theta)} returning the
 log absolute Jacobian for \code{custom}. Only used if \code{bayesian = TRUE}. Requires
@@ -157,7 +157,7 @@ as \code{\link[stats:dlnorm]{stats::dlnorm()}}. The median is \code{exp(meanlog)
 }
 \section{Custom priors}{
 
-With the RTMB backend (the default), \code{custom} adds arbitrary log densities
+\code{custom} adds arbitrary log densities
 to the joint objective. The function is called as \code{custom(par, theta)}, where
 \code{par} is the list of raw (internal) parameters and \code{theta} is a list of
 natural-scale versions of them. See \code{\link[=get_prior_parameters]{get_prior_parameters()}} for their

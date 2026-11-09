@@ -246,7 +246,6 @@ test_that("prepare_spatial_domain returns areal domain pieces", {
   expect_s4_class(out$W_ss, "dgCMatrix")
   expect_equal(dim(out$W_ss), c(2L, 2L))
   expect_equal(as.matrix(out$W_ss), as.matrix(d$W))
-  expect_identical(out$normalize_in_r, 0L)
   expect_identical(out$barrier, 0L)
   expect_identical(out$anisotropy, 0L)
 })

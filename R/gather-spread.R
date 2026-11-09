@@ -37,7 +37,7 @@
 spread_sims <- function(object, nsim = 200) {
   .check_family_capability(object, "spread_sims")
   if (!"jointPrecision" %in% names(object$sd_report)) {
-    cli_abort("TMB::sdreport() must be run with the joint precision returned.")
+    cli_abort("`RTMB::sdreport()` must be run with the joint precision returned.")
   }
 
   if (.object_has_two_components(object, caller = "`spread_sims()`")) {

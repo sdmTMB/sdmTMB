@@ -439,10 +439,7 @@ model.frame.sdmTMB <- function(formula, ...) {
 #' from saved files.
 #'
 #' Unless `control` is supplied, the updated model reuses the fitted model's
-#' [sdmTMBcontrol()] settings, including its backend, regardless of the
-#' current `sdmTMB.backend` option. A supplied `control` replaces these
-#' settings, including the backend (e.g.,
-#' `update(fit, control = sdmTMBcontrol(backend = "rtmb"))`).
+#' [sdmTMBcontrol()] settings. A supplied `control` replaces these settings.
 #'
 #' @param object An sdmTMB model object.
 #' @param formula. Optional updated formula.
@@ -493,14 +490,9 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
     call$data <- object$data
   }
 
-  # keep the fitted controls and backend unless `control` is replaced;
-  # otherwise the backend would re-resolve from the current global option
+  # keep the fitted controls unless `control` is replaced
   if (!"control" %in% names(new_args)) {
-    control <- object$control
-    control$backend <- object$backend
-    call$control <- control
-  } else if (is.list(new_args$control) && is.null(new_args$control$backend)) {
-    call$control$backend <- object$backend
+    call$control <- object$control
   }
 
   # evaluate the updated call if requested

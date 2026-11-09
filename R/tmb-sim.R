@@ -51,9 +51,8 @@
 #' @param fixed_re A list of optional random effects to fix at specified
 #'   (e.g., previously estimated) values. `NULL` values indicate that the
 #'   corresponding random effects should be simulated.
-#' @param seed Seed number. The TMB and RTMB backends (see the `backend`
-#'   argument of [sdmTMBcontrol()], passed via `control`) draw random numbers
-#'   differently, so the same seed gives different simulated values with each.
+#' @param seed Seed number. Simulated values for a given seed differ from
+#'   those of the removed C++ TMB backend, the default before sdmTMB 1.2.0.
 #' @param rho_time Autoregressive correlation(s) for time-varying parameters
 #'   when `time_varying_type = "ar1"`. Values must lie between -1 and 1 and may
 #'   be supplied as a single value or a vector the same length as `sigma_V`.
@@ -424,8 +423,7 @@ simulate_new <- function(formula,
 
   newobj <- make_sdmTMB_adfun(
     data = tmb_data, map = fit$tmb_map,
-    random = fit$tmb_random, parameters = params,
-    backend = fit$backend
+    random = fit$tmb_random, parameters = params
   )
 
   set.seed(seed)
@@ -516,8 +514,7 @@ sdmTMB_simulate <- simulate_new
 #' @method simulate sdmTMB
 #' @param object An `sdmTMB` model.
 #' @param nsim Number of response lists to simulate. Defaults to 1.
-#' @param seed Random number seed. Simulations use the backend the model was
-#'   fit with; TMB and RTMB fits give different values for the same seed.
+#' @param seed Random number seed.
 #' @param type How parameters should be treated. `"mle-eb"`: fixed effects
 #'   are at their maximum likelihood (MLE) estimates  and random effects are at
 #'   their empirical Bayes (EB) estimates. `"mle-mvn"`: fixed effects are at
@@ -668,8 +665,7 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
 
   newobj <- make_sdmTMB_adfun(
     data = tmb_dat, map = object$tmb_map,
-    random = object$tmb_random, parameters = object$tmb_obj$env$parList(),
-    backend = object$backend
+    random = object$tmb_random, parameters = object$tmb_obj$env$parList()
   )
 
   # params MLE/MVN stuff

@@ -31,11 +31,11 @@ test_that("sdmTMB model fit with a covariate beta", {
   plot(spde)
   m <- sdmTMB(
     data = s, formula = observed ~ 0 + cov1, time = "time",
-    silent = TRUE, mesh = spde, control = sdmTMBcontrol(normalize = FALSE, newton_loops = 1)
+    silent = TRUE, mesh = spde, control = sdmTMBcontrol(newton_loops = 1)
   )
   m_pc <- sdmTMB(
     data = s, formula = observed ~ 0 + cov1, time = "time",
-    silent = TRUE, mesh = spde, control = sdmTMBcontrol(normalize = FALSE, newton_loops = 1),
+    silent = TRUE, mesh = spde, control = sdmTMBcontrol(newton_loops = 1),
     priors = sdmTMBpriors(
       matern_s = pc_matern(range_gt = 0.2, sigma_lt = 0.2, range_prob = 0.05, sigma_prob = 0.05)
     )

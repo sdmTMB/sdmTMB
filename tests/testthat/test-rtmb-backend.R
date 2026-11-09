@@ -35,7 +35,7 @@ test_that("RTMB rejects unsupported MakeADFun options and random parameters", {
     spatiotemporal = "off", time = "year")
   expect_error(make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
     fit$tmb_random, hessian = TRUE),
-    "Additional MakeADFun options")
+    "Only `intern`")
   expect_error(make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
     random = "ln_phi"), "can't integrate over")
 })
@@ -94,4 +94,30 @@ test_that("update() keeps the fitted controls", {
   # an explicit control replaces the fitted one
   new <- update(fit, control = sdmTMBcontrol(multiphase = TRUE))
   expect_true(new$control$multiphase)
+})
+
+test_that("the deprecated backend and normalize controls warn and are ignored", {
+  withr::local_options(lifecycle_verbosity = "warning")
+  expect_warning(ctl <- sdmTMBcontrol(backend = "tmb"), "TMB backend was removed")
+  expect_null(ctl$backend)
+  expect_warning(sdmTMBcontrol(backend = "rtmb"), "only backend")
+  expect_warning(ctl <- sdmTMBcontrol(normalize = TRUE), "deprecated")
+  expect_null(ctl$normalize)
+  expect_no_warning(sdmTMBcontrol())
+
+  fit <- sdmTMB(density ~ 1, data = pcod_2011, spatial = "off")
+  expect_identical(fit$backend, "rtmb")
+  # controls saved with these fields by older versions still update and fit
+  fit$control$backend <- "rtmb"
+  fit$control$normalize <- FALSE
+  new <- update(fit, density ~ depth_scaled)
+  expect_equal(new$model$convergence, 0L)
+})
+
+test_that("fits with the removed TMB backend ask for a refit", {
+  fit <- sdmTMB(density ~ 1, data = pcod_2011, spatial = "off")
+  fit$backend <- "tmb"
+  expect_error(predict(fit), "C\\+\\+ TMB backend")
+  expect_error(update(fit), "C\\+\\+ TMB backend")
+  expect_error(sdmTMB:::reload_model(fit), "C\\+\\+ TMB backend")
 })

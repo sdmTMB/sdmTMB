@@ -296,15 +296,14 @@ project <- function(
   map$epsilon_st <- as.factor(map$epsilon_st)
 
   ## rebuild TMB object
-  if (!silent) cli::cli_inform("Rebuilding TMB object with TMB::MakeADFun()")
+  if (!silent) cli::cli_inform("Rebuilding the RTMB objective with RTMB::MakeADFun()")
   obj <- make_sdmTMB_adfun(
     data = p,
     profile = object$control$profile,
     parameters = pars,
     map = map,
     random = object$tmb_random,
-    backend = object$backend,
-    silent = TRUE
+      silent = TRUE
   )
 
   ## do simulations
@@ -390,7 +389,7 @@ project <- function(
 project_sd_report <- function(object) {
   sd_report <- object$sd_report
   if (!"jointPrecision" %in% names(sd_report) && length(object$tmb_random)) {
-    sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
+    sd_report <- RTMB::sdreport(object$tmb_obj, getJointPrecision = TRUE)
   }
   sd_report
 }

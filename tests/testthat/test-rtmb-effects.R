@@ -200,7 +200,7 @@ test_that("RTMB dispersion formulas match frozen TMB values", {
   rt <- make_sdmTMB_adfun(single$tmb_data, single$tmb_params,
     single$tmb_map, single$tmb_random)
   expect_true(all(c("ln_phi_i(0)", "phi_i(0)") %in%
-    rownames(summary(sdreport_sdmTMB(rt), "report"))))
+    rownames(summary(RTMB::sdreport(rt), "report"))))
 })
 
 test_that("RTMB gamma prior on time-varying SD matches frozen TMB values", {

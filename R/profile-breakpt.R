@@ -26,7 +26,7 @@
 #'    [stats::optimize()].
 #'
 #' Each profile fit starts from the nearest finished fit and skips the extra
-#' optimization steps and [TMB::sdreport()] for speed.
+#' optimization steps and [RTMB::sdreport()] for speed.
 #' Only the final fit runs those.
 #'
 #' The confidence interval runs from the lowest to the highest cutpoint within
@@ -143,9 +143,7 @@ profile_breakpt <- function(formula, ..., control = sdmTMBcontrol(), cuts = NULL
   if (!(is.numeric(level) && length(level) == 1L && level > 0 && level < 1)) {
     cli_abort("`level` must be a single number between 0 and 1, e.g., 0.95.")
   }
-  control_build <- control
-  control_build$normalize <- FALSE # normalizing only saves time inside the inner problem
-  built <- suppressMessages(sdmTMB(formula, ..., control = control_build, do_fit = FALSE))
+  built <- suppressMessages(sdmTMB(formula, ..., control = control, do_fit = FALSE))
   obj <- built$tmb_obj
   if (!identical(as.integer(built$tmb_data$threshold_func), 1L)) {
     cli_abort("`formula` needs a `breakpt()` term.")

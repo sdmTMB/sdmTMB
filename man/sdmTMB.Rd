@@ -240,16 +240,15 @@ model and then pass it with \code{newdata} directly to \code{\link[=get_index]{g
 An object (list) of class \code{sdmTMB}. Useful elements include:
 \itemize{
 \item \code{model}: output from \code{\link[stats:nlminb]{stats::nlminb()}}
-\item \code{sd_report}: output from \code{\link[TMB:sdreport]{TMB::sdreport()}} or \code{\link[RTMB:sdreport]{RTMB::sdreport()}}
+\item \code{sd_report}: output from \code{\link[RTMB:sdreport]{RTMB::sdreport()}}
 \item \code{gradients}: gradients of the marginal log likelihood with respect to
 each fixed effect
 \item \code{data}: the data used in fitting (rows with missing values removed)
 \item \code{spde}: the object supplied to \code{mesh}
 \item \code{family}: the family object, including the inverse link function
 \code{family$linkinv()}
-\item \code{backend}: \code{"rtmb"} or \code{"tmb"}; see \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}}
-\item \code{tmb_obj}: the objective function object from \code{\link[TMB:MakeADFun]{TMB::MakeADFun()}} or
-\code{\link[RTMB:MakeADFun]{RTMB::MakeADFun()}}
+\item \code{backend}: always \code{"rtmb"}; kept for compatibility
+\item \code{tmb_obj}: the objective function object from \code{\link[RTMB:MakeADFun]{RTMB::MakeADFun()}}
 \item \code{tmb_data}, \code{tmb_params}, \code{tmb_map}: the data, parameter, and map lists
 passed to \code{MakeADFun()}
 }
@@ -383,8 +382,7 @@ See the \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-
 
 Censored families treat some observations as known only to lie within a
 range, e.g., catch counts on longlines where competition for hooks hides
-the true number caught. Supply the bounds with \code{censored_upper}. All but
-\code{\link[=censored_poisson]{censored_poisson()}} need the RTMB backend (the default). See \link{Families}
+the true number caught. Supply the bounds with \code{censored_upper}. See \link{Families}
 and the \href{https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html}{hook competition vignette}.
 
 \strong{Areal models}

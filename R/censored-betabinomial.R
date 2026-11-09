@@ -40,8 +40,7 @@ refit_censored_betabinomial <- function(obj, opt, data, map, random, lim,
     data$cens_direct[rows] <- 1L
     obj <- make_sdmTMB_adfun(data,
       parameters = obj$env$parList(par = obj$env$last.par.best),
-      map = map, random = random, profile = profile, backend = "rtmb",
-      silent = silent)
+      map = map, random = random, profile = profile, silent = silent)
     opt <- maybe_suppress_warnings(suppress_warnings)(stats::nlminb(
       start = obj$par, objective = obj$fn, gradient = obj$gr,
       lower = lim$lower, upper = lim$upper, control = control))

@@ -17,7 +17,7 @@
 #'   estimates.
 #' @param map A named list with factor `NA`s specifying parameter values that
 #'   should be fixed at a constant value. See the documentation in
-#'   [TMB::MakeADFun()]. This should usually be used with `start` to specify the
+#'   [RTMB::MakeADFun()]. This should usually be used with `start` to specify the
 #'   fixed value.
 #' @param start A named list specifying the starting values for parameters. You
 #'   can see the necessary structure by fitting the model once and inspecting
@@ -30,24 +30,17 @@
 #'   profile for depth, and depth and depth^2 are part of your formula, you need
 #'   to make sure these are listed first and that an intercept isn't included.
 #'   For example, `formula = cpue ~ 0 + depth + depth2 + as.factor(year)`.
-#' @param getsd Logical indicating whether to call [TMB::sdreport()].
-#' @param normalize Logical: use [TMB::normalize()] to normalize the process
-#'   likelihood using the Laplace approximation? Can result in a substantial
-#'   speed boost in some cases. This used to default to `FALSE` prior to
-#'   May 2021. Currently not working for models fit with REML or random intercepts.
-#' @param backend Model backend. `"rtmb"` is the default; set
-#'   `options(sdmTMB.backend = "tmb")` to use the C++ TMB template by default.
-#'   The `"rtmb"` backend currently supports all families, including delta and
-#'   multi-family models, with SPDE (isotropic, anisotropic, or barrier) and
-#'   areal SAR/CAR spatial and spatiotemporal fields, spatially and
-#'   time-varying coefficients, IID random effects, smoothers, threshold
-#'   terms, covariate diffusion, restricted spatial regression, priors, and
-#'   derived indices.
+#' @param getsd Logical indicating whether to call [RTMB::sdreport()].
+#' @param normalize `r lifecycle::badge("deprecated")` Ignored. This used
+#'   `TMB::normalize()` with the removed C++ TMB backend; the RTMB densities are
+#'   already fully normalized.
+#' @param backend `r lifecycle::badge("deprecated")` Ignored. The C++ TMB
+#'   backend was removed and all models use RTMB.
 #' @param multiphase Logical: estimate the fixed and random effects in phases?
 #'   Phases are usually faster and more stable.
 #' @param profile Logical: should population-level/fixed effects be profiled
 #'   out of the likelihood? These are then appended to the random effects
-#'   vector without the Laplace approximation. See [TMB::MakeADFun()]. *This
+#'   vector without the Laplace approximation. See [RTMB::MakeADFun()]. *This
 #'   can dramatically speed up model fit if there are many fixed effects but is
 #'   experimental at this stage.*
 #' @param lower An optional named list of lower bounds within the optimization.
@@ -65,13 +58,10 @@
 #'   applies at the estimate, so consider `"direct"` when evaluating the
 #'   likelihood far from it (e.g., MCMC sampling).
 #' @param get_joint_precision Logical. Passed to `getJointPrecision` in
-#'   [TMB::sdreport()]. Must be `TRUE` to use simulation-based methods in
+#'   [RTMB::sdreport()]. Must be `TRUE` to use simulation-based methods in
 #'   [predict.sdmTMB()] or [get_index_sims()]. If not needed, setting this to
 #'   `FALSE` will reduce object size.
-#' @param parallel Argument currently ignored. For parallel processing with 3
-#'   cores, as an example, use `TMB::openmp(n = 3, DLL = "sdmTMB")`. But be
-#'   careful, because it's not always faster with more cores and there is
-#'   definitely an upper limit.
+#' @param parallel Argument currently ignored.
 #' @param suppress_nlminb_warnings Suppress uninformative warnings
 #'   from [stats::nlminb()] arising when a function evaluation is `NA`, which
 #'   are then replaced with `Inf` and avoided during estimation?
@@ -138,7 +128,7 @@
 sdmTMBcontrol <- function(
   eval.max = 2e3L,
   iter.max = 1e3L,
-  normalize = FALSE,
+  normalize = deprecated(),
   nlminb_loops = 1L,
   newton_loops = 1L,
   getsd = TRUE,
@@ -160,8 +150,26 @@ sdmTMBcontrol <- function(
   collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
   get_rsr = FALSE,
-  backend = getOption("sdmTMB.backend", "rtmb"),
+  backend = deprecated(),
   ...) {
+
+  if (is_present(normalize)) {
+    deprecate_warn("1.2.0.9009", "sdmTMBcontrol(normalize = )",
+      details = "The RTMB densities are already fully normalized; the argument is ignored.")
+  }
+  if (is_present(backend)) {
+    deprecate_warn("1.2.0.9009", "sdmTMBcontrol(backend = )",
+      details = if (identical(backend, "tmb")) {
+        "The C++ TMB backend was removed; the model uses RTMB."
+      } else {
+        "RTMB is the only backend; the argument is ignored."
+      })
+  }
+  if (identical(getOption("sdmTMB.backend"), "tmb")) {
+    cli_warn(c("The C++ TMB backend was removed; `options(sdmTMB.backend = \"tmb\")` is ignored.",
+      "i" = "Models use RTMB."), .frequency = "once",
+      .frequency_id = "sdmTMB.backend.tmb")
+  }
 
   assert_that(is.numeric(nlminb_loops), is.numeric(newton_loops))
   assert_that(nlminb_loops >= 1L)
@@ -207,13 +215,10 @@ sdmTMBcontrol <- function(
   )
   sar_weight_style <- match.arg(sar_weight_style)
   censored_method <- match.arg(censored_method)
-  backend <- match.arg(backend, c("tmb", "rtmb"))
 
   out <- named_list(
     eval.max,
     iter.max,
-    normalize,
-    backend,
     nlminb_loops,
     newton_loops,
     getsd,
@@ -330,7 +335,7 @@ get_convergence_diagnostics <- function(sd_report) {
 # diagnostics, best parameters) in a fit. Used by sdmTMB() and
 # run_extra_optimization().
 set_fit_results <- function(object, obj, opt, getsd = TRUE, get_joint_precision = FALSE) {
-  sd_report <- if (getsd) sdreport_sdmTMB(obj, getJointPrecision = get_joint_precision)
+  sd_report <- if (getsd) RTMB::sdreport(obj, getJointPrecision = get_joint_precision)
   conv <- if (getsd) get_convergence_diagnostics(sd_report)
   lpb <- obj$env$last.par.best
   results <- list(
@@ -885,13 +890,20 @@ set_delta_model <- function(x, model = c(NA, 1, 2)) {
 }
 
 # Fits saved before sdmTMB 1.2.0 lack metadata that methods assume (e.g.,
-# `backend` and `design_specs`), so they need a refit.
+# `design_specs`), and fits with the removed C++ TMB backend can't rebuild their
+# objective, so both need a refit.
 check_fit_version <- function(object) {
   version <- object$version
   if (is.null(version) || package_version(version) < "1.2.0") {
     fitted <- if (is.null(version)) "an old version" else paste("version", version)
     cli_abort(c(
       "This model was fit with sdmTMB {fitted}; fits from before 1.2.0 are not supported.",
+      "i" = "Refit the model with the installed sdmTMB version."
+    ))
+  }
+  if (identical(object$backend, "tmb")) {
+    cli_abort(c(
+      "This model was fit with the C++ TMB backend, which has been removed.",
       "i" = "Refit the model with the installed sdmTMB version."
     ))
   }
@@ -922,7 +934,7 @@ reinitialize <- function(x) {
     check_sdmTMB_version(x$version)
     x$tmb_obj$env$beSilent()
     # retape before fn(): without a cached `L.created.by.newton` (dropped from
-    # saved cross-validation models), TMB's inner newton() evaluates the stale
+    # saved cross-validation models), the inner newton() evaluates the stale
     # Hessian pointer before fn() would retape
     x$tmb_obj$retape(set.defaults = FALSE)
     x$tmb_obj$fn(x$model$par)

@@ -409,7 +409,7 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
   obj <- new_tmb_obj
 
   if (req$se_fit) {
-    sr <- sdreport_sdmTMB(new_tmb_obj, bias.correct = FALSE)
+    sr <- RTMB::sdreport(new_tmb_obj, bias.correct = FALSE)
     sr_est <- as.list(sr, "Estimate", report = TRUE)
     sr_se <- as.list(sr, "Std. Error", report = TRUE)
   }
@@ -437,10 +437,9 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
 }
 
 # Whether predictions need only the model's reports at saved parameter values
-# (the fitted ones or draws), which the RTMB backend can evaluate without an
-# AD object.
+# (the fitted ones or draws), which can be evaluated without an AD object.
 predict_report_only <- function(object, req, return_tmb_object) {
-  object$backend == "rtmb" && !req$se_fit && !return_tmb_object
+  !req$se_fit && !return_tmb_object
 }
 
 # Reports at the parameter list `pars` (equivalently, the parameter vector
@@ -476,7 +475,6 @@ predict_objective <- function(object, tmb_data, n_new_re = 0L) {
     parameters = parameters,
     map = map,
     random = object$tmb_random,
-    backend = object$backend,
     silent = TRUE
   )
   obj
@@ -777,9 +775,9 @@ predict_parameter_draws <- function(object, lp, req) {
     return(t_draws)
   }
   if (!"jointPrecision" %in% names(object$sd_report) && !has_no_random_effects(object)) {
-    message("Rerunning TMB::sdreport() with `getJointPrecision = TRUE`.")
+    message("Rerunning RTMB::sdreport() with `getJointPrecision = TRUE`.")
     reinitialize(object)
-    sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
+    sd_report <- RTMB::sdreport(object$tmb_obj, getJointPrecision = TRUE)
   } else {
     sd_report <- object$sd_report
   }

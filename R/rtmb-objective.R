@@ -20,8 +20,8 @@
 #   parameter would be fixed at whatever its value was at taping time.
 #   Data-dependent cases (e.g. y == 0) use logical indexing on data, not
 #   if/else on AD values.
-# - `par` keeps the C++ parameter names and shapes, so `map`, `random`,
-#   starting values, and post-fit methods work the same with either backend.
+# - `par` keeps the parameter names and shapes of the removed C++ template, so
+#   `map`, `random`, starting values, and saved fits keep working.
 #   `theta` (from rtmb_transform()) holds natural-scale versions, computed
 #   once per evaluation.
 # - Matrices of rows: rows are observations (`_i`) or vertices (`_s`),

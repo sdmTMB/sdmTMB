@@ -127,7 +127,7 @@ the \href{https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html}{hook c
 spatiotemporal random fields set to zero, and \code{list(re_form_iid = NA)}
 does the same for IID random effects.}
 
-\item{...}{Passed to \code{\link[TMB:sdreport]{TMB::sdreport()}} or \code{\link[RTMB:sdreport]{RTMB::sdreport()}}.}
+\item{...}{Passed to \code{\link[RTMB:sdreport]{RTMB::sdreport()}}.}
 
 \item{nsplit}{The number of chunks of time steps to calculate the index in
 separately. For large grids or models, \code{nsplit > 1} reduces memory use

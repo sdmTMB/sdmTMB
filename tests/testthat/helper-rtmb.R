@@ -20,25 +20,13 @@ rtmb_perturb <- function(par) par + 0.05 * sin(seq_along(par))
 # objective; its `fn()` and `gr()` at deterministic parameters (plus a few
 # values outside the likelihood: projections, deviance residuals, derived
 # indices) are stored as `deparse` snapshots in `_snaps/`, and RTMB is compared
-# against them. They were recorded with `SDMTMB_FROZEN_RECORD=tmb` (and the
-# old snapshots deleted) before the template was removed (sdmTMB 1.2.0 still
-# has both backends). After an intended change, rerun the test and accept the
-# new RTMB values with `testthat::snapshot_review()` or
+# against them. They were recorded from the C++ template before it was removed
+# (sdmTMB 1.2.0 still has both backends). After an intended change, rerun the
+# test and accept the new RTMB values with `testthat::snapshot_review()` or
 # `testthat::snapshot_accept()`, and say why in the commit.
 frozen_tolerance <- 1e-8
 
-frozen_record_tmb <- function() {
-  identical(Sys.getenv("SDMTMB_FROZEN_RECORD"), "tmb")
-}
-
-# Snapshot `actual`; when recording, snapshot the TMB values instead and
-# check RTMB against them.
-expect_frozen_snapshot <- function(key, actual, expected = NULL,
-                                   tolerance = frozen_tolerance) {
-  if (!is.null(expected)) {
-    expect_equal(actual, expected, tolerance = tolerance, info = key)
-    actual <- expected
-  }
+expect_frozen_snapshot <- function(key, actual, tolerance = frozen_tolerance) {
   # 10 significant digits resolve differences well below the tolerance.
   actual <- rapply(actual, signif, classes = "numeric", how = "replace",
     digits = 10)
@@ -55,10 +43,10 @@ frozen_summary <- function(x) {
   c(length(x), sum(x), sum(abs(x)), sum(sin(seq_along(x)) * x))
 }
 
-# ADREPORT order differs between backends, so `sdreport()` summaries are
+# ADREPORT order differed between the backends, so `sdreport()` summaries are
 # summarized by name, keeping the order within each name.
 frozen_sdreport <- function(obj) {
-  sd <- suppressWarnings(summary(sdreport_sdmTMB(obj), "report"))
+  sd <- suppressWarnings(summary(RTMB::sdreport(obj), "report"))
   sd <- sd[!rownames(sd) %in% c("log_range_min", "log_range_max"), ,
     drop = FALSE]
   lapply(split(seq_len(nrow(sd)), rownames(sd)), function(i)
@@ -68,9 +56,6 @@ frozen_sdreport <- function(obj) {
 
 # RTMB computes deviance residuals only on request, off the tape.
 frozen_devresid <- function(obj, data) {
-  if (identical(attr(obj, "sdmTMB_backend"), "tmb")) {
-    return(obj$report()$devresid)
-  }
   rtmb_report_values(data, obj$env$parList(), deviance = TRUE)$devresid
 }
 
@@ -87,9 +72,8 @@ frozen_fn_gr <- function(obj, par) {
 frozen_objective_values <- function(data, parameters, map = list(),
                                     random = NULL, reports = character(0),
                                     sdreport = FALSE, joint = TRUE,
-                                    objective = TRUE, backend = "rtmb") {
-  make <- function(random) make_sdmTMB_adfun(data, parameters, map, random,
-    backend = backend)
+                                    objective = TRUE) {
+  make <- function(random) make_sdmTMB_adfun(data, parameters, map, random)
   obj <- make(random)
   # Evaluated even when not stored: reports use the inner mode at the start.
   fn_gr <- frozen_fn_gr(obj, obj$par)
@@ -116,12 +100,10 @@ expect_frozen_objective <- function(key, data, parameters, map = list(),
                                     random = NULL, reports = character(0),
                                     sdreport = FALSE, joint = TRUE,
                                     objective = TRUE) {
-  values <- function(backend) frozen_objective_values(data, parameters, map,
-    random, reports, sdreport, joint, objective, backend)
-  rt <- values("rtmb")
-  expected <- if (frozen_record_tmb()) values("tmb")$values
-  expect_frozen_snapshot(key, rt$values, expected)
-  invisible(rt$obj)
+  x <- frozen_objective_values(data, parameters, map, random, reports,
+    sdreport, joint, objective)
+  expect_frozen_snapshot(key, x$values)
+  invisible(x$obj)
 }
 
 # Check fitted rows and, unless `project = FALSE`, the projected linear
@@ -139,14 +121,12 @@ expect_frozen_fit_data <- function(prefix, fit, newdata, info,
   }
 }
 
-# Compare other deterministic values with frozen ones. `compute(backend)`
-# returns a numeric vector or a list of them.
-expect_frozen_values <- function(key, compute, tolerance = frozen_tolerance) {
+# Compare other deterministic values (a numeric vector or a list of them)
+# with frozen ones.
+expect_frozen_values <- function(key, values, tolerance = frozen_tolerance) {
   summarize <- function(x) {
     if (is.list(x)) lapply(x, summarize) else frozen_summary(x)
   }
-  actual <- summarize(compute("rtmb"))
-  expected <- if (frozen_record_tmb()) summarize(compute("tmb"))
-  expect_frozen_snapshot(key, list(values = actual), if (!is.null(expected))
-    list(values = expected), tolerance = tolerance)
+  expect_frozen_snapshot(key, list(values = summarize(values)),
+    tolerance = tolerance)
 }

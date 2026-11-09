@@ -53,12 +53,12 @@
 #'
 #' With `anisotropy = TRUE`, `effects = "ran_pars"` reports `range_min` and
 #' `range_max`, the ranges along the minor and major axes, in place of `range`.
-#' Their geometric mean is `range`. With the RTMB backend, their standard
+#' Their geometric mean is `range`. Their standard
 #' errors are from the delta method and their confidence intervals are Wald
 #' intervals on the log scale. These intervals are unreliable when the
 #' anisotropy is weakly identified, such as when `range_max / range_min` is
 #' close to 1, because the axis ranges have no derivative at isotropy. They are
-#' `NA` at exact isotropy and with the TMB backend.
+#' `NA` at exact isotropy.
 #'
 #' Standard errors for spatial variance terms fit in log space (e.g., variance
 #' terms, range, or parameters associated with the observation error) are
