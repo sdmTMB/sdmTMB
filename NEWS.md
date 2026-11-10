@@ -4,6 +4,10 @@
   positive. The slope is estimated in log space, but `tidy()`,
   `profile_breakpt()`, priors, and `sdmTMB_simulate(threshold_coefs = )` use
   the slope itself. Existing `breakpt(x)` models are unchanged.
+  With `positive = TRUE`, `profile_breakpt()` refits any profile fit whose
+  slope ends up near 0 or very large, starting from a moderate slope, and
+  keeps the better fit. Otherwise a fit with a slope near 0 could be carried
+  from one cutpoint to the next and hide a better fit with a positive slope.
 
 * **The C++ TMB backend has been removed; all models use RTMB**, which has been
   the default since 1.2.0. sdmTMB no longer contains compiled code, so

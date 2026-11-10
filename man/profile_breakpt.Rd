@@ -117,6 +117,17 @@ Each profile fit starts from the nearest finished fit and skips the extra
 optimization steps and \code{\link[RTMB:sdreport]{RTMB::sdreport()}} for speed.
 Only the final fit runs those.
 
+With \code{breakpt(x, positive = TRUE)}, the slope is estimated as log(slope),
+so the optimizer has almost no gradient to follow once the slope is near 0
+or so large that the bend acts as a step. A fit that starts from such a
+neighbour can stay there even where a moderate slope fits better. So if a
+profile fit ends with the slope more than a factor of \code{exp(2)} (about 7.4)
+from one unit on the link scale per standard deviation of \code{x}, it is
+refitted from that slope and the better of the two fits is kept. The first
+fit also starts from that slope, unless \code{control$start} sets \code{b_threshold}.
+Both depend on \code{x} only through its standard deviation, so they don't
+change with the units of \code{x}.
+
 The confidence interval runs from the lowest to the highest cutpoint within
 \code{qchisq(level, 1) / 2} NLL units of the best, with the ends interpolated
 between grid points. If the profile rises above the cutoff between them

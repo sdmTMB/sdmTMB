@@ -239,3 +239,31 @@ test_that("profile_breakpt() works with breakpt(positive = TRUE)", {
   expect_equal(c(e$lwr, e$upr), c(p0$estimate$lwr, p0$estimate$upr), tolerance = 1e-2)
   expect_output(print(p), sprintf("Slope %.3f", e$slope))
 })
+
+test_that("profile_breakpt(positive = TRUE) doesn't carry a zero slope across the profile", {
+  skip_on_cran()
+  # rises steeply below the cutpoint and declines above it, so with the cutpoint at the
+  # median the best positive slope is 0; fits warm-started from there used to stay at 0
+  set.seed(1)
+  x <- rnorm(400)
+  d <- data.frame(x = x, y = 3 * pmin(x, -1.3) - pmax(x, -1.3) + rnorm(400, sd = 0.3))
+  # few observations fall below the best cutpoint, which the profile warns about
+  p <- suppressWarnings(profile_breakpt(y ~ breakpt(x, positive = TRUE), data = d,
+    spatial = "off", final = FALSE))
+  # a fit with the cutpoint fixed at the truth, started from a moderate slope
+  m <- suppressMessages(sdmTMB(y ~ breakpt(x, positive = TRUE), data = d, spatial = "off",
+    control = sdmTMBcontrol(start = list(b_threshold = matrix(c(0, -1.3), 2L, 1L)),
+      map = list(b_threshold = factor(c(1, NA))))))
+  expect_lt(p$estimate$nll, m$model$objective + 1e-4)
+  expect_gt(p$estimate$slope, 1)
+  # the decline above the cutpoint isn't in the model, so the best cutpoint is below the truth
+  expect_lt(p$estimate$cut, -1)
+
+  # the same profile with x in other units
+  d2 <- transform(d, x = 100 * x)
+  p2 <- suppressWarnings(profile_breakpt(y ~ breakpt(x, positive = TRUE), data = d2,
+    spatial = "off", final = FALSE))
+  expect_equal(p2$estimate$nll, p$estimate$nll, tolerance = 1e-4)
+  expect_equal(p2$estimate$cut, 100 * p$estimate$cut, tolerance = 1e-3)
+  expect_equal(p2$estimate$slope, p$estimate$slope / 100, tolerance = 1e-3)
+})
