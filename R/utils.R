@@ -154,11 +154,12 @@ sdmTMBcontrol <- function(
   ...) {
 
   if (is_present(normalize)) {
-    deprecate_warn("1.2.0.9009", "sdmTMBcontrol(normalize = )",
+    deprecate_warn("1.2.0.9010", "sdmTMBcontrol(normalize = )",
       details = "The RTMB densities are already fully normalized; the argument is ignored.")
   }
   if (is_present(backend)) {
-    deprecate_warn("1.2.0.9009", "sdmTMBcontrol(backend = )",
+    deprecate_warn("1.2.0.9010", "sdmTMBcontrol(backend = )",
+      always = identical(backend, "tmb"), # the user asked for a different model
       details = if (identical(backend, "tmb")) {
         "The C++ TMB backend was removed; the model uses RTMB."
       } else {

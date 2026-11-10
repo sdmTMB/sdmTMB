@@ -110,7 +110,7 @@ test_that("RTMB matches frozen TMB values for other families", {
   }
 })
 
-# The C++ template once evaluated the censored Poisson CDF with `asDouble()`,
+# The removed C++ template once evaluated the censored Poisson CDF with `asDouble()`,
 # holding those terms fixed at the taping point. Compare with a direct
 # calculation away from it.
 test_that("censored Poisson likelihood is correct away from the taping point", {

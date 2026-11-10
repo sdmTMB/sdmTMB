@@ -39,7 +39,7 @@ test_that("TMB (custom) AR1 simulation is unbiased", {
   expect_true(median(out$rho) > 0.79 && median(out$rho) < 0.81)
   # +/-10%, matching the tolerance already used for sigma_E below: the
   # per-replicate range estimates are noisy (range ~0.3-0.8 across the 12
-  # seeds), so a tighter median bound is not reliably met by either backend
+  # seeds), so a tighter median bound is not reliably met
   expect_true(median(out$range) > 0.45 && median(out$range) < 0.55)
   expect_true(median(out$sigma_E) > 0.09 && median(out$sigma_E) < 0.11)
 })

@@ -651,7 +651,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     profile = obj$fit_obj$control$profile,
     map = obj$fit_obj$tmb_map,
     random = obj$fit_obj$tmb_random,
-      silent = silent,
+    silent = silent,
     adreport = adreport
   )
   # bias correction is done below
@@ -671,7 +671,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       map = obj$fit_obj$tmb_map,
       profile = obj$fit_obj$control$profile,
       random = obj$fit_obj$tmb_random,
-          silent = silent,
+      silent = silent,
       # Ratio quantities (weighted_avg, eao) tag their sums in the template;
       # only the internal inner optimizer uses those tags (lowrank = TRUE)
       # and they are much faster there. The external optimizer is faster for

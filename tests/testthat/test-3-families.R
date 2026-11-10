@@ -182,8 +182,7 @@ test_that("Truncated NB2, truncated NB1, and regular NB1 fit", {
 
   # tolerance below is loose enough to allow for the small (~1e-5 relative)
   # cross-package convergence differences between sdmTMB (via nlminb) and
-  # glmmTMB's own optimizer, confirmed identical between the TMB and RTMB
-  # backends on the same data
+  # glmmTMB's own optimizer
   m_sdmTMB <- sdmTMB(data = s, formula = observed ~ 1,
     mesh = spde, family = nbinom1(),
     spatial = "off")

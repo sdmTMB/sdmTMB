@@ -39,8 +39,9 @@
 #   work for both AD and plain numbers. Base R random generators are fine
 #   in simulation paths.
 #
-# Checking changes: the RTMB tests compare against the C++ template with
-# expect_rtmb_matches_tmb(); `make reference-check` compares saved reference
+# Checking changes: the tests compare against objective values frozen from
+# the removed C++ template (expect_frozen_snapshot() in
+# tests/testthat/helper-rtmb.R); `make reference-check` compares saved reference
 # fits.
 
 # The objective as a closure over `prepared` alone, built in its own frame so

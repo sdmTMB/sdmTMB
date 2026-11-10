@@ -637,8 +637,6 @@ For $N = 1$, the distribution reduces to Bernoulli.
 Available links are logit and cloglog.
 This family is useful for overdispersed counts of successes/failures (e.g., aggregated Bernoulli data, proportions with extra-binomial variation).
 
-Code defined [within sdmTMB](https://github.com/sdmTMB/sdmTMB/blob/18a39eabc111e2179fa589f942c8820d87ad10df/src/utils.h#L505-L512).
-
 Example: `family = betabinomial(link = "logit")`
 
 ### Beta
@@ -709,8 +707,6 @@ where $\mu$ is the mean and $\phi$ is the dispersion parameter.
 The variance scales linearly with the mean $\mathrm{Var}[y] = \mu + \mu \phi = \mu (1 + \phi)$ [@hilbe2011].
 Internally, the distribution is parameterized as the [robust version](https://kaskr.github.io/adcomp/group__R__style__distribution.html#gaa23e3ede4669d941b0b54314ed42a75c) in TMB.
 
-Code defined [within sdmTMB](https://github.com/sdmTMB/sdmTMB/blob/18a39eabc111e2179fa589f942c8820d87ad10df/src/sdmTMB.cpp#L577-L582) based on NB2 and borrowed from glmmTMB.
-
 Example: `family = nbinom1(link = "log")`
 
 ### Truncated negative binomial
@@ -756,8 +752,6 @@ $$
 \operatorname{Lognormal} \left( \log \mu - \frac{\phi^2}{2}, \phi^2 \right).
 $$ Because of the bias correction, $\mathbb{E}[y] = \mu$ and $\mathrm{Var}[\log y] = \phi^2$.
 
-Code defined [within sdmTMB](https://github.com/sdmTMB/sdmTMB/blob/18a39eabc111e2179fa589f942c8820d87ad10df/src/utils.h#L47-L54) based on the TMB `dnorm()` normal density.
-
 Example: `family = lognormal(link = "log")`
 
 ### Generalized gamma
@@ -772,8 +766,6 @@ Here, $\mu$ is the mean on the data scale, $\phi$ is a scale parameter that equa
 See @dunicGeneralizedGamma2025 for the full PDF in the Prentice formulation as implemented.
 Links available: identity, log, inverse.
 This flexibility is useful for right-skewed positive responses with tails heavier or lighter than gamma/lognormal, and is often paired in a hurdle/mixture as `delta_gengamma()` for zero-inflated biomass or catch data (see @dunicGeneralizedGamma2025).
-
-Code defined [within sdmTMB](https://github.com/sdmTMB/sdmTMB/blob/18a39eabc111e2179fa589f942c8820d87ad10df/src/utils.h#L7-L43).
 
 Example: `family = gengamma(link = "log")`; delta/hurdle: `family = delta_gengamma(link1 = "logit", link2 = "log")`.
 
@@ -866,8 +858,6 @@ where $\mu$ is the location (mean for $\nu > 1$), $\phi$ is a scale parameter (n
 Lower values of $\nu$ result in heavier tails compared to the Gaussian distribution.
 Above approximately `df = 20`, the distribution becomes very similar to the Gaussian.
 The Student-t distribution with a low degrees of freedom (e.g., $\nu \le 7$) can be helpful for modelling data that would otherwise be suitable for Gaussian but needs an approach that is robust to outliers [e.g., @anderson2017c].
-
-Code defined [within sdmTMB](https://github.com/sdmTMB/sdmTMB/blob/18a39eabc111e2179fa589f942c8820d87ad10df/src/utils.h#L37-L45) based on the `dt()` distribution in TMB.
 
 Example: `family = student(link = "identity", df = 7)`
 

@@ -423,6 +423,6 @@ test_that("get_index() honours re_form for single and delta models", {
       predict_args = list(re_form = NA))
     p <- predict(m, newdata = nd, re_form = NA, type = "response")
     expect_equal(ind$est, as.numeric(tapply(p$est, p$year, sum)),
-      label = paste(family$family[[1]]))
+      label = family$family[[1]])
   }
 })

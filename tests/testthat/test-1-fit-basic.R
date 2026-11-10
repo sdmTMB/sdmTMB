@@ -23,9 +23,6 @@ test_that("sdmTMB model fit with a covariate beta", {
     phi = phi, range = range, sigma_O = sigma_O, sigma_E = sigma_E,
     seed = SEED
   )
-  # `sdmTMB_simulate()` draws random numbers via the active backend's
-  # `simulate()` method; TMB and RTMB consume the RNG stream in different
-  # orders, so exact simulated values are not comparable across backends.
   expect_equal(nrow(s), nrow(loc))
   expect_true(all(is.finite(s$observed)))
   plot(spde)
@@ -63,7 +60,7 @@ test_that("sdmTMB model fit with a covariate beta", {
   expect_true(se_pc$ln_kappa[1] < se$ln_kappa[1])
   # `se_pc$ln_tau_O < se$ln_tau_O` is not checked here: whether the PC prior
   # tightens this particular SE depends on the realized random field draw
-  # (it flips for plenty of seeds under either backend), so it is not a
+  # (it flips for plenty of seeds), so it is not a
   # reliable property to assert for one fixed seed.
   expect_true(is.finite(se_pc$ln_tau_O) && is.finite(se$ln_tau_O))
 

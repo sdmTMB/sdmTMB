@@ -303,7 +303,7 @@ project <- function(
     parameters = pars,
     map = map,
     random = object$tmb_random,
-      silent = TRUE
+    silent = TRUE
   )
 
   ## do simulations

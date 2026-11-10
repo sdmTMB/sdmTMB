@@ -1,5 +1,3 @@
-NULL
-
 #' Fit a spatial or spatiotemporal GLMM with TMB
 #'
 #' Fit a spatial or spatiotemporal generalized linear mixed effects model (GLMM)
@@ -823,10 +821,10 @@ sdmTMB <- function(
   } else if (!is.character(control$profile)) {
     control$profile <- NULL
   }
-  # options that aren't sdmTMBcontrol() arguments go to nlminb(); the others
-  # are in controls saved by old versions
+  # options that aren't sdmTMBcontrol() arguments go to nlminb(); "newton_steps"
+  # and "mgcv" are in controls saved by old versions
   sdmTMB_only <- c(setdiff(names(formals(sdmTMBcontrol)), c("eval.max", "iter.max", "...")),
-    "newton_steps", "mgcv", "normalize", "backend")
+    "newton_steps", "mgcv")
   .control <- control[setdiff(names(control), sdmTMB_only)]
 
   assert_that(

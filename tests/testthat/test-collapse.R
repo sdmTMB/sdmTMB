@@ -118,8 +118,7 @@ test_that("custom collapse threshold works", {
   )
 
   # With a threshold comfortably above the fitted sigma_E, should collapse.
-  # The fitted sigma_E itself is not asserted: TMB and RTMB `simulate()`
-  # consume the RNG stream in different orders, so it varies by backend.
+  # The fitted sigma_E itself is not asserted: it depends on the simulated draw.
   sigma_E_est <- tidy(fit_default, "ran_pars")$estimate[
     tidy(fit_default, "ran_pars")$term == "sigma_E"]
 

@@ -564,7 +564,7 @@ sdmTMB_cv <- function(
       parameters = get_pars(object),
       map = object$tmb_map,
       random = object$tmb_random,
-          silent = TRUE
+      silent = TRUE
     )
     r <- scoring_obj$report(object$tmb_obj$env$last.par.best)
     cv_data$cv_loglik_mle_eb <- -lik_weights * r$jnll_obs[validation_index]
