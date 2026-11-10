@@ -44,7 +44,8 @@
 #' @param df Student-t degrees of freedom.
 #' @param threshold_coefs An optional vector of threshold coefficient values
 #'   if the `formula` includes `breakpt()` or `logistic()`. If `breakpt()`,
-#'   these are slope and cut values. If `logistic()`, these are the threshold at
+#'   these are slope and cut values (with `breakpt(positive = TRUE)`, the
+#'   slope itself, which must be positive). If `logistic()`, these are the threshold at
 #'   which the function is 50% of the maximum, the threshold at which the
 #'   function is 95% of the maximum, and the maximum. See the model description
 #'   vignette for details.
@@ -315,6 +316,12 @@ simulate_new <- function(formula,
   if (!is.null(threshold_coefs)) {
     if(!is.matrix(threshold_coefs)) threshold_coefs <- matrix(threshold_coefs, ncol=1)
     params$b_threshold <- threshold_coefs
+    if (tmb_data$threshold_func == 3L) {
+      if (any(threshold_coefs[1L, ] <= 0)) {
+        cli::cli_abort("The slope in `threshold_coefs` must be positive with `breakpt(positive = TRUE)`.")
+      }
+      params$b_threshold[1L, ] <- log(threshold_coefs[1L, ])
+    }
   }
 
   if (is.null(sigma_O)) sigma_O <- 0
@@ -487,7 +494,7 @@ simulate_new <- function(formula,
   }
 
   tpar <- fit$threshold_parameter
-  if (tmb_data$threshold_func == 1L) {
+  if (tmb_data$threshold_func %in% c(1L, 3L)) {
     d[[paste0(tpar, "-slope")]] <- threshold_coefs[[1]]
     d[[paste0(tpar, "-breakpt")]] <- threshold_coefs[[2]]
   }

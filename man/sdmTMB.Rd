@@ -310,6 +310,12 @@ reporting convergence, and its standard error for the cutpoint is not
 reliable. \code{\link[=profile_breakpt]{profile_breakpt()}} estimates the cutpoint and a confidence interval
 by profile likelihood instead.
 
+Use \code{+ breakpt(variable, positive = TRUE)} to constrain the slope to be
+positive. The slope is then estimated in log space, so any \code{b_threshold}
+starting value for it in \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}} must be \code{log(slope)}, but \code{\link[=tidy]{tidy()}},
+\code{\link[=profile_breakpt]{profile_breakpt()}}, priors, and the \code{threshold_coefs} argument of
+\code{\link[=sdmTMB_simulate]{sdmTMB_simulate()}} use the slope itself.
+
 Similarly, a logistic-function threshold model can be included via
 \code{+ logistic(variable)}. This option models the relationship as a logistic
 function of the 50\% and 95\% values. This is similar to length- or size-based

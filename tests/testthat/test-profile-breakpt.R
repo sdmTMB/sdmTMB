@@ -36,6 +36,8 @@ test_that("profile_breakpt() recovers the cutpoint and fits the final model", {
   expect_output(print(p$fit), "Data: d")
   # the stored call keeps the caller's control, not the starts and map that fix the cutpoint
   expect_null(p$fit$call$control)
+  # the estimate reports the final fit's slope
+  expect_equal(e$slope, tidy(p$fit)$estimate[[2L]], tolerance = 1e-8)
   # the profile, the estimate, and the final fit agree on the minimum
   expect_equal(e$nll, min(p$profile$nll, na.rm = TRUE))
   expect_lte(e$nll, e$final_nll)
@@ -216,4 +218,24 @@ test_that("profile_breakpt() evaluates its `...` arguments once", {
   p <- profile_breakpt(y ~ breakpt(x), data = get_data(), spatial = "off")
   expect_s3_class(p$fit, "sdmTMB")
   expect_equal(n_eval, 1)
+})
+
+test_that("profile_breakpt() works with breakpt(positive = TRUE)", {
+  skip_on_cran()
+  d <- sim_breakpt()
+  p0 <- profile_breakpt(y ~ breakpt(x), data = d, spatial = "off")
+  p <- profile_breakpt(y ~ breakpt(x, positive = TRUE), data = d, spatial = "off")
+  e <- p$estimate
+  # the slope is reported as itself, not log(slope)
+  expect_gt(e$slope, 0)
+  expect_true(all(p$profile$slope > 0, na.rm = TRUE))
+  expect_equal(e$slope, tidy(p$fit)$estimate[[2L]], tolerance = 1e-8)
+  expect_equal(exp(p$fit$model$par[["b_threshold"]]),
+    tidy(p$fit)$estimate[[2L]], tolerance = 1e-8)
+  # with a clearly positive slope, it matches the unconstrained profile
+  expect_equal(e$cut, p0$estimate$cut, tolerance = 1e-3)
+  expect_equal(e$slope, p0$estimate$slope, tolerance = 1e-3)
+  expect_equal(e$nll, p0$estimate$nll, tolerance = 1e-4)
+  expect_equal(c(e$lwr, e$upr), c(p0$estimate$lwr, p0$estimate$upr), tolerance = 1e-2)
+  expect_output(print(p), sprintf("Slope %.3f", e$slope))
 })

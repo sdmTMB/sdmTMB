@@ -1,5 +1,10 @@
 # sdmTMB (development version)
 
+* Add `breakpt(x, positive = TRUE)` to constrain a break-point slope to be
+  positive. The slope is estimated in log space, but `tidy()`,
+  `profile_breakpt()`, priors, and `sdmTMB_simulate(threshold_coefs = )` use
+  the slope itself. Existing `breakpt(x)` models are unchanged.
+
 * **The C++ TMB backend has been removed; all models use RTMB**, which has been
   the default since 1.2.0. sdmTMB no longer contains compiled code, so
   installing it from source no longer needs a C++ compiler, and it installs

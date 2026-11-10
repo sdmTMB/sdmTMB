@@ -68,7 +68,8 @@
 #'   time-varying coefficients or a vector with one element per coefficient
 #'   (`NA` for no prior). In delta models, the priors apply to both components.
 #' @param threshold_breakpt_slope A `normal()` prior for the slope of the
-#'   linear (hockey stick) function.
+#'   linear (hockey stick) function. With `breakpt(positive = TRUE)`, this
+#'   applies to the positive slope, not its log.
 #' @param threshold_breakpt_cut A `normal()` prior for the cutoff of the
 #'   linear (hockey stick) function.
 #' @param threshold_logistic_s50 A `normal()` prior for the parameter at which

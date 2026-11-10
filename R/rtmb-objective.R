@@ -174,11 +174,12 @@ rtmb_transform <- function(par, prepared) {
     # Time-varying coefficients
     sigma_V = sigma_V,
     rho_time = rho_time,
-    # Threshold covariate: breakpoint slope and cut, or logistic s50, s95,
-    # and maximum, with s95 > s50.
+    # Threshold covariate: breakpoint slope (positive if estimated in log
+    # space) and cut, or logistic s50, s95, and maximum, with s95 > s50.
     threshold = switch(prepared$threshold,
       none = list(),
       breakpt = list(s_slope = b[1L, ], s_cut = b[2L, ]),
+      positive_breakpt = list(s_slope = exp(b[1L, ]), s_cut = b[2L, ]),
       logistic = list(s50 = b[1L, ], s95 = b[1L, ] + exp(b[2L, ]),
         s_max = b[3L, ])),
     # Observation families

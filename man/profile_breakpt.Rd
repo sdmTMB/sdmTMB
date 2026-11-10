@@ -59,14 +59,17 @@ A list of class \code{breakpt_profile} with:
 \itemize{
 \item \code{profile}: a data frame with one row per profile fit: the cutpoint
 (\code{cut}), its NLL (\code{nll}, \code{NA} if the fit failed), NLL above the best
-(\code{dnll}), the slope, the maximum absolute gradient, the convergence code,
+(\code{dnll}), the slope (the slope itself, not its log, with
+\code{breakpt(x, positive = TRUE)}), the maximum absolute gradient, the convergence code,
 and the share of observations below the cutpoint.
 \item \code{estimate}: a one-row data frame with the best cutpoint (\code{cut}), slope,
 NLL, the final fit's NLL (\code{final_nll}, \code{NA} if \code{final = FALSE}), interval
 (\code{lwr}, \code{upr}), AIC, numbers of observations below and above the
 cutpoint, and flags for checking the result (see Warnings). If the final
 fit improves on the profile fit at the same cutpoint, \code{nll}, \code{aic}, and the
-profile use the final fit's NLL.
+profile use the final fit's NLL. With \code{final = TRUE}, the slope (in
+\code{estimate} and in that row of the profile) is the final fit's, as in
+\code{\link[=tidy]{tidy()}} on \code{fit}.
 \item \code{fit}: the \code{\link[=sdmTMB]{sdmTMB()}} fit with the cutpoint fixed at \code{estimate$cut}, or
 \code{NULL} if \code{final = FALSE}. Its stored call is the call you made, with your
 \code{control}, so \code{\link[=update]{update()}} on it refits with the cutpoint estimated directly,

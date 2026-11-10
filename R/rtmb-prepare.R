@@ -46,7 +46,8 @@ rtmb_prepare <- function(data) {
     re_groups = lapply(components, function(m) rtmb_re_groups(data, m)),
     smooths = smooths,
     smooth_index = if (smooths) rtmb_smooth_index(data) else list(),
-    threshold = c("none", "breakpt", "logistic")[data$threshold_func + 1L],
+    threshold = c("none", "breakpt", "logistic", "positive_breakpt")[
+      data$threshold_func + 1L],
     diffusion = rtmb_diffusion_inputs(data),
     priors = rtmb_prior_inputs(data),
 

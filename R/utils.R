@@ -422,10 +422,25 @@ parse_threshold_term <- function(formula) {
     e <- str2lang(label)
     fns <- intersect(call_names(e), threshold_fns)
     if (!length(fns)) next
-    if (!(deparse(e[[1L]]) %in% threshold_fns && length(e) == 2L && is.name(e[[2L]]))) {
+    fn <- deparse(e[[1L]])
+    arg_names <- names(e) %||% character(length(e))
+    if (!(fn %in% threshold_fns && length(e) >= 2L && is.name(e[[2L]]) && arg_names[2L] == "")) {
       cli_abort(c(
         "`{fns[1]}()` takes a single column name and can't be used in an interaction or transformation.",
         i = "Found `{label}`. Create any transformed column in the data first."
+      ))
+    }
+    # breakpt() can also take `positive = TRUE` or `FALSE`
+    extra <- as.list(e)[-(1:2)]
+    if (length(extra) && !(fn == "breakpt" && identical(names(extra), "positive") &&
+      (isTRUE(extra[[1L]]) || isFALSE(extra[[1L]])))) {
+      cli_abort(c(
+        if (fn == "breakpt") {
+          "`breakpt()` takes a column name and, optionally, `positive = TRUE` or `FALSE`."
+        } else {
+          "`logistic()` takes only a column name."
+        },
+        i = "Found `{label}`."
       ))
     }
   }
@@ -435,11 +450,13 @@ parse_threshold_term <- function(formula) {
   }
   if (!any(is_thresh)) return(list(formula = formula, term = NULL))
   term <- labels[is_thresh]
+  e <- str2lang(term)
   list(
     formula = stats::update(formula, paste("~ . -", term)),
     term = term,
-    type = sub("\\(.*$", "", term),
-    parameter = sub("^[a-z]+\\((.*)\\)$", "\\1", term)
+    type = deparse(e[[1L]]),
+    parameter = as.character(e[[2L]]),
+    positive = isTRUE(e$positive)
   )
 }
 
@@ -466,8 +483,8 @@ parse_thresholds <- function(formulas, data, data_name = "data") {
       cli_abort("Threshold variable `{threshold_parameter}` is not a column in `{data_name}`.")
     }
     X_threshold <- as.numeric(data[[threshold_parameter]])
-    # 1 or 2; 0 tells TMB there is no threshold:
-    threshold_func <- match(p$type, c("breakpt", "logistic"))
+    # 0 = none, 1 = breakpt(), 2 = logistic(), 3 = breakpt(positive = TRUE)
+    threshold_func <- if (p$positive) 3L else match(p$type, c("breakpt", "logistic"))
   }
   list(
     formulas = lapply(parsed, `[[`, "formula"),

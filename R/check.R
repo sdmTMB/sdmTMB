@@ -298,7 +298,7 @@ sanity <- function(object, big_sd_log10 = 2, gradient_thresh = 0.001, silent = F
   # a breakpt() cutpoint estimated with the other parameters, rather than fixed
   # (as profile_breakpt() does) or mapped by the user
   breakpt_ok <- TRUE
-  if (identical(as.integer(object$tmb_data$threshold_func), 1L) &&
+  if (object$tmb_data$threshold_func %in% c(1L, 3L) &&
     is.null(object$control$map$b_threshold)) {
     if (!silent) {
       cli::cli_alert_danger("The `breakpt()` cutpoint was estimated directly")

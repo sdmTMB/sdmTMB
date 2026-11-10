@@ -72,14 +72,17 @@
 #' @return A list of class `breakpt_profile` with:
 #' * `profile`: a data frame with one row per profile fit: the cutpoint
 #'   (`cut`), its NLL (`nll`, `NA` if the fit failed), NLL above the best
-#'   (`dnll`), the slope, the maximum absolute gradient, the convergence code,
+#'   (`dnll`), the slope (the slope itself, not its log, with
+#'   `breakpt(x, positive = TRUE)`), the maximum absolute gradient, the convergence code,
 #'   and the share of observations below the cutpoint.
 #' * `estimate`: a one-row data frame with the best cutpoint (`cut`), slope,
 #'   NLL, the final fit's NLL (`final_nll`, `NA` if `final = FALSE`), interval
 #'   (`lwr`, `upr`), AIC, numbers of observations below and above the
 #'   cutpoint, and flags for checking the result (see Warnings). If the final
 #'   fit improves on the profile fit at the same cutpoint, `nll`, `aic`, and the
-#'   profile use the final fit's NLL.
+#'   profile use the final fit's NLL. With `final = TRUE`, the slope (in
+#'   `estimate` and in that row of the profile) is the final fit's, as in
+#'   [tidy()] on `fit`.
 #' * `fit`: the [sdmTMB()] fit with the cutpoint fixed at `estimate$cut`, or
 #'   `NULL` if `final = FALSE`. Its stored call is the call you made, with your
 #'   `control`, so [update()] on it refits with the cutpoint estimated directly,
@@ -145,9 +148,11 @@ profile_breakpt <- function(formula, ..., control = sdmTMBcontrol(), cuts = NULL
   }
   built <- suppressMessages(sdmTMB(formula, ..., control = control, do_fit = FALSE))
   obj <- built$tmb_obj
-  if (!identical(as.integer(built$tmb_data$threshold_func), 1L)) {
+  if (!built$tmb_data$threshold_func %in% c(1L, 3L)) {
     cli_abort("`formula` needs a `breakpt()` term.")
   }
+  # the slope is estimated as log(slope) with breakpt(positive = TRUE)
+  to_slope <- if (built$tmb_data$threshold_func == 3L) exp else identity
   ib <- which(names(obj$par) == "b_threshold")
   if (length(ib) != 2L) cli_abort("Delta models aren't supported.")
   # a prior on the cutpoint would add its penalty to the profile NLL, and so to logLik() and AIC()
@@ -291,18 +296,18 @@ profile_breakpt <- function(formula, ..., control = sdmTMBcontrol(), cuts = NULL
     cl[c("cuts", "within", "tol", "tol_coarse", "max_fits", "level", "final")] <- NULL
     fit$call <- cl
     final_nll <- fit$model$objective
-    # the final fit's extra optimization can improve on the profile fit at the same cutpoint
-    if (final_nll < best$nll) {
-      best$nll <- final_nll
-      best$par[i_slope] <- fit$tmb_obj$env$parList()$b_threshold[1L, 1L]
-      done[[best_i]] <- best
-    }
+    # report the final fit's slope, so it matches tidy(fit), and its NLL if the extra
+    # optimization improved on the profile fit at the same cutpoint. `tmb_obj$env$parList()`
+    # would give the last point evaluated, not the optimum.
+    best$par[i_slope] <- fit$model$par[["b_threshold"]]
+    best$nll <- min(best$nll, final_nll)
+    done[[best_i]] <- best
   }
 
   p <- data.frame(
     cut = done_col("cut"),
     nll = done_col("nll"),
-    slope = vapply(done, function(z) if (is.null(z$par)) NA_real_ else z$par[[i_slope]], 0),
+    slope = vapply(done, function(z) if (is.null(z$par)) NA_real_ else to_slope(z$par[[i_slope]]), 0),
     max_grad = done_col("max_grad"),
     convergence = vapply(done, function(z) as.integer(z$convergence), 0L)
   )

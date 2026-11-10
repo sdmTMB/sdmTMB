@@ -250,6 +250,12 @@
 #' reliable. [profile_breakpt()] estimates the cutpoint and a confidence interval
 #' by profile likelihood instead.
 #'
+#' Use `+ breakpt(variable, positive = TRUE)` to constrain the slope to be
+#' positive. The slope is then estimated in log space, so any `b_threshold`
+#' starting value for it in [sdmTMBcontrol()] must be `log(slope)`, but [tidy()],
+#' [profile_breakpt()], priors, and the `threshold_coefs` argument of
+#' [sdmTMB_simulate()] use the slope itself.
+#'
 #' Similarly, a logistic-function threshold model can be included via
 #' `+ logistic(variable)`. This option models the relationship as a logistic
 #' function of the 50% and 95% values. This is similar to length- or size-based
@@ -1444,7 +1450,7 @@ sdmTMB <- function(
   tmb_map[names(control$map)] <- control$map
 
   # profile_breakpt() maps b_threshold to fix the cutpoint, so it doesn't trigger this
-  if (do_fit && identical(as.integer(tmb_data$threshold_func), 1L) && is.null(control$map$b_threshold)) {
+  if (do_fit && tmb_data$threshold_func %in% c(1L, 3L) && is.null(control$map$b_threshold)) {
     cli_inform(class = "sdmTMB_breakpt_message", c(
       i = paste0("The likelihood of a `breakpt()` model isn't smooth in the cutpoint, ",
         "so the fit can stop at the wrong cutpoint while reporting convergence, ",

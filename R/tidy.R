@@ -242,10 +242,14 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   out <- data.frame(term = fe_names, estimate = b_j, std.error = b_j_se, stringsAsFactors = FALSE)
 
   if (x$tmb_data$threshold_func > 0) {
-    if (x$threshold_function == 1L) {
+    if (x$threshold_function %in% c(1L, 3L)) {
       par_name <- paste0(x$threshold_parameter, c("-slope", "-breakpt"))
       estimates <- est$b_threshold[,model,drop=TRUE]
       ses <- se$b_threshold[,model,drop=TRUE]
+      if (x$threshold_function == 3L) { # the slope, not the estimated log(slope)
+        estimates[1L] <- est$s_slope[model]
+        ses[1L] <- se$s_slope[model]
+      }
     } else {
       par_name <- paste0(x$threshold_parameter, c("-s50", "-s95", "-smax"))
       estimates <- c(est$s50[model], est$s95[model], est$s_max[model])

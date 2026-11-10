@@ -69,7 +69,8 @@ time-varying coefficients or a vector with one element per coefficient
 (\code{NA} for no prior). In delta models, the priors apply to both components.}
 
 \item{threshold_breakpt_slope}{A \code{normal()} prior for the slope of the
-linear (hockey stick) function.}
+linear (hockey stick) function. With \code{breakpt(positive = TRUE)}, this
+applies to the positive slope, not its log.}
 
 \item{threshold_breakpt_cut}{A \code{normal()} prior for the cutoff of the
 linear (hockey stick) function.}

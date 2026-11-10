@@ -239,3 +239,41 @@ test_that("RTMB combined model matches every TMB report and sdreport row", {
     time_varying = ~1, time_varying_type = "rw0", do_fit = FALSE)
   expect_frozen_fit_data("effects", fit, d[c(1, 40, 90), ], info = "combined")
 })
+
+test_that("RTMB positive break-point slopes are exp(b_threshold[1, ])", {
+  set.seed(54)
+  d <- data.frame(z = seq(-2, 2, length.out = 60L), response = rnorm(60L))
+  build <- function(term) {
+    sdmTMB(stats::as.formula(paste("response ~ 1 +", term)), data = d,
+      spatial = "off", do_fit = FALSE,
+      priors = sdmTMBpriors(threshold_breakpt_slope = normal(1, 1)))
+  }
+  objective <- function(fit, slope, stan_flag) {
+    p <- fit$tmb_params
+    p$b_threshold[] <- c(slope, 0.2)
+    data <- fit$tmb_data
+    data$stan_flag <- stan_flag
+    make_sdmTMB_adfun(data, p, fit$tmb_map, fit$tmb_random)
+  }
+  free_fit <- build("breakpt(z)")
+  pos_fit <- build("breakpt(z, positive = TRUE)")
+  expect_identical(pos_fit$tmb_data$threshold_func, 3L)
+  i <- which(names(free_fit$tmb_obj$par) == "b_threshold")[1L]
+  for (stan_flag in 0:1) {
+    free <- objective(free_fit, 0.7, stan_flag)
+    pos <- objective(pos_fit, log(0.7), stan_flag)
+    # the prior is on the slope; with stan_flag, add the Jacobian of exp()
+    expect_equal(pos$fn(), free$fn() - stan_flag * log(0.7), tolerance = 1e-10)
+    expect_equal(pos$gr()[i], free$gr()[i] * 0.7 - stan_flag, tolerance = 1e-8)
+    expect_equal(pos$report()$eta_i, free$report()$eta_i)
+  }
+  expect_equal(as.numeric(pos$report()$eta_i[, 1L]),
+    pos_fit$tmb_params$b_j[[1L]] + 0.7 * pmin(d$z, 0.2), tolerance = 1e-10)
+  proj <- function(fit, slope) {
+    data <- predict(fit, newdata = d[1:5, ], return_tmb_data = TRUE)
+    p <- fit$tmb_params
+    p$b_threshold[] <- c(slope, 0.2)
+    make_sdmTMB_adfun(data, p, fit$tmb_map, fit$tmb_random)$report()$proj_eta
+  }
+  expect_equal(proj(pos_fit, log(0.7)), proj(free_fit, 0.7))
+})
