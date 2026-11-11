@@ -41,7 +41,8 @@
 #'   vector matching the number of time-varying coefficients.
 #' @param phi Observation error scale parameter (e.g., SD in Gaussian).
 #' @param tweedie_p Tweedie p (power) parameter; between 1 and 2.
-#' @param df Student-t degrees of freedom.
+#' @param df Student-t degrees of freedom (must be > 1). Overrides any `df`
+#'   supplied to [student()]. If neither is given, `df = 3`.
 #' @param threshold_coefs An optional vector of threshold coefficient values
 #'   if the `formula` includes `breakpt()` or `logistic()`. If `breakpt()`,
 #'   these are slope and cut values (with `breakpt(positive = TRUE)`, the
@@ -159,7 +160,7 @@ simulate_new <- function(formula,
   # }
 
   assert_that((tweedie_p > 1 && tweedie_p < 2) || is.null(tweedie_p))
-  assert_that(df >= 1 || is.null(df))
+  assert_that(df > 1 || is.null(df))
   assert_that(all(range > 0) || is.null(range))
   assert_that(length(range) %in% c(1, 2) || is.null(range))
   assert_that((rho >= -1 && rho <= 1) || is.null(rho))
@@ -415,7 +416,12 @@ simulate_new <- function(formula,
       tmb_data$rw_fields <- 1L
     }
   }
-  if (!is.null(df)) tmb_data$df <- df
+  if (!is.null(df)) {
+    if (!length(params$ln_student_df)) {
+      cli::cli_abort("`df` was supplied but `family` is not `student()`.")
+    }
+    params$ln_student_df[] <- log(df - 1)
+  }
   if (!is.null(tweedie_p)) params$thetaf <- stats::qlogis(tweedie_p - 1)
 
   if (!is.null(fixed_re$omega_s)) {

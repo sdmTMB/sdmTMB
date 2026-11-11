@@ -213,3 +213,18 @@ test_that("sdmTMB_simulate() recovery holds across variances, ranges, and field 
   # expect_lt(0.2, ci$conf.high[ci$term=="sigma_E"]) # RW underestimates sigma_E?
   expect_gt(0.2, ci$conf.low[ci$term=="sigma_E"])
 })
+
+test_that("sdmTMB_simulate() uses the `df` argument for student()", {
+  d <- predictor_dat[predictor_dat$year == 1, ]
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.2)
+  sim <- function(df, family = suppressMessages(student())) {
+    sdmTMB_simulate(~ 1, data = d, mesh = mesh, family = family,
+      range = 0.3, sigma_O = 0, phi = 1, B = 0, df = df, seed = 1)$observed
+  }
+  y3 <- sim(3)
+  expect_false(identical(y3, sim(50)))
+  expect_identical(y3, sim(NULL))
+  expect_identical(sim(10), sim(NULL, family = suppressMessages(student(df = 10))))
+  expect_error(sim(3, family = gaussian()), "not `student\\(\\)`")
+  expect_error(sim(1))
+})

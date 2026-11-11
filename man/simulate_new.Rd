@@ -105,7 +105,8 @@ and spatiotemporal ranges will be unique. Not used for areal models.}
 
 \item{tweedie_p}{Tweedie p (power) parameter; between 1 and 2.}
 
-\item{df}{Student-t degrees of freedom.}
+\item{df}{Student-t degrees of freedom (must be > 1). Overrides any \code{df}
+supplied to \code{\link[=student]{student()}}. If neither is given, \code{df = 3}.}
 
 \item{threshold_coefs}{An optional vector of threshold coefficient values
 if the \code{formula} includes \code{breakpt()} or \code{logistic()}. If \code{breakpt()},

@@ -1,5 +1,9 @@
 # sdmTMB (development version)
 
+* `sdmTMB_simulate(df = )` now sets the Student-t degrees of freedom. It was
+  silently ignored, so simulations used the `df` from `student()` (or 3).
+  Supplying `df` with a non-Student family is now an error.
+
 * Add `strip_sdmTMB()` to shrink a fitted model before saving it. It removes
   the cached Cholesky factor and the handle to the in-memory RTMB tape, which
   sdmTMB rebuilds as needed, and optionally the joint precision matrix. For
