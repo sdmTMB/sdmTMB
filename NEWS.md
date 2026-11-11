@@ -1,5 +1,9 @@
 # sdmTMB (development version)
 
+* `get_index_sims()` now returns `log_est` as `log(est)`. It was the mean of
+  the log draws while `est` was their median (by default), so
+  `exp(log_est)` did not equal `est`.
+
 * `sdmTMB_simulate()` no longer draws random smoother wiggles that the user
   could not control. Previously, `s()` terms got penalized coefficients drawn
   with SD 1 on every call. They are now 0 unless the new `sigma_smooth`

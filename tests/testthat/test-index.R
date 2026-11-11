@@ -82,6 +82,10 @@ test_that("get_index_sims() roughly matches get_index()", {
   expect_gt(cor(ind_sim$est, ind$est), 0.9)
   expect_gt(cor(ind_sim$lwr, ind$lwr), 0.9)
   expect_gt(cor(ind_sim$upr, ind$upr), 0.9)
+  expect_equal(exp(ind_sim$log_est), ind_sim$est)
+  ind_mean <- get_index_sims(predict(m, newdata = nd, nsim = 100L),
+    est_function = mean)
+  expect_equal(exp(ind_mean$log_est), ind_mean$est)
 })
 
 test_that("get_index works with offsets and splits", {
