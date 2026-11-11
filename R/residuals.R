@@ -615,8 +615,6 @@ residuals.sdmTMB <- function(object,
     } else {
       mu <- linkinv(pred[[est_column]])
     }
-  } else if (type == "mvn-laplace") {
-    mu <- linkinv(predict(object, nsim = 1L, model = model, offset = object$offset)[, 1L, drop = TRUE])
   } else if (type == "mle-mcmc") {
     if (is.null(mcmc_samples)) {
       msg <- c("As of sdmTMB 0.3.0, `mcmc_samples` must be supplied to use `type = 'mle-mcmc'`.",
