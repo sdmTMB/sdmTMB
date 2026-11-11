@@ -1,5 +1,8 @@
 # sdmTMB (development version)
 
+* Delta models with smoothers can now have different parametric terms in
+  each component. The smoothers must still be the same in both components.
+
 * `get_index_sims()` now returns `log_est` as `log(est)`. It was the mean of
   the log draws while `est` was their median (by default), so
   `exp(log_est)` did not equal `est`.

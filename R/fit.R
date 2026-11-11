@@ -1044,14 +1044,14 @@ sdmTMB <- function(
 
   re <- re_tmb_data(split_formula) # random intercepts and slopes
 
-  has_smooths <- vapply(formula, function(f) {
-    length(get_smooth_terms(all_terms(reformulas::nobars(f)))) > 0L
-  }, logical(1))
-  if (has_two_components && any(has_smooths) &&
-      original_formula[[1]] != original_formula[[2]]) {
+  smooth_terms <- lapply(formula, function(f) {
+    trms <- all_terms(reformulas::nobars(f))
+    trms[get_smooth_terms(trms)]
+  })
+  if (has_two_components && !identical(smooth_terms[[1]], smooth_terms[[2]])) {
     cli_abort(paste0(
       "For now, if delta models contain smoothers, both components ",
-      "must have the same main-effects formula."
+      "must have the same smoothers (in the same order)."
     ))
   }
 

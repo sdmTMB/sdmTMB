@@ -316,6 +316,30 @@ test_that("delta models work with different main effects", {
     regexp = "smooth"
   )
 
+  # diff parametric terms with the same smoothers match separate fits; the
+  # zero-weighted Gamma fit builds the smoother basis from the same rows
+  d <- pcod
+  f1 <- density ~ s(depth_scaled, k = 5) + depth_scaled2
+  f2 <- density ~ s(depth_scaled, k = 5) + as.factor(year)
+  fit <- sdmTMB(list(f1, f2), data = d, spatial = "off",
+    family = delta_gamma())
+  d$present <- as.integer(d$density > 0)
+  d$dens_pos <- ifelse(d$density > 0, d$density, 1)
+  fit1 <- sdmTMB(update(f1, present ~ .), data = d, spatial = "off",
+    family = binomial())
+  fit2 <- sdmTMB(update(f2, dens_pos ~ .), data = d, spatial = "off",
+    family = Gamma(link = "log"), weights = d$present)
+  expect_equal(as.numeric(logLik(fit)),
+    as.numeric(logLik(fit1)) + as.numeric(logLik(fit2)), tolerance = 1e-6)
+  expect_equal(tidy(fit, model = 1)$estimate, tidy(fit1)$estimate,
+    tolerance = 1e-6)
+  expect_equal(tidy(fit, model = 2)$estimate, tidy(fit2)$estimate,
+    tolerance = 1e-6)
+  nd <- d[1:20, ]
+  p <- predict(fit, newdata = nd)
+  expect_equal(p$est1, predict(fit1, newdata = nd)$est, tolerance = 1e-6)
+  expect_equal(p$est2, predict(fit2, newdata = nd)$est, tolerance = 1e-6)
+
   # diff random intercepts throw an error for now
   # expect_error(
   #   {
