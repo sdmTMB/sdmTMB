@@ -670,9 +670,10 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
 
   tmb_dat$sim_obs <- as.integer(observation_error)
 
+  env <- object$tmb_obj$env
   newobj <- make_sdmTMB_adfun(
     data = tmb_dat, map = object$tmb_map,
-    random = object$tmb_random, parameters = object$tmb_obj$env$parList()
+    random = object$tmb_random, parameters = env$parList(par = env$last.par.best)
   )
 
   # params MLE/MVN stuff
