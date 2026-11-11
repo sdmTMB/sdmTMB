@@ -1,5 +1,11 @@
 # sdmTMB (development version)
 
+* `sdmTMB_simulate()` no longer draws random smoother wiggles that the user
+  could not control. Previously, `s()` terms got penalized coefficients drawn
+  with SD 1 on every call. They are now 0 unless the new `sigma_smooth`
+  argument is supplied, and `B` now also takes the coefficients of the
+  smoothers' linear parts (e.g., `sx`), in the order `tidy()` lists them.
+
 * `sdmTMB_simulate(df = )` now sets the Student-t degrees of freedom. It was
   silently ignored, so simulations used the `df` from `student()` (or 3).
   Supplying `df` with a non-Student family is now an error.

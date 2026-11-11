@@ -20,6 +20,7 @@ simulate_new(
   phi = NULL,
   tweedie_p = NULL,
   df = NULL,
+  sigma_smooth = NULL,
   threshold_coefs = NULL,
   fixed_re = list(omega_s = NULL, epsilon_st = NULL, zeta_s = NULL),
   seed = sample.int(1e+06, 1),
@@ -50,6 +51,7 @@ sdmTMB_simulate(
   phi = NULL,
   tweedie_p = NULL,
   df = NULL,
+  sigma_smooth = NULL,
   threshold_coefs = NULL,
   fixed_re = list(omega_s = NULL, epsilon_st = NULL, zeta_s = NULL),
   seed = sample.int(1e+06, 1),
@@ -86,7 +88,9 @@ Instead, simulate the two component models separately and combine.}
 If \code{nonlocal_formula} is used, include regular fixed-effect
 coefficients followed by transformed-covariate coefficients in operator
 order. Same-covariate \code{diffusion()} and \code{time_lag()} wrappers contribute
-one joint coefficient.}
+one joint coefficient. If \code{formula} includes smoothers (\code{s()}), append
+the coefficients of their linear (unpenalized) parts, in the order
+\code{\link[=tidy.sdmTMB]{tidy.sdmTMB()}} lists them (e.g., \code{sx}).}
 
 \item{range}{Parameter that controls the decay of spatial correlation. If a
 vector of length 2, \code{share_range} will be set to \code{FALSE} and the spatial
@@ -107,6 +111,13 @@ and spatiotemporal ranges will be unique. Not used for areal models.}
 
 \item{df}{Student-t degrees of freedom (must be > 1). Overrides any \code{df}
 supplied to \code{\link[=student]{student()}}. If neither is given, \code{df = 3}.}
+
+\item{sigma_smooth}{SD(s) of the penalized (wiggly) smoother coefficients
+if \code{formula} includes \code{s()}: a single value or one per smoother. If
+\code{NULL} (the default), these coefficients are 0 and each smoother reduces
+to its linear part set through \code{B}. Otherwise they are drawn as random
+effects with this SD on the scale of the \pkg{mgcv} basis, giving a
+random nonlinear shape.}
 
 \item{threshold_coefs}{An optional vector of threshold coefficient values
 if the \code{formula} includes \code{breakpt()} or \code{logistic()}. If \code{breakpt()},

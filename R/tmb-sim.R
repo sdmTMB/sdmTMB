@@ -28,7 +28,9 @@
 #'   If `nonlocal_formula` is used, include regular fixed-effect
 #'   coefficients followed by transformed-covariate coefficients in operator
 #'   order. Same-covariate `diffusion()` and `time_lag()` wrappers contribute
-#'   one joint coefficient.
+#'   one joint coefficient. If `formula` includes smoothers (`s()`), append
+#'   the coefficients of their linear (unpenalized) parts, in the order
+#'   [tidy.sdmTMB()] lists them (e.g., `sx`).
 #' @param range Parameter that controls the decay of spatial correlation. If a
 #'   vector of length 2, `share_range` will be set to `FALSE` and the spatial
 #'   and spatiotemporal ranges will be unique. Not used for areal models.
@@ -43,6 +45,12 @@
 #' @param tweedie_p Tweedie p (power) parameter; between 1 and 2.
 #' @param df Student-t degrees of freedom (must be > 1). Overrides any `df`
 #'   supplied to [student()]. If neither is given, `df = 3`.
+#' @param sigma_smooth SD(s) of the penalized (wiggly) smoother coefficients
+#'   if `formula` includes `s()`: a single value or one per smoother. If
+#'   `NULL` (the default), these coefficients are 0 and each smoother reduces
+#'   to its linear part set through `B`. Otherwise they are drawn as random
+#'   effects with this SD on the scale of the \pkg{mgcv} basis, giving a
+#'   random nonlinear shape.
 #' @param threshold_coefs An optional vector of threshold coefficient values
 #'   if the `formula` includes `breakpt()` or `logistic()`. If `breakpt()`,
 #'   these are slope and cut values (with `breakpt(positive = TRUE)`, the
@@ -138,6 +146,7 @@ simulate_new <- function(formula,
                          phi = NULL,
                          tweedie_p = NULL,
                          df = NULL,
+                         sigma_smooth = NULL,
                          threshold_coefs = NULL,
                          fixed_re = list(omega_s = NULL, epsilon_st = NULL, zeta_s = NULL),
                          seed = sample.int(1e6, 1),
@@ -211,7 +220,7 @@ simulate_new <- function(formula,
 
   .sim_re <- list(
     omega = TRUE, epsilon = TRUE, zeta = TRUE,
-    IID = TRUE, RW = TRUE, smooth = TRUE
+    IID = TRUE, RW = TRUE, smooth = !is.null(sigma_smooth)
   )
   if (!is.null(fixed_re$omega_s)) {
     .sim_re$omega <- FALSE
@@ -247,15 +256,25 @@ simulate_new <- function(formula,
   tmb_data$sim_re <- as.integer(.sim_re)
   # tmb_data$sim_re <- c(1L, 0L, 0L, 0L, 0L, 0L)
 
+  n_b_j <- ncol(fit$tmb_data$X_ij[[1]])
+  n_bs <- if (tmb_data$has_smooths) nrow(params$bs) else 0L
   if (!is.null(B)) {
-    n_covariates <- length(B)
-    assert_that(ncol(fit$tmb_data$X_ij[[1]]) == length(B),
+    assert_that(length(B) == n_b_j + n_bs,
       msg = paste0(
         "Number of specified fixed-effect `B` parameters does ",
-        "not match model matrix columns implied by the formula ",
-        "and any `nonlocal_formula` terms."
+        "not match model matrix columns implied by the formula, ",
+        "any `nonlocal_formula` terms, and any smoother linear terms."
       )
     )
+  }
+  if (!is.null(sigma_smooth)) {
+    if (!tmb_data$has_smooths) {
+      cli::cli_abort("`sigma_smooth` was supplied but `formula` has no `s()` terms.")
+    }
+    n_sm <- nrow(params$ln_smooth_sigma)
+    assert_that(length(sigma_smooth) %in% c(1L, n_sm), all(sigma_smooth > 0),
+      msg = "`sigma_smooth` must be positive with length 1 or one per smoother.")
+    params$ln_smooth_sigma[, 1L] <- log(rep_len(sigma_smooth, n_sm))
   }
 
   .set_diffusion_parameter <- function(params, param_name, user_value, mask,
@@ -406,7 +425,10 @@ simulate_new <- function(formula,
     }
   }
 
-  if (!is.null(B)) params$b_j <- matrix(B, ncol = 1L) # TODO DELTA
+  if (!is.null(B)) { # TODO DELTA
+    params$b_j <- matrix(B[seq_len(n_b_j)], ncol = 1L)
+    if (n_bs > 0L) params$bs <- matrix(B[n_b_j + seq_len(n_bs)], ncol = 1L)
+  }
   if (!is.null(phi) && length(params$ln_phi) > 0L) params$ln_phi <- log(phi)
   if (!is.null(rho)) {
     if (rho != 0 && rho < 1) {
