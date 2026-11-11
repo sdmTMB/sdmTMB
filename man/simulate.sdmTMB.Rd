@@ -33,6 +33,8 @@
 are at their maximum likelihood (MLE) estimates  and random effects are at
 their empirical Bayes (EB) estimates. \code{"mle-mvn"}: fixed effects are at
 their MLEs but random effects are taken from a single approximate sample.
+With \code{reml = TRUE} or \code{sdmTMBcontrol(profile = TRUE)}, the integrated-out
+fixed effects are sampled along with the random effects.
 This latter option is a suggested approach if these simulations will be
 used for goodness of fit testing (e.g., with the DHARMa package).}
 

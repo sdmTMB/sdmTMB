@@ -434,8 +434,11 @@ qres_gengamma <- function(object, y, mu, ...) {
 #' computational efficiency. This is the same sample as `obj$env$MC()`, where
 #' `obj` is the object created with `RTMB::MakeADFun()`. See Waagepetersen
 #' (2006) and the description in the source code for the internal \pkg{TMB}
-#' function `TMB:::oneSamplePosterior()`. Residuals are converted to randomized
-#' quantile residuals as described above.
+#' function `TMB:::oneSamplePosterior()`. With `reml = TRUE` or
+#' `sdmTMBcontrol(profile = TRUE)`, the fixed effects that are integrated out
+#' (`b_j`, plus smoother coefficients for REML) are part of the random effects
+#' and so are sampled along with them rather than held at their estimates.
+#' Residuals are converted to randomized quantile residuals as described above.
 #'
 #' **`mle-eb`**: Fixed effects are held at their MLEs and random effects are
 #' taken as their EB estimates. These used to be the default residual type in
@@ -766,7 +769,9 @@ check_overdisp <- function(object) {
 
 # Returns a function that draws `n` full parameter vectors (as columns) with
 # the random effects sampled from their approximate MVN posterior,
-# N(u_hat, H_uu^-1), and the fixed effects at their MLEs. Equivalent to TMB's
+# N(u_hat, H_uu^-1), and the fixed effects at their MLEs. Under REML or
+# `profile`, `env$random` also holds the integrated-out fixed effects, so those
+# are sampled too (as in TMB:::oneSamplePosterior()). Equivalent to TMB's
 # `obj$env$MC()` samples but factors the inner Hessian only once and skips
 # MC()'s per-draw likelihood evaluations.
 .posterior_re_sampler <- function(object) {
