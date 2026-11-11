@@ -1,5 +1,15 @@
 # sdmTMB (development version)
 
+* Add `strip_sdmTMB()` to shrink a fitted model before saving it. It removes
+  the cached Cholesky factor and the handle to the in-memory RTMB tape, which
+  sdmTMB rebuilds as needed, and optionally the joint precision matrix. For
+  the `pcod` spatiotemporal example this cuts the saved file roughly in half.
+
+* `spread_sims()` and `gather_sims()` now recompute the joint precision
+  matrix if the fit doesn't have it (as `predict(..., nsim = )` already did),
+  and now work for models without random effects by sampling from the
+  fixed-effect covariance matrix.
+
 * Fitted models no longer carry the environment they were fit in. Formulas
   and terms kept a reference to the calling frame, so a model fit inside a
   function, loop, or `lapply()` call saved everything in that frame (data,

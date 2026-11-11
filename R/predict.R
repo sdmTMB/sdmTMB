@@ -774,14 +774,7 @@ predict_parameter_draws <- function(object, lp, req) {
     }
     return(t_draws)
   }
-  if (!"jointPrecision" %in% names(object$sd_report) && !has_no_random_effects(object)) {
-    message("Rerunning RTMB::sdreport() with `getJointPrecision = TRUE`.")
-    reinitialize(object)
-    sd_report <- RTMB::sdreport(object$tmb_obj, getJointPrecision = TRUE)
-  } else {
-    sd_report <- object$sd_report
-  }
-  project_historical_draws(lp, sd_report, nsim,
+  project_historical_draws(lp, sd_report_joint(object), nsim,
     sample_fe = req$sample_fe, sample_historical_re = TRUE)
 }
 

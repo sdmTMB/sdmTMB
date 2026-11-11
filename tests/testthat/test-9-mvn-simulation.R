@@ -319,6 +319,17 @@ test_that("gather/spread sims work", {
   expect_s3_class(x, "data.frame")
 })
 
+test_that("spread_sims() works without random effects", {
+  skip_on_cran()
+  m <- sdmTMB(density ~ depth_scaled, data = pcod_2011, spatial = "off",
+    family = tweedie())
+  set.seed(1)
+  x <- spread_sims(m, nsim = 2000)
+  expect_equal(nrow(x), 2000L)
+  expect_equal(unname(sapply(x[2:3], sd)),
+    tidy(m)$std.error, tolerance = 0.05)
+})
+
 test_that("predict() can draw random effects only with sample_fe = FALSE", {
   skip_on_cran()
   m <- sdmTMB(

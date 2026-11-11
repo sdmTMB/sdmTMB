@@ -220,7 +220,7 @@ project <- function(
 
   ee <- object$tmb_obj$env
   lpb <- ee$last.par.best
-  sd_report <- project_sd_report(object)
+  sd_report <- sd_report_joint(object)
   lp <- project_historical_draws(
     lpb = lpb,
     sd_report = sd_report,
@@ -384,14 +384,6 @@ project <- function(
     return(extract_project_sims(ret, sims_var))
   }
   out
-}
-
-project_sd_report <- function(object) {
-  sd_report <- object$sd_report
-  if (!"jointPrecision" %in% names(sd_report) && length(object$tmb_random)) {
-    sd_report <- RTMB::sdreport(object$tmb_obj, getJointPrecision = TRUE)
-  }
-  sd_report
 }
 
 project_historical_re_indices <- function(lp) {
