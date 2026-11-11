@@ -1009,10 +1009,6 @@ sdmTMB <- function(
     cli_abort("Detected `offset()` in formula. Offsets in sdmTMB must be specified via the `offset` argument.")
   }
 
-  # the default `~ 1` is created in this frame; don't capture (and serialize) it
-  if (identical(environment(dispformula), environment())) {
-    environment(dispformula) <- globalenv()
-  }
   disp_design <- .make_design(dispformula, data, "`dispformula`")
   Xdisp_ij <- disp_design$X
 
@@ -1527,6 +1523,7 @@ sdmTMB <- function(
     ),
     class = "sdmTMB"
   )
+  out_structure <- rehome_formula_envs(out_structure, data_cols = names(data))
 
   tmb_obj <- make_sdmTMB_adfun(
     data = tmb_data, parameters = tmb_params, map = tmb_map,

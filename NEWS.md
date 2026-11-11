@@ -1,5 +1,12 @@
 # sdmTMB (development version)
 
+* Fitted models no longer carry the environment they were fit in. Formulas
+  and terms kept a reference to the calling frame, so a model fit inside a
+  function, loop, or `lapply()` call saved everything in that frame (data,
+  other fits) along with it. The stored formulas now keep only the non-data
+  objects they refer to (e.g., `k` in `poly(x, k)`). `emmeans()` now uses
+  the data stored in the fit instead of looking up the `data` argument again.
+
 * Add `breakpt(x, positive = TRUE)` to constrain a break-point slope to be
   positive. The slope is estimated in log space, but `tidy()`,
   `profile_breakpt()`, priors, and `sdmTMB_simulate(threshold_coefs = )` use

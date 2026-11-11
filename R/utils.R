@@ -1104,3 +1104,71 @@ make_category_svc <- function(data,
     info = info
   ))
 }
+
+# Formulas and terms keep the environment they were created in, and saving a
+# fit serializes that environment. For a fit made inside a function, loop, or
+# lapply() callback, that's the whole calling frame (other fits, large data).
+# Give each such environment a small replacement holding only the symbols the
+# formulas reference that aren't data columns, parented at the first top-level
+# environment on the original chain (global, a namespace, or the search path)
+# so every symbol resolves as before. Formulas sharing an environment still
+# share one afterwards.
+rehome_formula_envs <- function(x, data_cols = character()) {
+  is_fml <- function(z) inherits(z, "formula")
+  is_top <- function(e) {
+    identical(e, emptyenv()) || identical(e, globalenv()) ||
+      identical(e, baseenv()) || isNamespace(e) || nzchar(environmentName(e))
+  }
+  walk <- function(z, f) {
+    if (is_fml(z)) return(f(z))
+    # .subset2() and unclass(): S3 `[[` methods can misbehave here (e.g.,
+    # a package_version's `[[` returns itself)
+    if (is.list(z) && !is.data.frame(z)) {
+      cl <- oldClass(z)
+      for (i in seq_along(z)) {
+        zi <- .subset2(z, i)
+        if (is.null(zi)) next
+        new <- walk(zi, f)
+        if (!identical(new, zi)) {
+          z <- unclass(z)
+          z[[i]] <- new
+          class(z) <- cl
+        }
+      }
+    }
+    z
+  }
+  envs <- list()
+  syms <- character()
+  walk(x, function(z) {
+    e <- environment(z)
+    if (!is.null(e) && !is_top(e)) {
+      if (!any(vapply(envs, identical, logical(1), e))) envs[[length(envs) + 1L]] <<- e
+      syms <<- union(syms, all.names(z))
+    }
+    z
+  })
+  if (!length(envs)) return(x)
+  syms <- setdiff(syms, data_cols)
+  new_envs <- lapply(envs, function(e) {
+    top <- e
+    while (!is_top(top)) top <- parent.env(top)
+    out <- new.env(parent = top)
+    for (s in syms) {
+      # tryCatch(): `s` may be bound to a missing argument
+      v <- tryCatch(get0(s, envir = e, ifnotfound = out), error = function(err) out)
+      if (!identical(v, out) && !identical(v, get0(s, envir = top, ifnotfound = out))) {
+        assign(s, v, envir = out)
+      }
+    }
+    out
+  })
+  walk(x, function(z) {
+    e <- environment(z)
+    if (!is.null(e)) {
+      j <- which(vapply(envs, identical, logical(1), e))
+      if (length(j)) environment(z) <- new_envs[[j]]
+    }
+    z
+  })
+}
