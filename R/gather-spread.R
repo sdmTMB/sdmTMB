@@ -36,16 +36,12 @@
 
 spread_sims <- function(object, nsim = 200) {
   .check_family_capability(object, "spread_sims")
-  if (!"jointPrecision" %in% names(object$sd_report)) {
-    cli_abort("TMB::sdreport() must be run with the joint precision returned.")
-  }
-
   if (.object_has_two_components(object, caller = "`spread_sims()`")) {
     cli_abort("This function isn't yet set up for delta models.")
   }
   n_sims <- nsim
-  tmb_sd <- object$sd_report
-  samps <- rmvnorm_prec(object$tmb_obj$env$last.par.best, tmb_sd, n_sims)
+  tmb_sd <- sd_report_joint(object)
+  samps <- draw_joint_pars(object, tmb_sd, n_sims)
   pars <- c(tmb_sd$par.fixed, tmb_sd$par.random)
   pn <- names(pars)
 
@@ -55,12 +51,6 @@ spread_sims <- function(object, nsim = 200) {
   pars <- pars[pn %in% par_fixed]
   samps <- samps[pn %in% par_fixed, , drop = FALSE]
   pn <- pn[pn %in% par_fixed]
-  .formula <- object$split_formula[[1]]$form_no_bars # TODO DELTA HARDCODED TO 1!
-  if (isFALSE(object$mgcv)) {
-    fe_names <- colnames(model.matrix(.formula, object$data))
-  } else {
-    fe_names <- colnames(model.matrix(mgcv::gam(.formula, data = object$data)))
-  }
   fe_names <- tidy(object, silent = TRUE)$term
   row.names(samps) <- pn
   row.names(samps)[row.names(samps) == "b_j"] <- fe_names
@@ -139,9 +129,38 @@ gather_sims <- function(object, nsim = 200) {
   out[ , c(".iteration", ".variable", ".value"), drop = FALSE]
 }
 
-rmvnorm_prec <- function(mu, tmb_sd, n_sims) {
+# `object$sd_report`, recomputing the joint precision if it wasn't stored
+# (e.g., removed by strip_sdmTMB()). Fits without random effects have none.
+sd_report_joint <- function(object) {
+  sd_report <- object$sd_report
+  if (is.null(sd_report[["jointPrecision"]]) && !has_no_random_effects(object)) {
+    message("Rerunning RTMB::sdreport() with `getJointPrecision = TRUE`.")
+    reinitialize(object)
+    sd_report <- RTMB::sdreport(object$tmb_obj, getJointPrecision = TRUE)
+  }
+  sd_report
+}
+
+# Draws (parameters x draws) of all parameters around `last.par.best`: from
+# the joint precision, or from `cov.fixed` without random effects
+draw_joint_pars <- function(object, sd_report, n_sims) {
+  mu <- object$tmb_obj$env$last.par.best
+  if (!has_no_random_effects(object)) {
+    return(rmvnorm_prec(mu, sd_report, n_sims))
+  }
+  L <- t(chol(sd_report$cov.fixed))
   z <- matrix(stats::rnorm(length(mu) * n_sims), ncol = n_sims)
+  mu + as.matrix(L %*% z)
+}
+
+rmvnorm_prec <- function(mu, tmb_sd, n_sims) {
   L <- Matrix::Cholesky(tmb_sd[["jointPrecision"]], super = TRUE)
+  rmvnorm_chol(mu, L, n_sims)
+}
+
+# Draws from N(mu, Q^-1) given a sparse Cholesky factor `L` of Q
+rmvnorm_chol <- function(mu, L, n_sims) {
+  z <- matrix(stats::rnorm(length(mu) * n_sims), ncol = n_sims)
   z <- Matrix::solve(L, z, system = "Lt")
   z <- Matrix::solve(L, z, system = "Pt")
   z <- as.matrix(z)

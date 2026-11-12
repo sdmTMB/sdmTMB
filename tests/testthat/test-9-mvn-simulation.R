@@ -222,10 +222,19 @@ test_that("rmvnorm sim prediction works with various sims_vars", {
   expect_identical(length(p2b), 2L)
 
   p2b <- predict(m2, nsim = 10, sims_var = 'est_rf')
-  expect_identical(dim(p1b), c(nrow(d), 10L))
+  expect_identical(dim(p2b), c(nrow(d), 10L))
 
-  p2b <- predict(m2, nsim = 10, sims_var = 'epsilon_st')
-  expect_identical(dim(p1b), c(nrow(d), 10L))
+  p2b <- predict(m2, nsim = 10, sims_var = 'omega_s')
+  expect_identical(dim(p2b), c(nrow(d), 10L))
+
+  # no time column, so no spatiotemporal fields:
+  expect_error(predict(m2, nsim = 2, sims_var = 'epsilon_st'), "no \"epsilon_st\"")
+  expect_error(predict(m2, nsim = 2, sims_var = 'omega_s_A'), "must be one of")
+
+  expect_error(
+    predict(m2, nsim = 2, sims_var = 'omega_s', type = 'response'),
+    "only supported with `sims_var = 'est'`"
+  )
 
   # Delta models:
 
@@ -255,8 +264,31 @@ test_that("rmvnorm sim prediction works with various sims_vars", {
   p3c <- predict(m3, nsim = 3, sims_var = 'omega_s', model = 1)
   expect_identical(dim(p3c), c(nrow(d), 3L))
 
-  p3c <- predict(m3, nsim = 3, sims_var = 'epsilon_st', model = 1)
-  expect_identical(dim(p3c), c(nrow(d), 3L))
+  expect_error(predict(m3, nsim = 3, sims_var = 'epsilon_st', model = 1), "component 1")
+})
+
+test_that("non-spatial models return est_non_rf predictions and draws", {
+  set.seed(42)
+  d <- data.frame(x = seq(-1, 1, length.out = 40))
+  d$y <- 1 + 2 * d$x + rnorm(nrow(d), sd = 0.3)
+
+  fit <- sdmTMB(y ~ x, data = d, spatial = "off")
+  for (nd in list(NULL, d[c(3, 1, 7), ])) {
+    p <- predict(fit, newdata = nd)
+    expect_equal(p$est_non_rf, p$est)
+
+    set.seed(1)
+    reports <- predict(fit, newdata = nd, nsim = 3,
+      return_tmb_report = TRUE)
+    expected <- do.call(cbind, lapply(reports, function(r) r$proj_fe[, 1]))
+    set.seed(1)
+    draws <- predict(fit, newdata = nd, nsim = 3, sims_var = "est_non_rf")
+    expect_equal(dim(draws), c(nrow(p), 3L))
+    expect_equal(draws, expected)
+    expect_true(all(is.finite(draws)))
+  }
+  expect_error(predict(fit, nsim = 2, sims_var = "est_rf"),
+    'no "est_rf"')
 })
 
 test_that("nsim with s() and no other random effects works", {
@@ -285,4 +317,52 @@ test_that("gather/spread sims work", {
   x <- gather_sims(m, nsim = 10)
   expect_true(ncol(x) == 3L)
   expect_s3_class(x, "data.frame")
+})
+
+test_that("spread_sims() works without random effects", {
+  skip_on_cran()
+  m <- sdmTMB(density ~ depth_scaled, data = pcod_2011, spatial = "off",
+    family = tweedie())
+  set.seed(1)
+  x <- spread_sims(m, nsim = 2000)
+  expect_equal(nrow(x), 2000L)
+  expect_equal(unname(sapply(x[2:3], sd)),
+    tidy(m)$std.error, tolerance = 0.05)
+})
+
+test_that("predict() can draw random effects only with sample_fe = FALSE", {
+  skip_on_cran()
+  m <- sdmTMB(
+    density ~ depth_scaled, data = pcod_2011, mesh = pcod_mesh_2011,
+    family = tweedie(link = "log"), time = "year", spatiotemporal = "iid"
+  )
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
+  p <- predict(m, newdata = nd)
+
+  set.seed(1)
+  r <- predict(m, newdata = nd, nsim = 5, sample_fe = FALSE, return_tmb_report = TRUE)
+  expect_false(isTRUE(all.equal(r[[1]]$proj_omega_s_A, r[[2]]$proj_omega_s_A)))
+
+  # fixed effects are held at the MLE:
+  set.seed(1)
+  s <- predict(m, newdata = nd, nsim = 50, sims_var = "est_non_rf",
+    sample_fe = FALSE)
+  expect_equal(s[, 1], p$est_non_rf)
+  expect_equal(apply(s, 1, sd), rep(0, nrow(nd)))
+
+  # random effects vary, with less total uncertainty than the joint draws:
+  set.seed(1)
+  s_re <- predict(m, newdata = nd, nsim = 50, sample_fe = FALSE)
+  set.seed(1)
+  s_joint <- predict(m, newdata = nd, nsim = 50)
+  expect_gt(cor(rowMeans(s_re), p$est), 0.99)
+  expect_lt(mean(apply(s_re, 1, sd)), mean(apply(s_joint, 1, sd)))
+
+  expect_error(predict(m, newdata = nd, nsim = 2, sample_fe = NA), "sample_fe")
+  m_fe <- sdmTMB(density ~ depth_scaled, data = pcod_2011,
+    family = tweedie(link = "log"), spatial = "off")
+  expect_error(
+    predict(m_fe, newdata = nd, nsim = 2, sample_fe = FALSE),
+    "requires a model with random effects"
+  )
 })

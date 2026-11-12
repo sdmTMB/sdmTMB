@@ -52,13 +52,16 @@
 .family_registry <- local({
   registry <- data.frame(
     family_name = names(.valid_family),
-    uses_phi = !names(.valid_family) %in% c("binomial", "poisson", "censored_poisson"),
+    uses_phi = !names(.valid_family) %in% c("binomial", "censored_binomial", "poisson", "censored_poisson"),
     auxiliary = NA_character_,
     # Allowed as a single-component (LP1-only) family in multi-family mode:
     multi_family_single = FALSE,
     # Allowed as the positive (2nd) component of a delta family in
     # multi-family mode:
     multi_family_delta_positive = FALSE,
+    # Uses `censored_upper`:
+    censored = grepl("^censored_", names(.valid_family)),
+    truncated = grepl("^truncated_", names(.valid_family)),
     stringsAsFactors = FALSE
   )
   registry$auxiliary[registry$family_name == "tweedie"] <- "thetaf"
@@ -81,6 +84,12 @@
     cli_abort("Unsupported family supplied in `family`: {paste(bad, collapse = ', ')}")
   }
   out
+}
+
+# Logical registry `flag` (e.g., "censored") for each of `family_name`
+.family_has <- function(family_name, flag) {
+  registry <- .family_registry()
+  registry[[flag]][match(family_name, registry$family_name)] %in% TRUE
 }
 
 .make_family_param_slots <- function(family_names) {
@@ -157,7 +166,7 @@
       numeric(0)
     },
     gengamma_Q = rep(0.5, n$gengamma_Q),
-    psi = if (has_ordbeta) c(-1, 1) else numeric(0),
+    psi = if (has_ordbeta) c(-1, log(2)) else numeric(0), # cutpoints -1 and 1
     ln_phi = rep(0, n$ln_phi)
   )
 }
@@ -286,6 +295,7 @@
   invisible(family_list)
 }
 
+#' @importFrom utils tail
 .compile_family_spec <- function(family, data = NULL, distribution_column = NULL) {
   if (inherits(family, "family")) {
     if (!is.null(distribution_column)) {

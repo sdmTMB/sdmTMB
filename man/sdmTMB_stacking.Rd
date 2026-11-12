@@ -21,8 +21,6 @@ cross validation, and the first 4 are needed to generate these weights,
 A vector of model weights.
 }
 \description{
-\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}}
-
 This approach is described in Yao et al. (2018) \doi{10.1214/17-BA1091}. The
 general method minimizes (or maximizes) some quantity across models. For
 simple models with normal error, this may be the root mean squared error

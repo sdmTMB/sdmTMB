@@ -54,6 +54,25 @@ test_that("Beta-binomial fits with logit link", {
   expect_true(m$model$convergence == 0)
 })
 
+test_that("Beta-binomial quantile residuals are randomized for zeros", {
+  set.seed(1)
+  n <- 100
+  dat <- data.frame(n_trials = 5)
+  dat <- dat[rep(1, n), , drop = FALSE]
+  dat$y <- stats::rbinom(n, size = 5, prob = stats::rbeta(n, 0.2 * 2, 0.8 * 2))
+  m <- sdmTMB(cbind(y, n_trials - y) ~ 1, data = dat,
+    family = betabinomial(), spatial = "off")
+  r <- residuals(m)[dat$y == 0]
+  expect_gt(sum(dat$y == 0), 1)
+  expect_gt(length(unique(r)), 1)
+  # zeros span [0, F(0)], so their residuals fall at or below qnorm(F(0)):
+  theta <- get_pars(m)
+  mu <- plogis(theta$b_j)
+  phi <- exp(theta$ln_phi)
+  F0 <- pbbinom(0, size = 5, alpha = mu * phi, beta = (1 - mu) * phi)
+  expect_true(all(r <= qnorm(F0)))
+})
+
 test_that("Beta-binomial fits with cloglog link", {
   skip_on_cran()
   set.seed(42)

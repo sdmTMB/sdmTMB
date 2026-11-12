@@ -166,6 +166,26 @@ test_that("covariate diffusion newdata covariate changes prediction direction wh
   expect_true("nl_time_lag_x1" %in% names(p_low))
   expect_gt(mean(p_high$nl_time_lag_x1 - p_low$nl_time_lag_x1), 0)
   expect_gt(mean(p_high$est - p_low$est), 0)
+
+  # Omitted `newdata` applies the override on the fitted data:
+  p_high_fitted <- predict(fit, nonlocal_newdata = grid_high)
+  expect_equal(p_high_fitted$est, p_high$est)
+  expect_equal(p_high_fitted$nl_time_lag_x1, p_high$nl_time_lag_x1)
+  expect_error(
+    predict(fit, nonlocal_newdata = grid_high[, setdiff(names(grid_high), "x1")]),
+    "x1"
+  )
+
+  # simulate() with newdata uses the overriding grid, not the fitted field:
+  sim_means <- function(...) {
+    rowMeans(simulate(fit, nsim = 20, newdata = dat, seed = 1,
+      observation_error = FALSE, ...), na.rm = TRUE)
+  }
+  s_low <- sim_means(nonlocal_newdata = grid_low)
+  s_high <- sim_means(nonlocal_newdata = grid_high)
+  expect_equal(s_high - s_low, p_high$est - p_low$est, tolerance = 1e-6,
+    ignore_attr = TRUE)
+  expect_equal(s_low, p_low$est, tolerance = 1e-6, ignore_attr = TRUE)
 })
 
 test_that("delta covariate diffusion in component 2 changes combined response predictions", {

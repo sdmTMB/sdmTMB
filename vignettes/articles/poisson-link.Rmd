@@ -322,7 +322,9 @@ $$
 p = 1 - \exp(-a \cdot n).
 $$
 
-Therefore, the encounter probability goes to 1 as area swept (effort) and underlying group numbers density increase toward infinity. This carries over to the positive rate $r$ via $p$ because $r = nw/p$.
+Therefore, the encounter probability goes to 1 as area swept (effort) and underlying group numbers density increase toward infinity. The expected catch is $a \cdot n \cdot w$, so the offset also carries over to the positive rate: $r = a n w / p$.
+
+In link-space predictions from `predict()`, the offset is included in `est2`, so `exp(est1 + est2)` is the expected catch at that offset. With `type = "response"`, `est1` and `est2` are $p$ and $r$ at the supplied offset.
 
 ## Why call it a Poisson-link?
 

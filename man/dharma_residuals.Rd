@@ -32,7 +32,8 @@ residuals have the expected distribution.}
 
 \item{test_dispersion}{Passed to \code{testDispersion} in \code{\link[DHARMa:plotQQunif]{DHARMa::plotQQunif()}}.}
 
-\item{...}{Other arguments to pass to \code{\link[DHARMa:createDHARMa]{DHARMa::createDHARMa()}}.}
+\item{...}{Other arguments to pass to \code{\link[DHARMa:createDHARMa]{DHARMa::createDHARMa()}}. By default,
+\code{fittedPredictedResponse} is the mean of the simulations.}
 }
 \value{
 A data frame of observed and expected values is invisibly returned so you can
@@ -86,19 +87,19 @@ fit <- sdmTMB(density ~ as.factor(year) + s(depth, k = 3),
 
 # not great:
 set.seed(123)
-simulate(fit, nsim = 100, type = "mle-mvn") |>
+simulate(fit, nsim = 200, type = "mle-mvn") |>
   dharma_residuals(fit)
 
 \donttest{
 # delta-lognormal looks better:
 set.seed(123)
 fit_dl <- update(fit, family = delta_lognormal())
-simulate(fit_dl, nsim = 100, type = "mle-mvn") |>
-  dharma_residuals(fit)
+simulate(fit_dl, nsim = 200, type = "mle-mvn") |>
+  dharma_residuals(fit_dl)
 
 # or skip the pipe:
 set.seed(123)
-s <- simulate(fit_dl, nsim = 100, type = "mle-mvn")
+s <- simulate(fit_dl, nsim = 200, type = "mle-mvn")
 # and manually plot it:
 r <- dharma_residuals(s, fit_dl, plot = FALSE)
 head(r)
@@ -106,8 +107,8 @@ plot(r$expected, r$observed)
 abline(0, 1)
 
 # return the DHARMa object and work with the DHARMa methods
-ret <- simulate(fit_dl, nsim = 100, type = "mle-mvn") |>
-  dharma_residuals(fit, return_DHARMa = TRUE)
+ret <- simulate(fit_dl, nsim = 200, type = "mle-mvn") |>
+  dharma_residuals(fit_dl, return_DHARMa = TRUE)
 plot(ret)
 }
 \dontshow{\}) # examplesIf}

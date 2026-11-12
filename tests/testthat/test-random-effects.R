@@ -235,9 +235,8 @@ test_that("Model with random intercepts fits appropriately.", {
   expect_equal(nrow(.t), 5)
 
   b <- as.list(m$sd_report, "Estimate")
-  # a recovery-quality check rather than exact values: `sdmTMB_simulate()`
-  # draws the spatial field via the active backend's `simulate()` method,
-  # and TMB/RTMB consume the RNG stream in a different order
+  # a recovery-quality check rather than exact values, which depend on the
+  # simulated draw
   .cor <- cor(c(RE_vals, RE_vals2), b$re_b_pars)
   expect_gt(c(.cor), 0.8)
 #
@@ -303,6 +302,14 @@ test_that("Model with random intercepts fits appropriately.", {
   p_silent <- predict(m, newdata = nd, allow_new_levels = TRUE)
   expect_equal(p_warn$est, p_silent$est)
   expect_equal(p_silent$est, as.numeric(coef(m)))
+  expect_error(
+    predict(m, newdata = nd, allow_new_levels = FALSE),
+    regexp = "Found new levels"
+  )
+  expect_no_warning(predict(m, newdata = nd, re_form_iid = NA,
+    allow_new_levels = FALSE))
+  expect_error(predict(m, newdata = nd, allow_new_levels = NA),
+    regexp = "must be")
 
   # predicting with missing factors works with the right re_form_iid
   m <- sdmTMB(data = s, formula = observed ~ 1 + (1 | g), spatial = "off")
@@ -311,6 +318,160 @@ test_that("Model with random intercepts fits appropriately.", {
   p2 <- predict(m, newdata = nd, re_form_iid = NA)
   # and this fails when not correct
   expect_error(predict(m, newdata = nd), regexp = "missing from `newdata`")
+})
+
+test_that("New random effect levels are zeroed per grouping term", {
+  set.seed(1)
+  d <- data.frame(g = factor(rep(1:20, each = 10)), h = factor(rep(1:5, 40)))
+  d$y <- c(-1, -0.5, 0, 0.5, 1)[d$h] + rnorm(20, 0, 0.5)[d$g] +
+    rnorm(200, 0, 0.1)
+  m <- sdmTMB(y ~ 1 + (1 | g) + (1 | h), data = d, spatial = "off")
+  nd <- data.frame(g = factor("new"), h = factor(c("1", "5")))
+  p <- predict(m, newdata = nd, allow_new_levels = TRUE)
+  b <- m$parlist$re_b_pars[, 1]
+  # a new `g` keeps the fitted `h` effects:
+  expect_equal(p$est, as.numeric(coef(m)) + b[20 + c(1, 5)], tolerance = 1e-6)
+})
+
+test_that("New random effect levels can be sampled in draws", {
+  skip_on_cran()
+  set.seed(1)
+  d <- data.frame(g = factor(rep(1:40, each = 15)), x = rnorm(600))
+  b <- matrix(rnorm(80), ncol = 2) %*% chol(matrix(c(0.36, 0.12, 0.12, 0.16), 2))
+  d$y <- 1 + 0.5 * d$x + b[d$g, 1] + b[d$g, 2] * d$x + rnorm(600, 0, 0.2)
+  m <- sdmTMB(y ~ x + (1 | g), data = d, spatial = "off")
+  sigma <- exp(m$parlist$re_cov_pars[1, 1])
+
+  nd <- data.frame(x = 0, g = factor(c("1", "new", "new", "new2")))
+  set.seed(2)
+  p <- predict(m, newdata = nd, nsim = 2000, allow_new_levels = "sample",
+    sample_fe = FALSE)
+  # rows sharing a new level share each draw:
+  expect_identical(p[2, ], p[3, ])
+  expect_equal(sd(p[2, ]), sigma, tolerance = 0.06)
+  expect_equal(sd(p[4, ]), sigma, tolerance = 0.06)
+  expect_lt(abs(cor(p[2, ], p[4, ])), 0.1)
+  # fitted levels keep their draws:
+  set.seed(2)
+  p_fit <- predict(m, newdata = nd[1, , drop = FALSE], nsim = 2000,
+    sample_fe = FALSE)
+  expect_identical(p_fit[1, ], p[1, ])
+
+  expect_error(predict(m, newdata = nd, allow_new_levels = "sample"),
+    regexp = "requires draws")
+  expect_error(predict(m, newdata = nd, allow_new_levels = "sample",
+    nsim = 2, se_fit = TRUE), regexp = "requires draws")
+})
+
+test_that("Sampled new levels take the estimated correlated slope covariance", {
+  skip_on_cran()
+  skip_on_ci()
+  set.seed(1)
+  d <- data.frame(g = factor(rep(1:40, each = 15)), x = rnorm(600))
+  b <- matrix(rnorm(80), ncol = 2) %*% chol(matrix(c(0.36, 0.12, 0.12, 0.16), 2))
+  d$y <- 1 + 0.5 * d$x + b[d$g, 1] + b[d$g, 2] * d$x + rnorm(600, 0, 0.2)
+  nd <- data.frame(x = c(0, 1), g = factor("new"))
+  m <- sdmTMB(y ~ x + (1 + x | g), data = d, spatial = "off")
+  # expected values from tidy(), separate from the sampling code:
+  ran_pars <- tidy(m, "ran_pars")
+  sds <- ran_pars$estimate[match(c("sd__(Intercept)", "sd__x"), ran_pars$term)]
+  rho <- tidy(m, "ran_vcov")$est[[1]][2, 1]
+  set.seed(3)
+  p <- predict(m, newdata = nd, nsim = 1000, allow_new_levels = "sample", sample_fe = FALSE)
+  draws <- cbind(p[1, ], p[2, ] - p[1, ])
+  expect_equal(apply(draws, 2, sd), sds, tolerance = 0.1)
+  expect_equal(cor(draws)[2, 1], rho, tolerance = 0.1)
+})
+
+test_that("Sampled new levels take each delta component's random effect SD", {
+  skip_on_cran()
+  set.seed(1)
+  d <- data.frame(g = factor(rep(1:40, each = 25)))
+  b1 <- rnorm(40, 0, 0.3)
+  b2 <- rnorm(40, 0, 1.2)
+  d$y <- rbinom(1000, 1, plogis(0.5 + b1[d$g])) * rlnorm(1000, 1 + b2[d$g], 0.2)
+  nd <- data.frame(g = factor("new"))
+  m <- sdmTMB(
+    y ~ 1 + (1 | g),
+    data = d,
+    family = delta_lognormal(),
+    spatial = "off"
+  )
+  sds <- exp(m$parlist$re_cov_pars[1, ])
+  expect_gt(sds[2], 2 * sds[1]) # a mix-up of the components would be caught
+  set.seed(2)
+  p <- lapply(1:2, function(i) {
+    predict(
+      m,
+      newdata = nd,
+      nsim = 500,
+      allow_new_levels = "sample",
+      sample_fe = FALSE,
+      model = i
+    )
+  })
+  expect_equal(sd(p[[1]]), sds[1], tolerance = 0.1)
+  expect_equal(sd(p[[2]]), sds[2], tolerance = 0.1)
+})
+
+test_that("Grouping columns that were not factors in fitting keep their levels", {
+  skip_on_cran()
+  skip_on_ci()
+  set.seed(1)
+  # numeric and alphabetical order differ, and each new level sorts among the
+  # fitted ones, so a misaligned level would pick up another level's effect:
+  ints <- c(2L, 9L, 10L, 30L)
+  chrs <- c("b", "A", "c", "D")
+  d <- data.frame(g_int = rep(ints, each = 25), g_chr = rep(chrs, each = 25))
+  d$y <- rep(c(-1, 1, -2, 2), each = 25) + rnorm(100, 0, 0.1)
+  groups <- list(g_int = list(fit = as.character(ints), new = "5"),
+    g_chr = list(fit = chrs, new = "Bb"))
+  for (g in names(groups)) {
+    m <- sdmTMB(stats::as.formula(paste0("y ~ 1 + (1 | ", g, ")")), data = d)
+    est_fit <- predict(m)$est[seq(1, 100, by = 25)]
+    expect_gt(max(abs(diff(est_fit))), 1) # the fitted effects differ
+
+    nd_fit <- stats::setNames(data.frame(factor(groups[[g]]$fit)), g)
+    expect_equal(predict(m, newdata = nd_fit)$est, est_fit, tolerance = 1e-6)
+
+    vals <- c(groups[[g]]$new, groups[[g]]$fit)
+    nd <- stats::setNames(data.frame(factor(vals)), g)
+    expect_equal(predict(m, newdata = nd, allow_new_levels = TRUE)$est,
+      c(as.numeric(coef(m)), est_fit), tolerance = 1e-6)
+
+    set.seed(2)
+    p_fit <- predict(m, newdata = nd_fit, nsim = 500, sample_fe = FALSE)
+    set.seed(2)
+    p <- predict(m, newdata = nd, nsim = 500, allow_new_levels = "sample",
+      sample_fe = FALSE)
+    expect_equal(as.numeric(p[-1, ]), as.numeric(p_fit))
+    expect_equal(sd(p[1, ]), exp(m$parlist$re_cov_pars[1, 1]), tolerance = 0.1)
+  }
+  expect_error(predict(m, newdata = d), regexp = "not a factor")
+})
+
+test_that("Sampled new levels work for delta models and repeated groups", {
+  skip_on_cran()
+  d <- pcod_2011
+  d$fyear <- as.factor(d$year)
+  m <- sdmTMB(density ~ 1 + (1 | fyear), data = d, family = delta_gamma(),
+    spatial = "off")
+  nd <- data.frame(fyear = factor(c("2099", "2011")))
+  p <- predict(m, newdata = nd, nsim = 50, allow_new_levels = "sample",
+    type = "response")
+  expect_equal(dim(p), c(2L, 50L))
+  expect_true(all(is.finite(p) & p > 0))
+
+  skip_if_not_installed("lme4")
+  data("sleepstudy", package = "lme4")
+  fit <- sdmTMB(Reaction ~ Days + (1 | Subject) + (0 + Days | Subject),
+    sleepstudy, spatial = "off", silent = TRUE)
+  sds <- exp(fit$parlist$re_cov_pars[1:2, 1])
+  nd <- data.frame(Days = c(0, 10), Subject = factor("new"))
+  set.seed(1)
+  p <- predict(fit, newdata = nd, nsim = 1000, allow_new_levels = "sample",
+    sample_fe = FALSE)
+  expect_equal(c(sd(p[1, ]), sd(p[2, ] - p[1, ]) / 10), sds, tolerance = 0.06)
 })
 
 test_that("Interleaved random-effect groups retain covariance parameter order", {
@@ -493,7 +654,7 @@ test_that("Random intercepts and cross validation play nicely", {
   out <- sdmTMB_cv(
     observed ~ 1 + (1 | g),
     fold_ids = fold_ids, k_folds = 2L, spatial = "off", data = s, mesh = spde,
-    parallel = FALSE
+    parallel = FALSE, predictive = "mle-eb"
   )
   expect_equal(round(out$sum_loglik, 3), -51.36)
   # Because the function fits with all the data but sets the missing fold to
@@ -633,7 +794,9 @@ test_that("Delta model works with random effects", {
 test_that("issue breakpt() version of formula doesn't break random effect prediction #423", {
   d <- pcod
   d$year_f <- as.factor(pcod$year)
-  m <- sdmTMB(
+  # flat likelihood near the breakpoint: the max gradient is ~0.03; this test
+  # checks prediction, not convergence quality
+  m <- suppressWarnings(sdmTMB(
     data = d,
     formula = density ~ 0 + breakpt(depth_scaled) + (1 | year_f),
     spatial = "off",
@@ -642,7 +805,7 @@ test_that("issue breakpt() version of formula doesn't break random effect predic
       threshold_breakpt_cut = normal(0, 1)
     ),
     family = tweedie(link = "log")
-  )
+  ))
   nd <- data.frame(
     depth_scaled = seq(min(pcod$depth_scaled) + 0.5,
       max(pcod$depth_scaled) - 0.2,

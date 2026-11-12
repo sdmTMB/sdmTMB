@@ -78,8 +78,8 @@ test_that("AR1 time-varying works", {
                 spatiotemporal = "off",
                 family = tweedie())
   s <- tidy(fit, "ran_pars")
-  expect_equal(dim(s), c(3L, 5L))
-  expect_equal(s$term, c("phi","rho_time","tweedie_p"))
+  expect_equal(dim(s), c(4L, 5L))
+  expect_equal(s$term, c("phi","sigma_V","rho_time","tweedie_p"))
 
   # test that tidy works -- RW
   fit <- sdmTMB(density ~ 1, time = "year",
@@ -88,8 +88,8 @@ test_that("AR1 time-varying works", {
                 spatiotemporal = "off",
                 family = tweedie(), priors = sdmTMBpriors(sigma_V = gamma_cv(0.2, 0.5)))
   s <- tidy(fit, "ran_pars")
-  expect_equal(dim(s), c(2L, 5L))
-  expect_equal(s$term, c("phi","tweedie_p"))
+  expect_equal(dim(s), c(3L, 5L))
+  expect_equal(s$term, c("phi","sigma_V","tweedie_p"))
 
   # test that tidy works -- AR1
   fit <- sdmTMB(density ~ 1, time = "year",
@@ -99,8 +99,8 @@ test_that("AR1 time-varying works", {
                 spatiotemporal = "off",
                 family = tweedie(), priors = sdmTMBpriors(sigma_V = gamma_cv(0.2, 0.5)))
   s <- tidy(fit, "ran_pars")
-  expect_equal(dim(s), c(3L, 5L))
-  expect_equal(s$term, c("phi", "rho_time", "tweedie_p"))
+  expect_equal(dim(s), c(4L, 5L))
+  expect_equal(s$term, c("phi", "sigma_V", "rho_time", "tweedie_p"))
 
   # test that tidy works -- no time varying
   fit <- sdmTMB(density ~ as.factor(year), time = "year",
@@ -119,8 +119,9 @@ test_that("AR1 time-varying works", {
                 spatiotemporal = "off",
                 family = tweedie())
   s <- tidy(fit, "ran_pars")
-  expect_equal(dim(s), c(4L, 5L))
-  expect_equal(s$term, c("phi","rho_time","rho_time","tweedie_p"))
+  expect_equal(dim(s), c(6L, 5L))
+  expect_equal(s$term, c("phi", "sigma_V[depth_scaled]", "sigma_V[I(depth_scaled^2)]",
+    "rho_time[depth_scaled]", "rho_time[I(depth_scaled^2)]", "tweedie_p"))
 
   # test that tidy works with delta
   fit <- sdmTMB(density ~ depth_scaled, time = "year",
@@ -130,18 +131,18 @@ test_that("AR1 time-varying works", {
                 spatiotemporal = "off",
                 family = delta_gamma(), priors = sdmTMBpriors(sigma_V = gamma_cv(0.2, 0.5)))
   s <- tidy(fit, "ran_pars")
-  expect_equal(dim(s), c(1L, 6L))
-  expect_equal(s$term, c("rho_time"))
+  expect_equal(dim(s), c(2L, 6L))
+  expect_equal(s$term, c("sigma_V", "rho_time"))
 
   s <- tidy(fit, "ran_pars", model = 1)
-  expect_equal(dim(s), c(1L, 6L))
-  expect_equal(s$term, c("rho_time"))
+  expect_equal(dim(s), c(2L, 6L))
+  expect_equal(s$term, c("sigma_V", "rho_time"))
   # values changed when the delta sigma_V prior stopped being applied twice
-  expect_equal(s$estimate, c(0.869430355), tolerance = 0.001)
+  expect_equal(s$estimate[2], c(0.869430355), tolerance = 0.001)
 
   s <- tidy(fit, "ran_pars", model = 2)
-  expect_equal(s$term, c("phi", "rho_time"))
-  expect_equal(s$estimate, c(0.651627427, 0.722630797), tolerance = 0.001)
+  expect_equal(s$term, c("phi", "sigma_V", "rho_time"))
+  expect_equal(s$estimate[-2], c(0.651627427, 0.722630797), tolerance = 0.001)
 
 })
 
@@ -197,4 +198,23 @@ test_that("RW with mean-zero (rw0) time-varying works", {
   abline(0, 1)
   expect_gt(cor(B, s$b_rw_t[,,1]), 0.99)
   expect_equal(round(mean(sigma_V_hats), 2L), sigma_true)
+})
+
+test_that("rw time-varying terms confounded with formula warn", {
+  d <- pcod_2011
+  d$f <- factor(d$depth > 100)
+  fit_rw <- function(formula, time_varying, type = "rw", family = gaussian()) {
+    sdmTMB(formula, data = d, mesh = pcod_mesh_2011, time = "year", spatial = "off",
+      time_varying = time_varying, time_varying_type = type,
+      family = family, do_fit = FALSE)
+  }
+  expect_warning(fit_rw(density ~ 0 + f, ~ 1), "rw0")
+  expect_warning(fit_rw(density ~ 1, ~ 1), "rw0")
+  expect_warning(fit_rw(density ~ depth_scaled, ~ 0 + depth_scaled), "rw0")
+  expect_warning(fit_rw(density ~ 1 + s(depth_scaled), ~ 0 + depth_scaled), "rw0")
+  expect_warning(fit_rw(density ~ 0 + f, ~ 1, family = delta_gamma()), "rw0")
+  expect_no_warning(fit_rw(density ~ 0 + depth_scaled, ~ 1))
+  expect_no_warning(fit_rw(density ~ 1, ~ 0 + depth_scaled))
+  expect_no_warning(fit_rw(density ~ 0 + f, ~ 1, type = "rw0"))
+  expect_no_warning(fit_rw(density ~ 0 + f, ~ 1, type = "ar1"))
 })

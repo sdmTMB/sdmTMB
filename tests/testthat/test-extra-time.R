@@ -88,26 +88,6 @@ test_that("extra_time, newdata, get_index() work", {
   nd <- subset(nd, year != 2017)
   ind5 <- get_index(m, newdata = nd)
   expect_equal(ind2[ind2$year %in% nd$year, "est"], ind5[ind5$year %in% nd$year, "est"])
-
-  # with do_index = TRUE
-  nd <- replicate_df(pcod, "year", unique(pcod$year))
-  m2 <- sdmTMB(
-    density ~ 1,
-    time_varying = ~ 1,
-    time_varying_type = "ar1",
-    data = pcod,
-    family = tweedie(link = "log"),
-    time = "year",
-    spatial = "off",
-    spatiotemporal = "off",
-    do_index = TRUE,
-    predict_args = list(newdata = nd),
-    index_args = list(area = 1), # used to cause crash b/c extra_time
-    extra_time = c(2006, 2008, 2010, 2012, 2014, 2016, 2018) # last real year is 2017
-  )
-  ind6 <- get_index(m2)
-  expect_identical(ind6$year, c(2003, 2004, 2005, 2007, 2009, 2011, 2013, 2015, 2017))
-  expect_equal(ind3$est, ind6$est, tolerance = 0.1)
 })
 test_that("extra time does not affect estimation (without time series estimation)", {
   # there was a bad bug at one point where the likelihood (via the weights)
@@ -375,7 +355,7 @@ test_that("make_time_lu works", {
     data = pcod,
     spatial = "off",
     spatiotemporal = "rw",
-    mesh = make_mesh(pcod, c("X", "Y"), cutoff = 40),
+    mesh = make_mesh(pcod, c("X", "Y"), cutoff = 30),
     time = "year",
     family = tweedie(),
     extra_time = 2018:2020

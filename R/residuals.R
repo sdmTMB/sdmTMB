@@ -83,10 +83,49 @@ qres_betabinomial <- function(object, y, mu, .n = NULL) {
 
   if (is.null(.n)) .n <- rep(1, length(y))
 
-  a <- pbbinom(pmax(0, y - 1), size = .n, alpha = alpha, beta = beta)
+  a <- pbbinom(y - 1, size = .n, alpha = alpha, beta = beta)
   b <- pbbinom(y, size = .n, alpha = alpha, beta = beta)
   u <- stats::runif(n = length(y), min = pmin(a, b), max = pmax(a, b))
   stats::qnorm(u)
+}
+
+# Censored counts are uniform over the CDF across their interval [y, upr].
+qres_censored_betabinomial <- function(object, y, mu, .n = NULL) {
+  upr <- object$tmb_data$upr
+  upr <- ifelse(is.finite(upr), upr, .n)
+  phi <- exp(get_pars(object)[["ln_phi"]])
+  alpha <- mu * phi
+  beta <- (1 - mu) * phi
+  a <- pbbinom(y - 1, size = .n, alpha = alpha, beta = beta)
+  b <- pbbinom(upr, size = .n, alpha = alpha, beta = beta)
+  u <- stats::runif(n = length(y), min = pmin(a, b), max = pmax(a, b))
+  stats::qnorm(u)
+}
+
+qres_censored_binomial <- function(object, y, mu, .n = NULL) {
+  upr <- object$tmb_data$upr
+  upr <- ifelse(is.finite(upr), upr, .n)
+  a <- stats::pbinom(y - 1, .n, mu)
+  b <- stats::pbinom(upr, .n, mu)
+  u <- stats::runif(n = length(y), min = pmin(a, b), max = pmax(a, b))
+  stats::qnorm(u)
+}
+
+# Censored counts are uniform over the CDF across their interval [y, upr].
+qres_censored_nb <- function(object, y, mu, size) {
+  upr <- floor(object$tmb_data$upr)
+  a <- stats::pnbinom(y - 1, size = size, mu = mu)
+  b <- stats::pnbinom(upr, size = size, mu = mu)
+  u <- stats::runif(n = length(y), min = pmin(a, b), max = pmax(a, b))
+  stats::qnorm(u)
+}
+
+qres_censored_nbinom1 <- function(object, y, mu, ...) {
+  qres_censored_nb(object, y, mu, mu / exp(get_pars(object)[["ln_phi"]]))
+}
+
+qres_censored_nbinom2 <- function(object, y, mu, ...) {
+  qres_censored_nb(object, y, mu, exp(get_pars(object)[["ln_phi"]]))
 }
 
 qres_nbinom2 <- function(object, y, mu, ...) {
@@ -120,6 +159,24 @@ qres_nbinom1 <- function(object, y, mu, ...) {
   if (is_delta(object)) phi <- phi[1]
   a <- pnbinom1(y - 1, phi = phi, mu = mu)
   b <- pnbinom1(y, phi = phi, mu = mu)
+  u <- stats::runif(n = length(y), min = a, max = b)
+  stats::qnorm(u)
+}
+
+# No closed form, so sum the mass function; nu = 1 / phi
+pcompois2 <- function(q, mu, nu) {
+  vapply(seq_along(q), function(i) {
+    if (q[i] < 0) return(0)
+    sum(RTMB::dcompois2(0:q[i], mu[i], nu[i]))
+  }, numeric(1))
+}
+
+qres_compois <- function(object, y, mu, ...) {
+  theta <- get_pars(object)
+  nu <- rep_len(1 / exp(theta[["ln_phi"]]), length(y))
+  mu <- rep_len(mu, length(y))
+  a <- pcompois2(y - 1, mu, nu)
+  b <- pcompois2(y, mu, nu)
   u <- stats::runif(n = length(y), min = a, max = b)
   stats::qnorm(u)
 }
@@ -254,7 +311,7 @@ qres_beta <- function(object, y, mu, ...) {
 qres_ordbeta <- function(object, y, mu, ...) {
   theta <- get_pars(object)
   phi <- exp(theta[["ln_phi"]])
-  psi <- theta[["psi"]]
+  psi <- ordbeta_cutpoints(theta[["psi"]])
   eta <- stats::qlogis(mu)
   p0 <- stats::plogis(psi[1] - eta)              # Pr(y == 0)
   p1 <- stats::plogis(eta - psi[2])              # Pr(y == 1)
@@ -374,11 +431,14 @@ qres_gengamma <- function(object, y, mu, ...) {
 #' refers to the sample being taken from the random effects' assumed MVN
 #' distribution. In practice, the sample is obtained based on the mode and
 #' Hessian of the random effects taking advantage of sparsity in the Hessian for
-#' computational efficiency. This sample is taken with `obj$MC()`, where `obj`
-#' is the \pkg{TMB} object created with `TMB::MakeADFun()`. See Waagepetersen
+#' computational efficiency. This is the same sample as `obj$env$MC()`, where
+#' `obj` is the object created with `RTMB::MakeADFun()`. See Waagepetersen
 #' (2006) and the description in the source code for the internal \pkg{TMB}
-#' function `TMB:::oneSamplePosterior()`. Residuals are converted to randomized
-#' quantile residuals as described above.
+#' function `TMB:::oneSamplePosterior()`. With `reml = TRUE` or
+#' `sdmTMBcontrol(profile = TRUE)`, the fixed effects that are integrated out
+#' (`b_j`, plus smoother coefficients for REML) are part of the random effects
+#' and so are sampled along with them rather than held at their estimates.
+#' Residuals are converted to randomized quantile residuals as described above.
 #'
 #' **`mle-eb`**: Fixed effects are held at their MLEs and random effects are
 #' taken as their EB estimates. These used to be the default residual type in
@@ -489,9 +549,6 @@ residuals.sdmTMB <- function(object,
     ))
   }
 
-  # retrieve function that called this:
-  sys_calls <- unlist(lapply(sys.calls(), deparse))
-  visreg_call <- any(grepl("setupV", substr(sys_calls, 1, 7)))
   if (type == "mle-laplace") type <- "mle-eb"
   model_missing <- FALSE
   if (identical(model, c(1, 2))) model_missing <- TRUE
@@ -515,20 +572,30 @@ residuals.sdmTMB <- function(object,
     nd <- object$data
     est_column <- if (model == 1L) "est1" else "est2"
   }
-  if(fam %in% c("truncated_nbinom1", "truncated_nbinom2")){
-    linkinv <- function(eta){exp(eta)}
-  } # for residuals, use untruncated mean
-  if (is.null(qres_func)) {
+  if (type == "response") {
+    # response residuals use the response mean, as in `predict()`
+    fam_linkinv <- list(family = fam, linkinv = linkinv)
+    linkinv <- .response_linkinv(fam_linkinv, .object_par(object, "ln_phi"),
+      .object_par(object, "psi"))
+  } else if (fam %in% c("truncated_nbinom1", "truncated_nbinom2")) {
+    linkinv <- exp # quantile residuals use the untruncated mean
+  }
+  if (is.null(qres_func) && type != "deviance") {
     res_func <- switch(fam,
       gaussian = qres_gaussian,
       binomial = qres_binomial,
+      censored_binomial = qres_censored_binomial,
       betabinomial = qres_betabinomial,
+      censored_betabinomial = qres_censored_betabinomial,
       tweedie  = qres_tweedie,
       Beta     = qres_beta,
       ordbeta  = qres_ordbeta,
       Gamma    = qres_gamma,
       nbinom2  = qres_nbinom2,
       nbinom1  = qres_nbinom1,
+      compois  = qres_compois,
+      censored_nbinom2 = qres_censored_nbinom2,
+      censored_nbinom1 = qres_censored_nbinom1,
       truncated_nbinom2  = qres_truncated_nbinom2,
       truncated_nbinom1  = qres_truncated_nbinom1,
       poisson  = qres_pois,
@@ -544,7 +611,6 @@ residuals.sdmTMB <- function(object,
     res_func <- qres_func
   }
 
-  if (!"offset" %in% names(object)) cli_abort("This model appears to have been fit with an older sdmTMB.")
   if (type %in% c("mle-eb", "response", "pearson")) {
     pred <- predict(object, newdata = object$data, offset = object$offset) # not newdata = NULL
     if (poisson_link_delta) {
@@ -552,8 +618,6 @@ residuals.sdmTMB <- function(object,
     } else {
       mu <- linkinv(pred[[est_column]])
     }
-  } else if (type == "mvn-laplace") {
-    mu <- linkinv(predict(object, nsim = 1L, model = model, offset = object$offset)[, 1L, drop = TRUE])
   } else if (type == "mle-mcmc") {
     if (is.null(mcmc_samples)) {
       msg <- c("As of sdmTMB 0.3.0, `mcmc_samples` must be supplied to use `type = 'mle-mcmc'`.",
@@ -635,7 +699,10 @@ residuals.sdmTMB <- function(object,
         cli_abort("Deviance residuals not implemented for binomial family with size > 1.")
       }
     }
-    report <- object$tmb_obj$report(object$tmb_obj$env$last.par.best)
+    env <- object$tmb_obj$env
+    # Deviance residuals are left off the tape; evaluate them directly.
+    report <- rtmb_report_values(object$tmb_data,
+      env$parList(par = env$last.par.best), deviance = TRUE)
     resids <- report$devresid[, model, drop = TRUE]
     if (all(resids == 0)) {
       cli_abort("Deviance residuals not implemented for this family.")
@@ -700,20 +767,28 @@ check_overdisp <- function(object) {
   data.frame(chisq = pearson_chisq, ratio = prat, rdf = rdf, p = pval)
 }
 
-# return full set of parameter vector with the
-# random effects sampled from the implied MVN posterior and the
-# fixed effects at their MLEs
-.one_sample_posterior <- function(object) {
-  if (!any(object$tmb_obj$env$lrandom())) {
-    return(object$tmb_obj$env$last.par.best)
+# Returns a function that draws `n` full parameter vectors (as columns) with
+# the random effects sampled from their approximate MVN posterior,
+# N(u_hat, H_uu^-1), and the fixed effects at their MLEs. Under REML or
+# `profile`, `env$random` also holds the integrated-out fixed effects, so those
+# are sampled too (as in TMB:::oneSamplePosterior()). Equivalent to TMB's
+# `obj$env$MC()` samples but factors the inner Hessian only once and skips
+# MC()'s per-draw likelihood evaluations.
+.posterior_re_sampler <- function(object) {
+  env <- object$tmb_obj$env
+  par_best <- env$last.par.best
+  random <- env$random
+  if (!length(random)) {
+    return(function(n) matrix(par_best, nrow = length(par_best), ncol = n))
   }
-  tmp <- object$tmb_obj$env$MC(n = 1L, keep = TRUE, antithetic = FALSE)
-  re_samp <- as.vector(attr(tmp, "samples"))
-  lp <- object$tmb_obj$env$last.par.best
-  p <- numeric(length(lp))
-  fe <- object$tmb_obj$env$lfixed()
-  re <- object$tmb_obj$env$lrandom()
-  p[re] <- re_samp
-  p[fe] <- lp[fe]
-  p
+  L <- Matrix::Cholesky(env$spHess(par_best, random = TRUE), super = TRUE)
+  function(n) {
+    draws <- matrix(par_best, nrow = length(par_best), ncol = n)
+    draws[random, ] <- rmvnorm_chol(par_best[random], L, n)
+    draws
+  }
+}
+
+.one_sample_posterior <- function(object) {
+  .posterior_re_sampler(object)(1L)[, 1L]
 }

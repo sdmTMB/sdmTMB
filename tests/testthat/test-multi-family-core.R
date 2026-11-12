@@ -651,7 +651,7 @@ test_that("mixed-family predict returns rowwise combined and masked component ou
 
   expect_error(
     predict(fixture$fit, newdata = fixture$newdata, type = "response", se_fit = TRUE),
-    regexp = "not yet supported"
+    regexp = "link scale"
   )
 })
 
@@ -860,7 +860,7 @@ test_that("mixed-family weighted-average and EAO helpers use rowwise families", 
     area = area,
     bias_correct = FALSE
   )
-  manual_mean_dens <- sum(pred_resp$est * pred_resp$est) / sum(pred_resp$est)
+  manual_mean_dens <- sum(area * pred_resp$est^2) / manual_total
   manual_eao <- manual_total / manual_mean_dens
   expect_equal(eao$est, manual_eao, tolerance = 1e-6)
 })
@@ -953,30 +953,6 @@ test_that("multi-family sdmTMB_cv guard fails before any fitting", {
       family = list(gauss = gaussian(), delta = delta_gamma()),
       distribution_column = "dist",
       k_folds = 2
-    ),
-    regexp = "not yet supported"
-  )
-})
-
-test_that("multi-family do_index guard fails before fit setup continues", {
-  dat <- data.frame(
-    y = c(1.2, 0, 2.4, 3.1),
-    x = c(-1, -0.3, 0.4, 1),
-    dist = c("gauss", "delta", "delta", "gauss")
-  )
-
-  expect_error(
-    sdmTMB(
-      y ~ x,
-      data = dat,
-      spatial = "off",
-      spatiotemporal = "off",
-      family = list(gauss = gaussian(), delta = delta_gamma()),
-      distribution_column = "dist",
-      do_index = TRUE,
-      do_fit = FALSE,
-      predict_args = list(newdata = dat),
-      index_args = list(area = 1)
     ),
     regexp = "not yet supported"
   )
@@ -1095,7 +1071,7 @@ test_that("delta sdreport exposes generic combined prediction names", {
     pred_obj <- predict(fit, newdata = nd, se_fit = TRUE, return_tmb_object = TRUE),
     "return_tmb_object"
   )
-  pred_sr <- sdreport_sdmTMB(pred_obj$obj, bias.correct = FALSE)
+  pred_sr <- RTMB::sdreport(pred_obj$obj, bias.correct = FALSE)
   pred_rep <- as.list(pred_sr, "Estimate", report = TRUE)
 
   expect_true("proj_eta_combined" %in% names(pred_rep))
@@ -1122,7 +1098,7 @@ test_that("delta sdreport exposes generic combined prediction names", {
     ),
     "return_tmb_object"
   )
-  pop_pred_sr <- sdreport_sdmTMB(pop_pred_obj$obj, bias.correct = FALSE)
+  pop_pred_sr <- RTMB::sdreport(pop_pred_obj$obj, bias.correct = FALSE)
   pop_pred_rep <- as.list(pop_pred_sr, "Estimate", report = TRUE)
 
   expect_true("proj_fe_combined" %in% names(pop_pred_rep))
@@ -1184,7 +1160,7 @@ test_that("poisson-link delta ordinary se_fit uses generic combined report", {
     ),
     "return_tmb_object"
   )
-  pred_sr <- sdreport_sdmTMB(pred_obj$obj, bias.correct = FALSE)
+  pred_sr <- RTMB::sdreport(pred_obj$obj, bias.correct = FALSE)
   pred_rep <- as.list(pred_sr, "Estimate", report = TRUE)
 
   expect_true("proj_eta_combined" %in% names(pred_rep))
@@ -1224,7 +1200,7 @@ test_that("poisson-link delta population se_fit uses generic combined report", {
     ),
     "return_tmb_object"
   )
-  pred_sr <- sdreport_sdmTMB(pred_obj$obj, bias.correct = FALSE)
+  pred_sr <- RTMB::sdreport(pred_obj$obj, bias.correct = FALSE)
   pred_rep <- as.list(pred_sr, "Estimate", report = TRUE)
 
   expect_true("proj_fe_combined" %in% names(pred_rep))

@@ -29,6 +29,6 @@ test_that("RTMB covariate diffusion matches every TMB report and sdreport row", 
     args <- c(cases[[name]], list(data = d, mesh = mesh, time = "year",
       nonlocal_data = grid, do_fit = FALSE))
     fit <- do.call(sdmTMB, args)
-    expect_rtmb_fit_data_matches(fit, newdata, info = name)
+    expect_frozen_fit_data("diffusion", fit, newdata, info = name)
   }
 })

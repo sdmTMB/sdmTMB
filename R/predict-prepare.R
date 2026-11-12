@@ -1,0 +1,367 @@
+# Build the prediction `tmb_data` for `predict.sdmTMB()` with `newdata`.
+#
+# Returns `tmb_data` with the `proj_*` slots filled and the internal frame
+# `nd` (the user's rows plus any dummy columns needed for model matrices,
+# including a fake response for `model.frame()` and smoothers), plus
+# `new_re` (see predict_iid_re_matrices()).
+predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
+  newdata <- req$newdata
+  has_nonlocal <- !is.null(object$nonlocal_parsed)
+  nonlocal_uses_external_grid <- .nonlocal_uses_external_grid(object, nonlocal_newdata)
+
+  newdata <- predict_check_newdata(object, req, newdata, nonlocal_newdata)
+  spatial <- predict_spatial_index(object, req, newdata)
+  newdata <- spatial$newdata
+
+  thresh <- parse_thresholds(object$formula, newdata, "newdata")
+  formula <- thresh$formulas
+  threshold_columns <- thresh$threshold_parameter
+
+  response <- get_response(object$formula[[1]])
+  if (!response %in% names(newdata)) newdata[[response]] <- 0 # fake for model.matrix
+
+  .check_no_missing_covariates(
+    data = newdata,
+    formulas = lapply(formula, reformulas::nobars),
+    shared_formulas = c(
+      .formula_list(object$spatial_varying_formula),
+      .formula_list(object$time_varying),
+      list(object$dispformula)
+    ),
+    # A supplied (or stored) nonlocal grid provides its own covariates. The
+    # prediction locations therefore need not duplicate those columns.
+    # `.nonlocal_from_grid()` validates an overriding grid below.
+    required_columns = if (is.null(object$nonlocal_formula_parsed) || nonlocal_uses_external_grid) {
+      threshold_columns
+    } else {
+      c(object$nonlocal_formula_parsed$covariates, threshold_columns)
+    },
+    stage = "prediction"
+  )
+
+  iid_re <- predict_iid_re_matrices(object, req, newdata, length(formula))
+  proj_X_ij <- predict_fixed_matrices(object, newdata)
+  proj_Xdisp_ij <- predict_disp_matrix(object, newdata)
+  # one set of smoothers (the union of all components' smoothers):
+  sm <- parse_smoothers(object$smoothers$formula_no_bars, data = object$data,
+    newdata = newdata, basis_prev = object$smoothers$basis_out)
+  proj_X_rw_ik <- predict_tv_matrix(object, newdata)
+
+  n <- nrow(proj_X_ij[[1]])
+  tmb_data$proj_offset_i <- predict_offset(req, object, n)
+  tmb_data$proj_X_threshold <- thresh$X_threshold
+  tmb_data$area_i <- rep(1, n)
+  tmb_data$proj_mesh <- spatial$proj_mesh
+  tmb_data$proj_X_ij <- proj_X_ij
+  tmb_data$proj_Xdisp_ij <- proj_Xdisp_ij
+  tmb_data$proj_X_rw_ik <- proj_X_rw_ik
+  tmb_data$Zt_list_proj <- iid_re$Zt_list
+  n_new_re <- length(unlist(lapply(iid_re$new_re, `[[`, "rows")))
+  if (n_new_re > 0L) {
+    # fitted rows have no sampled new levels; RTMB needs conformable `Zt`
+    tmb_data$Zt_list <- lapply(tmb_data$Zt_list, function(Zt) {
+      rbind(Zt, Matrix::Matrix(0, n_new_re, ncol(Zt), sparse = TRUE))
+    })
+  }
+  time_lu <- object$time_lu
+  tmb_data$proj_year <- time_index(time_lu, newdata[[object$time]])
+  tmb_data$proj_time_include <- as.integer(time_lu$time_from_data %in% newdata[[object$time]])
+  tmb_data$proj_family_id <- .family_spec_row_family_id(req$family_spec, newdata) - 1L
+  tmb_data$calc_se <- as.integer(req$se_fit)
+  tmb_data$pop_pred <- as.integer(req$pop_pred)
+  tmb_data$exclude_RE <- req$exclude_RE
+  tmb_data$proj_spatial_index <- newdata$sdm_spatial_id
+  tmb_data$covariate_diffusion$proj_covariate_vertex_time <- if (has_nonlocal) {
+    predict_nonlocal_field(object, tmb_data, newdata, spatial$proj_mesh,
+      nonlocal_newdata, nonlocal_uses_external_grid)
+  } else {
+    array(0, dim = c(1L, 1L, 1L))
+  }
+  tmb_data$proj_Zs <- sm$Zs
+  tmb_data$proj_Xs <- sm$Xs
+  tmb_data$proj_z_i <- predict_svc_matrix(object, newdata)
+
+  list(tmb_data = tmb_data, nd = newdata, new_re = iid_re$new_re)
+}
+
+# Validate `newdata` coordinates and time; fill in a time column where the
+# model has none and dummy coordinates for population predictions.
+predict_check_newdata <- function(object, req, newdata, nonlocal_newdata) {
+  no_spatial <- as.logical(object$tmb_data$no_spatial)
+  has_nonlocal <- !is.null(object$nonlocal_parsed)
+
+  needs_xy <- if (has_nonlocal) TRUE else isFALSE(req$pop_pred) && !no_spatial && !req$is_areal
+  if (any(!req$xy_cols %in% names(newdata)) && needs_xy)
+    cli_abort(c("`xy_cols` (the column names for the x and y coordinates) are not in `newdata`.",
+      "Did you miss specifying the argument `xy_cols` to match your data?",
+      "The newer `make_mesh()` (vs. `make_spde()`) takes care of this for you."))
+
+  if (isFALSE(req$pop_pred) && !req$is_areal && (!no_spatial || has_nonlocal)) {
+    xy_orig <- object$data[,req$xy_cols]
+    xy_nd <- newdata[,req$xy_cols]
+    all_outside <- function(x1, x2) {
+      min(x1) > max(x2) || max(x1) < min(x2)
+    }
+    if (all_outside(xy_orig[,1], xy_nd[,1]) || all_outside(xy_orig[,2], xy_nd[,2])) {
+      cli_warn(c("`newdata` prediction coordinates appear to be outside the fitted coordinates.",
+        "This will likely cause all your random field values to be returned as 0.",
+        "Check your coordinates including any conversions between projections.",
+        "If working with UTMs, are both in km or m?"))
+    }
+  }
+
+  if (object$time == "_sdmTMB_time") newdata[[object$time]] <- 0L
+
+  check_time_class(object, newdata)
+  original_time <- object$time_lu$time_from_data
+  new_data_time <- unique(newdata[[object$time]])
+
+  if (anyNA(new_data_time))
+    cli_abort(c("There is at least one NA value in the time column.",
+      "Please remove it."))
+  if (!all(new_data_time %in% original_time))
+    cli_abort(c("Some new time values were found in `newdata`. ",
+      "If you would like to predict on new time values,",
+      "see the `extra_time` argument in `?sdmTMB`.")
+    )
+  if (.nonlocal_prediction_requires_full_time(object, nonlocal_newdata) &&
+    !setequal(new_data_time, original_time)) {
+    cli_abort(c(
+      "Temporal nonlocal prediction currently requires full time coverage in `newdata`.",
+      "i" = "Include exactly the same time values used in the fitted model."
+    ))
+  }
+
+  # If making population predictions (with standard errors), we don't need
+  # to worry about space, so fill in dummy values if the user hasn't made any:
+  if (req$pop_pred && !req$is_areal) {
+    for (i in c(1, 2)) {
+      if (!req$xy_cols[[i]] %in% names(newdata)) {
+        suppressWarnings({
+          newdata[[req$xy_cols[[i]]]] <- mean(object$data[[req$xy_cols[[i]]]], na.rm = TRUE)
+        })
+      }
+    }
+  }
+
+  newdata
+}
+
+# Add `sdm_orig_id` and `sdm_spatial_id` to `newdata` and build the
+# projection matrix from spatial vertices (or areal units) to unique
+# prediction locations.
+predict_spatial_index <- function(object, req, newdata) {
+  no_spatial <- as.logical(object$tmb_data$no_spatial)
+  has_nonlocal <- !is.null(object$nonlocal_parsed)
+  newdata$sdm_orig_id <- seq(1L, nrow(newdata))
+
+  if (req$is_areal) {
+    newdata[["sdm_spatial_id"]] <- seq_len(nrow(newdata)) - 1L
+    if (isFALSE(req$pop_pred) && !no_spatial) {
+      if (!object$spde$space_column %in% names(newdata)) {
+        cli_abort("Areal space column {.field {object$spde$space_column}} was not found in `newdata`.")
+      }
+      if (anyNA(newdata[[object$spde$space_column]])) {
+        cli_abort("Areal space column {.field {object$spde$space_column}} contains missing values in `newdata`.")
+      }
+      proj_mesh <- areal_projection_matrix(object$spde, newdata)
+    } else {
+      proj_mesh <- Matrix::sparseMatrix(
+        i = integer(0L),
+        j = integer(0L),
+        x = numeric(0L),
+        dims = c(nrow(newdata), object$spde$n_s)
+      )
+    }
+  } else if (!no_spatial || has_nonlocal) {
+    locations <- .project_unique_locations(object$spde$mesh, newdata, req$xy_cols)
+    newdata[["sdm_spatial_id"]] <- locations$index
+    proj_mesh <- locations$A
+  } else {
+    proj_mesh <- object$spde$A_st # fake
+    if (!all(object$spde$xy_cols %in% names(newdata))) {
+      newdata[[req$xy_cols[1]]] <- NA_real_ # fake
+      newdata[[req$xy_cols[2]]] <- NA_real_ # fake
+    }
+    newdata[["sdm_spatial_id"]] <- rep(0L, nrow(newdata)) # fake
+  }
+  list(newdata = newdata, proj_mesh = proj_mesh)
+}
+
+# IID random intercept/slope sparse model matrices, one per linear predictor.
+# All linear predictors share the same random effect structure.
+predict_iid_re_matrices <- function(object, req, newdata, n_formula) {
+  if (sum(object$tmb_data$n_re_groups) == 0 || !isFALSE(req$pop_pred_iid)) {
+    return(list(Zt_list = list(), new_re = list()))
+  }
+  re_formula_no_response <- stats::formula(
+    stats::delete.response(
+      stats::terms(remove_s_and_t2(object$smoothers$formula_no_sm))
+    )
+  )
+  # factor level checks:
+  RE_names <- barnames(reformulas::findbars(re_formula_no_response))
+  missing_RE_names <- setdiff(RE_names, names(newdata))
+  if (length(missing_RE_names) > 0) {
+    cli_abort(c(
+      "Random effect group column(s) missing from `newdata`: {.val {missing_RE_names}}.",
+      "i" = "Use `re_form_iid = NA` or `re_form_iid = ~0` to exclude random effects in prediction."
+    ))
+  }
+  sample_new <- identical(req$allow_new_levels, "sample")
+  # grouping columns as coded in fitting, where non-factors become factors and
+  # only levels with an estimated random effect remain (unused levels have none):
+  fit_groups <- lapply(stats::setNames(nm = unique(RE_names)),
+    function(g) droplevels(as.factor(object$data[[g]])))
+  levels_fit <- lapply(fit_groups, levels)
+  new_levels <- list()
+  for (g in names(levels_fit)) {
+    # the fitted data may hold non-factor grouping columns, coded as in fitting:
+    if (!req$newdata_supplied) newdata[[g]] <- fit_groups[[g]]
+    assert_that(is.factor(newdata[[g]]),
+      msg = sprintf("Random effect group column `%s` in newdata is not a factor.", g))
+    values_nd <- as.character(newdata[[g]])
+    new_levels[[g]] <- unique(values_nd[!is.na(values_nd) & !values_nd %in% levels_fit[[g]]])
+    if (length(new_levels[[g]]) && !sample_new) {
+      if (isFALSE(req$allow_new_levels)) {
+        cli_abort(c(
+          "Found new levels in random effect grouping variable {.field {g}}.",
+          "i" = "Set `allow_new_levels = TRUE` to give new levels a random effect value of 0. Other grouping factors keep their random effects."
+        ))
+      }
+      if (is.null(req$allow_new_levels)) {
+        cli_warn(c(
+          "Found new levels in random effect grouping variable {.field {g}}.",
+          "i" = "New levels will get a random effect value of 0. Other grouping factors keep their random effects.",
+          "i" = "Set `allow_new_levels = TRUE` to suppress this warning."
+        ))
+      }
+    }
+  }
+
+  # now do with a joint data frame to ensure factor levels match;
+  # new grouping levels go after the fitted ones
+  common_cols <- intersect(colnames(object$data), colnames(newdata))
+  data_aligned <- object$data[, common_cols, drop = FALSE]
+  data_aligned[names(fit_groups)] <- fit_groups
+  nd_aligned <- newdata[, common_cols, drop = FALSE]
+  for (col_name in common_cols) {
+    if (is.factor(data_aligned[[col_name]]) && is.factor(nd_aligned[[col_name]])) {
+      nd_aligned[[col_name]] <- factor(
+        as.character(nd_aligned[[col_name]]),
+        levels = if (col_name %in% names(levels_fit)) {
+          c(levels_fit[[col_name]], new_levels[[col_name]])
+        } else {
+          levels(data_aligned[[col_name]])
+        }
+      )
+      if (anyNA(nd_aligned[[col_name]])) {
+        nd_aligned[[col_name]][is.na(nd_aligned[[col_name]])] <-
+          levels(data_aligned[[col_name]])[1]
+      }
+    }
+  }
+  joint_df <- rbind(data_aligned, nd_aligned)
+  xx <- parse_formula(re_formula_no_response, joint_df)
+  # drop the original data:
+  Zt <- xx$re_cov_terms$Zt[, seq(nrow(object$data) + 1, nrow(object$data) + nrow(newdata)), drop = FALSE]
+
+  # Zt rows run by term, then level, then coefficient. Rows of new levels are
+  # dropped (a random effect of 0) or, when sampling, moved after the fitted
+  # rows to match the extra `re_b_pars` rows that predict_objective() adds.
+  q <- lengths(xx$re_cov_terms$cnms)
+  n_fit <- lengths(levels_fit[RE_names])
+  n_new <- lengths(new_levels[RE_names])
+  is_new <- unlist(lapply(seq_along(q), function(i) {
+    rep(seq_len(n_fit[i] + n_new[i]) > n_fit[i], each = q[i])
+  }))
+  Zt <- Zt[c(which(!is_new), if (sample_new) which(is_new)), , drop = FALSE]
+
+  # `re_b_pars` rows of each term's new levels (level by level, then
+  # coefficient) and the term giving their covariance:
+  new_re <- list()
+  if (sample_new) {
+    n_rows <- n_new * q
+    first <- sum(n_fit * q) + cumsum(n_rows) - n_rows
+    new_re <- lapply(which(n_new > 0), function(i) {
+      list(term = i, n_levels = n_new[[i]], rows = first[[i]] + seq_len(n_rows[[i]]))
+    })
+  }
+  list(Zt_list = rep(list(Zt), n_formula), new_re = new_re)
+}
+
+# Fixed-effect model matrices, one per linear predictor, built with each
+# component's fitted terms (with `predvars`), factor levels, and contrasts.
+predict_fixed_matrices <- function(object, newdata) {
+  nl_cols <- object$nonlocal_parsed$term_coef_name
+  lapply(seq_along(object$formula), function(i) {
+    spec <- list(
+      name = "`formula`",
+      terms = stats::delete.response(object$terms[[i]]),
+      xlevels = object$xlevels[[i]],
+      contrasts = object$contrasts[[i]],
+      columns = setdiff(colnames(object$tmb_data$X_ij[[i]]), nl_cols)
+    )
+    .append_nonlocal_coef_columns(.apply_design(spec, newdata), nl_cols)
+  })
+}
+
+predict_disp_matrix <- function(object, newdata) {
+  if (!isTRUE(object$has_dispformula)) return(NULL)
+  predict_design_matrix(object, newdata, "dispformula")
+}
+
+predict_tv_matrix <- function(object, nd) {
+  if (is.null(object$time_varying)) {
+    return(matrix(0, ncol = 1, nrow = 1)) # dummy
+  }
+  predict_design_matrix(object, nd, "time_varying")
+}
+
+# Apply a saved auxiliary design (`spatial_varying`, `time_varying`, or
+# `dispformula`) to the prediction rows.
+predict_design_matrix <- function(object, newdata, which) {
+  spec <- object$design_specs[[which]]
+  if (is.null(spec)) {
+    cli_abort("Internal error: no saved `{which}` design specification.")
+  }
+  .apply_design(spec, newdata)
+}
+
+# Covariate field (vertex x time) for nonlocal (covariate diffusion) terms.
+predict_nonlocal_field <- function(object, tmb_data, nd, proj_mesh,
+                                   nonlocal_newdata, nonlocal_uses_external_grid) {
+  if (!is.null(nonlocal_newdata)) {
+    # override grid: rebuild the field from the supplied nonlocal_newdata
+    .nonlocal_from_grid(
+      grid = nonlocal_newdata,
+      nonlocal_formula = object$nonlocal_formula_parsed,
+      mesh = object$spde,
+      time = object$time,
+      time_lu = object$time_lu,
+      time_indexed = .nonlocal_time_indexed_from_object(object)
+    )$covariate_vertex_time
+  } else if (nonlocal_uses_external_grid) {
+    # reuse the fitted field: same mesh vertices, all time slices already present
+    object$nonlocal_parsed$covariate_vertex_time
+  } else {
+    # no grid was used at fit: rebuild the field from newdata
+    .build_nonlocal_tmb_data(
+      nonlocal_formula = object$nonlocal_formula_parsed,
+      data = nd,
+      A_st = proj_mesh,
+      A_spatial_index = nd$sdm_spatial_id,
+      year_i = tmb_data$proj_year,
+      n_t = tmb_data$n_t,
+      time_values = object$time_lu$time_from_data
+    )$covariate_vertex_time
+  }
+}
+
+# Spatially varying coefficient covariate matrix.
+predict_svc_matrix <- function(object, newdata) {
+  if (is.null(object$spatial_varying)) {
+    return(matrix(0, nrow(newdata), 0L))
+  }
+  predict_design_matrix(object, newdata, "spatial_varying")
+}

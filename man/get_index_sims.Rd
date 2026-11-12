@@ -46,8 +46,8 @@ A data frame. If \code{return_sims = FALSE}:
 \item \code{est}: estimate
 \item \code{lwr}: lower confidence interval value
 \item \code{upr}: upper confidence interval value
-\item \code{log_est}: log estimate
-\item \code{se}: standard error on the log estimate
+\item \code{log_est}: log of \code{est}
+\item \code{se}: standard deviation of the log draws (standard error on the log scale)
 }
 
 If \code{return_sims = TRUE}, a long-format data frame of index draws:

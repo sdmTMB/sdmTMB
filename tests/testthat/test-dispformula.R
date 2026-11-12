@@ -96,7 +96,7 @@ test_that("dispformula works with simulation and index prediction pathways", {
   d1 <- pcod[pcod$year == 2003, ]
   d2 <- pcod[pcod$year == 2004, ]
   d <- rbind(d1[seq_len(60), ], d2[seq_len(60), ])
-  mesh <- make_mesh(d, c("X", "Y"), n_knots = 20)
+  mesh <- make_mesh(d, c("X", "Y"), n_knots = 30)
 
   fit <- sdmTMB(
     density ~ 1,
@@ -191,4 +191,16 @@ test_that("dispformula works for regular delta models", {
 
   p <- predict(fit, newdata = d[seq_len(40), , drop = FALSE], type = "response")
   expect_true(all(c("est", "est1", "est2") %in% names(p)))
+})
+
+test_that("default dispformula does not capture the sdmTMB() frame", {
+  d <- pcod[pcod$year %in% c(2003, 2004), ]
+  captures_frame <- function(fit) {
+    exists("tmb_obj", envir = environment(fit$dispformula), inherits = FALSE)
+  }
+  fit <- sdmTMB(density ~ 1, data = d, family = tweedie(), spatial = "off")
+  expect_false(captures_frame(fit))
+  fit <- suppressWarnings(sdmTMB(present ~ 1, data = d, family = binomial(),
+    spatial = "off", dispformula = ~ depth_scaled))
+  expect_false(captures_frame(fit))
 })

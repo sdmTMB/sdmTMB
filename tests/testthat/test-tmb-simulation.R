@@ -125,7 +125,7 @@ test_that("sdmTMB_simulate can generate time-varying RW effects", {
     X = runif(600), Y = runif(600),
     year = rep(seq_len(60), each = 10)
   )
-  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.3)
+  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.15)
 
   sim_dat <- sdmTMB_simulate(
     formula = ~1,
@@ -161,7 +161,10 @@ test_that("sdmTMB_simulate can generate time-varying AR1 effects", {
     X = runif(800), Y = runif(800),
     year = rep(seq_len(80), each = 10)
   )
-  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.3)
+  mesh <- suppressWarnings(
+    make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.3),
+    classes = "sdmTMB_mesh_outside_warning"
+  )
 
   rho_true <- 0.6
   sigma_v_true <- 0.2
@@ -205,7 +208,10 @@ test_that("sdmTMB_simulate supports multiple AR1 time-varying coefficients", {
     cov1 = rnorm(900),
     cov2 = rnorm(900)
   )
-  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.3)
+  mesh <- suppressWarnings(
+    make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.3),
+    classes = "sdmTMB_mesh_outside_warning"
+  )
 
   sigma_true <- c(0.15, 0.3)
   rho_true <- c(0.4, -0.5)
@@ -435,4 +441,104 @@ test_that("simulate without observation error works for binomial likelihoods and
   m <- apply(s.dg, 1, mean)
   p <- predict(fit.dg, newdata = qcs_grid_small)
   expect_gt(cor(exp(p$est1) * exp(p$est2), m), 0.98)
+})
+
+test_that("simulate_re redraws only the named random effects", {
+  skip_on_cran()
+  mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 30)
+  fit <- sdmTMB(density ~ 0 + as.factor(year), data = pcod, mesh = mesh,
+    family = tweedie(), time = "year", spatiotemporal = "iid")
+  sim <- function(...) {
+    simulate(fit, return_tmb_report = TRUE, seed = 1, silent = TRUE, ...)
+  }
+
+  # mle-eb: held omega equals the EB estimates
+  cond <- sim(nsim = 1)[[1]]
+  r <- sim(nsim = 2, simulate_re = "spatiotemporal")
+  expect_equal(r[[1]]$omega_s, cond$omega_s)
+  expect_identical(r[[1]]$omega_s, r[[2]]$omega_s)
+  expect_false(identical(r[[1]]$epsilon_st, r[[2]]$epsilon_st))
+
+  # mle-mvn single: one shared posterior draw, different from EB
+  r <- sim(nsim = 3, type = "mle-mvn", mle_mvn_samples = "single",
+    simulate_re = "spatiotemporal")
+  expect_identical(r[[1]]$omega_s, r[[3]]$omega_s)
+  expect_false(isTRUE(all.equal(r[[1]]$omega_s, cond$omega_s)))
+  expect_false(identical(r[[1]]$epsilon_st, r[[2]]$epsilon_st))
+
+  # mle-mvn multiple: held omega differs across nsim
+  r <- sim(nsim = 2, type = "mle-mvn", mle_mvn_samples = "multiple",
+    simulate_re = "spatiotemporal")
+  expect_false(identical(r[[1]]$omega_s, r[[2]]$omega_s))
+
+  # naming both redraws both
+  r <- sim(nsim = 2, simulate_re = c("spatial", "spatiotemporal"))
+  expect_false(identical(r[[1]]$omega_s, r[[2]]$omega_s))
+
+  # newdata
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod$year))
+  r <- sim(nsim = 2, newdata = nd, simulate_re = "spatiotemporal")
+  expect_equal(r[[1]]$omega_s, cond$omega_s)
+  expect_identical(r[[1]]$omega_s, r[[2]]$omega_s)
+  expect_false(identical(r[[1]]$epsilon_st, r[[2]]$epsilon_st))
+
+  # matrix output and reproducibility
+  y <- simulate(fit, nsim = 2, simulate_re = "spatiotemporal", seed = 1, silent = TRUE)
+  expect_equal(dim(y), c(nrow(pcod), 2L))
+  expect_identical(y, simulate(fit, nsim = 2, simulate_re = "spatiotemporal",
+    seed = 1, silent = TRUE))
+
+  # all named is the same as re_form = NA
+  expect_identical(
+    simulate(fit, nsim = 2, seed = 1, silent = TRUE, re_form = NA),
+    simulate(fit, nsim = 2, seed = 1, silent = TRUE,
+      simulate_re = c("spatial", "spatiotemporal", "spatial_varying",
+        "group_re", "time_varying"))
+  )
+
+  expect_error(simulate(fit, simulate_re = "spatiotemporal", re_form = ~0), "only one")
+  expect_error(simulate(fit, simulate_re = "spatio"), "Unknown")
+  expect_error(simulate(fit, simulate_re = "omega_s"), "Unknown")
+})
+
+test_that("simulate_re works for delta models and time-varying effects", {
+  skip_on_cran()
+  mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 30)
+  fit <- sdmTMB(density ~ 1, data = pcod, mesh = mesh,
+    family = delta_gamma(type = "poisson-link"), time = "year",
+    spatiotemporal = "iid")
+  cond <- simulate(fit, nsim = 1, return_tmb_report = TRUE, seed = 1, silent = TRUE)[[1]]
+  r <- simulate(fit, nsim = 2, simulate_re = "spatiotemporal",
+    return_tmb_report = TRUE, seed = 1, silent = TRUE)
+  expect_equal(r[[1]]$omega_s, cond$omega_s)
+  expect_equal(ncol(r[[1]]$omega_s), 2L)
+  expect_false(identical(r[[1]]$epsilon_st, r[[2]]$epsilon_st))
+
+  fit <- sdmTMB(density ~ 0, time_varying = ~1, data = pcod, mesh = mesh,
+    family = tweedie(), time = "year", spatiotemporal = "iid")
+  r <- simulate(fit, nsim = 2, simulate_re = "time_varying",
+    return_tmb_report = TRUE, seed = 1, silent = TRUE)
+  expect_identical(r[[1]]$omega_s, r[[2]]$omega_s)
+  expect_identical(r[[1]]$epsilon_st, r[[2]]$epsilon_st)
+  expect_false(identical(r[[1]]$b_rw_t, r[[2]]$b_rw_t))
+})
+
+test_that("simulate_re = 'group_re' simulates correlated random slopes", {
+  skip_on_cran()
+  set.seed(1)
+  ng <- 100
+  g <- rep(seq_len(ng), each = 10)
+  b <- matrix(rnorm(2 * ng, 0, c(0.5, 0.3)), ncol = 2, byrow = TRUE)
+  d <- data.frame(g = factor(g), x = rnorm(length(g)))
+  d$y <- 1 + b[g, 1] + (0.5 + b[g, 2]) * d$x + rnorm(length(g), 0, 0.3)
+  fit <- sdmTMB(y ~ x + (1 + x | g), data = d, spatial = "off")
+  r <- simulate(fit, nsim = 200, simulate_re = "group_re",
+    return_tmb_report = TRUE, seed = 1, silent = TRUE)
+  b_sim <- do.call(rbind, lapply(r, function(.x) {
+    matrix(.x$re_b_pars[, 1], ncol = 2, byrow = TRUE)
+  }))
+  sds <- tidy(fit, "ran_pars")
+  sds <- sds$estimate[grepl("^sd__", sds$term)]
+  expect_equal(apply(b_sim, 2, sd), sds, tolerance = 0.05)
+  expect_false(identical(r[[1]]$re_b_pars, r[[2]]$re_b_pars))
 })

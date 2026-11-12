@@ -21,7 +21,10 @@ test_that("randomized quantile residuals work,", {
 
   set.seed(1)
   predictor_dat <- data.frame(X = runif(2000), Y = runif(2000))
-  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.2)
+  mesh <- suppressWarnings(
+    make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.2),
+    classes = "sdmTMB_mesh_outside_warning"
+  )
 
   sim_dat <- function(family, phi = 0.2, sigma_O = 0.2) {
     set.seed(1)
@@ -595,4 +598,23 @@ test_that("pgengamma works for Q = 0", {
   set.seed(1)
   p <- pgengamma(q = 1, mean = 0.5, sigma = 0.8, .Q = 0, lower.tail = TRUE, log.p = FALSE)
   expect_equal(round(p, 4), 0.8973)
+})
+
+test_that("MVN draws are unchanged when the inner Cholesky factor is rebuilt", {
+  skip_on_cran()
+  d <- pcod[pcod$year %in% c(2003, 2004), ]
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  fit <- sdmTMB(density ~ 1, data = d, mesh = mesh, family = tweedie())
+  draws <- function(fit) {
+    set.seed(1)
+    list(
+      resid = residuals(fit, type = "mle-mvn"),
+      sim = simulate(fit, nsim = 2, type = "mle-mvn", mle_mvn_samples = "multiple")
+    )
+  }
+  expected <- draws(fit)
+  best <- fit$tmb_obj$env$last.par.best
+  fit$tmb_obj$env$L.created.by.newton <- NULL
+  expect_equal(draws(fit), expected)
+  expect_identical(fit$tmb_obj$env$last.par.best, best)
 })

@@ -17,7 +17,7 @@
 #'   estimates.
 #' @param map A named list with factor `NA`s specifying parameter values that
 #'   should be fixed at a constant value. See the documentation in
-#'   [TMB::MakeADFun()]. This should usually be used with `start` to specify the
+#'   [RTMB::MakeADFun()]. This should usually be used with `start` to specify the
 #'   fixed value.
 #' @param start A named list specifying the starting values for parameters. You
 #'   can see the necessary structure by fitting the model once and inspecting
@@ -30,24 +30,17 @@
 #'   profile for depth, and depth and depth^2 are part of your formula, you need
 #'   to make sure these are listed first and that an intercept isn't included.
 #'   For example, `formula = cpue ~ 0 + depth + depth2 + as.factor(year)`.
-#' @param getsd Logical indicating whether to call [TMB::sdreport()].
-#' @param normalize Logical: use [TMB::normalize()] to normalize the process
-#'   likelihood using the Laplace approximation? Can result in a substantial
-#'   speed boost in some cases. This used to default to `FALSE` prior to
-#'   May 2021. Currently not working for models fit with REML or random intercepts.
-#' @param backend Model backend. `"tmb"` is the default; set
-#'   `options(sdmTMB.backend = "rtmb")` to use RTMB by default. The experimental
-#'   `"rtmb"` backend currently supports all families, including delta and
-#'   multi-family models, with SPDE (isotropic, anisotropic, or barrier) and
-#'   areal SAR/CAR spatial and spatiotemporal fields, spatially and
-#'   time-varying coefficients, IID random effects, smoothers, threshold
-#'   terms, covariate diffusion, restricted spatial regression, priors, and
-#'   derived indices.
+#' @param getsd Logical indicating whether to call [RTMB::sdreport()].
+#' @param normalize `r lifecycle::badge("deprecated")` Ignored. This used
+#'   `TMB::normalize()` with the removed C++ TMB backend; the RTMB densities are
+#'   already fully normalized.
+#' @param backend `r lifecycle::badge("deprecated")` Ignored. The C++ TMB
+#'   backend was removed and all models use RTMB.
 #' @param multiphase Logical: estimate the fixed and random effects in phases?
 #'   Phases are usually faster and more stable.
 #' @param profile Logical: should population-level/fixed effects be profiled
 #'   out of the likelihood? These are then appended to the random effects
-#'   vector without the Laplace approximation. See [TMB::MakeADFun()]. *This
+#'   vector without the Laplace approximation. See [RTMB::MakeADFun()]. *This
 #'   can dramatically speed up model fit if there are many fixed effects but is
 #'   experimental at this stage.*
 #' @param lower An optional named list of lower bounds within the optimization.
@@ -57,18 +50,18 @@
 #'   implement lower and upper bounds, so you must set `newton_loops = 0` if
 #'   setting limits.
 #' @param upper An optional named list of upper bounds within the optimization.
-#' @param censored_upper An optional vector of upper bounds for
-#'   [sdmTMBcontrol()]. Values of `NA` indicate an unbounded right-censored
-#'   distribution, values greater than the observation indicate an upper bound,
-#'   and values equal to the observation indicate no censoring.
+#' @param censored_method How [censored_betabinomial()] sums the likelihood.
+#'   `"auto"` (default) sums the interval or its
+#'   complement, whichever has fewer terms, and checks the precision at the
+#'   estimate, refitting with the direct sum for any rows that fail. `"direct"`
+#'   always sums the interval, which can be much slower. The check only
+#'   applies at the estimate, so consider `"direct"` when evaluating the
+#'   likelihood far from it (e.g., MCMC sampling).
 #' @param get_joint_precision Logical. Passed to `getJointPrecision` in
-#'   [TMB::sdreport()]. Must be `TRUE` to use simulation-based methods in
+#'   [RTMB::sdreport()]. Must be `TRUE` to use simulation-based methods in
 #'   [predict.sdmTMB()] or [get_index_sims()]. If not needed, setting this to
 #'   `FALSE` will reduce object size.
-#' @param parallel Argument currently ignored. For parallel processing with 3
-#'   cores, as an example, use `TMB::openmp(n = 3, DLL = "sdmTMB")`. But be
-#'   careful, because it's not always faster with more cores and there is
-#'   definitely an upper limit.
+#' @param parallel Argument currently ignored.
 #' @param suppress_nlminb_warnings Suppress uninformative warnings
 #'   from [stats::nlminb()] arising when a function evaluation is `NA`, which
 #'   are then replaced with `Inf` and avoided during estimation?
@@ -135,7 +128,7 @@
 sdmTMBcontrol <- function(
   eval.max = 2e3L,
   iter.max = 1e3L,
-  normalize = FALSE,
+  normalize = deprecated(),
   nlminb_loops = 1L,
   newton_loops = 1L,
   getsd = TRUE,
@@ -144,7 +137,7 @@ sdmTMBcontrol <- function(
   map = NULL,
   lower = NULL,
   upper = NULL,
-  censored_upper = NULL,
+  censored_method = c("auto", "direct"),
   multiphase = TRUE,
   profile = FALSE,
   get_joint_precision = TRUE,
@@ -157,8 +150,27 @@ sdmTMBcontrol <- function(
   collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
   get_rsr = FALSE,
-  backend = getOption("sdmTMB.backend", "tmb"),
+  backend = deprecated(),
   ...) {
+
+  if (is_present(normalize)) {
+    deprecate_warn("1.2.0.9010", "sdmTMBcontrol(normalize = )",
+      details = "The RTMB densities are already fully normalized; the argument is ignored.")
+  }
+  if (is_present(backend)) {
+    deprecate_warn("1.2.0.9010", "sdmTMBcontrol(backend = )",
+      always = identical(backend, "tmb"), # the user asked for a different model
+      details = if (identical(backend, "tmb")) {
+        "The C++ TMB backend was removed; the model uses RTMB."
+      } else {
+        "RTMB is the only backend; the argument is ignored."
+      })
+  }
+  if (identical(getOption("sdmTMB.backend"), "tmb")) {
+    cli_warn(c("The C++ TMB backend was removed; `options(sdmTMB.backend = \"tmb\")` is ignored.",
+      "i" = "Models use RTMB."), .frequency = "once",
+      .frequency_id = "sdmTMB.backend.tmb")
+  }
 
   assert_that(is.numeric(nlminb_loops), is.numeric(newton_loops))
   assert_that(nlminb_loops >= 1L)
@@ -203,13 +215,11 @@ sdmTMBcontrol <- function(
     collapse_ar1_threshold < 0.5
   )
   sar_weight_style <- match.arg(sar_weight_style)
-  backend <- match.arg(backend, c("tmb", "rtmb"))
+  censored_method <- match.arg(censored_method)
 
   out <- named_list(
     eval.max,
     iter.max,
-    normalize,
-    backend,
     nlminb_loops,
     newton_loops,
     getsd,
@@ -219,10 +229,11 @@ sdmTMBcontrol <- function(
     map,
     lower,
     upper,
-    censored_upper,
+    censored_method,
     multiphase,
     parallel,
     get_joint_precision,
+    suppress_nlminb_warnings,
     collapse_spatial_variance,
     collapse_spatial_variance_threshold,
     collapse_spatiotemporal_ar1,
@@ -312,13 +323,35 @@ get_convergence_diagnostics <- function(sd_report) {
           "extreme or very small eigen values detected.", call. = FALSE)
         bad_eig <- TRUE
       }
-      if (any(final_grads > 0.01))
+      if (any(abs(final_grads) > 0.01))
         warning("The model may not have converged. ",
-          "Maximum final gradient: ", max(final_grads), ".", call. = FALSE)
+          "Maximum final gradient: ", max(abs(final_grads)), ".", call. = FALSE)
     }
   }
   pdHess <- isTRUE(sd_report$pdHess)
   invisible(named_list(final_grads, bad_eig, pdHess))
+}
+
+# Store an optimized objective and its results (sdreport, convergence
+# diagnostics, best parameters) in a fit. Used by sdmTMB() and
+# run_extra_optimization().
+set_fit_results <- function(object, obj, opt, getsd = TRUE, get_joint_precision = FALSE) {
+  sd_report <- if (getsd) RTMB::sdreport(obj, getJointPrecision = get_joint_precision)
+  conv <- if (getsd) get_convergence_diagnostics(sd_report)
+  lpb <- obj$env$last.par.best
+  results <- list(
+    tmb_obj = obj,
+    model = opt,
+    sd_report = sd_report,
+    parlist = obj$env$parList(par = lpb),
+    last.par.best = lpb,
+    gradients = conv$final_grads,
+    bad_eig = conv$bad_eig,
+    pos_def_hessian = sd_report$pdHess
+  )
+  object[names(results)] <- results # `[<-` keeps NULL entries
+  object["smooth_edf"] <- list(calc_smooth_edf(object))
+  object
 }
 
 make_year_i <- function(x) {
@@ -343,6 +376,11 @@ make_time_lu <- function(time_vec_from_data, full_time_vec = sort(unique(time_ve
   lu
 }
 
+# 0-based time index of each element of `x` in a `make_time_lu()` table
+time_index <- function(time_lu, x) {
+  time_lu$year_i[match(x, time_lu$time_from_data)]
+}
+
 check_offset <- function(formula) {
   .check <- any(grepl("^offset$",
     gsub(" ", "", unlist(strsplit(as.character(formula), "\\+")))))
@@ -350,59 +388,110 @@ check_offset <- function(formula) {
     cli_abort("Contains offset in formula. This is deprecated. Please use the `offset` argument.")
 }
 
-check_and_parse_thresh_params <- function(formula, data) {
-  terms <- stats::terms(formula)
-  terms_labels <- attr(terms, "term.labels")
-  if (any(grepl("linear_thresh", terms_labels)) && any(grepl("logistic_thresh", terms_labels))) {
-    cli_abort("Please include only a linear (`breakpt`) *or* a logistic threshold.")
+# A list argument (or a vector `share_range`) needs one element per model
+# component (linear predictor)
+check_component_list <- function(x, n_m, name, vector_ok = FALSE) {
+  if (inherits(x, "formula") || is.null(x)) return(invisible(NULL))
+  if (!vector_ok && !is.list(x) && length(x) > 1L) {
+    cli_abort("`{name}` should be a single value or a list with one element per component.")
   }
-  if (sum(grepl("linear_thresh", terms_labels)) > 1 || sum(grepl("logistic_thresh", terms_labels)) > 1) {
-    cli_abort("Please include only a *single* threshold variable.")
+  if (!is.list(x) && length(x) == 1L) return(invisible(NULL))
+  if (length(x) != n_m) {
+    cli_abort(c(
+      "`{name}` has {length(x)} element{?s}, but the model has {n_m} component{?s}.",
+      i = if (n_m == 1L) {
+        "Supply a single value, or use a delta family for two components."
+      } else {
+        "Supply a single value (shared by all components) or a list with one element per component."
+      }
+    ))
   }
-  threshold_parameter <- NULL
-  if (any(grepl("breakpt", terms_labels))) {
-    out <- parse_threshold_formula(formula, "breakpt", terms_labels)
-    threshold_parameter <- out$threshold_parameter
-    formula <- out$formula
-    threshold_function <- "linear"
-  }
-  if (any(grepl("logistic", terms_labels))) {
-    out <- parse_threshold_formula(formula, "logistic", terms_labels)
-    threshold_parameter <- out$threshold_parameter
-    formula <- out$formula
-    threshold_function <- "logistic"
-  }
-  if (!is.null(threshold_parameter)) {
-    if (length(threshold_parameter) > 1) {
-      cli_abort("`threshold_parameter` must be a single variable name.")
-    }
-    if (!threshold_parameter %in% names(data)) {
-      cli_abort("`threshold_parameter` is not a column in the `data` data frame.")
-    }
-  }
+  invisible(NULL)
+}
 
-  if (is.null(threshold_parameter)) {
-    X_threshold <- rep(0, nrow(data)) # just placeholder
-    threshold_func <- 0L
-  } else {
-    X_threshold <- data[, names(data) == threshold_parameter, drop = TRUE]
-    # indexed 1, 2 because 0 will tell TMB not to estimate this:
-    threshold_func <- match(threshold_function, c("linear", "logistic"))
+# Find and drop a single `breakpt()` or `logistic()` term from one formula
+parse_threshold_term <- function(formula) {
+  labels <- attr(stats::terms(formula), "term.labels")
+  # Names of the functions called anywhere in an expression
+  call_names <- function(e) {
+    if (!is.call(e)) return(character(0))
+    c(deparse(e[[1L]]), unlist(lapply(as.list(e)[-1L], call_names)))
   }
-  X_threshold <- as.numeric(unlist(X_threshold))
+  threshold_fns <- c("breakpt", "logistic")
+  for (label in labels) {
+    e <- str2lang(label)
+    fns <- intersect(call_names(e), threshold_fns)
+    if (!length(fns)) next
+    fn <- deparse(e[[1L]])
+    arg_names <- names(e) %||% character(length(e))
+    if (!(fn %in% threshold_fns && length(e) >= 2L && is.name(e[[2L]]) && arg_names[2L] == "")) {
+      cli_abort(c(
+        "`{fns[1]}()` takes a single column name and can't be used in an interaction or transformation.",
+        i = "Found `{label}`. Create any transformed column in the data first."
+      ))
+    }
+    # breakpt() can also take `positive = TRUE` or `FALSE`
+    extra <- as.list(e)[-(1:2)]
+    if (length(extra) && !(fn == "breakpt" && identical(names(extra), "positive") &&
+      (isTRUE(extra[[1L]]) || isFALSE(extra[[1L]])))) {
+      cli_abort(c(
+        if (fn == "breakpt") {
+          "`breakpt()` takes a column name and, optionally, `positive = TRUE` or `FALSE`."
+        } else {
+          "`logistic()` takes only a column name."
+        },
+        i = "Found `{label}`."
+      ))
+    }
+  }
+  is_thresh <- grepl("^(breakpt|logistic)\\(", labels)
+  if (sum(is_thresh) > 1L) {
+    cli_abort("Please include only a single `breakpt()` or `logistic()` threshold term.")
+  }
+  if (!any(is_thresh)) return(list(formula = formula, term = NULL))
+  term <- labels[is_thresh]
+  e <- str2lang(term)
   list(
-    formula = formula, threshold_parameter = threshold_parameter,
-    threshold_func = threshold_func, X_threshold = X_threshold
+    formula = stats::update(formula, paste("~ . -", term)),
+    term = term,
+    type = deparse(e[[1L]]),
+    parameter = as.character(e[[2L]]),
+    positive = isTRUE(e$positive)
   )
 }
 
-parse_threshold_formula <- function(formula, thresh_type_short = "lin_thresh",
-  terms_labels) {
-  which_thresh <- grep(thresh_type_short, terms_labels)
-  temp <- gsub(paste0("^", thresh_type_short, "\\("), "", terms_labels[which_thresh])
-  threshold_parameter <- gsub("\\)$", "", temp)
-  formula <- stats::update(formula, paste("~ . -", terms_labels[which_thresh]))
-  list(formula = formula, threshold_parameter = threshold_parameter)
+# Parse the threshold term of every model component. Components share one
+# threshold covariate and type (with separate `b_threshold` columns), so every
+# formula must have the same threshold term or none.
+parse_thresholds <- function(formulas, data, data_name = "data") {
+  parsed <- lapply(formulas, parse_threshold_term)
+  terms <- vapply(parsed, function(x) if (is.null(x$term)) "" else x$term, character(1L))
+  if (length(unique(terms)) > 1L) {
+    cli_abort(c(
+      "All delta model components must have the same threshold term (or none).",
+      i = "Include the same `breakpt()` or `logistic()` term in every formula, or use a single formula."
+    ))
+  }
+  p <- parsed[[1L]]
+  if (is.null(p$term)) {
+    threshold_parameter <- NULL
+    X_threshold <- rep(0, nrow(data)) # placeholder
+    threshold_func <- 0L
+  } else {
+    threshold_parameter <- p$parameter
+    if (!threshold_parameter %in% names(data)) {
+      cli_abort("Threshold variable `{threshold_parameter}` is not a column in `{data_name}`.")
+    }
+    X_threshold <- as.numeric(data[[threshold_parameter]])
+    # 0 = none, 1 = breakpt(), 2 = logistic(), 3 = breakpt(positive = TRUE)
+    threshold_func <- if (p$positive) 3L else match(p$type, c("breakpt", "logistic"))
+  }
+  list(
+    formulas = lapply(parsed, `[[`, "formula"),
+    threshold_parameter = threshold_parameter,
+    threshold_func = threshold_func,
+    X_threshold = X_threshold
+  )
 }
 
 expand_time <- function(df, time_slices, time_column, weights, offset, upr) {
@@ -443,6 +532,11 @@ extract_call_name <- function(call_element, max_width = 80) {
       deparsed <- paste0(substr(deparsed, 1, max_width - 3), "...")
     }
     return(deparsed)
+  }
+
+  # String literals (e.g., time = "year")
+  if (is.character(call_element) && length(call_element) == 1L) {
+    return(call_element)
   }
 
   obj_class <- class(call_element)[1]
@@ -625,11 +719,13 @@ get_scale_factor <- function(prop_removed, n_hooks, pstar) {
 #'   proportion of baits removed for each fishing event as the predictor.
 #'   Check when the curve drops off as the proportion bait removed increases.
 #'
-#' The `lwr` limit for [sdmTMB::censored_poisson()] should be the observed catch
-#' counts, i.e., `n_catch` here.
-#'
-#' If `upr` in [sdmTMB::censored_poisson()] is set to NA, the full
-#' right-censored Poisson likelihood is used without any upper bound.
+#' Pass the returned vector to the `censored_upper` argument of [sdmTMB()]
+#' with `family = censored_poisson()` and the observed catch counts
+#' (`n_catch`) as the response. Fishing events with `prop_removed` below
+#' `pstar` get an upper bound equal to the observed catch and are therefore
+#' treated as uncensored. Alternatively, set `censored_upper` to `Inf` for
+#' fishing events above `pstar` to use the right-censored likelihood without
+#' an upper bound.
 #'
 #' The right-censored Poisson density can be written as:
 #'
@@ -650,11 +746,24 @@ get_scale_factor <- function(prop_removed, n_hooks, pstar) {
 #' In practice, these computations are done in log space for numerical
 #' stability.
 #'
-#' @return A numeric vector of upper bound catch counts of the target species to
-#'   improve convergence of the censored method.
+#' With [censored_binomial()] or [censored_betabinomial()], the number of
+#' hooks is already an upper bound on the count, so `Inf` can be used for
+#' censored fishing events.
 #'
-#' @references See \doi{10.1139/cjfas-2022-0159} for more details.
-#' @noRd
+#' @return A numeric vector of upper bound catch counts of the target species to
+#'   improve convergence of the censored method. Bounds are capped at
+#'   `n_hooks`.
+#'
+#' @references
+#' Watson, J., Edwards, A.M., and Auger-Méthé, M. 2023. A statistical
+#' censoring approach accounts for hook competition in abundance indices from
+#' longline surveys. Canadian Journal of Fisheries and Aquatic Sciences. 80(3):
+#' 468--486. \doi{10.1139/cjfas-2022-0159}
+#'
+#' @seealso [censored_poisson()], [censored_binomial()],
+#'   [censored_betabinomial()], and the
+#'   [hook competition article](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html).
+#' @export
 #'
 #' @examples
 #' dat <- structure(
@@ -730,7 +839,7 @@ get_censored_upper <- function(
   high <- n_catch
   high[prop_removed >= pstar] <- high[prop_removed >= pstar] +
     upper_bound[prop_removed >= pstar]
-  round(high)
+  pmin(round(high), n_hooks)
 }
 
 #' Set delta model for [ggeffects::ggpredict()]
@@ -798,34 +907,35 @@ set_delta_model <- function(x, model = c(NA, 1, 2)) {
   x
 }
 
-get_fitted_time <- function(x) {
-  if (!"fitted_time" %in% names(x))
-    cli_abort("Missing 'fitted_time' element in fitted object. Please refit the model with a current version of sdmTMB.")
-  x$fitted_time
+# Fits saved before sdmTMB 1.2.0 lack metadata that methods assume (e.g.,
+# `design_specs`), and fits with the removed C++ TMB backend can't rebuild their
+# objective, so both need a refit.
+check_fit_version <- function(object) {
+  version <- object$version
+  if (is.null(version) || package_version(version) < "1.2.0") {
+    fitted <- if (is.null(version)) "an old version" else paste("version", version)
+    cli_abort(c(
+      "This model was fit with sdmTMB {fitted}; fits from before 1.2.0 are not supported.",
+      "i" = "Refit the model with the installed sdmTMB version."
+    ))
+  }
+  if (identical(object$backend, "tmb")) {
+    cli_abort(c(
+      "This model was fit with the C++ TMB backend, which has been removed.",
+      "i" = "Refit the model with the installed sdmTMB version."
+    ))
+  }
 }
 
 reload_model <- function(object) {
-  if ("parlist" %in% names(object)) {
-    # tinyVAST does this to be extra sure... I've found one case where it was needed
-    obj <- make_sdmTMB_adfun(
-      data = object$tmb_data,
-      parameters = object$parlist, #!! important part
-      map = object$tmb_map,
-      random = object$tmb_random,
-      backend = backend_sdmTMB(object),
-      profile = object$control$profile
-    )
-    obj$env$beSilent()
-    nll_new <- obj$fn(object$model$par) #!! important: need to eval once (restores last.par.best etc.)
-    if (abs(nll_new - object$model$objective) > 0.01) {
-      cli_abort(c("Model fit is not identical to recorded value:", "
-        something is not working as expected"))
-    }
-    object$tmb_obj <- obj
-    object
-  } else {
-    cli_abort("`reload_model()` only works with models fit with sdmTMB 0.5.0.9006 and higher.")
+  # tinyVAST does this to be extra sure... I've found one case where it was needed
+  obj <- remake_tmb_obj(object)
+  check_sdmTMB_version(object$version)
+  if (abs(obj$fn(object$model$par) - object$model$objective) > 0.01) {
+    cli_abort("Model fit is not identical to recorded value; something is not working as expected.")
   }
+  object$tmb_obj <- obj
+  object
 }
 
 reinitialize <- function(x) {
@@ -837,16 +947,19 @@ reinitialize <- function(x) {
     attributes(x) <- NULL
     identical(x, new("externalptr"))
   }
+  check_fit_version(x)
   if (is_null_pointer(x)) {
+    check_sdmTMB_version(x$version)
     x$tmb_obj$env$beSilent()
+    # retape before fn(): without a cached `L.created.by.newton` (dropped from
+    # saved cross-validation models), the inner newton() evaluates the stale
+    # Hessian pointer before fn() would retape
+    x$tmb_obj$retape(set.defaults = FALSE)
     x$tmb_obj$fn(x$model$par)
-    # x$tmb_obj$retape()
-    if ("parlist" %in% names(x) && "last.par.best" %in% names(x)) {
-      if (!identical(x$tmb_obj$env$last.par.best, x$last.par.best)) {
-        cli_warn(c("Detected a potential issue reloading a saved sdmTMB model.",
-          "Please run `fit <- sdmTMB:::reload_model(fit)`,",
-          "where `fit` is your fitted model."))
-      }
+    if (!identical(x$tmb_obj$env$last.par.best, x$last.par.best)) {
+      cli_warn(c("Detected a potential issue reloading a saved sdmTMB model.",
+        "Please run `fit <- sdmTMB:::reload_model(fit)`,",
+        "where `fit` is your fitted model."))
     }
   }
 }
@@ -990,4 +1103,72 @@ make_category_svc <- function(data,
     svc_map = list(ln_tau_Z = svc_map),
     info = info
   ))
+}
+
+# Formulas and terms keep the environment they were created in, and saving a
+# fit serializes that environment. For a fit made inside a function, loop, or
+# lapply() callback, that's the whole calling frame (other fits, large data).
+# Give each such environment a small replacement holding only the symbols the
+# formulas reference that aren't data columns, parented at the first top-level
+# environment on the original chain (global, a namespace, or the search path)
+# so every symbol resolves as before. Formulas sharing an environment still
+# share one afterwards.
+rehome_formula_envs <- function(x, data_cols = character()) {
+  is_fml <- function(z) inherits(z, "formula")
+  is_top <- function(e) {
+    identical(e, emptyenv()) || identical(e, globalenv()) ||
+      identical(e, baseenv()) || isNamespace(e) || nzchar(environmentName(e))
+  }
+  walk <- function(z, f) {
+    if (is_fml(z)) return(f(z))
+    # .subset2() and unclass(): S3 `[[` methods can misbehave here (e.g.,
+    # a package_version's `[[` returns itself)
+    if (is.list(z) && !is.data.frame(z)) {
+      cl <- oldClass(z)
+      for (i in seq_along(z)) {
+        zi <- .subset2(z, i)
+        if (is.null(zi)) next
+        new <- walk(zi, f)
+        if (!identical(new, zi)) {
+          z <- unclass(z)
+          z[[i]] <- new
+          class(z) <- cl
+        }
+      }
+    }
+    z
+  }
+  envs <- list()
+  syms <- character()
+  walk(x, function(z) {
+    e <- environment(z)
+    if (!is.null(e) && !is_top(e)) {
+      if (!any(vapply(envs, identical, logical(1), e))) envs[[length(envs) + 1L]] <<- e
+      syms <<- union(syms, all.names(z))
+    }
+    z
+  })
+  if (!length(envs)) return(x)
+  syms <- setdiff(syms, data_cols)
+  new_envs <- lapply(envs, function(e) {
+    top <- e
+    while (!is_top(top)) top <- parent.env(top)
+    out <- new.env(parent = top)
+    for (s in syms) {
+      # tryCatch(): `s` may be bound to a missing argument
+      v <- tryCatch(get0(s, envir = e, ifnotfound = out), error = function(err) out)
+      if (!identical(v, out) && !identical(v, get0(s, envir = top, ifnotfound = out))) {
+        assign(s, v, envir = out)
+      }
+    }
+    out
+  })
+  walk(x, function(z) {
+    e <- environment(z)
+    if (!is.null(e)) {
+      j <- which(vapply(envs, identical, logical(1), e))
+      if (length(j)) environment(z) <- new_envs[[j]]
+    }
+    z
+  })
 }

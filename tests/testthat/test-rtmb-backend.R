@@ -1,22 +1,20 @@
-test_that("RTMB Gaussian fit agrees with TMB through fit, prediction, simulation, and reload", {
+test_that("RTMB Gaussian fit matches lm() through fit, prediction, simulation, and reload", {
   set.seed(2026)
   d <- data.frame(x = seq(-1, 1, length.out = 24L))
   d$y <- 0.4 + 0.7 * d$x + rnorm(nrow(d), sd = 0.6)
-  tmb <- sdmTMB(y ~ x, data = d, spatial = "off",
-    control = sdmTMBcontrol(multiphase = FALSE, backend = "tmb"))
-  rtmb <- sdmTMB(y ~ x, data = d, spatial = "off",
-    control = sdmTMBcontrol(backend = "rtmb"))
+  rtmb <- sdmTMB(y ~ x, data = d, spatial = "off")
+  m <- stats::lm(y ~ x, data = d)
 
-  expect_equal(rtmb$model$par, tmb$model$par, tolerance = 1e-6)
-  expect_equal(rtmb$model$objective, tmb$model$objective, tolerance = 1e-6)
   expect_true(rtmb$sd_report$pdHess)
-  expect_sdreport_matches(rtmb, tmb)
-  expect_equal(rtmb$tmb_obj$gr(rtmb$model$par),
-    tmb$tmb_obj$gr(tmb$model$par), tolerance = 1e-5)
-  expected <- predict(tmb, newdata = d[1:4, ], se_fit = TRUE)
+  expect_equal(tidy(rtmb)$estimate, unname(coef(m)), tolerance = 1e-6)
+  expect_equal(as.numeric(logLik(rtmb)), as.numeric(logLik(m)),
+    tolerance = 1e-6)
   actual <- predict(rtmb, newdata = d[1:4, ], se_fit = TRUE)
-  expect_equal(actual$est, expected$est, tolerance = 1e-5)
-  expect_equal(actual$est_se, expected$est_se, tolerance = 1e-5)
+  expected <- predict(m, newdata = d[1:4, ], se.fit = TRUE)
+  expect_equal(actual$est, unname(expected$fit), tolerance = 1e-5)
+  # ML and OLS standard errors differ by sqrt((n - p) / n).
+  expect_equal(actual$est_se,
+    unname(expected$se.fit) * sqrt((nrow(d) - 2) / nrow(d)), tolerance = 1e-4)
   sims <- simulate(rtmb, nsim = 2L)
   expect_identical(dim(sims), c(nrow(d), 2L))
   expect_true(all(is.finite(sims)))
@@ -34,13 +32,12 @@ test_that("RTMB rejects unsupported MakeADFun options and random parameters", {
   d <- data.frame(y = rnorm(20), X = runif(20), Y = runif(20), year = 1L)
   mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.2)
   fit <- sdmTMB(y ~ 1, data = d, mesh = mesh, spatial = "off",
-    spatiotemporal = "off", time = "year",
-    control = sdmTMBcontrol(backend = "rtmb"))
+    spatiotemporal = "off", time = "year")
   expect_error(make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
-    fit$tmb_random, backend = "rtmb", ADreport = TRUE),
-    "Additional MakeADFun options")
+    fit$tmb_random, hessian = TRUE),
+    "Only `intern`")
   expect_error(make_sdmTMB_adfun(fit$tmb_data, fit$tmb_params, fit$tmb_map,
-    random = "ln_phi", backend = "rtmb"), "can't integrate over")
+    random = "ln_phi"), "can't integrate over")
 })
 
 test_that("RTMB fits survive update, extra optimization, and CV", {
@@ -48,18 +45,15 @@ test_that("RTMB fits survive update, extra optimization, and CV", {
   d <- data.frame(x = runif(60L), y = runif(60L), z = rnorm(60L))
   d$response <- 0.3 + 0.5 * d$z + sin(4 * d$x) + cos(4 * d$y) +
     rnorm(60L, sd = 0.2)
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 12L, type = "kmeans")
-  control <- sdmTMBcontrol(backend = "rtmb", multiphase = FALSE)
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 20L, type = "kmeans")
+  control <- sdmTMBcontrol(multiphase = FALSE)
   fit <- sdmTMB(response ~ z, data = d, mesh = mesh, control = control)
   objective <- fit$model$objective
 
   updated <- update(fit, response ~ 1)
-  expect_identical(updated$backend, "rtmb")
-  expect_identical(attr(updated$tmb_obj, "sdmTMB_backend"), "rtmb")
   expect_false(isTRUE(all.equal(updated$model$objective, objective)))
 
   extra <- run_extra_optimization(fit, newton_loops = 1L)
-  expect_identical(extra$backend, "rtmb")
   expect_equal(extra$model$objective, objective, tolerance = 1e-6)
 
   predict(fit, newdata = d[1:5, ])
@@ -68,7 +62,6 @@ test_that("RTMB fits survive update, extra optimization, and CV", {
   d$fold <- rep(1:3, length.out = nrow(d))
   cv <- sdmTMB_cv(response ~ z, data = d, mesh = mesh, fold_ids = d$fold,
     control = control)
-  expect_true(all(vapply(cv$models, function(x) x$backend, "") == "rtmb"))
   expect_true(is.finite(cv$sum_loglik))
 })
 
@@ -76,55 +69,55 @@ test_that("RTMB fits random effects with the default multiphase start", {
   set.seed(2028)
   d <- data.frame(z = rnorm(120L), g = factor(rep(1:12, 10L)))
   d$y <- 1 + d$z + rnorm(12L)[d$g] + rnorm(120L, sd = 0.5)
-  tmb <- sdmTMB(y ~ z + (1 | g), data = d, spatial = "off",
-    control = sdmTMBcontrol(backend = "tmb"))
-  rtmb <- sdmTMB(y ~ z + (1 | g), data = d, spatial = "off",
-    control = sdmTMBcontrol(backend = "rtmb"))
-  expect_equal(rtmb$model$par, tmb$model$par, tolerance = 1e-5)
+  multiphase <- sdmTMB(y ~ z + (1 | g), data = d, spatial = "off")
+  single <- sdmTMB(y ~ z + (1 | g), data = d, spatial = "off",
+    control = sdmTMBcontrol(multiphase = FALSE))
+  expect_true(multiphase$sd_report$pdHess)
+  expect_equal(multiphase$model$par, single$model$par, tolerance = 1e-5)
 })
 
-test_that("update() keeps the fitted backend and controls", {
+test_that("update() keeps the fitted controls", {
   set.seed(3)
   d <- data.frame(x = seq(-1, 1, length.out = 20L))
   d$y <- 0.2 + 0.5 * d$x + rnorm(nrow(d), sd = 0.5)
-  old_options <- options(sdmTMB.backend = NULL)
-  on.exit(options(old_options), add = TRUE)
-  for (backend in c("rtmb", "tmb")) {
-    other <- setdiff(c("tmb", "rtmb"), backend)
-    options(sdmTMB.backend = backend)
-    fit <- sdmTMB(y ~ x, data = d, spatial = "off")
-    expect_identical(fit$backend, backend)
-    options(sdmTMB.backend = other)
-    expect_identical(update(fit, y ~ 1)$backend, backend)
-    call <- update(fit, y ~ 1, evaluate = FALSE)
-    expect_identical(eval(call)$backend, backend)
-    # an explicit control replaces the fitted one, including its backend
-    new <- update(fit, control = sdmTMBcontrol(backend = other))
-    expect_identical(new$backend, other)
-  }
 
-  # a named control that is later removed; other settings are kept
-  ctl <- sdmTMBcontrol(multiphase = FALSE, profile = TRUE, backend = "rtmb")
+  # a named control that is later removed; its settings are kept
+  ctl <- sdmTMBcontrol(multiphase = FALSE, profile = TRUE)
   fit <- sdmTMB(y ~ x, data = d, spatial = "off", control = ctl)
   rm(ctl)
-  options(sdmTMB.backend = "tmb")
   new <- update(fit, y ~ 1)
-  expect_identical(new$backend, "rtmb")
   expect_false(new$control$multiphase)
   expect_identical(new$control$profile, fit$control$profile)
+  call <- update(fit, y ~ 1, evaluate = FALSE)
+  expect_false(eval(call)$control$multiphase)
 
-  # a supplied legacy control list without a backend keeps the fitted one
-  legacy <- fit$control
-  legacy$backend <- NULL
-  expect_identical(update(fit, control = legacy)$backend, "rtmb")
+  # an explicit control replaces the fitted one
+  new <- update(fit, control = sdmTMBcontrol(multiphase = TRUE))
+  expect_true(new$control$multiphase)
+})
 
-  # old objects without backend or control metadata fall back to TMB
-  options(sdmTMB.backend = "rtmb")
-  old <- fit
-  old$backend <- NULL
-  old$control <- NULL
-  expect_identical(update(old, evaluate = FALSE)$control$backend, "tmb")
-  old$control <- fit$control
-  old$control$backend <- NULL
-  expect_identical(update(old, y ~ 1)$backend, "tmb")
+test_that("the deprecated backend and normalize controls warn and are ignored", {
+  withr::local_options(lifecycle_verbosity = "warning")
+  expect_warning(ctl <- sdmTMBcontrol(backend = "tmb"), "TMB backend was removed")
+  expect_null(ctl$backend)
+  expect_warning(sdmTMBcontrol(backend = "rtmb"), "only backend")
+  expect_warning(ctl <- sdmTMBcontrol(normalize = TRUE), "deprecated")
+  expect_null(ctl$normalize)
+  expect_no_warning(sdmTMBcontrol())
+
+  fit <- sdmTMB(density ~ 1, data = pcod_2011, spatial = "off")
+  expect_identical(fit$backend, "rtmb")
+  # controls saved with these fields by older versions still update and fit
+  fit$control$backend <- "rtmb"
+  fit$control$normalize <- FALSE
+  new <- update(fit, density ~ depth_scaled)
+  expect_equal(new$model$convergence, 0L)
+})
+
+test_that("fits with the removed TMB backend ask for a refit", {
+  fit <- sdmTMB(density ~ 1, data = pcod_2011, spatial = "off")
+  fit$backend <- "tmb"
+  expect_error(predict(fit), "C\\+\\+ TMB backend")
+  expect_error(update(fit), "C\\+\\+ TMB backend")
+  expect_error(sdmTMB:::reload_model(fit), "C\\+\\+ TMB backend")
 })

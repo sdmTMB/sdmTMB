@@ -41,7 +41,9 @@ print_model_info <- function(x) {
     time <- NULL
   }
 
-  mesh <- paste0("Mesh: ", extract_call_name(x$call$mesh), " (", covariance, " covariance)\n")
+  mesh <- if (!is.null(x$call$mesh)) {
+    paste0("Mesh: ", extract_call_name(x$call$mesh), " (", covariance, " covariance)\n")
+  }
   data <- paste0("Data: ", extract_call_name(x$call$data), "\n")
   nonlocal_formula <- NULL
   if (!is.null(x$nonlocal_formula_parsed) &&
@@ -110,14 +112,24 @@ print_main_effects <- function(x, m = 1) {
   mm
 }
 
-print_smooth_effects <- function(x, m = 1, edf = NULL, silent = FALSE) {
+# Which smoother rows (`"block_active"`: penalized blocks, as in
+# `ln_smooth_sigma`; `"col_active"`: linear columns, as in `bs`) component `m`
+# uses. Fits from before components could have different smoothers use all.
+smooth_rows_active <- function(x, m, what) {
+  active <- x$smoothers[[what]]
+  if (is.null(active)) return(TRUE)
+  active[, m]
+}
+
+print_smooth_effects <- function(x, m = 1, silent = FALSE) {
   sr <- x$sd_report
   sr_se <- as.list(sr, "Std. Error")
   sr_est <- as.list(sr, "Estimate")
   if (x$tmb_data$has_smooths) {
     bs_se <- round(sr_se$bs[, m], 2L)
     bs <- round(sr_est$bs[, m], 2L)
-    sm <- parse_smoothers(formula = x$formula[[m]], data = x$data)
+    # names for all shared smoothers; rows a component doesn't use are dropped below
+    sm <- parse_smoothers(formula = x$smoothers$formula_no_bars, data = x$data)
     sm_names_orig <- unlist(lapply(sm$Zs, function(x) attr(x, "s.label")))
     sm_names <- gsub("s\\(", "", sm_names_orig)
     sm_names <- gsub("t2\\(", "", sm_names)
@@ -127,10 +139,12 @@ print_smooth_effects <- function(x, m = 1, edf = NULL, silent = FALSE) {
       if (grepl("^t2\\(", sm_names_orig[i])) {
         paste0("t2(", sm_names[i], ")")
       } else {
-        paste0("s", sm_names[i])
+        paste0("s", sub("\\):", ":", sm_names[i])) # `by` smooths: "s(x):f" to "sx:f"
       }
     })
-    sm_classes <- unlist(sm$classes)
+    # class of each penalized block, from its term (a `by` term has several bases)
+    basis_classes <- rep(unlist(sm$classes), lengths(sm$basis_out))
+    sm_classes <- basis_classes[sm$zs_basis]
 
     xx <- lapply(seq_along(sm_names_bs), function(i) {
       .x <- sm_names_bs[i]
@@ -261,16 +275,17 @@ print_smooth_effects <- function(x, m = 1, edf = NULL, silent = FALSE) {
     rownames(ln_re_sm_mat) <- ln_sm_names_sds
     colnames(ln_re_sm_mat) <- c("estimate", "std.error")
 
-    if (!is.null(edf)) {
-      if (.object_has_two_components(x, caller = "`print()`")) {
-        lp_regex <- paste0("^", m, "LP-s\\(")
-        edf <- edf[grepl(lp_regex, names(edf))]
-      } else {
-        edf <- edf[grepl("^s\\(", names(edf))]
-      }
-      edf <- round(edf, 2)
-      re_sm_mat <- cbind(re_sm_mat, matrix(edf, ncol = 1))
-      colnames(re_sm_mat)[2] <- "EDF"
+    if (!is.null(x$smooth_edf)) {
+      re_sm_mat <- cbind(re_sm_mat, EDF = round(x$smooth_edf[, m], 2L))
+    }
+    blocks <- smooth_rows_active(x, m, "block_active")
+    if (!any(blocks)) { # this component has no smoothers
+      return(list(smooth_effects = NULL, smooth_sds = NULL, ln_sd_estimates = NULL))
+    }
+    re_sm_mat <- re_sm_mat[blocks, , drop = FALSE]
+    ln_re_sm_mat <- ln_re_sm_mat[blocks, , drop = FALSE]
+    if (!is.null(mm_sm)) {
+      mm_sm <- mm_sm[smooth_rows_active(x, m, "col_active"), , drop = FALSE]
     }
   } else {
     re_sm_mat <- NULL
@@ -342,8 +357,9 @@ print_time_varying <- function(x, m = 1) {
 
     # append AR(1) parameters if they are estimated
     p <- tidy(x, effects = "ran_pars", model = m, silent = TRUE)
-    if(any(p$term == "rho_time")) {
-      rho_tv <- as.matrix(p[p$term=="rho_time",c("estimate","std.error")])
+    is_rho <- startsWith(p$term, "rho_time")
+    if (any(is_rho)) {
+      rho_tv <- as.matrix(p[is_rho, c("estimate", "std.error")])
       rho_tv[] <- round(rho_tv, 2L)
       colnames(rho_tv) <- colnames(mm_tv)
       row.names(rho_tv) <- paste("rho", tv_names, sep = "-")
@@ -602,15 +618,10 @@ print_header <- function(x) {
   cat(info$overall_family)
 }
 
-print_one_model <- function(x, m = 1, edf = FALSE, silent = FALSE) {
-  if (edf) {
-    .edf <- suppressMessages(cAIC(x, what = "EDF"))
-  } else {
-    .edf <- NULL
-  }
+print_one_model <- function(x, m = 1) {
   info <- print_model_info(x)
   main <- print_main_effects(x, m = m)
-  smooth <- print_smooth_effects(x, m = m, edf = .edf, silent = TRUE)
+  smooth <- print_smooth_effects(x, m = m, silent = TRUE)
   # iid_re <- print_iid_re(x, m = m)
   re <- print_int_slope_re(x, m = m)
   tv <- print_time_varying(x, m = m)
@@ -696,16 +707,17 @@ print.sdmTMB <- function(x, ...) {
     section1 <- if (multi_family) "Linear predictor 1" else "Delta/hurdle model 1"
     cat("\n", section1, ": -----------------------------------\n", sep = "")
   }
-  print_one_model(x, 1, ...)
+  print_one_model(x, 1)
   if (delta) {
     section2 <- if (multi_family) "Linear predictor 2" else "Delta/hurdle model 2"
     cat("\n", section2, ": -----------------------------------\n", sep = "")
-    print_one_model(x, 2, ...)
+    print_one_model(x, 2)
   }
   if (multi_family) {
     print_multi_family_summary(x)
   } else if (delta) {
     cat("\n")
   }
+  if (!is.null(x$preferential)) print_sampling(x)
   print_footer(x)
 }

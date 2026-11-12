@@ -312,7 +312,6 @@ areal_projection_matrix <- function(mesh, data) {
 
 prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
                                    anisotropy = FALSE, nonlocal_formula, priors = sdmTMBpriors(),
-                                   normalize, experimental = NULL,
                                    share_range_user = share_range,
                                    spatial_model = c("spde", "sar", "car"),
                                    sar_weight_style = c("row", "raw")) {
@@ -357,11 +356,6 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
     if (any(c(!is.na(priors$matern_s[1:2]), !is.na(priors$matern_st[1:2])))) {
       cli::cli_abort("PC Matern priors are not supported with areal domains.")
     }
-    if (!is.null(experimental) &&
-        "epsilon_model" %in% names(experimental) &&
-        !is.null(experimental$epsilon_model)) {
-      cli::cli_abort("`experimental$epsilon_model` is not supported with areal domains.")
-    }
     if (spatial_model == "car" && !Matrix::isSymmetric(spde$W_raw)) {
       cli::cli_abort("`spatial_model = \"car\"` requires a symmetric areal adjacency matrix.")
     }
@@ -375,7 +369,6 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
       A_spatial_index = seq_len(nrow(data)) - 1L,
       W_ss = if (spatial_model == "car" || sar_weight_style == "raw") spde$W_raw else spde$W,
       sar_weight_style = sar_weight_style,
-      normalize_in_r = 0L,
       barrier = 0L,
       barrier_scaling = c(1, 1),
       anisotropy = 0L,
@@ -387,17 +380,13 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
 
   barrier <- "spde_barrier" %in% names(spde)
   if (barrier && anisotropy) {
-    cli::cli_warn("Using a barrier mesh; therefore, anistropy will be disabled.")
+    cli::cli_warn("Using a barrier mesh; therefore, anisotropy will be disabled.")
     anisotropy <- FALSE
   }
   if (any(c(!is.na(priors$matern_s[1:2]), !is.na(priors$matern_st[1:2]))) && anisotropy) {
-    cli::cli_warn("Using PC Matern priors; therefore, anistropy will be disabled.")
+    cli::cli_warn("Using PC Matern priors; therefore, anisotropy will be disabled.")
     anisotropy <- FALSE
   }
-  if (!"A_st" %in% names(spde)) {
-    cli::cli_abort("`mesh` was created with an old version of `make_mesh()`.")
-  }
-
   list(
     type = "spde",
     spatial_model = spatial_model,
@@ -407,7 +396,6 @@ prepare_spatial_domain <- function(mesh, data, mesh_missing, share_range = TRUE,
     A_spatial_index = spde$sdm_spatial_id - 1L,
     W_ss = dummy_sparse_1x1(),
     sar_weight_style = "row",
-    normalize_in_r = as.integer(normalize),
     barrier = as.integer(barrier),
     barrier_scaling = if (barrier) spde$barrier_scaling else c(1, 1),
     anisotropy = as.integer(anisotropy),

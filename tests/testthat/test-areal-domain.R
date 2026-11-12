@@ -246,7 +246,6 @@ test_that("prepare_spatial_domain returns areal domain pieces", {
   expect_s4_class(out$W_ss, "dgCMatrix")
   expect_equal(dim(out$W_ss), c(2L, 2L))
   expect_equal(as.matrix(out$W_ss), as.matrix(d$W))
-  expect_identical(out$normalize_in_r, 0L)
   expect_identical(out$barrier, 0L)
   expect_identical(out$anisotropy, 0L)
 })
@@ -399,19 +398,6 @@ test_that("prepare_spatial_domain validates unsupported areal options", {
     ),
     "Barrier models are not supported"
   )
-
-  expect_error(
-    prepare_spatial_domain(
-      mesh = d,
-      data = dat,
-      mesh_missing = FALSE,
-      anisotropy = FALSE,
-      nonlocal_formula = NULL,
-      experimental = list(epsilon_model = ~x),
-      spatial_model = "sar"
-    ),
-    "epsilon_model.*not supported"
-  )
 })
 
 test_that("set_limits applies default bounds for SAR rho", {
@@ -549,7 +535,7 @@ test_that("spread_sims uses areal field-scale transform when areal flag is set",
     X = stats::runif(60),
     Y = stats::runif(60)
   )
-  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.2)
+  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.1)
   fit_spde <- sdmTMB(
     y ~ x,
     data = dat,
@@ -805,4 +791,29 @@ test_that("no-spatial areal models do not estimate SAR rho", {
 
   expect_s3_class(fit, "sdmTMB")
   expect_false("logit_rho_sar" %in% names(fit$tmb_obj$par))
+})
+
+test_that("simulate_new works with areal SAR/CAR domains", {
+  skip_on_cran()
+  skip_if_not_installed("sf")
+  domain <- make_areal_domain(ohio_sf, id_column = "county")
+  d <- data.frame(county = rep(domain$unit_names, 20))
+
+  for (m in c("sar", "car")) {
+    s <- simulate_new(~ 1, data = d, mesh = domain, spatial_model = m,
+      B = 0.5, sigma_O = 0.6, phi = 0.3, rho_sar = 0.7, alpha_car = 0.9,
+      seed = 1)
+    expect_identical(names(s)[1:2], c("county", "omega_s"))
+    expect_equal(nrow(s), nrow(d))
+    fit <- sdmTMB(observed ~ 1, data = s, mesh = domain, spatial_model = m)
+    p <- tidy(fit, "ran_pars")
+    expect_equal(p$estimate[p$term == "sigma_O"], 0.6, tolerance = 0.15)
+    expect_equal(p$estimate[p$term == "phi"], 0.3, tolerance = 0.1)
+  }
+
+  expect_error(
+    simulate_new(~ 1, data = d, mesh = domain, spatial_model = "car",
+      B = 0.5, sigma_O = 0.6, phi = 0.3),
+    "alpha_car"
+  )
 })

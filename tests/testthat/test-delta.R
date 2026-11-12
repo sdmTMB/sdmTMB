@@ -235,3 +235,17 @@ test_that("delta_gengamma() Poisson-link family fits", {
   s <- as.list(fit_pgg$sd_report, "Std. Error")
   expect_true(sum(is.na(s$b_j)) == 0L)
 })
+
+test_that("List arguments must match the number of model components", {
+  f <- function(...) sdmTMB(data = pcod_2011, mesh = pcod_mesh_2011, do_fit = FALSE, ...)
+  expect_error(f(formula = list(density ~ 1, density ~ depth_scaled), family = tweedie()),
+    "`formula` has 2 elements")
+  expect_error(f(formula = list(density ~ 1), family = delta_gamma()),
+    "`formula` has 1 element")
+  expect_error(f(formula = density ~ 1, spatial = list("on", "off"), family = tweedie()),
+    "`spatial` has 2 elements")
+  expect_error(f(formula = density ~ 1, spatial = list("off"), family = delta_gamma()),
+    "`spatial` has 1 element")
+  expect_error(f(formula = density ~ 1, time = "year", spatiotemporal = list("iid"),
+    family = delta_gamma()), "`spatiotemporal` has 1 element")
+})

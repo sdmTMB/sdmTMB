@@ -1,66 +1,106 @@
 #' Extract a relative biomass/abundance index, center of gravity, effective
 #' area occupied, or weighted average
 #'
+#' Calculate quantities derived from a model fitted with [sdmTMB()] by
+#' combining its predictions over a grid (`newdata`) for each time step, with
+#' standard errors and confidence intervals that account for uncertainty in
+#' both fixed and random effects:
+#'
+#' * `get_index()`: total abundance or biomass (an index).
+#' * `get_index_split()`: the same, calculated a few time steps at a time to
+#'   reduce memory use.
+#' * `get_cog()`: center of gravity (the mean x and y coordinates, weighted by
+#'   abundance).
+#' * `get_eao()`: effective area occupied.
+#' * `get_weighted_average()`: the mean of any variable weighted by abundance
+#'   (e.g., the average depth or temperature occupied).
+#'
 #' @param obj A model fitted with [sdmTMB()]. For backwards compatibility,
 #'   output from [predict.sdmTMB()] with `return_tmb_object = TRUE` is also
-#'   accepted.
-#' @param newdata New data (e.g., a prediction grid by year) to pass to
-#'   [predict.sdmTMB()]. Not used when `obj` is legacy prediction output.
-#' @param bias_correct Should bias correction be implemented via
-#'   [TMB::sdreport()]? Bias correction accounts for the non-linear
-#'   transformation of random effects when calculating the index. Recommended to
-#'   be `TRUE` for final analyses, but can be set to `FALSE` for faster
-#'   calculation while experimenting with models. See Thorson and Kristensen
-#'   (2016) in the References.
-#' @param level The confidence level.
-#' @param area Grid cell area for area weighting the index. Can be: (1) a
-#'   numeric vector of length `nrow(newdata)` with area for each grid cell, (2)
-#'   a single numeric value to apply to all grid cells, or (3) a character value
-#'   giving the column name in `newdata` containing areas. See Details for
-#'   non-spatial uses of `area` as an integration multiplier.
-#' @param offset An optional numeric offset vector with one value per row of
-#'   `newdata`.
-#' @param silent Logical. Suppress progress messages?
-#' @param derived_link Optional override for the inverse link used when
-#'   calculating derived quantities such as the index. By default, the fitted
-#'   family link is used. Currently supported for non-delta `binomial()` and
-#'   `betabinomial()` models fit with `link = "cloglog"`.
-#' @param predict_args A named list of less commonly used arguments to pass to
-#'   [predict.sdmTMB()]. `newdata` and `offset` should be supplied directly.
-#' @param ... Passed to [TMB::sdreport()].
+#'   accepted (not for `get_index_split()`).
+#' @param newdata A data frame of locations (and times) to combine predictions
+#'   over, usually a grid covering the area of interest replicated for each
+#'   time step (see [replicate_df()]). Same requirements as `newdata` in
+#'   [predict.sdmTMB()]. Results are returned only for time steps in
+#'   `newdata`. Required unless `obj` is legacy prediction output.
+#' @param bias_correct Logical: apply bias correction? Predictions plugged in
+#'   at the estimated random effects can be biased once transformed to the
+#'   response scale and summed; bias correction (Thorson and Kristensen 2016)
+#'   adjusts the estimate for this. Recommended for final results but slower,
+#'   so it can be turned off while exploring models. The standard errors are
+#'   not bias-corrected.
+#' @param level The confidence level of the intervals.
+#' @param area The area of each row of `newdata` (e.g., grid cell area),
+#'   used to weight predictions when combining them: (1) a numeric vector with
+#'   one value per row of `newdata`, (2) a single value for all rows, or (3)
+#'   the name of a column in `newdata`. With the default of 1, the index is a
+#'   sum of densities rather than an area-weighted total. See Details for
+#'   other uses.
+#' @param offset An optional numeric vector of offset values, one per row of
+#'   `newdata`, or a single value for all rows (not a column name). If `NULL`
+#'   (default), the offset is 0, so
+#'   predictions are per unit of the offset (e.g., density rather than catch
+#'   when the offset is log area swept).
+#' @param silent Logical: suppress TMB's output while calculating? In
+#'   `get_index_split()`, controls the progress bar instead.
+#' @param derived_link Optional link whose inverse is applied to the linear
+#'   predictor, in place of the model's own link, before combining
+#'   predictions. Currently only available for non-delta [binomial()],
+#'   [censored_binomial()], [betabinomial()], and [censored_betabinomial()]
+#'   models fit with `link = "cloglog"`; there, `derived_link = "log"` sums
+#'   expected event rates (e.g., catch per hook) instead of probabilities. See
+#'   the [hook competition
+#'   vignette](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html).
+#' @param predict_args A named list of other arguments to pass to
+#'   [predict.sdmTMB()] (supply `newdata` and `offset` directly). For example,
+#'   `list(re_form = NA)` calculates the quantity with the spatial and
+#'   spatiotemporal random fields set to zero, and `list(re_form_iid = NA)`
+#'   does the same for IID random effects.
+#' @param ... Passed to [RTMB::sdreport()].
 #'
 #' @details
-#' More generally, `area` is the multiplier used to integrate response-scale
-#' predictions. For binomial or beta-binomial models fit to proportions with
-#' `weights` specifying the number of trials, predictions are expected
-#' proportions per trial. In that case, `area` can be used as a standard number
-#' of trials (e.g., hooks per longline set) to obtain an expected-count index.
-#' The original fitting `weights` are not automatically reused for index
-#' standardization; supply the desired standardization multiplier through
-#' `area`.
+#' For each time step, predictions are converted to the response scale (for
+#' delta models, combining both components), multiplied by `area`, and
+#' combined. With \eqn{\mu_i} the prediction and \eqn{a_i} the area for row
+#' \eqn{i}:
 #'
-#' @seealso [get_index_sims()]
+#' * Index: \eqn{\sum_i a_i \mu_i}.
+#' * Weighted average: \eqn{\sum_i a_i \mu_i v_i / \sum_i a_i \mu_i}, for
+#'   values \eqn{v_i} given by `vector`. Center of gravity is the weighted
+#'   average of the x and y coordinates, in the units of the coordinates used
+#'   to build the mesh.
+#' * Effective area occupied: \eqn{(\sum_i a_i \mu_i)^2 / \sum_i a_i
+#'   \mu_i^2}, the area needed to hold the total if density were spread
+#'   evenly at the abundance-weighted average density.
+#'
+#' Standard errors use the delta method. Confidence intervals for the index
+#' and effective area occupied are calculated on the log scale, so they are
+#' asymmetric and always positive. Those for the center of gravity and
+#' weighted average are calculated on the original scale.
+#'
+#' More generally, `area` is any multiplier on the response-scale
+#' predictions. For example, binomial or beta-binomial models fit to
+#' proportions (with `weights` giving the number of trials) predict
+#' proportions per trial. Setting `area` to a standard number of trials
+#' (e.g., hooks per longline set) gives an index of expected counts. The
+#' fitting `weights` are not reused automatically.
+#'
+#' @seealso [get_index_sims()] for derived quantities from simulation draws.
 #' @return
-#' For `get_index()`:
-#' A data frame with columns for time, estimate (area-weighted total abundance
-#' or biomass), lower and upper confidence intervals, log estimate, and standard
-#' error of the log estimate.
+#' A data frame with one row per time step (time column named as in the
+#' fitted model), a `type` column, and:
 #'
-#' For `get_cog()`:
-#' A data frame with columns for time, estimate (center of gravity: the
-#' abundance-weighted mean x and y coordinates), lower and upper confidence
-#' intervals, and standard error of center of gravity coordinates.
-#'
-#' For `get_eao()`:
-#' A data frame with columns for time, estimate (effective area occupied: the
-#' area required if the population was spread evenly at the arithmetic mean
-#' density), lower and upper confidence intervals, log EAO, and standard error
-#' of the log EAO estimates.
-#'
-#' For `get_weighted_average()`:
-#' A data frame with columns for time, estimate (weighted average of the
-#' provided vector, weighted by predicted density), lower and upper confidence
-#' intervals, and standard error of the estimates.
+#' * `get_index()` and `get_index_split()`: `est` (the index), `lwr` and `upr`
+#'   (confidence interval), `log_est` (log of `est`), `se` (standard error of
+#'   `log_est`), and `se_natural` (standard error of `est`).
+#' * `get_cog()`: with `format = "long"` (default), two rows per time step,
+#'   one per coordinate (`coord` is `"X"` or `"Y"`), with `est`, `lwr`, `upr`,
+#'   and `se` (standard error of `est`). With `format = "wide"`, one row per
+#'   time step with these columns suffixed `_x` and `_y`.
+#' * `get_eao()`: `est`, `lwr`, `upr`, `log_est`, and `se` (standard error of
+#'   `log_est`).
+#' * `get_weighted_average()`: `est`, `lwr`, `upr`, and `se` (standard error
+#'   of `est`).
 #'
 #' @references
 #'
@@ -103,8 +143,8 @@
 #' if (ggplot2_installed()) {
 #' library(ggplot2)
 #'
-#' # use a small number of knots for this example to make it fast:
-#' mesh <- make_mesh(pcod, c("X", "Y"), n_knots = 60)
+#' # use a coarse mesh for this example to make it fast:
+#' mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 20)
 #'
 #' # fit a spatiotemporal model:
 #' m <- sdmTMB(
@@ -123,10 +163,8 @@
 #'   geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.4) +
 #'   ylim(0, NA)
 #'
-#' # do that in 2 chunks
-#' # only necessary for very large grids to save memory
-#' # will be slower but save memory
-#' # note the first argument is the model fit object:
+#' # the same, calculated in 2 chunks of years;
+#' # slower but uses less memory for very large grids:
 #' ind <- get_index_split(m, newdata = nd, nsplit = 2, bias_correct = TRUE)
 #'
 #' # center of gravity:
@@ -164,11 +202,10 @@ get_index <- function(obj, newdata = NULL, bias_correct = TRUE, level = 0.95,
     bias_correct <- newdata
     newdata <- NULL
   }
-  area_missing <- missing(area)
   obj <- .prepare_index_input(obj, newdata, offset, predict_args)
-  d <- get_generic(obj, value_name = "link_total",
+  d <- get_generic(obj, value_name = "link_total", silent = silent,
     bias_correct = bias_correct, level = level, trans = exp, area = area,
-    derived_link = derived_link, area_missing = area_missing, ...)
+    derived_link = derived_link, ...)
   names(d)[names(d) == "trans_est"] <- "log_est"
   d$type <- "index"
   d
@@ -195,8 +232,9 @@ get_index <- function(obj, newdata = NULL, bias_correct = TRUE, level = 0.95,
   if (.family_spec_has_two_components(family_spec)) {
     cli_abort("`derived_link` is not currently supported for delta or hurdle families.")
   }
-  if (!family$family %in% c("binomial", "betabinomial")) {
-    cli_abort("`derived_link` is currently only supported for binomial and betabinomial models.")
+  if (!family$family %in% c("binomial", "censored_binomial", "betabinomial",
+    "censored_betabinomial")) {
+    cli_abort("`derived_link` is currently only supported for (censored) binomial and betabinomial models.")
   }
   if (!identical(family$link, "cloglog")) {
     cli_abort("`derived_link` is currently only supported when the fitted family uses `link = 'cloglog'`.")
@@ -253,21 +291,21 @@ chunk_time <- function(x, chunks) {
 
   if (inherits(obj, "sdmTMB")) {
     if (is.null(newdata)) {
-      if (!is.null(offset)) {
-        cli_abort("`offset` can only be supplied with `newdata`.")
-      }
-      if (length(predict_args)) {
-        cli_abort("`predict_args` can only be supplied with `newdata`.")
-      }
-      return(obj)
+      cli_abort(c(
+        "`newdata` is required when `obj` is a fitted model.",
+        "i" = "Use, e.g., `get_index(fit, newdata = data)`."
+      ))
     }
     if (!is.data.frame(newdata)) {
       cli_abort("`newdata` must be a data frame.")
     }
-    if (!is.null(offset) &&
-        (!is.numeric(offset) || length(offset) != nrow(newdata))) {
-      cli_abort("`offset` must be a numeric vector with one value per row of `newdata`.")
+    # A NULL offset is 0 here (per unit of offset), which is what an index
+    # usually needs, so don't trigger the predict() offset message.
+    if (is.null(offset)) offset <- 0
+    if (!is.numeric(offset) || !length(offset) %in% c(1L, nrow(newdata))) {
+      cli_abort("`offset` must have length one or one value per row of `newdata`.")
     }
+    offset <- rep_len(offset, nrow(newdata))
     args <- c(list(
       object = obj,
       newdata = newdata,
@@ -302,14 +340,12 @@ chunk_time <- function(x, chunks) {
 }
 
 #' @rdname get_index
-#' @param nsplit The number of splits to do the calculation in. For memory
-#'   intensive operations (large grids and/or models), it can be helpful to
-#'   do the prediction, area integration, and bias correction on subsets of
-#'   time slices (e.g., years) instead of all at once. If `nsplit > 1`, this
-#'   will usually be slower but with reduced memory use.
+#' @param nsplit The number of chunks of time steps to calculate the index in
+#'   separately. For large grids or models, `nsplit > 1` reduces memory use
+#'   but is usually slower.
 #' @export
 get_index_split <- function(
-    obj, newdata, bias_correct = FALSE, nsplit = 1,
+    obj, newdata, bias_correct = TRUE, nsplit = 1,
     level = 0.95, area = 1, offset = NULL, silent = FALSE, predict_args = list(),
     derived_link = NULL, ...) {
   if (!inherits(obj, "sdmTMB")) {
@@ -330,12 +366,11 @@ get_index_split <- function(
     offset <- predict_args$offset
     predict_args$offset <- NULL
   }
-  if (is.null(offset)) {
-    offset <- rep(0, nrow(newdata))
+  if (is.null(offset)) offset <- 0
+  if (!is.numeric(offset) || !length(offset) %in% c(1L, nrow(newdata))) {
+    cli_abort("`offset` must have length one or one value per row of `newdata`.")
   }
-  if (!is.numeric(offset) || length(offset) != nrow(newdata)) {
-    cli_abort("`offset` must be a numeric vector with one value per row of `newdata`.")
-  }
+  offset <- rep_len(offset, nrow(newdata))
   if (is.character(area)) {
     if (length(area) != 1L || !area %in% names(newdata)) {
       cli_abort("A character `area` must name a column in `newdata`.")
@@ -378,7 +413,8 @@ get_index_split <- function(
 }
 
 #' @rdname get_index
-#' @param format Long or wide.
+#' @param format The shape of the output: `"long"` or `"wide"` (see
+#'   Value).
 #' @export
 get_cog <- function(obj, newdata = NULL, bias_correct = FALSE, level = 0.95,
   format = c("long", "wide"), area = 1, offset = NULL, silent = TRUE,
@@ -392,34 +428,23 @@ get_cog <- function(obj, newdata = NULL, bias_correct = FALSE, level = 0.95,
     bias_correct <- newdata
     newdata <- NULL
   }
-  area_missing <- missing(area)
   obj <- .prepare_index_input(obj, newdata, offset, predict_args)
 
-  is_fit_obj <- inherits(obj, "sdmTMB")
-  fit_obj <- if (is_fit_obj) obj else obj$fit_obj
-  pred_tmb_data <- if (is_fit_obj) obj$tmb_data else obj$pred_tmb_data
-  xy_cols <- fit_obj$spde$xy_cols
+  xy_cols <- obj$fit_obj$spde$xy_cols
   if (is.null(xy_cols)) {
     cli_abort("`get_cog()` requires x/y coordinates and isn't available for areal models.")
   }
-  # for a bare `do_index = TRUE` fit, `obj$data` is the *observation* data, so
-  # coordinates must come from the stored prediction TMB data instead
-  if (!is_fit_obj && all(xy_cols %in% names(obj$data))) {
-    x_vec <- obj$data[[xy_cols[[1]]]]
-    y_vec <- obj$data[[xy_cols[[2]]]]
-  } else if (!is.null(pred_tmb_data$proj_lon) &&
-             !is.null(pred_tmb_data$proj_lat)) {
-    x_vec <- pred_tmb_data$proj_lon
-    y_vec <- pred_tmb_data$proj_lat
-  } else {
+  if (!all(xy_cols %in% names(obj$data))) {
     cli_abort("Prediction data must include the x/y columns used for the model.")
   }
-  d_x <- get_generic(obj, value_name = "weighted_avg",
+  x_vec <- obj$data[[xy_cols[[1]]]]
+  y_vec <- obj$data[[xy_cols[[2]]]]
+  # x and y share one objective function, sdreport, and bias correction
+  d_xy <- get_generic(obj, value_name = "weighted_avg", silent = silent,
     bias_correct = bias_correct, level = level, trans = I, area = area,
-    vector = x_vec, derived_link = derived_link, area_missing = area_missing, ...)
-  d_y <- get_generic(obj, value_name = "weighted_avg",
-    bias_correct = bias_correct, level = level, trans = I, area = area,
-    vector = y_vec, derived_link = derived_link, area_missing = area_missing, ...)
+    vector = cbind(x_vec, y_vec), derived_link = derived_link, ...)
+  d_x <- d_xy[[1]]
+  d_y <- d_xy[[2]]
   d_x <- d_x[, names(d_x) != "trans_est", drop = FALSE]
   d_y <- d_y[, names(d_y) != "trans_est", drop = FALSE]
   d_x$coord <- "X"
@@ -431,15 +456,15 @@ get_cog <- function(obj, newdata = NULL, bias_correct = FALSE, level = 0.95,
     y <- d[d$coord == "Y", c("est", "lwr", "upr", "se"),drop=FALSE]
     names(x) <- paste0(names(x), "_", "x")
     names(y) <- paste0(names(y), "_", "y")
-    d <- cbind(d[d$coord == "X", fit_obj$time, drop=FALSE], cbind(x, y))
+    d <- cbind(d[d$coord == "X", obj$fit_obj$time, drop=FALSE], cbind(x, y))
   }
   d$type <- "cog"
   d
 }
 
 #' @rdname get_index
-#' @param vector A numeric vector of the same length as the prediction data,
-#'   containing the values to be averaged (e.g., depth, temperature).
+#' @param vector A numeric vector of values to average (e.g., depth or
+#'   temperature), one per row of `newdata`.
 #' @export
 get_weighted_average <- function(obj, newdata = NULL, vector, bias_correct = FALSE,
   level = 0.95, area = 1, offset = NULL, silent = TRUE, derived_link = NULL,
@@ -450,12 +475,11 @@ get_weighted_average <- function(obj, newdata = NULL, vector, bias_correct = FAL
     vector <- newdata
     newdata <- NULL
   }
-  area_missing <- missing(area)
   obj <- .prepare_index_input(obj, newdata, offset, predict_args)
 
-  d <- get_generic(obj, value_name = "weighted_avg",
+  d <- get_generic(obj, value_name = "weighted_avg", silent = silent,
     bias_correct = bias_correct, level = level, trans = I, area = area,
-    vector = vector, derived_link = derived_link, area_missing = area_missing, ...)
+    vector = vector, derived_link = derived_link, ...)
   d <- d[, names(d) != "trans_est", drop = FALSE]
   d$type <- "weighted_average"
   d
@@ -483,20 +507,86 @@ get_eao <- function(obj,
     bias_correct <- newdata
     newdata <- NULL
   }
-  area_missing <- missing(area)
   obj <- .prepare_index_input(obj, newdata, offset, predict_args)
 
-  d <- get_generic(obj, value_name = c("log_eao"),
+  d <- get_generic(obj, value_name = c("log_eao"), silent = silent,
     bias_correct = bias_correct, level = level, trans = exp, area = area,
-    derived_link = derived_link, area_missing = area_missing, ...)
+    derived_link = derived_link, ...)
   names(d)[names(d) == "trans_est"] <- "log_est"
-  d$type <- "eoa"
+  d$type <- "eao"
   d
+}
+
+# Estimates and SEs of an index objective's reports, as from
+# `summary(<sdreport>, "report")`. `args` are make_sdmTMB_adfun() arguments.
+index_report <- function(fit, args, par, ...) {
+  if (...length() == 0L) {
+    out <- joint_precision_report(fit, args, par)
+    if (!is.null(out)) return(out)
+  }
+  new_obj <- do.call(make_sdmTMB_adfun, args)
+  summary(index_sdreport(fit, new_obj, par, ...), "report")
+}
+
+# sdreport()'s delta-method covariance of the reports is J Q^-1 J', with J
+# their Jacobian in all (fixed and random) parameters at the fitted mode and Q
+# the fit's joint precision. Projection rows don't enter the likelihood, so Q
+# applies; this skips re-optimizing the random effects and computing their
+# marginal variances. NULL unless it verifiably applies.
+joint_precision_report <- function(fit, args, par) {
+  sr <- fit$sd_report
+  Q <- sr$jointPrecision
+  random <- fit$tmb_obj$env$random
+  if (!is.null(args$profile) || is.null(Q) ||
+      !length(random) || !isTRUE(sr$pdHess) ||
+      !identical(unname(sr$par.fixed), unname(par))) {
+    return(NULL)
+  }
+  args$random <- NULL
+  obj <- do.call(make_sdmTMB_adfun, c(args, ADreport = TRUE))
+  x <- obj$par
+  if (!identical(names(x), colnames(Q)) ||
+      length(x) != length(par) + length(sr$par.random)) {
+    return(NULL)
+  }
+  x[random] <- sr$par.random
+  x[-random] <- par
+  J <- obj$gr(x)
+  QiJt <- tryCatch(as.matrix(Matrix::solve(Q, t(J))), error = function(e) NULL)
+  if (is.null(QiJt)) return(NULL)
+  se <- sqrt(rowSums(J * t(QiJt)))
+  if (any(!is.finite(se))) return(NULL)
+  est <- obj$fn(x)
+  out <- cbind(Estimate = as.numeric(est), `Std. Error` = se)
+  rownames(out) <- names(est)
+  out
+}
+
+# `sdreport()` for an index objective. Projection rows don't enter the
+# likelihood, so at the fitted parameters the fixed-effect Hessian is the fit's
+# and needn't be recomputed (about two gradient evaluations per fixed effect).
+index_sdreport <- function(fit, new_obj, par,
+  hessian.fixed = fit_hessian_fixed(fit, new_obj, par), ...) {
+  RTMB::sdreport(new_obj, par.fixed = par, hessian.fixed = hessian.fixed, ...)
+}
+
+# The fit's fixed-effect Hessian, or NULL (recompute) unless it verifiably
+# applies to `new_obj` at `par`.
+fit_hessian_fixed <- function(fit, new_obj, par) {
+  sr <- fit$sd_report
+  if (!is.null(fit$control$profile) || is.null(sr) || !isTRUE(sr$pdHess) ||
+      !identical(unname(sr$par.fixed), unname(par)) ||
+      !isTRUE(all.equal(as.numeric(new_obj$fn(par)), fit$model$objective,
+        tolerance = 1e-8))) {
+    return(NULL)
+  }
+  H <- tryCatch(solve(sr$cov.fixed), error = function(e) NULL)
+  if (is.null(H) || any(!is.finite(H))) NULL else H
 }
 
 get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
   trans = I, area = 1, vector = NULL, silent = TRUE, derived_link = NULL,
-  area_missing = FALSE, ...) {
+  ...) {
 
   # if offset is a character vector, use the value in the dataframe
   if (is.character(area)) {
@@ -505,166 +595,72 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
 
   reinitialize(obj$fit_obj)
 
-  is_fit_obj <- inherits(obj, "sdmTMB")
-  # `do_index = TRUE` fits precompute only the index totals
-  # (`calc_index_totals`) with the fit-time `area`; other derived quantities
-  # and explicit `area` overrides must rebuild the objective function or the
-  # requested values are missing from (or wrong in) the stored sdreport
-  use_precomputed <- is_fit_obj &&
-    isTRUE(obj$do_index) &&
-    value_name[[1]] == "link_total" &&
-    is.null(derived_link) &&
-    isTRUE(area_missing)
-  rebuild_from_fit <- is_fit_obj &&
-    value_name[[1]] %in% c("link_total", "weighted_avg", "log_eao") &&
-    !use_precomputed
+  # Only these reports need standard errors from the objective
+  adreport <- c(value_name,
+    switch(value_name[[1]], link_total = "total", log_eao = "eao"))
 
-  if (!use_precomputed && !rebuild_from_fit) {
-    if (is.null(obj$pred_tmb_data$proj_X_ij) ||
-        is.null(obj$pred_tmb_data$proj_time_include)) {
-      cli_abort(c(
-        "Prediction data needed for index calculation are missing.",
-        "i" = "Use `get_index(fit, newdata = data)` with the current sdmTMB version."
-      ))
-    }
-
-    nr1 <- nrow(obj$data)
-    nr2 <- nrow(obj$pred_tmb_data$proj_X_ij[[1]])
-    if (nr1 != nr2) {
-      cli_abort(c("Predicted data appears to be modified after prediction",
-        "i" = "Please filter `newdata` before predicting."))
-    }
-
-    if (bias_correct && obj$fit_obj$control$parallel > 1) {
-      cli_warn("Bias correction can be slower with multiple cores; using 1 core.")
-      obj$fit_obj$control$parallel <- 1L
-    }
-
-    assert_that(!is.null(area))
-    if (length(area) > 1L) {
-      n_fakend <- if (!is.null(obj$fake_nd)) nrow(obj$fake_nd) else 0L
-      area <- c(area, rep(1, n_fakend)) # pad area with any extra time
-    }
-    if (length(area) != nrow(obj$pred_tmb_data$proj_X_ij[[1]]) && length(area) != 1L) {
-      cli_abort("`area` should be of the same length as `nrow(newdata)` or of length 1.")
-    }
-    if (length(area) == 1L)
-      area <- rep(area, nrow(obj$pred_tmb_data$proj_X_ij[[1]]))
-
-    tmb_data <- obj$pred_tmb_data
-    if (is.null(tmb_data$proj_time_include)) {
-      cli_abort("Missing `proj_time_include` in prediction data. Please recreate the index input with the current sdmTMB version.")
-    }
-    tmb_data$link_pred <- .resolve_link_pred(obj$fit_obj, tmb_data, derived_link)
-    tmb_data$area_i <- area
-    if (value_name[1] == "link_total")
-      tmb_data$calc_index_totals <- 1L
-    if (value_name[1] == "log_eao")
-      tmb_data$calc_eao <- 1L
-    if (value_name[1] == "weighted_avg") {
-      if (is.null(vector)) {
-        cli_abort("A vector must be provided for weighted average calculation.")
-      }
-      if (length(vector) != nrow(obj$pred_tmb_data$proj_X_ij[[1]])) {
-        cli_abort("`vector` should be of the same length as `nrow(newdata)`.")
-      }
-      tmb_data$proj_vector <- vector
-      tmb_data$calc_weighted_avg <- 1L
-    }
-
-    pars <- get_pars(obj$fit_obj)
-
-    eps_name <- "eps_index" # FIXME break out into function; add for COG?
-    pars[[eps_name]] <- numeric(0)
-
-    new_obj <- make_sdmTMB_adfun(
-      data = tmb_data,
-      parameters = pars,
-      profile = obj$fit_obj$control$profile,
-      map = obj$fit_obj$tmb_map,
-      random = obj$fit_obj$tmb_random,
-      backend = backend_sdmTMB(obj$fit_obj),
-      silent = silent
-    )
-
-    old_par <- obj$fit_obj$model$par
-    bc <- FALSE ## done below
-    sr <- sdreport_sdmTMB(new_obj, par.fixed = old_par, bias.correct = bc, ...)
-  } else if (rebuild_from_fit) {
-    reinitialize(obj)
-    if (bias_correct && obj$control$parallel > 1) {
-      cli_warn("Bias correction can be slower with multiple cores; using 1 core.")
-      obj$control$parallel <- 1L
-    }
-
-    assert_that(!is.null(area))
-    if (isTRUE(area_missing)) {
-      area <- obj$tmb_data$area_i
-    }
-    if (length(area) != length(obj$tmb_data$area_i) && length(area) != 1L) {
-      cli_abort("`area` should be of the same length as the original index prediction data or of length 1.")
-    }
-    tmb_data <- obj$tmb_data
-    if (is.null(tmb_data$proj_time_include)) {
-      cli_abort("Missing `proj_time_include` in fitted data. Please refit or re-run with the current sdmTMB version.")
-    }
-    if (length(area) == 1L) {
-      tmb_data$area_i <- rep(area, length(tmb_data$area_i))
-    } else {
-      tmb_data$area_i <- area
-    }
-    tmb_data$link_pred <- .resolve_link_pred(obj, tmb_data, derived_link)
-    if (value_name[1] == "link_total")
-      tmb_data$calc_index_totals <- 1L
-    if (value_name[1] == "log_eao")
-      tmb_data$calc_eao <- 1L
-    if (value_name[1] == "weighted_avg") {
-      if (is.null(vector)) {
-        cli_abort("A vector must be provided for weighted average calculation.")
-      }
-      if (length(vector) != nrow(tmb_data$proj_X_ij[[1]])) {
-        cli_abort("`vector` should be of the same length as the original index prediction data.")
-      }
-      tmb_data$proj_vector <- vector
-      tmb_data$calc_weighted_avg <- 1L
-    }
-
-    pars <- get_pars(obj)
-    eps_name <- "eps_index"
-    pars[[eps_name]] <- numeric(0)
-
-    new_obj <- make_sdmTMB_adfun(
-      data = tmb_data,
-      parameters = pars,
-      profile = obj$control$profile,
-      map = obj$tmb_map,
-      random = obj$tmb_random,
-      backend = backend_sdmTMB(obj),
-      silent = silent
-    )
-
-    old_par <- obj$model$par
-    bc <- FALSE
-    sr <- sdreport_sdmTMB(new_obj, par.fixed = old_par, bias.correct = bc, ...)
-    obj <- list(fit_obj = obj)
-  } else {
-    sr <- obj$sd_report # already done in sdmTMB(do_index = TRUE)
-    pars <- get_pars(obj)
-    tmb_data <- obj$tmb_data
-    if (is.null(tmb_data$proj_time_include)) {
-      cli_abort("Missing `proj_time_include` in fitted data. Please refit or re-run with the current sdmTMB version.")
-    }
-    tmb_data$link_pred <- .resolve_link_pred(obj, tmb_data, derived_link)
-    obj <- list(fit_obj = obj) # to match regular format
-    eps_name <- "eps_index"
+  nr1 <- nrow(obj$data)
+  nr2 <- nrow(obj$pred_tmb_data$proj_X_ij[[1]])
+  if (nr1 != nr2) {
+    cli_abort(c("Predicted data appears to be modified after prediction",
+      "i" = "Please filter `newdata` before predicting."))
   }
-  sr_est <- as.list(sr, "Estimate", report = TRUE)
+
+  if (bias_correct && obj$fit_obj$control$parallel > 1) {
+    cli_warn("Bias correction can be slower with multiple cores; using 1 core.")
+    obj$fit_obj$control$parallel <- 1L
+  }
+
+  assert_that(!is.null(area))
+  if (length(area) > 1L) {
+    n_fakend <- if (!is.null(obj$fake_nd)) nrow(obj$fake_nd) else 0L
+    area <- c(area, rep(1, n_fakend)) # pad area with any extra time
+  }
+  if (length(area) != nrow(obj$pred_tmb_data$proj_X_ij[[1]]) && length(area) != 1L) {
+    cli_abort("`area` should be of the same length as `nrow(newdata)` or of length 1.")
+  }
+  if (length(area) == 1L)
+    area <- rep(area, nrow(obj$pred_tmb_data$proj_X_ij[[1]]))
+
+  tmb_data <- obj$pred_tmb_data
+  tmb_data$link_pred <- .resolve_link_pred(obj$fit_obj, tmb_data, derived_link)
+  tmb_data$area_i <- area
+  if (value_name[1] == "link_total")
+    tmb_data$calc_index_totals <- 1L
+  if (value_name[1] == "log_eao")
+    tmb_data$calc_eao <- 1L
+  if (value_name[1] == "weighted_avg") {
+    if (is.null(vector)) {
+      cli_abort("A vector must be provided for weighted average calculation.")
+    }
+    if (NROW(vector) != nrow(obj$pred_tmb_data$proj_X_ij[[1]])) {
+      cli_abort("`vector` should be of the same length as `nrow(newdata)`.")
+    }
+    tmb_data$proj_vector <- as.matrix(vector) # one column per variable
+    tmb_data$calc_weighted_avg <- 1L
+  }
+
+  pars <- get_pars(obj$fit_obj)
+
+  eps_name <- "eps_index" # FIXME break out into function; add for COG?
+  pars[[eps_name]] <- numeric(0)
+
+  args <- list(
+    data = tmb_data,
+    parameters = pars,
+    profile = obj$fit_obj$control$profile,
+    map = obj$fit_obj$tmb_map,
+    random = obj$fit_obj$tmb_random,
+    silent = silent,
+    adreport = adreport
+  )
+  # bias correction is done below
+  ssr <- index_report(obj$fit_obj, args, obj$fit_obj$model$par, ...)
 
   if (bias_correct && value_name[[1]] %in% c("link_total", "weighted_avg", "log_eao")) {
     # extract and modify parameters
-    if (value_name[[1]] == "link_total") .n <- length(sr_est$total)
-    if (value_name[[1]] == "weighted_avg") .n <- length(sr_est$weighted_avg)
-    if (value_name[[1]] == "log_eao") .n <- length(sr_est$eao)
+    .n <- sum(row.names(ssr) == switch(value_name[[1]],
+      link_total = "total", weighted_avg = "weighted_avg", log_eao = "eao"))
     pars[[eps_name]] <- rep(0, .n)
     new_values <- rep(0, .n)
     names(new_values) <- rep(eps_name, length(new_values))
@@ -675,9 +671,12 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       map = obj$fit_obj$tmb_map,
       profile = obj$fit_obj$control$profile,
       random = obj$fit_obj$tmb_random,
-      backend = backend_sdmTMB(obj$fit_obj),
       silent = silent,
-      intern = FALSE, # tested as faster for most models
+      # Ratio quantities (weighted_avg, eao) tag their sums in the template;
+      # only the internal inner optimizer uses those tags (lowrank = TRUE)
+      # and they are much faster there. The external optimizer is faster for
+      # the index total.
+      intern = value_name[[1]] != "link_total",
       inner.control = list(sparse = TRUE, lowrank = TRUE, trace = FALSE)
     )
     gradient <- new_obj2$gr(fixed)
@@ -687,11 +686,9 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
       cli_inform(c("Bias correction is turned off.", "
         It is recommended to turn this on for final inference."))
   }
-  ssr <- summary(sr, "report")
   log_total <- ssr[row.names(ssr) %in% value_name, , drop = FALSE]
   row.names(log_total) <- NULL
   d <- as.data.frame(log_total)
-  time_name <- obj$fit_obj$time
   names(d) <- c("trans_est", "se")
   if (bias_correct) {
     if (value_name[[1]] == "weighted_avg") {
@@ -712,6 +709,19 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     d$se_natural <- as.numeric(.total[,2])
   }
 
+  # A matrix `vector` (e.g., x and y for COG) stacks one time series per
+  # column; return one data frame per column
+  if (value_name[[1]] == "weighted_avg" && NCOL(vector) > 1L) {
+    chunk <- rep(seq_len(NCOL(vector)), each = nrow(d) / NCOL(vector))
+    return(lapply(split(d, chunk), finish_generic, obj = obj,
+      tmb_data = tmb_data, value_name = value_name))
+  }
+  finish_generic(d, obj, tmb_data, value_name)
+}
+
+# Match rows of derived quantities to time steps and drop unpredicted ones
+finish_generic <- function(d, obj, tmb_data, value_name) {
+  time_name <- obj$fit_obj$time
   time_include <- NULL
   if (!is.null(tmb_data) && "proj_time_include" %in% names(tmb_data)) {
     time_include <- as.integer(tmb_data$proj_time_include)
@@ -724,11 +734,7 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
     d <- d[keep, ,drop=FALSE]
     tt <- tt[keep]
   } else {
-    if ("pred_tmb_data" %in% names(obj)) { # standard case
-      ii <- sort(unique(obj$pred_tmb_data$proj_year))
-    } else { # fit with do_index = TRUE
-      ii <- sort(unique(obj$fit_obj$tmb_data$proj_year))
-    }
+    ii <- sort(unique(obj$pred_tmb_data$proj_year))
     d <- d[d$est != 0, ,drop=FALSE] # these were not predicted on
     d <- d[!is.na(d$est), ,drop=FALSE] # these were not predicted on
     tt <- lu$time_from_data[match(ii, lu$year_i)]
@@ -747,9 +753,6 @@ get_generic <- function(obj, value_name, bias_correct = FALSE, level = 0.95,
   # remove padded extra time fake data:
   if (!is.null(obj$fake_nd)) {
     d <- d[!d[[obj$fit_obj$time]] %in% obj$fake_nd[[obj$fit_obj$time]], ,drop = FALSE]
-  }
-  if ("do_index_time_missing_from_nd" %in% names(obj$fit_obj)) {
-    d <- d[!d[[obj$fit_obj$time]] %in% obj$fit_obj$do_index_time_missing_from_nd, ,drop = FALSE]
   }
   if (!"link_total" %in% value_name) {
     d[,c(time_name, 'est', 'lwr', 'upr', 'trans_est', 'se'), drop = FALSE]

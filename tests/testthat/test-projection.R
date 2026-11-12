@@ -596,9 +596,7 @@ test_that("project() works with time-varying effects", {
     return_tmb_report = TRUE, silent = TRUE
   )
   expect_equal(dim(raw[[1]]$b_rw_t), c(length(all_years), 2L, 1L))
-  # `ignore_attr` drops a benign `dimnames` structural difference: the RTMB
-  # backend's `simulate()`/report() reconstructs arrays with an explicit
-  # (but all-NULL) `dimnames` list, whereas TMB's does not
+  # `ignore_attr` drops a benign all-NULL `dimnames` list on the reported array
   expect_equal(
     raw[[1]]$b_rw_t[seq_along(historical_years), , , drop = FALSE],
     get_pars(fit3)$b_rw_t,
@@ -633,6 +631,20 @@ test_that("project() works with time-varying effects", {
     raw_fix$b_rw_t[n_historical + 1L, , 1L],
     raw_fix$b_rw_t[n_historical, , 1L]
   )
+
+  # every future step keeps the coefficients in their own columns:
+  grid3 <- replicate_df(wcvi_grid[seq(1, nrow(wcvi_grid), by = 20), ], "year",
+    c(historical_years, max(historical_years) + 1:3))
+  grid3$depth_scaled <- (grid3$depth - mean(dogfish$depth)) / sd(dogfish$depth)
+  raw_fix3 <- project(
+    fit3, newdata = grid3, nsim = 1, sample_fe = FALSE,
+    sample_historical_re = FALSE, future_re = "fix",
+    return_tmb_report = TRUE, silent = TRUE
+  )[[1L]]
+  last <- raw_fix3$b_rw_t[n_historical, , 1L]
+  for (tt in n_historical + 1:3) {
+    expect_equal(raw_fix3$b_rw_t[tt, , 1L], last)
+  }
 })
 
 

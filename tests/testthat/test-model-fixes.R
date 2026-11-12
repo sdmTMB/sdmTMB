@@ -1,12 +1,9 @@
-# Fixes to model code in both backends, checked against direct calculations.
+# Fixes to model code, checked against direct calculations.
 
-# Reports at exactly `parameters`, with no inner optimization.
-report_both_backends <- function(fit, parameters) {
-  lapply(c(tmb = "tmb", rtmb = "rtmb"), function(backend) {
-    obj <- make_sdmTMB_adfun(fit$tmb_data, parameters, fit$tmb_map,
-      random = NULL, backend = backend)
-    obj$report()
-  })
+# Reports at exactly `parameters`, with no inner optimization, evaluated
+# directly so that they include deviance residuals.
+report_at <- function(fit, parameters) {
+  list(rtmb_report_values(fit$tmb_data, parameters, deviance = TRUE))
 }
 
 test_that("each time-varying term enters the linear predictor once", {
@@ -19,7 +16,7 @@ test_that("each time-varying term enters the linear predictor once", {
   p <- fit$tmb_params
   p$b_rw_t[] <- seq(-1, 1, length.out = length(p$b_rw_t))
   expected <- p$b_rw_t[d$year, 1, 1] + d$x * p$b_rw_t[d$year, 2, 1]
-  for (r in report_both_backends(fit, p)) {
+  for (r in report_at(fit, p)) {
     expect_equal(r$eta_rw_i[, 1], expected)
     expect_equal(r$eta_i[, 1], expected)
   }
@@ -27,7 +24,7 @@ test_that("each time-varying term enters the linear predictor once", {
   nd <- d[c(1, 25, 60), ]
   projection <- predict(fit, newdata = nd, return_tmb_data = TRUE)
   fit$tmb_data <- projection
-  for (r in report_both_backends(fit, p)) {
+  for (r in report_at(fit, p)) {
     expect_equal(r$proj_eta[, 1], expected[c(1, 25, 60)])
   }
 })
@@ -49,14 +46,11 @@ test_that("sigma_V priors apply once per component in delta models", {
   sigma_V <- exp(p$ln_tau_V[1, ])
   expected <- -sum(stats::dgamma(sigma_V, shape = prior[[1]],
     scale = prior[[2]], log = TRUE))
-  for (backend in c("tmb", "rtmb")) {
-    nll <- vapply(list(fit0, fit1), function(fit) {
-      obj <- make_sdmTMB_adfun(fit$tmb_data, p, fit$tmb_map, NULL,
-        backend = backend)
-      obj$fn(obj$par)
-    }, numeric(1))
-    expect_equal(nll[[2]] - nll[[1]], expected, info = backend)
-  }
+  nll <- vapply(list(fit0, fit1), function(fit) {
+    obj <- make_sdmTMB_adfun(fit$tmb_data, p, fit$tmb_map, NULL)
+    obj$fn(obj$par)
+  }, numeric(1))
+  expect_equal(nll[[2]] - nll[[1]], expected)
 })
 
 test_that("binomial deviance residuals allow more than one trial", {
@@ -73,7 +67,7 @@ test_that("binomial deviance residuals allow more than one trial", {
   prob <- stats::plogis(p$b_j[[1]] + p$b_j[[2]] * d$x)
   expected <- sign(d$y - prob) *
     sqrt(stats::binomial()$dev.resids(d$y, prob, d$n))
-  for (r in report_both_backends(fit, p)) {
+  for (r in report_at(fit, p)) {
     expect_equal(r$devresid[, 1], expected)
   }
 })

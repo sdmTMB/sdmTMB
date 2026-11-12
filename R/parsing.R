@@ -210,3 +210,26 @@ add_model_index <- function(split_formula, dataframe_name) {
     df
   })
 }
+
+# Random-effect data slots for TMB, combined across model components
+re_tmb_data <- function(split_formula) {
+  bind <- function(name) do.call(rbind, add_model_index(split_formula, name))
+  re_cov_df_map <- bind("re_cov_term_map")
+  re_b_df <- bind("re_b_df")
+  n_m <- length(split_formula)
+  n_re_groups <- vapply(seq_len(n_m), function(i) sum(re_cov_df_map$model == i), numeric(1))
+  var_indx_matrix <- matrix(0, nrow = max(c(0, re_b_df$end)) + 1, ncol = n_m)
+  for (i in which(n_re_groups > 0)) {
+    sd_vec <- split_formula[[i]]$var_indx_vector
+    var_indx_matrix[seq_along(sd_vec), i] <- sd_vec
+  }
+  list(
+    re_cov_df_map = as.matrix(re_cov_df_map),
+    re_cov_df = as.matrix(bind("re_df")),
+    n_re_groups = n_re_groups,
+    re_b_df = as.matrix(re_b_df[, c("start", "end", "group_indices", "model")]),
+    re_b_map = as.matrix(bind("re_b_map")),
+    var_indx_matrix = var_indx_matrix,
+    Zt_list = lapply(split_formula[n_re_groups > 0], function(x) x$re_cov_terms$Zt)
+  )
+}

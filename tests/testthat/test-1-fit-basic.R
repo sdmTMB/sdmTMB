@@ -23,19 +23,16 @@ test_that("sdmTMB model fit with a covariate beta", {
     phi = phi, range = range, sigma_O = sigma_O, sigma_E = sigma_E,
     seed = SEED
   )
-  # `sdmTMB_simulate()` draws random numbers via the active backend's
-  # `simulate()` method; TMB and RTMB consume the RNG stream in different
-  # orders, so exact simulated values are not comparable across backends.
   expect_equal(nrow(s), nrow(loc))
   expect_true(all(is.finite(s$observed)))
   plot(spde)
   m <- sdmTMB(
     data = s, formula = observed ~ 0 + cov1, time = "time",
-    silent = TRUE, mesh = spde, control = sdmTMBcontrol(normalize = FALSE, newton_loops = 1)
+    silent = TRUE, mesh = spde, control = sdmTMBcontrol(newton_loops = 1)
   )
   m_pc <- sdmTMB(
     data = s, formula = observed ~ 0 + cov1, time = "time",
-    silent = TRUE, mesh = spde, control = sdmTMBcontrol(normalize = FALSE, newton_loops = 1),
+    silent = TRUE, mesh = spde, control = sdmTMBcontrol(newton_loops = 1),
     priors = sdmTMBpriors(
       matern_s = pc_matern(range_gt = 0.2, sigma_lt = 0.2, range_prob = 0.05, sigma_prob = 0.05)
     )
@@ -63,7 +60,7 @@ test_that("sdmTMB model fit with a covariate beta", {
   expect_true(se_pc$ln_kappa[1] < se$ln_kappa[1])
   # `se_pc$ln_tau_O < se$ln_tau_O` is not checked here: whether the PC prior
   # tightens this particular SE depends on the realized random field draw
-  # (it flips for plenty of seeds under either backend), so it is not a
+  # (it flips for plenty of seeds), so it is not a
   # reliable property to assert for one fixed seed.
   expect_true(is.finite(se_pc$ln_tau_O) && is.finite(se$ln_tau_O))
 
@@ -123,7 +120,7 @@ test_that("Anisotropy fits and plots", {
   expect_equal(m$tmb_obj$report()$H,
     structure(
       c(0.665528444798002, 0.079350716881963, 0.079350716881963, 1.51202633656794),
-      .Dim = c(2L, 2L)
+      dim = c(2L, 2L)
     ),
     tolerance = 1e-3
   )
@@ -220,4 +217,47 @@ test_that("poly() works on newdata", {
   )
   p2 <- predict(m2, newdata = nd)
   expect_equal(p, p2, tolerance = 1e-4)
+})
+
+test_that("extract_call_name() returns string literals for print()", {
+  expect_identical(extract_call_name(quote(year)), "year")
+  expect_identical(extract_call_name("year"), "year")
+  expect_null(extract_call_name(NULL))
+})
+
+test_that("spatial and spatiotemporal fields default to off without a mesh", {
+  skip_on_cran()
+  d <- pcod_2011
+  m <- sdmTMB(density ~ 1, data = d, family = tweedie(), time = "year")
+  expect_identical(m$spatial, "off")
+  expect_identical(m$spatiotemporal, "off")
+  m_off <- sdmTMB(density ~ 1, data = d, family = tweedie(),
+    spatial = "off", spatiotemporal = "off", time = "year", mesh = NULL)
+  expect_equal(logLik(m), logLik(m_off))
+  m_delta <- sdmTMB(density ~ 1, data = d, family = delta_gamma())
+  expect_identical(m_delta$spatial, c("off", "off"))
+
+  # print() only reports a mesh if there is one:
+  expect_false(any(grepl("Mesh", capture.output(print(m)))))
+  expect_false(any(grepl("Mesh", capture.output(print(m_off)))))
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 30)
+  m_mesh <- sdmTMB(density ~ 1, data = d, family = tweedie(), mesh = mesh,
+    spatial = "off")
+  expect_true(any(grepl("Mesh: mesh (isotropic covariance)",
+    capture.output(print(m_mesh)), fixed = TRUE)))
+
+  expect_error(
+    sdmTMB(density ~ 1, data = d, family = tweedie(), spatial = "on"),
+    regexp = "mesh"
+  )
+  expect_error(
+    sdmTMB(density ~ 1, data = d, family = tweedie(), time = "year",
+      spatiotemporal = "iid"),
+    regexp = "mesh"
+  )
+  expect_error(
+    sdmTMB(density ~ 1, data = d, family = tweedie(),
+      spatial_varying = ~ depth_scaled),
+    regexp = "mesh"
+  )
 })

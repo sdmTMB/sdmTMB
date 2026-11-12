@@ -11,23 +11,21 @@ jobs:
     if: "! contains(github.event.head_commit.message, '[skip ci]')"
     runs-on: ${{ matrix.config.os }}
 
-    name: ${{ matrix.config.os }} (${{ matrix.config.r }}, ${{ matrix.config.backend }})
+    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
 
     strategy:
       fail-fast: false
       matrix:
         config:
-          - {os: windows-latest, r: 'release', backend: tmb}
-        #  - {os: macOS-latest, r: 'release'}
+          - {os: windows-latest, r: 'release'}
+          - {os: macOS-latest, r: 'release'}
         # - {os: ubuntu-latest,   r: 'devel', http-user-agent: 'release'}
-          - {os: ubuntu-latest,   r: 'release', backend: tmb}
-          - {os: ubuntu-latest,   r: 'release', backend: rtmb}
+          - {os: ubuntu-latest,   r: 'release'}
         # - {os: ubuntu-latest,   r: 'oldrel-1'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
       R_KEEP_PKG_SOURCE: yes
-      SDMTMB_TEST_BACKEND: ${{ matrix.config.backend }}
       TESTTHAT_PARALLEL: ${{ matrix.config.os == 'windows-latest' && 'false' || 'true' }}
 
     steps:
@@ -65,7 +63,7 @@ jobs:
       # sdmTMBextra is not in Suggests; one job installs it so the barrier and
       # MCMC-residual tests run rather than skip
       - name: Install sdmTMBextra
-        if: runner.os == 'Linux' && matrix.config.backend == 'rtmb'
+        if: runner.os == 'Linux'
         run: |
           install.packages("remotes")
           remotes::install_github("sdmTMB/sdmTMBextra")

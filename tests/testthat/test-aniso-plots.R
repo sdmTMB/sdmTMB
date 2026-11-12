@@ -18,6 +18,12 @@ test_that("aniso plots work", {
 
   d <- plot_anisotropy(fit, return_data = TRUE)
   expect_s3_class(d, "data.frame")
+  # distance is sqrt(h' H^-1 h), so the axis ranges are range * sqrt(eigen(H))
+  e <- eigen(fit$tmb_obj$report(fit$tmb_obj$env$last.par.best)$H)$values
+  range <- as.list(fit$sd_report, "Estimate", report = TRUE)$range[, 1]
+  d <- d[!duplicated(d$random_field), ]
+  expect_equal(d$a, range * sqrt(e[[1L]]))
+  expect_equal(d$b, range * sqrt(e[[2L]]))
 
   plot_anisotropy2(fit)
 

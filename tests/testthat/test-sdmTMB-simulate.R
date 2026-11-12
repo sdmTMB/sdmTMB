@@ -213,3 +213,41 @@ test_that("sdmTMB_simulate() recovery holds across variances, ranges, and field 
   # expect_lt(0.2, ci$conf.high[ci$term=="sigma_E"]) # RW underestimates sigma_E?
   expect_gt(0.2, ci$conf.low[ci$term=="sigma_E"])
 })
+
+test_that("sdmTMB_simulate() uses the `df` argument for student()", {
+  d <- predictor_dat[predictor_dat$year == 1, ]
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.2)
+  sim <- function(df, family = suppressMessages(student())) {
+    sdmTMB_simulate(~ 1, data = d, mesh = mesh, family = family,
+      range = 0.3, sigma_O = 0, phi = 1, B = 0, df = df, seed = 1)$observed
+  }
+  y3 <- sim(3)
+  expect_false(identical(y3, sim(50)))
+  expect_identical(y3, sim(NULL))
+  expect_identical(sim(10), sim(NULL, family = suppressMessages(student(df = 10))))
+  expect_error(sim(3, family = gaussian()), "not `student\\(\\)`")
+  expect_error(sim(1))
+})
+
+test_that("sdmTMB_simulate() only draws smoother wiggles with `sigma_smooth`", {
+  d <- predictor_dat[predictor_dat$year == 1, ]
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.2)
+  sim <- function(...) {
+    sdmTMB_simulate(~ s(a1), data = d, mesh = mesh, family = gaussian(),
+      range = 0.3, sigma_O = 0, phi = 0.1, seed = 1, ...)
+  }
+  # without sigma_smooth the smoother is its linear part only:
+  s0 <- sim(B = c(0.2, 0.5))
+  expect_equal(stats::cor(s0$eta, d$a1)^2, 1, tolerance = 1e-8)
+  expect_false(identical(s0$eta, sim(B = c(0.2, 0))$eta))
+  # sigma_smooth adds a random nonlinear shape:
+  s1 <- sim(B = c(0.2, 0.5), sigma_smooth = 1)
+  expect_lt(stats::cor(s1$eta, d$a1)^2, 1 - 1e-4)
+  expect_error(sim(B = 0.2), "smoother linear terms")
+  expect_error(sim(B = c(0.2, 0.5), sigma_smooth = -1), "positive")
+  expect_error(
+    sdmTMB_simulate(~ 1, data = d, mesh = mesh, family = gaussian(),
+      range = 0.3, sigma_O = 0, phi = 0.1, B = 0, sigma_smooth = 1),
+    "no `s\\(\\)` terms"
+  )
+})

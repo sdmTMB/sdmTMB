@@ -130,3 +130,23 @@ rtmb_aniso_H <- function(x) {
   H[2L, 2L] <- (1 + x[[2L]]^2) / exp(x[[1L]])
   H
 }
+
+# cosh(|v|) - 1 for `H = rtmb_aniso_H(x)`, without cancellation near
+# isotropy. cosh(|v|) = tr(H) / 2 because det(H) = 1 and the eigenvalues of H
+# are exp(+/- |v|).
+rtmb_aniso_cosh_m1 <- function(x) {
+  (expm1(x[[1L]])^2 + x[[2L]]^2) * exp(-x[[1L]]) / 2
+}
+
+# Log ranges along the minor and major axes, log(range) -/+ |v| / 2, with the
+# dimensions of `range` (field by component). Distance is sqrt(h' H^-1 h), so
+# the axis ranges are range * exp(-/+ |v| / 2). |v| / 2 =
+# asinh(sqrt((cosh(|v|) - 1) / 2)) has no derivative at isotropy, so their
+# standard errors are NaN there.
+rtmb_aniso_log_ranges <- function(range, ln_H_input) {
+  half_v <- do.call(c, lapply(seq_len(ncol(range)), function(m) {
+    asinh(sqrt(rtmb_aniso_cosh_m1(ln_H_input[, m]) / 2))
+  }))
+  half_v <- rep(half_v, each = nrow(range))
+  list(log_range_min = log(range) - half_v, log_range_max = log(range) + half_v)
+}
