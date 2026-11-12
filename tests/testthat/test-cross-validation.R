@@ -214,14 +214,8 @@ test_that("LFO CV scores delta observations with explicit validation masks", {
 
     scoring_data <- object$tmb_data
     scoring_data$weights_i <- as.numeric(validation)
-    scoring_obj <- TMB::MakeADFun(
-      data = scoring_data,
-      parameters = get_pars(object),
-      map = object$tmb_map,
-      random = object$tmb_random,
-      DLL = "sdmTMB",
-      silent = TRUE
-    )
+    scoring_obj <- make_sdmTMB_adfun(scoring_data, get_pars(object),
+      object$tmb_map, object$tmb_random)
     report <- scoring_obj$report(object$tmb_obj$env$last.par.best)
     expect_equal(report$jnll_obs[!validation], rep(0, sum(!validation)))
   }
@@ -931,6 +925,12 @@ test_that("CV fold models skip the joint precision and cached Cholesky factor", 
   expect_false("jointPrecision" %in% names(m$sd_report))
   expect_null(m$tmb_obj$env$L.created.by.newton)
 
+  # serialized fold models (saved or returned from parallel workers) reload
+  # without the cached Cholesky factor instead of segfaulting
+  m2 <- unserialize(serialize(m, NULL))
+  expect_output(print(m2), "Spatial SD")
+  expect_equal(predict(m2)$est, predict(m)$est)
+
   # MVN draws still work
   r <- residuals(m, type = "mle-mvn")
   expect_length(r, nrow(d))
@@ -942,6 +942,7 @@ test_that("CV fold models skip the joint precision and cached Cholesky factor", 
   x <- sdmTMB_cv(density ~ 1, data = d, mesh = mesh, family = tweedie(),
     k_folds = 2, parallel = FALSE, control = sdmTMBcontrol())
   expect_true("jointPrecision" %in% names(x$models[[1]]$sd_report))
+
 })
 
 test_that("Integrated predictive: mle-eb is unchanged and outputs are well formed", {
@@ -1049,4 +1050,32 @@ test_that("elpd() hands sdmTMB_cv() output to loo", {
 
   m2$data$cv_loglik[1] <- NA
   expect_error(loo::elpd(m2), regexp = "NA")
+})
+
+test_that("Cross validation works without a mesh", {
+  skip_on_cran()
+  skip_on_ci()
+  d <- pcod_2011
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 30)
+  fold_ids <- rep(1:2, length.out = nrow(d))
+  cv <- sdmTMB_cv(density ~ depth_scaled, data = d, family = tweedie(),
+    time = "year", fold_ids = fold_ids)
+  expect_identical(cv$models[[1]]$spatial, "off")
+  expect_identical(cv$models[[1]]$spatiotemporal, "off")
+  # same as with a placeholder mesh and the fields turned off:
+  cv_mesh <- sdmTMB_cv(density ~ depth_scaled, data = d, family = tweedie(),
+    time = "year", fold_ids = fold_ids, mesh = mesh,
+    spatial = "off", spatiotemporal = "off")
+  expect_equal(cv$sum_loglik, cv_mesh$sum_loglik, tolerance = 1e-6)
+  expect_equal(cv$data$cv_predicted, cv_mesh$data$cv_predicted, tolerance = 1e-6)
+
+  cv_delta <- sdmTMB_cv(density ~ depth_scaled, data = d,
+    family = delta_gamma(), time = "year", fold_ids = fold_ids)
+  expect_identical(cv_delta$models[[1]]$spatial, c("off", "off"))
+  expect_true(is.finite(cv_delta$sum_loglik))
+  expect_error(
+    sdmTMB_cv(density ~ 1, data = d, family = tweedie(), fold_ids = fold_ids,
+      spatial = "on"),
+    regexp = "mesh"
+  )
 })

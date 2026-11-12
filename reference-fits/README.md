@@ -2,8 +2,9 @@
 
 A regression suite of cached model results. Every case is refit and compared
 with `ref/reference.csv` so that changes to sdmTMB can't silently change old
-model results. It runs in CI (`.github/workflows/reference-fits.yaml`) for
-both the TMB and RTMB backends against the same reference file.
+model results. It runs in CI (`.github/workflows/reference-fits.yaml`).
+The reference values were recorded while the C++ TMB and RTMB backends
+agreed, before the C++ backend was removed.
 
 This folder is excluded from the package build (`.Rbuildignore`).
 
@@ -12,24 +13,21 @@ This folder is excluded from the package build (`.Rbuildignore`).
 From the package root:
 
 ```sh
-make reference-check     # both backends, optimized DLL, 6 cores (REF_CORES=N to change)
+make reference-check     # 5 cores (REF_CORES=N to change)
 make reference-record    # re-record after an accepted change
 
-Rscript reference-fits/run.R check --backend tmb|rtmb|both [--filter REGEX] [--cores N]
-Rscript reference-fits/run.R validate [--backend ...] [--filter REGEX] [--cores N]
+Rscript reference-fits/run.R check [--filter REGEX] [--cores N] [--installed]
+Rscript reference-fits/run.R validate [--filter REGEX] [--cores N]
 Rscript reference-fits/run.R record [--filter REGEX] [--cores N]
 ```
 
 - `check` refits each case (no standard errors) and compares its metrics with
-  the reference. Failures are printed and written to `check-<backend>.csv`
+  the reference. Failures are printed and written to `check.csv`
   (git-ignored; uploaded as an artifact in CI).
-- `validate` fits with standard errors, runs `sanity()`, reports timing, and
-  compares TMB with RTMB. It writes nothing.
-- `record` is `validate` for both backends. It writes the TMB values to
-  `ref/reference.csv` (and versions to `ref/session.txt`) only if every case
-  passes `sanity()` and the two backends agree within tolerance. Cases limited
-  to one backend (`backends` in `cases.R`, e.g., RTMB-only families) record
-  that backend's values and skip the comparison. With
+- `validate` fits with standard errors, runs `sanity()`, and reports timing.
+  It writes only the git-ignored `validate.csv`.
+- `record` is `validate`. It writes the values to `ref/reference.csv` (and
+  versions to `ref/session.txt`) only if every case passes `sanity()`. With
   `--filter`, only the matching cases are replaced.
 
 ## Accepting a change
@@ -55,7 +53,7 @@ explanation of why the values moved.
 
 - `family/`: every family and documented link, non-spatial (fast), including
   binomial with `cbind()` trials and with proportions plus `weights`, and the
-  censored families (all but `censored_poisson()` are RTMB-only), including
+  censored families, including
   `censored_method = "direct"` and an observation-level random intercept.
 - `offset/`: one family per link with an offset.
 - `delta/`: every delta family, non-default `link1`/`link2`,
@@ -80,12 +78,13 @@ the mean and SD of link-scale predictions on the fitted data and on a fixed
 prediction. Some cases add population-level predictions (`re_form = NA`),
 `get_index()` estimates and standard errors, and `get_cog()`.
 
-`record` also stores `seconds_tmb` and `seconds_rtmb`: each case's elapsed
-time (fit with standard errors, metrics, and `sanity()`) to 0.01 s. These are
-for information only and are not compared by `check`.
+`record` also stores `seconds`: each case's elapsed time (fit with standard
+errors, metrics, and `sanity()`) to 0.01 s. References recorded before the
+C++ backend was removed have `seconds_tmb` and `seconds_rtmb` instead. These
+are for information only and are not compared by `check`.
 
 Every `check` and `validate` run also appends to a local, git-ignored
-`reference-fits/timings-local.csv` (latest timing per mode/backend/case, to
+`reference-fits/timings-local.csv` (latest timing per mode/case, to
 0.01 s) and flags cases at least 10% (and 0.02 s) slower than the previous run.
 Thresholds are `slow_rel` and `slow_abs` in `run.R`.
 

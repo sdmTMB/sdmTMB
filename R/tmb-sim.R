@@ -28,7 +28,9 @@
 #'   If `nonlocal_formula` is used, include regular fixed-effect
 #'   coefficients followed by transformed-covariate coefficients in operator
 #'   order. Same-covariate `diffusion()` and `time_lag()` wrappers contribute
-#'   one joint coefficient.
+#'   one joint coefficient. If `formula` includes smoothers (`s()`), append
+#'   the coefficients of their linear (unpenalized) parts, in the order
+#'   [tidy.sdmTMB()] lists them (e.g., `sx`).
 #' @param range Parameter that controls the decay of spatial correlation. If a
 #'   vector of length 2, `share_range` will be set to `FALSE` and the spatial
 #'   and spatiotemporal ranges will be unique. Not used for areal models.
@@ -41,19 +43,26 @@
 #'   vector matching the number of time-varying coefficients.
 #' @param phi Observation error scale parameter (e.g., SD in Gaussian).
 #' @param tweedie_p Tweedie p (power) parameter; between 1 and 2.
-#' @param df Student-t degrees of freedom.
+#' @param df Student-t degrees of freedom (must be > 1). Overrides any `df`
+#'   supplied to [student()]. If neither is given, `df = 3`.
+#' @param sigma_smooth SD(s) of the penalized (wiggly) smoother coefficients
+#'   if `formula` includes `s()`: a single value or one per smoother. If
+#'   `NULL` (the default), these coefficients are 0 and each smoother reduces
+#'   to its linear part set through `B`. Otherwise they are drawn as random
+#'   effects with this SD on the scale of the \pkg{mgcv} basis, giving a
+#'   random nonlinear shape.
 #' @param threshold_coefs An optional vector of threshold coefficient values
 #'   if the `formula` includes `breakpt()` or `logistic()`. If `breakpt()`,
-#'   these are slope and cut values. If `logistic()`, these are the threshold at
+#'   these are slope and cut values (with `breakpt(positive = TRUE)`, the
+#'   slope itself, which must be positive). If `logistic()`, these are the threshold at
 #'   which the function is 50% of the maximum, the threshold at which the
 #'   function is 95% of the maximum, and the maximum. See the model description
 #'   vignette for details.
 #' @param fixed_re A list of optional random effects to fix at specified
 #'   (e.g., previously estimated) values. `NULL` values indicate that the
 #'   corresponding random effects should be simulated.
-#' @param seed Seed number. The TMB and RTMB backends (see the `backend`
-#'   argument of [sdmTMBcontrol()], passed via `control`) draw random numbers
-#'   differently, so the same seed gives different simulated values with each.
+#' @param seed Seed number. Simulated values for a given seed differ from
+#'   those of the removed C++ TMB backend, the default before sdmTMB 1.2.0.
 #' @param rho_time Autoregressive correlation(s) for time-varying parameters
 #'   when `time_varying_type = "ar1"`. Values must lie between -1 and 1 and may
 #'   be supplied as a single value or a vector the same length as `sigma_V`.
@@ -137,6 +146,7 @@ simulate_new <- function(formula,
                          phi = NULL,
                          tweedie_p = NULL,
                          df = NULL,
+                         sigma_smooth = NULL,
                          threshold_coefs = NULL,
                          fixed_re = list(omega_s = NULL, epsilon_st = NULL, zeta_s = NULL),
                          seed = sample.int(1e6, 1),
@@ -159,7 +169,7 @@ simulate_new <- function(formula,
   # }
 
   assert_that((tweedie_p > 1 && tweedie_p < 2) || is.null(tweedie_p))
-  assert_that(df >= 1 || is.null(df))
+  assert_that(df > 1 || is.null(df))
   assert_that(all(range > 0) || is.null(range))
   assert_that(length(range) %in% c(1, 2) || is.null(range))
   assert_that((rho >= -1 && rho <= 1) || is.null(rho))
@@ -203,14 +213,14 @@ simulate_new <- function(formula,
   if (length(response) == 0L) {
     formula <- as.formula(paste("sdmTMB_response_", paste(as.character(formula), collapse = "")))
     data[["sdmTMB_response_"]] <- 0.1 # fake! does nothing but lets sdmTMB parse the formula
-    if (family$family %in% c("binomial", "poisson", "nbinom2", "nbinom1", "truncated_nbinom2", "truncated_nbinom1")) {
+    if (family$family %in% c("binomial", "poisson", "nbinom2", "nbinom1", "truncated_nbinom2", "truncated_nbinom1", "compois")) {
       data[["sdmTMB_response_"]] <- 1
     }
   }
 
   .sim_re <- list(
     omega = TRUE, epsilon = TRUE, zeta = TRUE,
-    IID = TRUE, RW = TRUE, smooth = TRUE
+    IID = TRUE, RW = TRUE, smooth = !is.null(sigma_smooth)
   )
   if (!is.null(fixed_re$omega_s)) {
     .sim_re$omega <- FALSE
@@ -246,15 +256,25 @@ simulate_new <- function(formula,
   tmb_data$sim_re <- as.integer(.sim_re)
   # tmb_data$sim_re <- c(1L, 0L, 0L, 0L, 0L, 0L)
 
+  n_b_j <- ncol(fit$tmb_data$X_ij[[1]])
+  n_bs <- if (tmb_data$has_smooths) nrow(params$bs) else 0L
   if (!is.null(B)) {
-    n_covariates <- length(B)
-    assert_that(ncol(fit$tmb_data$X_ij[[1]]) == length(B),
+    assert_that(length(B) == n_b_j + n_bs,
       msg = paste0(
         "Number of specified fixed-effect `B` parameters does ",
-        "not match model matrix columns implied by the formula ",
-        "and any `nonlocal_formula` terms."
+        "not match model matrix columns implied by the formula, ",
+        "any `nonlocal_formula` terms, and any smoother linear terms."
       )
     )
+  }
+  if (!is.null(sigma_smooth)) {
+    if (!tmb_data$has_smooths) {
+      cli::cli_abort("`sigma_smooth` was supplied but `formula` has no `s()` terms.")
+    }
+    n_sm <- nrow(params$ln_smooth_sigma)
+    assert_that(length(sigma_smooth) %in% c(1L, n_sm), all(sigma_smooth > 0),
+      msg = "`sigma_smooth` must be positive with length 1 or one per smoother.")
+    params$ln_smooth_sigma[, 1L] <- log(rep_len(sigma_smooth, n_sm))
   }
 
   .set_diffusion_parameter <- function(params, param_name, user_value, mask,
@@ -316,6 +336,12 @@ simulate_new <- function(formula,
   if (!is.null(threshold_coefs)) {
     if(!is.matrix(threshold_coefs)) threshold_coefs <- matrix(threshold_coefs, ncol=1)
     params$b_threshold <- threshold_coefs
+    if (tmb_data$threshold_func == 3L) {
+      if (any(threshold_coefs[1L, ] <= 0)) {
+        cli::cli_abort("The slope in `threshold_coefs` must be positive with `breakpt(positive = TRUE)`.")
+      }
+      params$b_threshold[1L, ] <- log(threshold_coefs[1L, ])
+    }
   }
 
   if (is.null(sigma_O)) sigma_O <- 0
@@ -399,7 +425,10 @@ simulate_new <- function(formula,
     }
   }
 
-  if (!is.null(B)) params$b_j <- matrix(B, ncol = 1L) # TODO DELTA
+  if (!is.null(B)) { # TODO DELTA
+    params$b_j <- matrix(B[seq_len(n_b_j)], ncol = 1L)
+    if (n_bs > 0L) params$bs <- matrix(B[n_b_j + seq_len(n_bs)], ncol = 1L)
+  }
   if (!is.null(phi) && length(params$ln_phi) > 0L) params$ln_phi <- log(phi)
   if (!is.null(rho)) {
     if (rho != 0 && rho < 1) {
@@ -409,7 +438,12 @@ simulate_new <- function(formula,
       tmb_data$rw_fields <- 1L
     }
   }
-  if (!is.null(df)) tmb_data$df <- df
+  if (!is.null(df)) {
+    if (!length(params$ln_student_df)) {
+      cli::cli_abort("`df` was supplied but `family` is not `student()`.")
+    }
+    params$ln_student_df[] <- log(df - 1)
+  }
   if (!is.null(tweedie_p)) params$thetaf <- stats::qlogis(tweedie_p - 1)
 
   if (!is.null(fixed_re$omega_s)) {
@@ -424,8 +458,7 @@ simulate_new <- function(formula,
 
   newobj <- make_sdmTMB_adfun(
     data = tmb_data, map = fit$tmb_map,
-    random = fit$tmb_random, parameters = params,
-    backend = backend_sdmTMB(fit)
+    random = fit$tmb_random, parameters = params
   )
 
   set.seed(seed)
@@ -489,7 +522,7 @@ simulate_new <- function(formula,
   }
 
   tpar <- fit$threshold_parameter
-  if (tmb_data$threshold_func == 1L) {
+  if (tmb_data$threshold_func %in% c(1L, 3L)) {
     d[[paste0(tpar, "-slope")]] <- threshold_coefs[[1]]
     d[[paste0(tpar, "-breakpt")]] <- threshold_coefs[[2]]
   }
@@ -516,12 +549,13 @@ sdmTMB_simulate <- simulate_new
 #' @method simulate sdmTMB
 #' @param object An `sdmTMB` model.
 #' @param nsim Number of response lists to simulate. Defaults to 1.
-#' @param seed Random number seed. Simulations use the backend the model was
-#'   fit with; TMB and RTMB fits give different values for the same seed.
+#' @param seed Random number seed.
 #' @param type How parameters should be treated. `"mle-eb"`: fixed effects
 #'   are at their maximum likelihood (MLE) estimates  and random effects are at
 #'   their empirical Bayes (EB) estimates. `"mle-mvn"`: fixed effects are at
 #'   their MLEs but random effects are taken from a single approximate sample.
+#'   With `reml = TRUE` or `sdmTMBcontrol(profile = TRUE)`, the integrated-out
+#'   fixed effects are sampled along with the random effects.
 #'   This latter option is a suggested approach if these simulations will be
 #'   used for goodness of fit testing (e.g., with the DHARMa package).
 #' @param re_form `NULL` to specify a simulation conditional on fitted random
@@ -672,10 +706,10 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
 
   tmb_dat$sim_obs <- as.integer(observation_error)
 
+  env <- object$tmb_obj$env
   newobj <- make_sdmTMB_adfun(
     data = tmb_dat, map = object$tmb_map,
-    random = object$tmb_random, parameters = object$tmb_obj$env$parList(),
-    backend = backend_sdmTMB(object)
+    random = object$tmb_random, parameters = env$parList(par = env$last.par.best)
   )
 
   # params MLE/MVN stuff
@@ -683,7 +717,7 @@ simulate.sdmTMB <- function(object, nsim = 1L, seed = sample.int(1e6, 1L),
     if (type == "mle-mvn") {
       if (mle_mvn_samples == "single") {
         new_par <- .one_sample_posterior(object)
-        new_par <- replicate(nsim, new_par)
+        new_par <- matrix(new_par, nrow = length(new_par), ncol = nsim)
       } else {
         new_par <- .posterior_re_sampler(object)(nsim)
       }

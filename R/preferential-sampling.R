@@ -4,8 +4,7 @@
 # model's fitted design evaluated on the sampling frame, like prediction
 # `newdata`, so the frame's covariate values define the standardization.
 #
-# Only the RTMB backend supports it. The specification and frame/design
-# preparation live here; the likelihood is in `R/rtmb-preferential.R`.
+# The specification and frame/design preparation live here; the likelihood is in `R/rtmb-preferential.R`.
 
 #' Preferential-sampling specification
 #'
@@ -32,8 +31,7 @@
 #' model (`type = "poisson-link"`), it is \eqn{\eta_1 + \eta_2}. As in
 #' prediction, `offset` enters \eqn{\eta_2} only.
 #'
-#' This feature requires the RTMB backend (the default), a main model with a spatial
-#' or spatiotemporal field, and either a single log-link family (Poisson,
+#' This feature requires a main model with a spatial or spatiotemporal field, and either a single log-link family (Poisson,
 #' NB2, Gamma, Tweedie, lognormal, or generalized gamma) or a [delta_gamma()],
 #' [delta_lognormal()], or [delta_gengamma()] family with default links (standard or Poisson-link). Smoothers in the main model must be univariate
 #' `s()` terms without `by` variables.
@@ -240,13 +238,10 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
 .validate_preferential_scope <- function(spec, formula, delta, multi_family,
                                          family, areal, mesh, mesh_missing,
                                          anisotropy, spatial_varying,
-                                         nonlocal_formula, normalize, backend,
+                                         nonlocal_formula,
                                          no_spatial) {
   if (!inherits(spec, "sdmTMB_preferential")) {
     cli_abort("`preferential` must be created with `preferential_sampling()`.")
-  }
-  if (!identical(backend, "rtmb")) {
-    cli_abort("Preferential sampling requires backend = \"rtmb\"; set control = sdmTMBcontrol(backend = \"rtmb\").")
   }
   if (mesh_missing) {
     cli_abort("`mesh` must be supplied when using `preferential`.")
@@ -291,8 +286,7 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
     "smoothers other than univariate `s()` terms without `by`" =
       !all(univariate),
     "including random slopes (`re_form_iid = NULL`)" =
-      random_slopes && spec$include_iid,
-    "`normalize = TRUE`" = isTRUE(normalize)
+      random_slopes && spec$include_iid
   )
   if (any(unsupported)) {
     cli_abort(c(
@@ -543,8 +537,7 @@ preferential_sampling <- function(formula, data, re_form_iid = NA, offset = 0,
     if (!is.null(tv_spec)) all.vars(tv_spec$terms)
   )), "the main model")
   design <- tryCatch(
-    .newdata_design(model, data, include_iid = include_iid,
-      new_levels = "error", na.action = stats::na.pass),
+    .newdata_design(model, data, include_iid = include_iid),
     error = function(e) {
       cli_abort(c(
         "Failed to evaluate the main model on the sampling `data`.",
@@ -785,8 +778,8 @@ predict_sampling <- function(object, type = c("response", "link"), nsim = 0) {
   inv <- if (type == "response") stats::plogis else identity
   lp <- object$tmb_obj$env$last.par.best
   if (nsim > 0) {
-    reports <- predict_draw_reports(object, object$tmb_obj, lp,
-      list(nsim = nsim, sample_fe = TRUE))
+    reports <- predict_draw_reports(object, object$tmb_obj,
+      object$tmb_data, lp, list(nsim = nsim, sample_fe = TRUE))
     return(inv(do.call(cbind, lapply(reports, `[[`, "sampling_eta_i"))))
   }
   r <- object$tmb_obj$report(lp)

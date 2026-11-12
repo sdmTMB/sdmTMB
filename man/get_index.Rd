@@ -86,8 +86,7 @@ accepted (not for \code{get_index_split()}).}
 over, usually a grid covering the area of interest replicated for each
 time step (see \code{\link[=replicate_df]{replicate_df()}}). Same requirements as \code{newdata} in
 \code{\link[=predict.sdmTMB]{predict.sdmTMB()}}. Results are returned only for time steps in
-\code{newdata}. Required unless \code{obj} is legacy prediction output or was fitted
-with the deprecated \code{do_index = TRUE}.}
+\code{newdata}. Required unless \code{obj} is legacy prediction output.}
 
 \item{bias_correct}{Logical: apply bias correction? Predictions plugged in
 at the estimated random effects can be biased once transformed to the
@@ -106,7 +105,8 @@ sum of densities rather than an area-weighted total. See Details for
 other uses.}
 
 \item{offset}{An optional numeric vector of offset values, one per row of
-\code{newdata} (not a column name). If \code{NULL} (default), the offset is 0, so
+\code{newdata}, or a single value for all rows (not a column name). If \code{NULL}
+(default), the offset is 0, so
 predictions are per unit of the offset (e.g., density rather than catch
 when the offset is log area swept).}
 
@@ -127,7 +127,7 @@ the \href{https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html}{hook c
 spatiotemporal random fields set to zero, and \code{list(re_form_iid = NA)}
 does the same for IID random effects.}
 
-\item{...}{Passed to \code{\link[TMB:sdreport]{TMB::sdreport()}} or \code{\link[RTMB:sdreport]{RTMB::sdreport()}}.}
+\item{...}{Passed to \code{\link[RTMB:sdreport]{RTMB::sdreport()}}.}
 
 \item{nsplit}{The number of chunks of time steps to calculate the index in
 separately. For large grids or models, \code{nsplit > 1} reduces memory use
@@ -206,8 +206,8 @@ fitting \code{weights} are not reused automatically.
 if (ggplot2_installed()) {
 library(ggplot2)
 
-# use a small number of knots for this example to make it fast:
-mesh <- make_mesh(pcod, c("X", "Y"), n_knots = 60)
+# use a coarse mesh for this example to make it fast:
+mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 20)
 
 # fit a spatiotemporal model:
 m <- sdmTMB(

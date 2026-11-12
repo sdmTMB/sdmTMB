@@ -56,7 +56,9 @@ before fitting, as with \code{na.action = na.omit} in \code{\link[stats:glm]{sta
 rows used are stored in the returned object as \code{data}.}
 
 \item{mesh}{An object from \code{\link[=make_mesh]{make_mesh()}} for \code{spatial_model = "spde"} or
-from \code{\link[=make_areal_domain]{make_areal_domain()}} for \code{"sar"} or \code{"car"}.}
+from \code{\link[=make_areal_domain]{make_areal_domain()}} for \code{"sar"} or \code{"car"}. Can be omitted for a
+model without spatial or spatiotemporal random fields, in which case
+\code{spatial} and \code{spatiotemporal} default to \code{'off'}.}
 
 \item{time}{An optional time column name (as character). Can be left as
 \code{NULL} for a model with only spatial random fields; however, if the data
@@ -73,13 +75,15 @@ the \href{https://sdmTMB.github.io/sdmTMB/articles/multi-family.html}{multi-fami
 supported combinations.}
 
 \item{spatial}{Estimate spatial random fields? Options are \code{'on'} / \code{'off'}
-or equivalently \code{TRUE} / \code{FALSE}. Optionally, a list for delta models,
+or equivalently \code{TRUE} / \code{FALSE}. Defaults to \code{'on'} if \code{mesh} is supplied
+and \code{'off'} otherwise. Optionally, a list for delta models,
 e.g. \code{list('on', 'off')}.}
 
 \item{spatiotemporal}{Estimate the spatiotemporal random fields as \code{'iid'}
 (independent and identically distributed; default), stationary \code{'ar1'}
 (first-order autoregressive), a random walk (\code{'rw'}), or fixed at 0
-\code{'off'}. Will be set to \code{'off'} if \code{time = NULL}. If a delta model, can be
+\code{'off'}. Will be set to \code{'off'} if \code{time = NULL} or, by default, if \code{mesh}
+is not supplied. If a delta model, can be
 a list. E.g., \code{list('off', 'ar1')}. Guidance: Use \code{'iid'} if spatiotemporal
 correlation is negligible or already accounted for in fixed effects; \code{'ar1'}
 if correlation between consecutive time steps decays gradually; \code{'rw'} if
@@ -181,8 +185,7 @@ Defaults to \code{NULL}, in which case \code{data} is used.}
 
 \item{preferential}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#experimental}{\figure{lifecycle-experimental.svg}{options: alt='[Experimental]'}}}{\strong{[Experimental]}} An optional
 preferential-sampling specification from \code{\link[=preferential_sampling]{preferential_sampling()}}.
-Requires the RTMB backend (the default). The sampling
-indicators are then modeled jointly with the catch data.}
+The sampling indicators are then modeled jointly with the catch data.}
 
 \item{knots}{Optional named list containing knot values to be used for basis
 construction of smoothing terms. See \code{\link[mgcv:gam]{mgcv::gam()}} and \code{\link[mgcv:gamm]{mgcv::gamm()}}.
@@ -233,34 +236,24 @@ fitting (\code{FALSE})?}
 \item{experimental}{A named list for esoteric or in-development options. Here
 be dragons.}
 
-\item{do_index}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} Do index
-standardization calculations while fitting? Instead, fit the model and
-then pass the fitted model and \code{newdata} directly to \code{\link[=get_index]{get_index()}},
-\code{\link[=get_cog]{get_cog()}}, \code{\link[=get_eao]{get_eao()}}, or \code{\link[=get_weighted_average]{get_weighted_average()}}. If \code{TRUE}, then
-\code{predict_args} must have a \code{newdata} element supplied and \code{area} can be
-supplied to \code{index_args}.}
-
-\item{predict_args}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} A list of arguments
-to pass to \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} \strong{if} \code{do_index = TRUE}.}
-
-\item{index_args}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} A list of arguments to
-pass to \code{\link[=get_index]{get_index()}} \strong{if} \code{do_index = TRUE}. Currently, \code{area} and
-\code{derived_link} are supported.}
+\item{do_index, predict_args, index_args}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#defunct}{\figure{lifecycle-defunct.svg}{options: alt='[Defunct]'}}}{\strong{[Defunct]}}
+Index calculations while fitting are no longer supported. Instead, fit the
+model and then pass it with \code{newdata} directly to \code{\link[=get_index]{get_index()}},
+\code{\link[=get_cog]{get_cog()}}, \code{\link[=get_eao]{get_eao()}}, or \code{\link[=get_weighted_average]{get_weighted_average()}}.}
 }
 \value{
 An object (list) of class \code{sdmTMB}. Useful elements include:
 \itemize{
 \item \code{model}: output from \code{\link[stats:nlminb]{stats::nlminb()}}
-\item \code{sd_report}: output from \code{\link[TMB:sdreport]{TMB::sdreport()}} or \code{\link[RTMB:sdreport]{RTMB::sdreport()}}
+\item \code{sd_report}: output from \code{\link[RTMB:sdreport]{RTMB::sdreport()}}
 \item \code{gradients}: gradients of the marginal log likelihood with respect to
 each fixed effect
 \item \code{data}: the data used in fitting (rows with missing values removed)
 \item \code{spde}: the object supplied to \code{mesh}
 \item \code{family}: the family object, including the inverse link function
 \code{family$linkinv()}
-\item \code{backend}: \code{"rtmb"} or \code{"tmb"}; see \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}}
-\item \code{tmb_obj}: the objective function object from \code{\link[TMB:MakeADFun]{TMB::MakeADFun()}} or
-\code{\link[RTMB:MakeADFun]{RTMB::MakeADFun()}}
+\item \code{backend}: always \code{"rtmb"}; kept for compatibility
+\item \code{tmb_obj}: the objective function object from \code{\link[RTMB:MakeADFun]{RTMB::MakeADFun()}}
 \item \code{tmb_data}, \code{tmb_params}, \code{tmb_map}: the data, parameter, and map lists
 passed to \code{MakeADFun()}
 }
@@ -316,7 +309,17 @@ supplied).
 A linear break-point relationship for a covariate can be included via
 \code{+ breakpt(variable)} in the formula, where \code{variable} is a single covariate
 corresponding to a column in \code{data}. In this case, the relationship is linear
-up to a point and then constant (hockey-stick shaped).
+up to a point and then constant (hockey-stick shaped). The likelihood is not
+smooth in the cutpoint, so a fit can stop at the wrong cutpoint while
+reporting convergence, and its standard error for the cutpoint is not
+reliable. \code{\link[=profile_breakpt]{profile_breakpt()}} estimates the cutpoint and a confidence interval
+by profile likelihood instead.
+
+Use \code{+ breakpt(variable, positive = TRUE)} to constrain the slope to be
+positive. The slope is then estimated in log space, so any \code{b_threshold}
+starting value for it in \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}} must be \code{log(slope)}, but \code{\link[=tidy]{tidy()}},
+\code{\link[=profile_breakpt]{profile_breakpt()}}, priors, and the \code{threshold_coefs} argument of
+\code{\link[=sdmTMB_simulate]{sdmTMB_simulate()}} use the slope itself.
 
 Similarly, a logistic-function threshold model can be included via
 \code{+ logistic(variable)}. This option models the relationship as a logistic
@@ -390,8 +393,7 @@ See the \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-
 
 Censored families treat some observations as known only to lie within a
 range, e.g., catch counts on longlines where competition for hooks hides
-the true number caught. Supply the bounds with \code{censored_upper}. All but
-\code{\link[=censored_poisson]{censored_poisson()}} need the RTMB backend (the default). See \link{Families}
+the true number caught. Supply the bounds with \code{censored_upper}. See \link{Families}
 and the \href{https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html}{hook competition vignette}.
 
 \strong{Areal models}

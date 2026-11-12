@@ -59,6 +59,9 @@
     # Allowed as the positive (2nd) component of a delta family in
     # multi-family mode:
     multi_family_delta_positive = FALSE,
+    # Uses `censored_upper`:
+    censored = grepl("^censored_", names(.valid_family)),
+    truncated = grepl("^truncated_", names(.valid_family)),
     stringsAsFactors = FALSE
   )
   registry$auxiliary[registry$family_name == "tweedie"] <- "thetaf"
@@ -81,6 +84,12 @@
     cli_abort("Unsupported family supplied in `family`: {paste(bad, collapse = ', ')}")
   }
   out
+}
+
+# Logical registry `flag` (e.g., "censored") for each of `family_name`
+.family_has <- function(family_name, flag) {
+  registry <- .family_registry()
+  registry[[flag]][match(family_name, registry$family_name)] %in% TRUE
 }
 
 .make_family_param_slots <- function(family_names) {

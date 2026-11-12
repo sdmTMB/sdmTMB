@@ -63,12 +63,18 @@ through its \code{predict_args}.}
 sets them all to zero. Excluding only some of them is not yet supported.}
 
 \item{allow_new_levels}{Allow levels of random effect grouping factors in
-\code{newdata} that were not seen in fitting? Rows with a new level get a
-random effect value of zero (a population-level prediction). \code{TRUE}
-allows them silently, \code{FALSE} gives an error (as with \code{allow.new.levels}
-in \pkg{lme4} and \pkg{glmmTMB}), and \code{NULL} (default) allows them with a
-warning. Not relevant if \code{re_form_iid} excludes the random effects.
-Grouping columns in \code{newdata} must be factors.}
+\code{newdata} that were not seen in fitting? A new level gets a random effect
+value of zero, while other grouping factors keep their random effects for
+those rows. \code{TRUE} allows them silently, \code{FALSE} gives an error (as with
+\code{allow.new.levels} in \pkg{lme4} and \pkg{glmmTMB}), and \code{NULL} (default)
+allows them with a warning. With \code{nsim}, \code{"sample"} instead draws each new
+level's random effects from their estimated (multivariate) normal
+distribution in every draw, as with \code{sample_new_levels = "gaussian"} in
+\pkg{brms}, so the draws include variation among levels. Rows sharing a new
+level share its draw, and fitted levels keep their usual draws. To include
+this variation for all rows, give the grouping factor a level not in the
+fitted data (see Examples). Not relevant if \code{re_form_iid} excludes the
+random effects. Grouping columns in \code{newdata} must be factors.}
 
 \item{nsim}{Number of draws. If \verb{> 0}, returns a matrix of draws instead of
 a data frame (see Value). Each draw takes the fixed and random effects
@@ -103,8 +109,9 @@ components, \code{1} gives the first (binary) component, and \code{2} the second
 component as \code{est1} and \code{est2}. Ignored for other models. See the
 \href{https://sdmTMB.github.io/sdmTMB/articles/delta-models.html}{delta-model vignette}.}
 
-\item{offset}{A numeric vector of offset values, one per row of \code{newdata}
-(not a column name). If \code{NULL} (default), predictions for the fitted data
+\item{offset}{A numeric vector of offset values, one per row of \code{newdata},
+or a single value for all rows (not a column name). If \code{NULL} (default),
+predictions for the fitted data
 use the fitted offset, and predictions with \code{newdata} use an offset of 0,
 i.e., predictions per unit of the offset (e.g., density rather than
 catch when the offset is log area swept).}
@@ -332,6 +339,18 @@ plot_map(p, exp(est_non_rf)) +
 plot_map(p, exp(est)) +
   ggtitle("Prediction (fixed effects + all random effects)") +
   scale_fill_viridis_c(trans = "sqrt")
+
+# Including variation among random effect levels ----------------------
+
+d <- pcod_2011
+d$fyear <- as.factor(d$year)
+m <- sdmTMB(density ~ depth_scaled + (1 | fyear), data = d,
+  family = tweedie(), spatial = "off")
+# a level not in the data draws a new year effect in each draw:
+nd <- data.frame(depth_scaled = 0, fyear = factor("new"))
+p <- predict(m, newdata = nd, nsim = 200, type = "response",
+  allow_new_levels = "sample")
+quantile(p, c(0.1, 0.5, 0.9))
 }
 \dontshow{\}) # examplesIf}
 }

@@ -26,8 +26,6 @@ nobs.sdmTMB <- function(object, ...) {
 #' @noRd
 fitted.sdmTMB <- function(object, ...) {
 
-  if (!"offset" %in% names(object))
-    cli_abort("It looks like this was fit with an older version of sdmTMB. Try sdmTMB:::update_version(fit).")
   predict(object, newdata = object$data, type = "response", offset = object$offset)$est
 }
 
@@ -119,6 +117,18 @@ confint.sdmTMB <- function(object, parm, level = 0.95, ...) {
   x
 }
 
+# Fixed effects counted by logLik(): every estimated parameter that isn't a
+# random effect. `control$profile` doesn't touch `tmb_random`, but REML adds
+# fixed effects to it, which are still counted.
+n_fixed_pars <- function(object) {
+  reml_random <- object$reml_random
+  if (is.null(reml_random) && isTRUE(object$reml)) {
+    reml_random <- c("b_j", "b_j2", "bs") # fits from before `reml_random` was stored
+  }
+  ran <- setdiff(object$tmb_random, reml_random)
+  sum(!names(object$tmb_obj$env$last.par.best) %in% ran)
+}
+
 #' Extract the log likelihood of a sdmTMB model
 #'
 #' @param object The fitted sdmTMB model object
@@ -128,10 +138,7 @@ confint.sdmTMB <- function(object, parm, level = 0.95, ...) {
 logLik.sdmTMB <- function(object, ...) {
   val <- -object$model$objective
   nobs <- nobs.sdmTMB(object)
-  lpb <- names(object$tmb_obj$env$last.par.best)
-  ran <- c("omega_s", "epsilon_st", "zeta_s", "b_rw_t", "RE", "b_smooth", "re_b_pars",
-    "xi_s", "b_pref_dev", "alpha_pref_dev")
-  df <- sum(!lpb %in% ran)
+  df <- n_fixed_pars(object)
   structure(val,
     nobs = nobs, nall = nobs, df = df,
     class = "logLik"
@@ -229,7 +236,8 @@ ranef.sdmTMB <- function(object, ...) {
 deviance.sdmTMB <- function(object, ...) {
   .check_family_capability(object, "deviance")
   implemented <- c("poisson", "Gamma", "binomial",
-    "gaussian", "lognormal", "tweedie", "nbinom1", "nbinom2", "gengamma", "censored_poisson")
+    "gaussian", "lognormal", "tweedie", "nbinom1", "nbinom2", "gengamma", "censored_poisson",
+    "compois")
   if (!.object_has_two_components(object, caller = "`deviance()`")) {
     if (!object$family$family %in% implemented) {
       cli_abort("Deviance not implemented for the fitted family")
@@ -431,10 +439,7 @@ model.frame.sdmTMB <- function(formula, ...) {
 #' from saved files.
 #'
 #' Unless `control` is supplied, the updated model reuses the fitted model's
-#' [sdmTMBcontrol()] settings, including its backend, regardless of the
-#' current `sdmTMB.backend` option. A supplied `control` replaces these
-#' settings, including the backend (e.g.,
-#' `update(fit, control = sdmTMBcontrol(backend = "rtmb"))`).
+#' [sdmTMBcontrol()] settings. A supplied `control` replaces these settings.
 #'
 #' @param object An sdmTMB model object.
 #' @param formula. Optional updated formula.
@@ -453,6 +458,7 @@ model.frame.sdmTMB <- function(formula, ...) {
 #' @export
 #' @importFrom stats update
 update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
+  check_fit_version(object)
   call <- object$call
   new_args <- list(...)
 
@@ -489,15 +495,9 @@ update.sdmTMB <- function(object, formula., ..., evaluate = TRUE) {
     call$preferential <- object$preferential$spec
   }
 
-  # keep the fitted controls and backend unless `control` is replaced;
-  # otherwise the backend would re-resolve from the current global option
+  # keep the fitted controls unless `control` is replaced
   if (!"control" %in% names(new_args)) {
-    control <- object$control
-    if (!is.list(control)) control <- sdmTMBcontrol(backend = "tmb")
-    control$backend <- backend_sdmTMB(object)
-    call$control <- control
-  } else if (is.list(new_args$control) && is.null(new_args$control$backend)) {
-    call$control$backend <- backend_sdmTMB(object)
+    call$control <- object$control
   }
 
   # evaluate the updated call if requested
@@ -567,7 +567,7 @@ sigma.sdmTMB <- function(object, ...) {
   }
 
   if (family_name %in% c("nbinom1", "nbinom2", "censored_nbinom1",
-    "censored_nbinom2", "tweedie")) {
+    "censored_nbinom2", "tweedie", "compois")) {
     # For negative binomial, return phi (dispersion parameter)
     tmb_obj <- object$tmb_obj
     phi_idx <- which(names(tmb_obj$env$last.par.best) == "ln_phi")

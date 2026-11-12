@@ -63,15 +63,18 @@
 NULL # don't document functions below
 
 #' @exportS3Method NULL
-recover_data.sdmTMB <- function(object, ...) {
+recover_data.sdmTMB <- function(object, data = NULL, ...) {
   fcall <- stats::getCall(object)
   if (!requireNamespace("emmeans", quietly = TRUE)) {
     cli_abort("Please install the emmeans package to use this function")
   }
+  # use the stored data rather than re-evaluating `fcall$data`, which may not
+  # resolve in the formula environment (e.g., a fit made inside a function)
+  if (is.null(data)) data <- model.frame(object)
   emmeans::recover_data(
     fcall,
     stats::delete.response(terms(object)),
-    attr(model.frame(object), "na.action"), ...
+    attr(model.frame(object), "na.action"), data = data, ...
   )
 }
 

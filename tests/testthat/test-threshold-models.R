@@ -37,7 +37,6 @@ test_that("A linear threshold *delta* model fits", {
   )
   mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.2)
   # seeds were chosen for RTMB draws, which differ from TMB draws
-  sim_ctrl <- sdmTMBcontrol(backend = "rtmb")
   s1 <- sdmTMB_simulate(
     formula = ~ 1 + breakpt(a1),
     data = predictor_dat,
@@ -52,8 +51,7 @@ test_that("A linear threshold *delta* model fits", {
     sigma_O = 0.05,
     seed = 4,
     B = 0,
-    threshold_coefs = c(0.5, 0.3),
-    control = sim_ctrl
+    threshold_coefs = c(0.5, 0.3)
   )
   s2 <- sdmTMB_simulate(
     formula = ~ 1 + breakpt(a1),
@@ -65,8 +63,7 @@ test_that("A linear threshold *delta* model fits", {
     sigma_O = 0.1,
     seed = 4,
     B = 0,
-    threshold_coefs = c(0.3, 0.3),
-    control = sim_ctrl
+    threshold_coefs = c(0.3, 0.3)
   )
 
   plot(predictor_dat$a1, s1$observed)
@@ -123,4 +120,135 @@ test_that("A linear threshold *delta* model fits", {
   expect_equal(t2$estimate, td2$estimate, tolerance = 1e-4)
   expect_equal(t1$std.error, td1$std.error, tolerance = 1e-3)
   expect_equal(t2$std.error, td2$std.error, tolerance = 1e-3)
+})
+
+test_that("Threshold terms are matched by function name, not substring", {
+  d <- pcod_2011
+  d$logistic_x <- d$depth_scaled
+  fit <- sdmTMB(density ~ logistic_x, data = d, spatial = "off",
+    family = tweedie(), do_fit = FALSE)
+  expect_identical(fit$tmb_data$threshold_func, 0L)
+  expect_true("logistic_x" %in% colnames(fit$tmb_data$X_ij[[1]]))
+
+  expect_error(
+    sdmTMB(density ~ breakpt(depth_scaled) + logistic(depth_scaled2), data = pcod_2011,
+      spatial = "off", family = tweedie(), do_fit = FALSE),
+    "single"
+  )
+})
+
+test_that("Threshold terms must wrap a single column", {
+  d <- pcod_2011
+  d$f <- factor(d$year %% 2)
+  fit_f <- function(f) {
+    sdmTMB(f, data = d, spatial = "off", family = tweedie(), do_fit = FALSE)
+  }
+  msg <- "single column name"
+  expect_error(fit_f(density ~ breakpt(depth_scaled):f), msg)
+  expect_error(fit_f(density ~ f:breakpt(depth_scaled)), msg)
+  expect_error(fit_f(density ~ breakpt(depth_scaled) * f), msg)
+  expect_error(fit_f(density ~ logistic(log(depth))), msg)
+  expect_error(fit_f(density ~ breakpt(not_a_column)), "not a column in `data`")
+
+  # fix the cutpoint: estimating it directly isn't reliable (see profile_breakpt())
+  fit <- sdmTMB(density ~ breakpt(depth_scaled), data = pcod_2011,
+    spatial = "off", family = tweedie(),
+    control = sdmTMBcontrol(
+      start = list(b_threshold = matrix(c(0, 0), 2L)),
+      map = list(b_threshold = factor(c(1L, NA)))
+    ))
+  nd <- pcod_2011
+  nd$depth_scaled <- NULL
+  expect_error(predict(fit, newdata = nd), "not a column in `newdata`")
+})
+
+test_that("Delta list formulas must share one threshold term", {
+  fit_list <- function(f) {
+    sdmTMB(f, data = pcod_2011, spatial = "off", family = delta_gamma(),
+      do_fit = FALSE)
+  }
+  expect_error(fit_list(list(density ~ 1, density ~ breakpt(depth_scaled))),
+    "same threshold term")
+  expect_error(fit_list(list(density ~ breakpt(depth_scaled), density ~ 1)),
+    "same threshold term")
+  expect_error(fit_list(list(density ~ breakpt(depth_scaled),
+    density ~ breakpt(depth_scaled2))), "same threshold term")
+
+  fit <- fit_list(list(density ~ breakpt(depth_scaled), density ~ depth_scaled2 + breakpt(depth_scaled)))
+  expect_identical(fit$tmb_data$threshold_func, 1L)
+  expect_identical(dim(fit$tmb_params$b_threshold), c(2L, 2L))
+  expect_true("depth_scaled2" %in% colnames(fit$tmb_data$X_ij[[2]]))
+})
+
+test_that("breakpt(positive = TRUE) constrains the slope to be positive", {
+  set.seed(41)
+  d <- data.frame(x = seq(-2, 2, length.out = 300))
+  d$y <- 2 + 1.5 * pmin(d$x, 0.35) + rnorm(nrow(d), sd = 0.25)
+  m0 <- sdmTMB(y ~ 1 + breakpt(x), data = d, spatial = "off")
+  m <- sdmTMB(y ~ 1 + breakpt(x, positive = TRUE), data = d, spatial = "off")
+
+  # the same model as the unconstrained fit when the slope is clearly positive
+  expect_equal(logLik(m), logLik(m0), tolerance = 1e-4, ignore_attr = TRUE)
+  b <- tidy(m)
+  b0 <- tidy(m0)
+  expect_equal(b$term, b0$term)
+  expect_equal(b$estimate, b0$estimate, tolerance = 1e-3)
+  expect_equal(b$std.error, b0$std.error, tolerance = 1e-3)
+  # the estimated parameter is log(slope); tidy() reports the slope
+  expect_equal(m$model$par[["b_threshold"]], log(b$estimate[[2L]]),
+    tolerance = 1e-6)
+  expect_equal(predict(m, newdata = d)$est, predict(m0, newdata = d)$est,
+    tolerance = 1e-3)
+
+  # a declining relationship can't produce a negative slope
+  d$y2 <- 2 - 1.5 * pmin(d$x, 0.35) + rnorm(nrow(d), sd = 0.25)
+  neg <- suppressWarnings(
+    sdmTMB(y2 ~ 1 + breakpt(x, positive = TRUE), data = d, spatial = "off"))
+  # the effect goes flat: here the cutpoint drops below the data, so
+  # `slope * min(x, cut)` is a constant absorbed by the intercept and the slope
+  # is unidentified (it could equally go to 0)
+  expect_gt(suppressWarnings(tidy(neg))$estimate[[2L]], 0)
+  expect_equal(diff(range(predict(neg)$est)), 0, tolerance = 1e-3)
+  expect_equal(logLik(neg), logLik(sdmTMB(y2 ~ 1, data = d, spatial = "off")),
+    tolerance = 1e-4, ignore_attr = TRUE)
+  expect_lt(tidy(sdmTMB(y2 ~ 1 + breakpt(x), data = d,
+    spatial = "off"))$estimate[[2L]], 0)
+})
+
+test_that("breakpt() options are parsed and checked", {
+  d <- data.frame(y = 1:3, x = c(0.1, 0.2, 0.3), mi1_s = 1:3)
+  parse <- function(f) parse_thresholds(list(f), d)
+  expect_identical(parse(y ~ breakpt(x))$threshold_func, 1L)
+  expect_identical(parse(y ~ logistic(x))$threshold_func, 2L)
+  expect_identical(parse(y ~ breakpt(x, positive = TRUE))$threshold_func, 3L)
+  expect_identical(parse(y ~ breakpt(x, positive = FALSE))$threshold_func, 1L)
+  out <- parse(y ~ 1 + breakpt(mi1_s, positive = TRUE))
+  expect_identical(out$threshold_parameter, "mi1_s")
+  expect_equal(out$formulas[[1L]], y ~ 1, ignore_formula_env = TRUE)
+  expect_error(parse(y ~ breakpt(x, nope = 1)), "optionally")
+  expect_error(parse(y ~ breakpt(x, positive = T)), "optionally")
+  expect_error(parse(y ~ breakpt(x, TRUE)), "optionally")
+  expect_error(parse(y ~ breakpt(x, positive = TRUE, positive = FALSE)), "optionally")
+  expect_error(parse(y ~ logistic(x, positive = TRUE)), "only a column name")
+  expect_error(parse(y ~ breakpt(x = x)), "single column name")
+  expect_error(parse(y ~ breakpt(x, positive = TRUE):mi1_s), "single column name")
+  # delta components must agree on `positive`
+  expect_error(parse_thresholds(list(y ~ breakpt(x), y ~ breakpt(x, positive = TRUE)), d),
+    "same threshold term")
+})
+
+test_that("breakpt(positive = TRUE) simulation takes the slope itself", {
+  d <- data.frame(X = runif(50), Y = runif(50), a1 = seq(-2, 2, length.out = 50))
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.2)
+  sim <- function(formula, coefs) {
+    sdmTMB_simulate(formula, data = d, mesh = mesh, family = gaussian(),
+      range = 0.5, sigma_O = 0, phi = 0.1, B = 1, seed = 1,
+      threshold_coefs = coefs)
+  }
+  s <- sim(~ 1 + breakpt(a1, positive = TRUE), c(0.5, 0.3))
+  expect_equal(s$mu, 1 + 0.5 * pmin(d$a1, 0.3), tolerance = 1e-6)
+  expect_equal(s$`a1-slope`[[1L]], 0.5)
+  expect_equal(s$mu, sim(~ 1 + breakpt(a1), c(0.5, 0.3))$mu)
+  expect_error(sim(~ 1 + breakpt(a1, positive = TRUE), c(-0.5, 0.3)),
+    "must be positive")
 })

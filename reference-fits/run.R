@@ -2,16 +2,16 @@
 
 # Reference-fit regression suite. Run from the package root:
 #
-#   Rscript reference-fits/run.R check    [--backend tmb|rtmb] [--filter REGEX] [--cores N] [--installed]
-#   Rscript reference-fits/run.R validate [--backend tmb|rtmb|both] [--filter REGEX] [--cores N]
+#   Rscript reference-fits/run.R check    [--filter REGEX] [--cores N] [--installed]
+#   Rscript reference-fits/run.R validate [--filter REGEX] [--cores N]
 #   Rscript reference-fits/run.R record   [--filter REGEX] [--cores N]
 #
 # `check` refits every case and compares it with ref/reference.csv.
-# `validate` fits with standard errors, runs sanity(), and reports timing and
-# TMB vs RTMB agreement without writing anything.
-# `record` is `validate` for both backends; if every case passes, it writes
-# the TMB values (RTMB values for RTMB-only cases) to ref/reference.csv (with
-# --filter, only those cases are replaced). See README.md.
+# `validate` fits with standard errors, runs sanity(), and reports timing
+# without writing anything.
+# `record` is `validate`; if every case passes, it writes the values to
+# ref/reference.csv (with --filter, only those cases are replaced). See
+# README.md.
 
 args <- commandArgs(trailingOnly = TRUE)
 mode <- if (length(args)) args[[1L]] else ""
@@ -23,8 +23,9 @@ opt <- function(name, default) {
   i <- match(paste0("--", name), args)
   if (is.na(i)) default else args[[i + 1L]]
 }
-backend_opt <- opt("backend", if (mode == "check") "tmb" else "both")
-backends <- if (mode == "record" || backend_opt == "both") c("tmb", "rtmb") else backend_opt
+if ("--backend" %in% args) {
+  stop("`--backend` was removed with the C++ TMB backend.", call. = FALSE)
+}
 filter <- opt("filter", NULL)
 cores <- as.integer(opt("cores", 1L))
 
@@ -42,12 +43,6 @@ options(cli.num_colors = 1L, lifecycle_verbosity = "quiet")
 source(file.path(rf_dir, "cases.R"), local = TRUE)
 if (!is.null(filter)) cases <- cases[grepl(filter, names(cases))]
 if (!length(cases)) stop("No cases match the filter.", call. = FALSE)
-
-# Cases that run on `backend` (e.g., RTMB-only families skip TMB).
-backend_cases <- function(backend) {
-  names(cases)[vapply(cases, function(x) backend %in% x$backends, logical(1))]
-}
-backends <- Filter(function(b) length(backend_cases(b)), backends)
 
 # Tolerances --------------------------------------------------------------------
 
@@ -119,11 +114,10 @@ case_metrics <- function(fit, case) {
   out
 }
 
-run_case <- function(name, backend, getsd) {
+run_case <- function(name, getsd) {
   case <- cases[[name]]
   a <- case$args
   if (is.null(a$control)) a$control <- sdmTMBcontrol()
-  a$control$backend <- backend
   a$control$getsd <- getsd
   # The first (no-random-effect) phase can step outside the valid region for
   # identity and inverse links; a single phase is also faster here.
@@ -151,10 +145,10 @@ run_case <- function(name, backend, getsd) {
   res
 }
 
-run_all <- function(backend, getsd) {
-  nms <- backend_cases(backend)
-  cat(sprintf("Fitting %d cases with %s...\n", length(nms), backend))
-  out <- parallel::mclapply(nms, run_case, backend = backend,
+run_all <- function(getsd) {
+  nms <- names(cases)
+  cat(sprintf("Fitting %d cases...\n", length(nms)))
+  out <- parallel::mclapply(nms, run_case,
     getsd = getsd, mc.cores = cores, mc.preschedule = FALSE)
   names(out) <- nms
   out
@@ -182,8 +176,9 @@ compare_long <- function(ref, new) {
   m[order(m$case, m$metric), ]
 }
 
-# Recorded for information only; never compared.
-timing_metrics <- c("seconds_tmb", "seconds_rtmb")
+# Recorded for information only; never compared. `seconds_tmb` and
+# `seconds_rtmb` are from references recorded with both backends.
+timing_metrics <- c("seconds", "seconds_tmb", "seconds_rtmb")
 
 format_value <- function(x) trimws(formatC(x, digits = 12, format = "g"))
 
@@ -200,38 +195,42 @@ print_failures <- function(cmp, label) {
 }
 
 # Local (untracked) timing history: compares each run with the previous run of
-# the same mode/backend/case, flags slowdowns, then stores the new timings.
+# the same mode/case, flags slowdowns, then stores the new timings.
 timing_file <- file.path(rf_dir, "timings-local.csv")
 slow_rel <- 0.10 # flag if at least 10% slower than the previous run
 slow_abs <- 0.02 # ... and at least this many seconds slower (ignore timer noise)
 
-flag_slow_timings <- function(results, backend) {
-  new <- data.frame(mode = mode, backend = backend, case = names(results),
+flag_slow_timings <- function(results) {
+  new <- data.frame(mode = mode, case = names(results),
     seconds = round(vapply(results, `[[`, numeric(1), "seconds"), 2))
   old <- if (file.exists(timing_file)) utils::read.csv(timing_file,
     stringsAsFactors = FALSE) else new[0, ]
-  prev <- old[old$mode == mode & old$backend == backend, ]
+  # Histories from before the TMB backend was removed have a `backend` column
+  if ("backend" %in% names(old)) {
+    old <- old[old$backend == "rtmb", setdiff(names(old), "backend")]
+  }
+  prev <- old[old$mode == mode, ]
   m <- merge(new, prev[c("case", "seconds")], by = "case",
     suffixes = c("", "_prev"))
   slow <- m[m$seconds - m$seconds_prev >= slow_abs &
     m$seconds >= (1 + slow_rel) * m$seconds_prev, , drop = FALSE]
   if (nrow(slow)) {
     slow$change <- sprintf("+%.0f%%", 100 * (slow$seconds / slow$seconds_prev - 1))
-    cat(sprintf("\n%s (%s): %d case(s) >= %.0f%% slower than the previous run:\n",
-      backend, mode, nrow(slow), 100 * slow_rel))
+    cat(sprintf("\n%s: %d case(s) >= %.0f%% slower than the previous run:\n",
+      mode, nrow(slow), 100 * slow_rel))
     print(slow[order(-slow$seconds / slow$seconds_prev),
       c("case", "seconds_prev", "seconds", "change")], row.names = FALSE, right = FALSE)
   } else if (nrow(m)) {
-    cat(sprintf("\n%s (%s): no cases >= %.0f%% slower than the previous run.\n",
-      backend, mode, 100 * slow_rel))
+    cat(sprintf("\n%s: no cases >= %.0f%% slower than the previous run.\n",
+      mode, 100 * slow_rel))
   }
-  keep <- old[!(old$mode == mode & old$backend == backend & old$case %in% new$case), ]
+  keep <- old[!(old$mode == mode & old$case %in% new$case), ]
   out <- rbind(keep, new)
-  utils::write.csv(out[order(out$mode, out$backend, out$case), ], timing_file,
+  utils::write.csv(out[order(out$mode, out$case), ], timing_file,
     row.names = FALSE)
 }
 
-report_status <- function(results, backend) {
+report_status <- function(results) {
   tab <- data.frame(
     case = names(results),
     seconds = round(vapply(results, `[[`, numeric(1), "seconds"), 2),
@@ -239,10 +238,9 @@ report_status <- function(results, backend) {
       if (r$sanity_ok) "ok" else paste("FAIL", r$sanity_fail), character(1)),
     error = vapply(results, `[[`, character(1), "error")
   )
-  utils::write.csv(tab, file.path(rf_dir, paste0("validate-", backend, ".csv")),
-    row.names = FALSE)
-  cat(sprintf("\n%s: %.2f s total\n", backend, sum(tab$seconds)))
-  flag_slow_timings(results, backend)
+  utils::write.csv(tab, file.path(rf_dir, "validate.csv"), row.names = FALSE)
+  cat(sprintf("\n%.2f s total\n", sum(tab$seconds)))
+  flag_slow_timings(results)
   bad <- tab[!is.na(tab$error) | tab$sanity != "ok", , drop = FALSE]
   bad$error <- substr(gsub("\\s+", " ", bad$error), 1, 70)
   if (nrow(bad)) print(bad, row.names = FALSE, right = FALSE)
@@ -258,46 +256,28 @@ if (mode == "check") {
   if (!file.exists(ref_file)) stop("No reference file; run `record` first.", call. = FALSE)
   ref <- utils::read.csv(ref_file, stringsAsFactors = FALSE)
   ref <- ref[ref$case %in% names(cases) & !ref$metric %in% timing_metrics, ]
-  ok <- TRUE
-  for (b in backends) {
-    results <- run_all(b, getsd = FALSE)
-    errors <- Filter(function(r) !is.na(r$error), results)
-    for (nm in names(errors)) cat(sprintf("ERROR %s: %s\n", nm, errors[[nm]]$error))
-    flag_slow_timings(results, b)
-    cmp <- compare_long(ref[ref$case %in% names(results), ], to_long(results))
-    out_file <- file.path(rf_dir, paste0("check-", b, ".csv"))
-    utils::write.csv(cmp, out_file, row.names = FALSE)
-    ok <- print_failures(cmp, paste(b, "vs reference")) && ok
-  }
+  results <- run_all(getsd = FALSE)
+  errors <- Filter(function(r) !is.na(r$error), results)
+  for (nm in names(errors)) cat(sprintf("ERROR %s: %s\n", nm, errors[[nm]]$error))
+  flag_slow_timings(results)
+  cmp <- compare_long(ref[ref$case %in% names(results), ], to_long(results))
+  utils::write.csv(cmp, file.path(rf_dir, "check.csv"), row.names = FALSE)
+  ok <- print_failures(cmp, "vs reference")
   quit(status = if (ok) 0L else 1L)
 }
 
 # validate / record: fit with standard errors so sanity() can run.
-results <- lapply(stats::setNames(backends, backends), run_all, getsd = TRUE)
-ok <- TRUE
-for (b in backends) ok <- report_status(results[[b]], b) && ok
-if (length(backends) == 2L) {
-  both <- intersect(names(results$tmb), names(results$rtmb))
-  cmp <- compare_long(to_long(results$tmb[both]), to_long(results$rtmb[both]))
-  ok <- print_failures(cmp, "RTMB vs TMB") && ok
-  cat("\nLargest TMB vs RTMB relative differences by metric type:\n")
-  cmp$type <- sub("_(est|est1|est2)_(mean|sd)$", "", cmp$metric)
-  print(stats::aggregate(rel_diff ~ type, cmp, max), row.names = FALSE)
-}
+results <- run_all(getsd = TRUE)
+ok <- report_status(results)
 
 if (mode == "record") {
   if (!ok) {
     cat("\nNot recording: fix the failures above first.\n")
     quit(status = 1L)
   }
-  # TMB values, plus RTMB values for RTMB-only cases.
-  rtmb_only <- setdiff(names(results$rtmb), names(results$tmb))
-  new <- rbind(to_long(results$tmb), to_long(results$rtmb[rtmb_only]))
-  for (b in backends) {
-    new <- rbind(new, data.frame(case = names(results[[b]]),
-      metric = paste0("seconds_", b),
-      value = round(vapply(results[[b]], `[[`, numeric(1), "seconds"), 2)))
-  }
+  new <- rbind(to_long(results), data.frame(case = names(results),
+    metric = "seconds",
+    value = round(vapply(results, `[[`, numeric(1), "seconds"), 2)))
   if (!is.null(filter) && file.exists(ref_file)) {
     old <- utils::read.csv(ref_file, stringsAsFactors = FALSE)
     new <- rbind(old[!old$case %in% names(cases), ], new)
@@ -306,7 +286,7 @@ if (mode == "record") {
   new$value <- format_value(new$value)
   dir.create(dirname(ref_file), showWarnings = FALSE)
   utils::write.csv(new, ref_file, row.names = FALSE, quote = FALSE)
-  pkgs <- c("TMB", "RTMB", "Matrix", "fmesher", "mgcv")
+  pkgs <- c("RTMB", "TMB", "Matrix", "fmesher", "mgcv")
   writeLines(c(
     paste("recorded:", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")),
     paste("git:", system("git rev-parse --short HEAD", intern = TRUE)),

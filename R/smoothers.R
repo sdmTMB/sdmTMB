@@ -28,6 +28,8 @@ parse_smoothers <- function(formula, data, knots = NULL, newdata = NULL, basis_p
   basis_out <- list()
   Zs <- list()
   Xs <- list()
+  zs_basis <- integer(0) # basis index for each penalized block in `Zs`
+  xf_term <- character(0) # smoother term label for each basis
   labels <- list()
   classes <- list()
   if (length(smooth_i) > 0) {
@@ -53,6 +55,7 @@ parse_smoothers <- function(formula, data, knots = NULL, newdata = NULL, basis_p
       }
       for (j in seq_along(basis[[i]])) { # elements > 1 with `by` terms
         ns_Xf <- ns_Xf + 1
+        xf_term[ns_Xf] <- smterms[i]
         rasm <- mgcv::smooth2random(basis[[i]][[j]], names(data), type = 2)
         if (!is.null(newdata)) {
           rasm <- s2rPred(basis[[i]][[j]], rasm, newdata)
@@ -60,22 +63,26 @@ parse_smoothers <- function(formula, data, knots = NULL, newdata = NULL, basis_p
         for (k in seq_along(rasm$rand)) { # elements > 1 with if s(x, y) or t2()
           ns <- ns + 1
           Zs[[ns]] <- rasm$rand[[k]]
+          zs_basis[ns] <- ns_Xf
         }
         Xs[[ns_Xf]] <- rasm$Xf
       }
     }
     sm_dims <- unlist(lapply(Zs, ncol))
+    xf_dims <- vapply(Xs, ncol, integer(1L)) # unpenalized (null space) columns per basis
     Xs <- do.call(cbind, Xs) # combine 'em all into one design matrix
     b_smooth_start <- c(0, cumsum(sm_dims)[-length(sm_dims)])
   } else {
     has_smooths <- FALSE
     sm_dims <- 0L
+    xf_dims <- integer(0)
     b_smooth_start <- 0L
     Xs <- matrix(nrow = 0L, ncol = 0L)
   }
   list(Xs = Xs, Zs = Zs, has_smooths = has_smooths, labels = labels,
     classes = classes, basis_out = basis_out,
-    sm_dims = sm_dims, b_smooth_start = b_smooth_start)
+    sm_dims = sm_dims, b_smooth_start = b_smooth_start,
+    xf_dims = xf_dims, zs_basis = zs_basis, xf_term = xf_term)
 }
 
 # from mgcv docs ?mgcv::smooth2random

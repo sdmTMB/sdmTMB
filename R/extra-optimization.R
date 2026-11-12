@@ -21,50 +21,33 @@
 run_extra_optimization <- function(object,
   nlminb_loops = 0,
   newton_loops = 1) {
-  new_obj <- object
   # a fresh objective so optimizing doesn't modify `object`'s TMB environment
-  new_obj$tmb_obj <- remake_tmb_obj(object)
+  obj <- remake_tmb_obj(object)
   tmb_opt <- run_nlminb_loops(
-    nlminb_loops = nlminb_loops, opt = object$model, obj = new_obj$tmb_obj,
+    nlminb_loops = nlminb_loops, opt = object$model, obj = obj,
     lower = object$lower, upper = object$upper,
     control = object$nlminb_control, silent = FALSE,
     suppress_warnings = isTRUE(object$control$suppress_nlminb_warnings)
   )
   tmb_opt <- run_newton_loops(
-    newton_loops = newton_loops, opt = tmb_opt, obj = new_obj$tmb_obj,
+    newton_loops = newton_loops, opt = tmb_opt, obj = obj,
     silent = FALSE, lower = object$lower, upper = object$upper
   )
-  new_obj$model <- tmb_opt
-  new_obj$sd_report <- sdreport_sdmTMB(new_obj$tmb_obj,
-    getJointPrecision = "jointPrecision" %in% names(object$sd_report))
-  conv <- get_convergence_diagnostics(new_obj$sd_report)
-  new_obj$gradients <- conv$final_grads
-  new_obj$bad_eig <- conv$bad_eig
-  new_obj$pos_def_hessian <- new_obj$sd_report$pdHess
-  lpb <- new_obj$tmb_obj$env$last.par.best
-  new_obj$parlist <- new_obj$tmb_obj$env$parList(par = lpb)
-  new_obj$last.par.best <- lpb
-  new_obj
+  set_fit_results(object, obj, tmb_opt,
+    get_joint_precision = "jointPrecision" %in% names(object$sd_report))
 }
 
 # Rebuild a fit's TMB objective and evaluate it at the fitted parameters. The
 # result shares no environment with `object$tmb_obj`.
 remake_tmb_obj <- function(object) {
-  if (is.null(object$parlist)) {
-    cli_abort("This model was fit with an sdmTMB version that is too old; please refit it.")
-  }
+  check_fit_version(object)
   obj <- make_sdmTMB_adfun(
     data = object$tmb_data,
     parameters = object$parlist,
     map = object$tmb_map,
     random = object$tmb_random,
-    backend = backend_sdmTMB(object),
     profile = object$control$profile
   )
-  if (isTRUE(object$control$normalize) &&
-      isTRUE(object$tmb_data$normalize_in_r == 1L)) {
-    obj <- TMB::normalize(obj, flag = "flag", value = 0)
-  }
   obj$env$beSilent()
   obj$fn(object$model$par) # restores last.par.best etc.
   obj
@@ -79,7 +62,7 @@ maybe_suppress_warnings <- function(suppress) {
 # First of two phases: fit the fixed effects with random fields off (and
 # censored families as uncensored for stability), returning starting values
 # for the full model. Falls back to `tmb_params` if this phase fails.
-fit_first_phase <- function(tmb_data, tmb_params, tmb_map, profile, backend,
+fit_first_phase <- function(tmb_data, tmb_params, tmb_map, profile,
                             lower, upper, mesh, nlminb_control, silent,
                             suppress_warnings = FALSE) {
   tmb_data$no_spatial <- 1L
@@ -95,8 +78,15 @@ fit_first_phase <- function(tmb_data, tmb_params, tmb_map, profile, backend,
   # Custom priors may refer to fields that are off in this phase, so they're
   # left out; this phase only finds starting values.
   tmb_data$priors_custom <- NULL
+  # estimate only the fixed effects and family parameters (as mapped in
+  # `tmb_map`); hold everything else at its starting value
+  phase1_pars <- c("b_j", "b_j2", "b_disp_k", "thetaf", "ln_student_df",
+    "gengamma_Q", "psi", "ln_phi", "b_threshold")
+  for (p in setdiff(names(tmb_params), phase1_pars)) {
+    tmb_map[[p]] <- factor(rep(NA, length(tmb_params[[p]])))
+  }
   obj <- make_sdmTMB_adfun(data = tmb_data, parameters = tmb_params,
-    profile = profile, map = tmb_map, backend = backend, silent = silent)
+    profile = profile, map = tmb_map, silent = silent)
   lim <- set_limits(obj, lower = lower, upper = upper, mesh = mesh,
     spatial_model = tmb_data$spatial_model, silent = TRUE)
   opt <- tryCatch(

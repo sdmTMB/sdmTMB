@@ -42,6 +42,20 @@ test_that("simulate() and dharma_residuals() work", {
   # expect_s3_class(x, "DHARMa")
 })
 
+test_that("dharma_residuals() uses the simulation mean as the predicted response", {
+  skip_on_cran()
+  skip_if_not_installed("DHARMa")
+
+  mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)
+  fit <- sdmTMB(density ~ 1, data = pcod_2011, mesh = mesh, family = tweedie())
+  s <- simulate(fit, nsim = 20, type = "mle-mvn")
+  r <- dharma_residuals(s, fit, return_DHARMa = TRUE, plot = FALSE)
+  expect_equal(r$fittedPredictedResponse, unname(rowMeans(s)))
+  r <- dharma_residuals(s, fit, return_DHARMa = TRUE, plot = FALSE,
+    fittedPredictedResponse = fitted(fit))
+  expect_equal(r$fittedPredictedResponse, fitted(fit))
+})
+
 test_that("dharma_residuals() uses family_spec for multi-family observed responses", {
   skip_on_cran()
   skip_if_not_installed("DHARMa")

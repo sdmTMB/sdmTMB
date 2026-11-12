@@ -7,7 +7,7 @@
 sdmTMBcontrol(
   eval.max = 2000L,
   iter.max = 1000L,
-  normalize = FALSE,
+  normalize = deprecated(),
   nlminb_loops = 1L,
   newton_loops = 1L,
   getsd = TRUE,
@@ -29,7 +29,7 @@ sdmTMBcontrol(
   collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
   get_rsr = FALSE,
-  backend = getOption("sdmTMB.backend", "rtmb"),
+  backend = deprecated(),
   ...
 )
 }
@@ -39,10 +39,9 @@ allowed.}
 
 \item{iter.max}{Maximum number of iterations allowed.}
 
-\item{normalize}{Logical: use \code{\link[TMB:normalize]{TMB::normalize()}} to normalize the process
-likelihood using the Laplace approximation? Can result in a substantial
-speed boost in some cases. This used to default to \code{FALSE} prior to
-May 2021. Currently not working for models fit with REML or random intercepts.}
+\item{normalize}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} Ignored. This used
+\code{TMB::normalize()} with the removed C++ TMB backend; the RTMB densities are
+already fully normalized.}
 
 \item{nlminb_loops}{How many times to run \code{\link[stats:nlminb]{stats::nlminb()}} optimization.
 Sometimes restarting the optimizer at the previous best values aids
@@ -56,7 +55,7 @@ the Hessian at the current MLE with \code{\link[stats:optimHess]{stats::optimHes
 finite-difference approach and uses this to update the fixed effect
 estimates.}
 
-\item{getsd}{Logical indicating whether to call \code{\link[TMB:sdreport]{TMB::sdreport()}}.}
+\item{getsd}{Logical indicating whether to call \code{\link[RTMB:sdreport]{RTMB::sdreport()}}.}
 
 \item{quadratic_roots}{Experimental feature for internal use right now; may
 be moved to a branch. Logical: should quadratic roots be calculated? Note:
@@ -73,7 +72,7 @@ will replace the default starting values.}
 
 \item{map}{A named list with factor \code{NA}s specifying parameter values that
 should be fixed at a constant value. See the documentation in
-\code{\link[TMB:MakeADFun]{TMB::MakeADFun()}}. This should usually be used with \code{start} to specify the
+\code{\link[RTMB:MakeADFun]{RTMB::MakeADFun()}}. This should usually be used with \code{start} to specify the
 fixed value.}
 
 \item{lower}{An optional named list of lower bounds within the optimization.
@@ -98,19 +97,16 @@ Phases are usually faster and more stable.}
 
 \item{profile}{Logical: should population-level/fixed effects be profiled
 out of the likelihood? These are then appended to the random effects
-vector without the Laplace approximation. See \code{\link[TMB:MakeADFun]{TMB::MakeADFun()}}. \emph{This
+vector without the Laplace approximation. See \code{\link[RTMB:MakeADFun]{RTMB::MakeADFun()}}. \emph{This
 can dramatically speed up model fit if there are many fixed effects but is
 experimental at this stage.}}
 
 \item{get_joint_precision}{Logical. Passed to \code{getJointPrecision} in
-\code{\link[TMB:sdreport]{TMB::sdreport()}}. Must be \code{TRUE} to use simulation-based methods in
+\code{\link[RTMB:sdreport]{RTMB::sdreport()}}. Must be \code{TRUE} to use simulation-based methods in
 \code{\link[=predict.sdmTMB]{predict.sdmTMB()}} or \code{\link[=get_index_sims]{get_index_sims()}}. If not needed, setting this to
 \code{FALSE} will reduce object size.}
 
-\item{parallel}{Argument currently ignored. For parallel processing with 3
-cores, as an example, use \code{TMB::openmp(n = 3, DLL = "sdmTMB")}. But be
-careful, because it's not always faster with more cores and there is
-definitely an upper limit.}
+\item{parallel}{Argument currently ignored.}
 
 \item{suppress_nlminb_warnings}{Suppress uninformative warnings
 from \code{\link[stats:nlminb]{stats::nlminb()}} arising when a function evaluation is \code{NA}, which
@@ -158,14 +154,8 @@ spatial regression (RSR) adjusted estimator for covariate responses. If
 \code{tidy(fit, effects = "rsr")}. See Hanks et al. (2015) and
 Diaz and Thorson (2025).}
 
-\item{backend}{Model backend. \code{"rtmb"} is the default; set
-\code{options(sdmTMB.backend = "tmb")} to use the C++ TMB template by default.
-The \code{"rtmb"} backend currently supports all families, including delta and
-multi-family models, with SPDE (isotropic, anisotropic, or barrier) and
-areal SAR/CAR spatial and spatiotemporal fields, spatially and
-time-varying coefficients, IID random effects, smoothers, threshold
-terms, covariate diffusion, restricted spatial regression, priors, and
-derived indices.}
+\item{backend}{\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}} Ignored. The C++ TMB
+backend was removed and all models use RTMB.}
 
 \item{...}{Anything else. See the 'Control parameters' section of
 \code{\link[stats:nlminb]{stats::nlminb()}}.}

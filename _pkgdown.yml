@@ -80,11 +80,14 @@ reference:
   - predict.sdmTMB
   - residuals.sdmTMB
   - update.sdmTMB
+  - strip_sdmTMB
   - dharma_residuals
   - sdmTMBcontrol
   - preferential_sampling
   - predict_sampling
   - run_extra_optimization
+  - profile_breakpt
+  - plot.breakpt_profile
   - replicate_df
   - set_delta_model
   - make_category_svc

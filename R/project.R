@@ -223,7 +223,7 @@ project <- function(
 
   ee <- object$tmb_obj$env
   lpb <- ee$last.par.best
-  sd_report <- project_sd_report(object)
+  sd_report <- sd_report_joint(object)
   lp <- project_historical_draws(
     lpb = lpb,
     sd_report = sd_report,
@@ -299,14 +299,13 @@ project <- function(
   map$epsilon_st <- as.factor(map$epsilon_st)
 
   ## rebuild TMB object
-  if (!silent) cli::cli_inform("Rebuilding TMB object with TMB::MakeADFun()")
+  if (!silent) cli::cli_inform("Rebuilding the RTMB objective with RTMB::MakeADFun()")
   obj <- make_sdmTMB_adfun(
     data = p,
     profile = object$control$profile,
     parameters = pars,
     map = map,
     random = object$tmb_random,
-    backend = backend_sdmTMB(object),
     silent = TRUE
   )
 
@@ -388,14 +387,6 @@ project <- function(
     return(extract_project_sims(ret, sims_var))
   }
   out
-}
-
-project_sd_report <- function(object) {
-  sd_report <- object$sd_report
-  if (!"jointPrecision" %in% names(sd_report) && length(object$tmb_random)) {
-    sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
-  }
-  sd_report
 }
 
 project_historical_re_indices <- function(lp) {
@@ -709,7 +700,7 @@ move_proj_to_tmbdat <- function(x, object, newdata, called_by_simulate = FALSE, 
   x$do_predict <- 0L
   x$year_i <- x$proj_year
   ## x$A_st <- x$proj_mesh
-  ## .cpp uses unique locations in projection but not in fitting:
+  ## the objective uses unique locations in projection but not in fitting:
   xy_cols <- object$spde$xy_cols
   if (!is.null(xy_cols) && all(xy_cols %in% names(newdata))) {
     proj_mesh <- fmesher::fm_basis(object$spde$mesh, loc = as.matrix(newdata[, xy_cols, drop = FALSE]))
@@ -774,8 +765,6 @@ move_proj_to_tmbdat <- function(x, object, newdata, called_by_simulate = FALSE, 
   x$proj_mesh <- Matrix::Matrix(c(0, 0, 2:0), 3, 5) # dummy
   x$proj_Zs <- list()
   x$proj_Xs <- matrix(nrow = 0L, ncol = 0L)
-  x$proj_lon <- 0
-  x$proj_lat <- 0
 
   x
 }

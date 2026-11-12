@@ -11,11 +11,12 @@ test_that("predict() routes omitted newdata and resolves offsets by row source",
   )
   fitted_offset <- fit$tmb_data$offset_i
 
-  # fast path: fitted report, fitted offset
+  # omitted newdata: fitted rows, fitted offset
   p <- predict(fit)
   r <- fit$tmb_obj$report(fit$tmb_obj$env$last.par.best)
-  expect_equal(p$est, r$eta_i[, 1])
-  expect_equal(predict(fit, return_tmb_report = TRUE), r)
+  expect_equal(p$est, r$eta_i[, 1], tolerance = 1e-6)
+  expect_equal(predict(fit, return_tmb_report = TRUE)$proj_eta[, 1],
+    r$eta_i[, 1], tolerance = 1e-6)
 
   # projection on the fitted data carries over the fitted offset
   p_resp <- predict(fit, type = "response")
@@ -33,6 +34,7 @@ test_that("predict() routes omitted newdata and resolves offsets by row source",
     return_tmb_data = TRUE)$proj_offset_i, rep(1, nrow(d)))
 
   # supplied newdata defaults to zero offset (with a message) unless overridden
+  rlang::local_options(rlib_message_verbosity = "verbose") # ignore "once"
   expect_message(td_nd <- predict(fit, newdata = d, return_tmb_data = TRUE),
     "offset")
   expect_equal(td_nd$proj_offset_i, rep(0, nrow(d)))
@@ -72,7 +74,7 @@ test_that("predict() data preparation does not need a fitted objective", {
 
   # fits saved with `parlist` predict without the fitted objective:
   expect_equal(predict(no_obj, newdata = nd)$est, predict(fit, newdata = nd)$est)
-  expect_error(predict(no_obj), "fitted objective used")
+  expect_equal(predict(no_obj)$est, predict(fit)$est)
 })
 
 test_that("predict() standard errors are selected from sdreport() untransformed", {
@@ -84,7 +86,7 @@ test_that("predict() standard errors are selected from sdreport() untransformed"
   nd <- pcod_2011[1:10, ]
   x <- predict_sdmTMB(fit, newdata = nd, re_form = NA, se_fit = TRUE,
     return_tmb_object = TRUE)
-  sr <- sdreport_sdmTMB(x$obj, bias.correct = FALSE)
+  sr <- RTMB::sdreport(x$obj, bias.correct = FALSE)
   se <- as.list(sr, "Std. Error", report = TRUE)
   expect_equal(x$data$est_se, as.numeric(se$proj_fe_combined))
   for (m in 1:2) {

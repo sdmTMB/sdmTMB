@@ -28,7 +28,7 @@
 #' These names and shapes are internal and could change in future versions of
 #' sdmTMB. Check them with `get_prior_parameters()` when writing custom priors.
 #'
-#' @param object An [sdmTMB()] model fit with the RTMB backend. For
+#' @param object An [sdmTMB()] model fit. For
 #'   `get_prior_densities()`, it must have custom priors.
 #' @param random Include the random effects (e.g., random field values)? There
 #'   are often many of them.
@@ -50,7 +50,6 @@
 #' @examples
 #' fit <- sdmTMB(density ~ depth_scaled, data = pcod_2011,
 #'   family = tweedie(), mesh = pcod_mesh_2011,
-#'   control = sdmTMBcontrol(backend = "rtmb"),
 #'   priors = sdmTMBpriors(custom = function(par, theta) {
 #'     c(depth = RTMB::dnorm(par$b_j[2], 0, 1, log = TRUE))
 #'   }))
@@ -59,9 +58,7 @@
 get_prior_parameters <- function(object, random = FALSE) {
   assert_that(inherits(object, "sdmTMB"))
   assert_that(is.logical(random), length(random) == 1L)
-  if (backend_sdmTMB(object) != "rtmb") {
-    cli_abort("Custom priors need a model fit with `sdmTMBcontrol(backend = \"rtmb\")`.")
-  }
+  check_fit_version(object)
   prepared <- rtmb_prepare(object$tmb_data)
   par <- prior_parlist(object)
   par_rows <- flatten_prior_elements(par, "par")

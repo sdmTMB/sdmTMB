@@ -42,12 +42,18 @@
 #'   `(1 | g)` in `formula`)? `NULL` (default) includes them. `NA` or `~ 0`
 #'   sets them all to zero. Excluding only some of them is not yet supported.
 #' @param allow_new_levels Allow levels of random effect grouping factors in
-#'   `newdata` that were not seen in fitting? Rows with a new level get a
-#'   random effect value of zero (a population-level prediction). `TRUE`
-#'   allows them silently, `FALSE` gives an error (as with `allow.new.levels`
-#'   in \pkg{lme4} and \pkg{glmmTMB}), and `NULL` (default) allows them with a
-#'   warning. Not relevant if `re_form_iid` excludes the random effects.
-#'   Grouping columns in `newdata` must be factors.
+#'   `newdata` that were not seen in fitting? A new level gets a random effect
+#'   value of zero, while other grouping factors keep their random effects for
+#'   those rows. `TRUE` allows them silently, `FALSE` gives an error (as with
+#'   `allow.new.levels` in \pkg{lme4} and \pkg{glmmTMB}), and `NULL` (default)
+#'   allows them with a warning. With `nsim`, `"sample"` instead draws each new
+#'   level's random effects from their estimated (multivariate) normal
+#'   distribution in every draw, as with `sample_new_levels = "gaussian"` in
+#'   \pkg{brms}, so the draws include variation among levels. Rows sharing a new
+#'   level share its draw, and fitted levels keep their usual draws. To include
+#'   this variation for all rows, give the grouping factor a level not in the
+#'   fitted data (see Examples). Not relevant if `re_form_iid` excludes the
+#'   random effects. Grouping columns in `newdata` must be factors.
 #' @param nsim Number of draws. If `> 0`, returns a matrix of draws instead of
 #'   a data frame (see Value). Each draw takes the fixed and random effects
 #'   from their approximate joint (multivariate normal) distribution and
@@ -78,8 +84,9 @@
 #'   component as `est1` and `est2`. Ignored for other models. See the
 #'   [delta-model
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/delta-models.html).
-#' @param offset A numeric vector of offset values, one per row of `newdata`
-#'   (not a column name). If `NULL` (default), predictions for the fitted data
+#' @param offset A numeric vector of offset values, one per row of `newdata`,
+#'   or a single value for all rows (not a column name). If `NULL` (default),
+#'   predictions for the fitted data
 #'   use the fitted offset, and predictions with `newdata` use an offset of 0,
 #'   i.e., predictions per unit of the offset (e.g., density rather than
 #'   catch when the offset is log area swept).
@@ -293,6 +300,18 @@
 #' plot_map(p, exp(est)) +
 #'   ggtitle("Prediction (fixed effects + all random effects)") +
 #'   scale_fill_viridis_c(trans = "sqrt")
+#'
+#' # Including variation among random effect levels ----------------------
+#'
+#' d <- pcod_2011
+#' d$fyear <- as.factor(d$year)
+#' m <- sdmTMB(density ~ depth_scaled + (1 | fyear), data = d,
+#'   family = tweedie(), spatial = "off")
+#' # a level not in the data draws a new year effect in each draw:
+#' nd <- data.frame(depth_scaled = 0, fyear = factor("new"))
+#' p <- predict(m, newdata = nd, nsim = 200, type = "response",
+#'   allow_new_levels = "sample")
+#' quantile(p, c(0.1, 0.5, 0.9))
 #' }
 
 predict.sdmTMB <- function(object, newdata = NULL,
@@ -357,8 +376,7 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
     re_form = re_form, re_form_iid = re_form_iid,
     allow_new_levels = allow_new_levels, nsim = nsim, model = model,
     offset = offset, mcmc_samples = mcmc_samples, sims_var = sims_var,
-    sample_fe = sample_fe, return_tmb_data = return_tmb_data,
-    nonlocal_newdata = nonlocal_newdata
+    sample_fe = sample_fe
   )
 
   tmb_data <- object$tmb_data
@@ -368,108 +386,117 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
   tmb_data$do_predict <- 1L
   has_nonlocal <- !is.null(object$nonlocal_parsed)
 
-  if (req$project) {
-    prep <- predict_prepare(object, req, tmb_data, nonlocal_newdata)
-    tmb_data <- prep$tmb_data
-    if (return_tmb_data) {
-      return(tmb_data)
-    }
-    if (!"mgcv" %in% names(object)) object[["mgcv"]] <- FALSE
+  prep <- predict_prepare(object, req, tmb_data, nonlocal_newdata)
+  tmb_data <- prep$tmb_data
+  if (return_tmb_data) {
+    return(tmb_data)
+  }
 
-    if (predict_report_only(object, req, return_tmb_object)) {
-      # Reports alone need no AD object, which for large grids dominates
-      # prediction time and memory.
-      r <- rtmb_report_values(tmb_data, object$parlist)
-      new_tmb_obj <- NULL
-    } else {
-      objective <- predict_objective(object, tmb_data)
-      new_tmb_obj <- objective$obj
-      lp <- objective$lp
-
-      if (req$nsim > 0 || !is.null(req$mcmc_samples)) {
-        r <- predict_draw_reports(object, new_tmb_obj, lp, req)
-        if (return_tmb_report) return(r)
-        return(predict_draws(r, req, object, tmb_data, prep$nd))
-      }
-
-      r <- new_tmb_obj$report(lp)
-    }
+  # On RTMB, reports alone need no AD object, which for large grids dominates
+  # prediction time and memory.
+  lp <- object$last.par.best
+  new_tmb_obj <- if (!predict_report_only(object, req, return_tmb_object)) {
+    predict_objective(object, tmb_data,
+      length(unlist(lapply(prep$new_re, `[[`, "rows"))))
+  }
+  if (req$nsim > 0 || !is.null(req$mcmc_samples)) {
+    r <- predict_draw_reports(object, new_tmb_obj, tmb_data, lp, req, prep$new_re)
     if (return_tmb_report) return(r)
-    obj <- new_tmb_obj
+    return(predict_draws(r, req, object, tmb_data, prep$nd))
+  }
+  r <- predict_report(new_tmb_obj, tmb_data, object$parlist, lp)
+  if (return_tmb_report) return(r)
+  obj <- new_tmb_obj
 
-    if (req$se_fit) {
-      sr <- sdreport_sdmTMB(new_tmb_obj, bias.correct = FALSE)
-      sr_est <- as.list(sr, "Estimate", report = TRUE)
-      sr_se <- as.list(sr, "Std. Error", report = TRUE)
-    }
+  if (req$se_fit) {
+    sr <- RTMB::sdreport(new_tmb_obj, bias.correct = FALSE)
+    sr_est <- as.list(sr, "Estimate", report = TRUE)
+    sr_se <- as.list(sr, "Std. Error", report = TRUE)
+  }
 
-    cols <- list(est = predict_est(if (req$se_fit) sr_est else r, req, tmb_data,
-      req$type, req$model))
-    components <- if (req$has_two_components) {
-      predict_components(r, req, tmb_data, req$type)[c("est1", "est2")]
-    }
-    se <- if (req$se_fit) {
-      list(est_se = predict_select(sr_se, req, tmb_data, req$model))
-    }
-    terms <- if (!req$pop_pred) {
-      predict_terms(
-        lapply(predict_term_reports, function(x) r[[x]]),
-        object, req$family_spec, tmb_data$proj_family_id + 1L
-      )
-    }
-    cols <- c(cols, components, terms, se)
-    if (has_nonlocal) {
-      cols <- c(predict_nonlocal_cols(object, r$proj_covariate_diffusion_values), cols)
-    }
-  } else { # Link prediction on the fitted data from the fitted report:
-    reinitialize(object)
-    lp <- object$tmb_obj$env$last.par.best
-    r <- object$tmb_obj$report(lp)
-    if (return_tmb_report) return(r)
-
-    cols <- c(list(est = r$eta_i[, 1]), predict_terms(
-      predict_fitted_term_reports(r, object),
-      object, req$family_spec, req$family_spec$family_id_i
-    ))
-    if (has_nonlocal) {
-      cols <- c(predict_nonlocal_cols(object, r$covariate_diffusion_values), cols)
-    }
-    obj <- object
+  cols <- list(est = predict_est(if (req$se_fit) sr_est else r, req, tmb_data,
+    req$type, req$model))
+  components <- if (req$has_two_components) {
+    predict_components(r, req, tmb_data, req$type)[c("est1", "est2")]
+  }
+  se <- if (req$se_fit) {
+    list(est_se = predict_select(sr_se, req, tmb_data, req$model))
+  }
+  terms <- if (!req$pop_pred) {
+    predict_terms(
+      lapply(predict_term_reports, function(x) r[[x]]),
+      object, req$family_spec, tmb_data$proj_family_id + 1L
+    )
+  }
+  cols <- c(cols, components, terms, se)
+  if (has_nonlocal) {
+    cols <- c(predict_nonlocal_cols(object, r$proj_covariate_diffusion_values), cols)
   }
 
   predict_return(cols, req, object, r, obj, tmb_data, return_tmb_object)
 }
 
-# Whether predictions need only the model's reports at the saved fitted
-# parameters, which the RTMB backend can evaluate without an AD object.
+# Whether predictions need only the model's reports at saved parameter values
+# (the fitted ones or draws), which can be evaluated without an AD object.
 predict_report_only <- function(object, req, return_tmb_object) {
-  backend_sdmTMB(object) == "rtmb" && !is.null(object$parlist) &&
-    !req$se_fit && req$nsim == 0 && is.null(req$mcmc_samples) &&
-    !return_tmb_object
+  !req$se_fit && !return_tmb_object
 }
 
-# Build the prediction objective from `tmb_data` and return it with the fitted
-# parameter vector `lp`. Fits saved with `parlist` and `last.par.best` need no
-# live fitted objective; older fits recover parameters from `object$tmb_obj`.
-predict_objective <- function(object, tmb_data) {
-  has_saved_fit <- !is.null(object$parlist) && !is.null(object$last.par.best)
-  if (!has_saved_fit) reinitialize(object)
+# Reports at the parameter list `pars` (equivalently, the parameter vector
+# `x`): from the AD object `obj`, or with plain numbers if `obj` is NULL.
+# Prediction needs no observation likelihood.
+predict_report <- function(obj, tmb_data, pars, x) {
+  if (is.null(obj)) {
+    rtmb_report_values(tmb_data, pars, likelihood = FALSE)
+  } else {
+    obj$report(x)
+  }
+}
+
+# Build the prediction objective from `tmb_data`, with `n_new_re` extra
+# `re_b_pars` rows for sampled new levels, at the saved fitted parameters.
+predict_objective <- function(object, tmb_data, n_new_re = 0L) {
+  parameters <- object$parlist
+  map <- object$tmb_map
+  if (n_new_re > 0L) {
+    # Rows for sampled new levels go after the fitted ones and are numbered
+    # after them in the map, so they sit at the end of the `re_b_pars` block.
+    b_map <- matrix(as.integer(map$re_b_pars), ncol = ncol(parameters$re_b_pars))
+    new_map <- matrix(NA_integer_, n_new_re, ncol(b_map))
+    has_re <- object$tmb_data$n_re_groups > 0
+    new_map[, has_re] <- max(b_map, na.rm = TRUE) + seq_len(n_new_re * sum(has_re))
+    map$re_b_pars <- factor(rbind(b_map, new_map))
+    parameters$re_b_pars <- rbind(parameters$re_b_pars,
+      matrix(0, n_new_re, ncol(b_map)))
+  }
   obj <- make_sdmTMB_adfun(
     data = tmb_data,
     profile = object$control$profile,
-    parameters = if (has_saved_fit) object$parlist else get_pars(object),
-    map = object$tmb_map,
+    parameters = parameters,
+    map = map,
     random = object$tmb_random,
-    backend = backend_sdmTMB(object),
     silent = TRUE
   )
-  if (has_saved_fit) {
-    lp <- object$last.par.best
-  } else {
-    obj$fn(object$model$par)
-    lp <- obj$env$last.par.best
+  obj
+}
+
+# Draws from N(0, Sigma) for the sampled new levels in `new_re`, given
+# `re_cov_pars`: a matrix with a row per new-level row of `re_b_pars` and a
+# column per component (zero for components without random intercepts).
+predict_new_re_b <- function(object, re_cov_pars, new_re) {
+  rows <- unlist(lapply(new_re, `[[`, "rows"))
+  n_re_groups <- object$tmb_data$n_re_groups
+  b <- matrix(0, length(rows), length(n_re_groups))
+  for (m in which(n_re_groups > 0)) {
+    groups <- rtmb_re_groups(object$tmb_data, m)
+    for (term in new_re) {
+      L <- t(chol(iid_re_covariance(re_cov_pars, groups[[term$term]], m)))
+      # one column per level:
+      z <- matrix(stats::rnorm(nrow(L) * term$n_levels), nrow(L))
+      b[match(term$rows, rows), m] <- L %*% z
+    }
   }
-  list(obj = obj, lp = lp)
+  b
 }
 
 # Nonlocal covariate values as named prediction columns.
@@ -481,7 +508,7 @@ predict_nonlocal_cols <- function(object, values) {
 # Bind the prediction columns `cols` onto the user's rows (`newdata`, or the
 # fitted data) and return the data frame or the `return_tmb_object` list.
 predict_return <- function(cols, req, object, r, obj, tmb_data, return_tmb_object) {
-  nd <- if (is.null(req$newdata)) object$data else req$newdata
+  nd <- req$newdata
   for (col in names(cols)) nd[[col]] <- cols[[col]]
   nd[["_sdmTMB_time"]] <- NULL
   row.names(nd) <- NULL
@@ -500,6 +527,16 @@ predict_visreg <- function(object, newdata, se_fit) {
     newdata[[object$time]] <- max(object$data[[object$time]], na.rm = TRUE)
   }
   model <- if ("visreg_model" %in% names(object)) object$visreg_model else 1L
+  if (!is.null(newdata)) {
+    # visreg supplies only this component's variables, but all components are
+    # predicted; fill the others' variables with any fitted value
+    vars <- unique(unlist(lapply(object$formula, function(f) {
+      all.vars(stats::delete.response(stats::terms(f)))
+    })))
+    for (v in setdiff(intersect(vars, names(object$data)), names(newdata))) {
+      newdata[[v]] <- object$data[[v]][[1L]]
+    }
+  }
   out <- predict_sdmTMB(object, newdata = newdata, se_fit = se_fit,
     re_form = NA, model = model)
   y_i <- object$tmb_data$y_i
@@ -513,21 +550,12 @@ predict_visreg <- function(object, newdata, se_fit) {
 # the returned list.
 predict_request <- function(object, newdata, type, se_fit, re_form,
                             re_form_iid, allow_new_levels, nsim, model,
-                            offset, mcmc_samples, sims_var, sample_fe,
-                            return_tmb_data, nonlocal_newdata) {
-  if ("version" %in% names(object)) {
-    check_sdmTMB_version(object$version)
-  } else {
-    cli_abort(c("This looks like a very old version of a model fit.",
-        "Re-fit the model before predicting with it."))
-  }
+                            offset, mcmc_samples, sims_var, sample_fe) {
+  check_fit_version(object)
+  check_sdmTMB_version(object$version)
   family_spec <- .object_family_spec(object, caller = "`predict()`")
-  multi_family <- family_spec$n_f > 1L
   has_two_components <- family_spec$n_m == 2L
-  is_areal <- object$tmb_data$spatial_model %in% c(1L, 2L)
-  if (!is_areal && is_areal_domain(object$spde)) {
-    is_areal <- TRUE
-  }
+  is_areal <- is_areal_fit(object)
   xy_cols <- NULL
   if (!is_areal) {
     if (!"xy_cols" %in% names(object$spde)) {
@@ -566,6 +594,12 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
       "i" = "Use `type = 'link'` with `se_fit = TRUE`, or use `nsim` for response-scale uncertainty."))
   }
 
+  if (identical(allow_new_levels, "sample") && (se_fit ||
+    (nsim == 0 && is.null(mcmc_samples)))) {
+    cli_abort(c("`allow_new_levels = \"sample\"` requires draws.",
+      "i" = "Use `nsim` (or `mcmc_samples`), and summarize the draws for uncertainty."))
+  }
+
   if (is.null(re_form) && isTRUE(se_fit)) {
     msg <- paste0("Prediction can be slow when `se_fit = TRUE` and random fields ",
       "are included (i.e., `re_form = NULL`). Consider using the `nsim` argument ",
@@ -574,32 +608,24 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
     cli_inform(msg)
   }
 
-  # Where the rows come from (`newdata_supplied`, which sets the default
-  # offset) is separate from how they are predicted (`project`). Omitted
-  # `newdata` uses the fitted report unless an option needs the projection
-  # path, which then runs on the fitted data. Mixture families need the mean
-  # adjustment only the projection path applies.
+  # Omitted `newdata` predicts on the fitted data. `newdata_supplied` only
+  # sets the default offset (see predict_offset()).
   newdata_supplied <- !is.null(newdata)
-  project <- newdata_supplied || return_tmb_data ||
-    !is.null(nonlocal_newdata) || multi_family || has_two_components ||
-    any(object$family$family %in% rtmb_mixture_families) ||
-    nsim > 0 || type == "response" || !is.null(mcmc_samples) || se_fit ||
-    !is.null(re_form) || !is.null(re_form_iid) || !is.null(offset)
-  if (project && !newdata_supplied) newdata <- object$data
+  if (!newdata_supplied) newdata <- object$data
 
   # from glmmTMB:
   pop_pred <- (!is.null(re_form) && ((re_form == ~0) || identical(re_form, NA)))
   pop_pred_iid <- (!is.null(re_form_iid) && ((re_form_iid == ~0) || identical(re_form_iid, NA)))
   if (!is.null(allow_new_levels) && !isTRUE(allow_new_levels) &&
-    !isFALSE(allow_new_levels)) {
-    cli_abort("`allow_new_levels` must be `NULL`, `TRUE`, or `FALSE`.")
+    !isFALSE(allow_new_levels) && !identical(allow_new_levels, "sample")) {
+    cli_abort("`allow_new_levels` must be `NULL`, `TRUE`, `FALSE`, or `\"sample\"`.")
   }
   exclude_RE <- if (pop_pred_iid) 1L else object$tmb_data$exclude_RE
 
   named_list(
     family_spec, has_two_components, is_areal, xy_cols, model, type, se_fit,
     pop_pred, pop_pred_iid, allow_new_levels, exclude_RE, newdata,
-    newdata_supplied, project, offset, nsim, sims_var, sample_fe, mcmc_samples,
+    newdata_supplied, offset, nsim, sims_var, sample_fe, mcmc_samples,
     ln_phi = .object_par(object, "ln_phi"), psi = .object_par(object, "psi")
   )
 }
@@ -609,13 +635,17 @@ predict_request <- function(object, newdata, type, se_fit, re_form,
 predict_offset <- function(req, object, n) {
   if (req$newdata_supplied && is.null(req$offset) && !all(object$offset == 0)) { # #372
     cli_inform(c(
-      "Fitted object contains an offset but the offset is `NULL` in `predict.sdmTMB()` and `newdata` were supplied.",
-      "Prediction will proceed assuming the offset vector is 0 in the prediction.",
-      "Specify an offset vector in `predict.sdmTMB()` to override this."))
+      "i" = "This model has an offset, but no {.arg offset} was given for {.arg newdata}, so an offset of 0 is used.",
+      " " = "With a log offset (e.g., log of effort, area, or time), predictions are then per unit of that quantity rather than totals.",
+      " " = "That is usually what you want for maps and indices. Supply {.arg offset} for other values, or use {.code offset = 0} to hide this message."
+    ), .frequency = "once", .frequency_id = "sdmTMB_predict_offset")
   }
   if (!is.null(req$offset)) {
+    if (!is.numeric(req$offset) && !all(is.na(req$offset)))
+      cli_abort("`offset` must be a numeric vector (not a column name).")
+    if (length(req$offset) == 1L) return(rep(req$offset, n))
     if (n != length(req$offset))
-      cli_abort("Prediction offset vector does not equal number of rows in prediction dataset.")
+      cli_abort("`offset` must have length one or one value per row of the prediction data.")
     return(req$offset)
   }
   if (req$newdata_supplied) rep(0, n) else object$tmb_data$offset_i
@@ -663,24 +693,6 @@ predict_est <- function(r, req, tmb_data, scale, model) {
     return(as.numeric(r$proj_response_combined)) # C++ applies `pop_pred`
   }
   predict_components(r, req, tmb_data, "response", model)$est
-}
-
-# The fitted report's terms in the shapes predict_terms() expects, for the
-# fast path (single-component, non-mixture models only). As in the projection
-# path, `est_rf` holds the spatial, spatiotemporal, and SVC terms, and
-# `est_non_rf` everything else (including the offset).
-predict_fitted_term_reports <- function(r, object) {
-  est <- r$eta_i[, 1]
-  est_rf <- r$omega_s_A[, 1] + r$epsilon_st_A_vec[, 1]
-  z_i <- unname(object$tmb_data$z_i)
-  for (z in seq_len(ncol(z_i))) est_rf <- est_rf + r$zeta_s_A[, z, 1] * z_i[, z]
-  list(
-    est_non_rf = as.matrix(est - est_rf),
-    est_rf = as.matrix(est_rf),
-    omega_s = r$omega_s_A,
-    zeta_s = r$zeta_s_A,
-    epsilon_st = r$epsilon_st_A_vec
-  )
 }
 
 # Linear predictor term columns and the projected report holding each.
@@ -732,8 +744,35 @@ predict_terms <- function(x, object, family_spec, row_family_id) {
 
 # Reports for each parameter draw: MCMC samples or draws from the joint
 # precision matrix (or the random effects only, conditional on the fixed
-# effects, if `sample_fe = FALSE`).
-predict_draw_reports <- function(object, obj, lp, req) {
+# effects, if `sample_fe = FALSE`), with any sampled new levels. Draws are
+# in the fitted parameter layout; `obj` (NULL on RTMB, see predict_report())
+# has the new-level rows after the fitted ones in `re_b_pars`.
+predict_draw_reports <- function(object, obj, tmb_data, lp, req, new_re = list()) {
+  t_draws <- predict_parameter_draws(object, lp, req)
+  last_b <- max(which(names(lp) == "re_b_pars"), 0L)
+  has_re <- object$tmb_data$n_re_groups > 0
+  pars <- lapply(seq_len(ncol(t_draws)), function(i) {
+    object$tmb_obj$env$parList(par = t_draws[, i])
+  })
+  out <- lapply(seq_along(pars), function(i) {
+    x <- t_draws[, i]
+    p <- pars[[i]]
+    if (length(new_re)) {
+      new_b <- predict_new_re_b(object, p$re_cov_pars, new_re)
+      p$re_b_pars <- rbind(p$re_b_pars, new_b)
+      x <- append(x, new_b[, has_re], after = last_b)
+    }
+    predict_report(obj, tmb_data, p, x)
+  })
+  # Response-scale means also depend on `ln_phi` and `psi`, which vary by draw:
+  attr(out, "draw_pars") <- lapply(pars, function(p) {
+    p[intersect(c("ln_phi", "psi"), names(p))]
+  })
+  out
+}
+
+# Parameter draws (parameters x draws) for predict_draw_reports().
+predict_parameter_draws <- function(object, lp, req) {
   nsim <- req$nsim
   if (!is.null(req$mcmc_samples)) {
     t_draws <- req$mcmc_samples
@@ -743,25 +782,10 @@ predict_draw_reports <- function(object, obj, lp, req) {
       }
       t_draws <- t_draws[, seq(ncol(t_draws) - nsim + 1, ncol(t_draws)), drop = FALSE]
     }
-  } else {
-    if (!"jointPrecision" %in% names(object$sd_report) && !has_no_random_effects(object)) {
-      message("Rerunning TMB::sdreport() with `getJointPrecision = TRUE`.")
-      reinitialize(object)
-      sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
-    } else {
-      sd_report <- object$sd_report
-    }
-    t_draws <- project_historical_draws(lp, sd_report, nsim,
-      sample_fe = req$sample_fe, sample_historical_re = TRUE)
+    return(t_draws)
   }
-  out <- apply(t_draws, 2L, obj$report)
-  # Response-scale means also depend on `ln_phi` and `psi`, which vary by draw:
-  fixed <- obj$env$lfixed()
-  attr(out, "draw_pars") <- lapply(seq_len(ncol(t_draws)), function(i) {
-    pars <- obj$env$parList(t_draws[fixed, i])
-    pars[intersect(c("ln_phi", "psi"), names(pars))]
-  })
-  out
+  project_historical_draws(lp, sd_report_joint(object), nsim,
+    sample_fe = req$sample_fe, sample_historical_re = TRUE)
 }
 
 # Matrix of draws (rows x draws) of `sims_var` from the per-draw reports `r`.
@@ -829,7 +853,7 @@ check_sdmTMB_version <- function(version) {
     cli_warn(c(
       "This model was fit with sdmTMB {fitted}, but sdmTMB {installed} is installed.",
       "i" = paste(
-        "The TMB model may differ between versions, so prediction may fail",
+        "The TMB model may differ between versions, so using this model may fail",
         "or give different results. We recommend refitting the model with the installed version."
       )
     ), .frequency = "once", .frequency_id = paste0("sdmTMB_version_", fitted))
@@ -866,119 +890,38 @@ call_fn_name <- function(x) {
   if (is.name(f)) as.character(f) else NA_character_
 }
 
-# Fixed-effect design for new rows from fitted terms (which carry `predvars`,
-# e.g., a fitted poly() basis), factor levels, and contrasts. Shared by
-# prediction and the preferential-sampling surface. `...` goes to
-# model.frame(), e.g., `na.action`.
-.fixed_effect_design <- function(terms, newdata, xlevels, contrasts, ...) {
-  mf <- stats::model.frame(terms, newdata, xlev = xlevels, ...)
-  stats::model.matrix(terms, mf, contrasts.arg = contrasts)
-}
-
 # Main-model covariate design at new rows, as prediction evaluates it: each
-# component's fixed-effect design from the fitted terms, the smoothers with
-# their fitted bases, and, if `include_iid`, the transposed IID random-effect
-# design (the same for every component). `model` holds the fitted pieces
-# (`split_formula`, `terms`, `xlevels`, `contrasts`, `smoothers`, `data`):
-# a fitted object, or the same pieces while fitting. Shared by prediction and
-# the preferential-sampling surface.
-.newdata_design <- function(model, newdata, include_iid = FALSE,
-                            new_levels = c("zero", "error"),
-                            warn_new_levels = TRUE, ...) {
-  X_ij <- lapply(seq_along(model$split_formula), function(i) {
-    tt <- stats::terms(remove_s_and_t2(model$split_formula[[i]]$form_no_bars))
-    attr(tt, "predvars") <- attr(model$terms[[i]], "predvars")
-    .fixed_effect_design(stats::delete.response(tt), newdata,
-      model$xlevels[[i]], model$contrasts[[i]], ...)
-  })
+# component's fixed-effect design, the smoothers with their fitted bases, and,
+# if `include_iid`, the transposed IID random-effect design (the same for every
+# component; new group levels are an error). `model` holds the fitted pieces
+# that predict_fixed_matrices() and predict_iid_re_matrices() read: a fitted
+# object, or the same pieces while fitting. Used by the preferential-sampling
+# surface.
+.newdata_design <- function(model, newdata, include_iid = FALSE) {
+  X_ij <- predict_fixed_matrices(model, newdata)
   sm <- parse_smoothers(model$smoothers$formula_no_bars, data = model$data,
     newdata = newdata, basis_prev = model$smoothers$basis_out)
   Zt_list <- list()
   if (include_iid) {
-    Zt <- .iid_newdata_design(model, newdata, match.arg(new_levels),
-      warn_new_levels)
-    Zt_list <- rep(list(Zt), length(X_ij))
+    req <- list(pop_pred_iid = FALSE, allow_new_levels = FALSE,
+      newdata_supplied = TRUE)
+    Zt_list <- predict_iid_re_matrices(model, req, newdata, length(X_ij))$Zt_list
   }
   list(X_ij = X_ij, Zs = sm$Zs, Xs = sm$Xs, Zt_list = Zt_list)
 }
 
-# Transposed IID random-effect design at new rows, indexed like the fitted
-# random effects: the random-effect terms are parsed on the fitted and new
-# rows together so that factor levels match, and only the new rows are kept.
-# Rows at new group levels get zero columns (with a warning if
-# `warn_new_levels`), or an error with `new_levels = "error"`.
-.iid_newdata_design <- function(model, newdata, new_levels = c("zero", "error"),
-                                warn_new_levels = TRUE) {
-  new_levels <- match.arg(new_levels)
-  data <- model$data
-  bars <- reformulas::findbars(model$smoothers$formula_no_sm)
-  groups <- barnames(bars)
-  missing <- setdiff(groups, names(newdata))
-  if (length(missing)) {
-    cli_abort(c(
-      "Random effect group column(s) missing from `newdata`: {.val {missing}}.",
-      "i" = "Use `re_form_iid = NA` or `re_form_iid = ~0` to exclude random effects in prediction."
-    ))
-  }
-  new_level_rows <- integer(0)
-  for (g in groups) {
-    assert_that(is.factor(newdata[[g]]),
-      msg = sprintf("Random effect group column `%s` in newdata is not a factor.", g))
-    values <- as.character(newdata[[g]])
-    is_new <- !is.na(values) & !values %in% levels(data[[g]])
-    if (!any(is_new)) next
-    if (new_levels == "error") {
-      cli_abort(c(
-        "Found new levels in random effect grouping variable {.field {g}}: {.val {unique(values[is_new])}}.",
-        "i" = "Use `re_form_iid = NA` to exclude IID random effects, or `allow_new_levels = TRUE` in `predict()` to predict these rows at the population level (random effect value of 0)."
-      ))
-    }
-    new_level_rows <- union(new_level_rows, which(is_new))
-    if (warn_new_levels) {
-      cli_warn(c(
-        "Found new levels in random effect grouping variable {.field {g}}.",
-        "i" = "These rows will use population-level IID random effect predictions (`re_form_iid = NA`).",
-        "i" = "Set `allow_new_levels = TRUE` to suppress this warning."
-      ))
-    }
-  }
-
-  common_cols <- intersect(colnames(data), colnames(newdata))
-  nd <- newdata[, common_cols, drop = FALSE]
-  for (col_name in common_cols) {
-    if (is.factor(data[[col_name]]) && is.factor(nd[[col_name]])) {
-      nd[[col_name]] <- factor(as.character(nd[[col_name]]),
-        levels = levels(data[[col_name]]))
-      if (anyNA(nd[[col_name]])) {
-        nd[[col_name]][is.na(nd[[col_name]])] <- levels(data[[col_name]])[1]
-      }
-    }
-  }
-  joint <- rbind(data[, common_cols, drop = FALSE], nd)
-  re_formula <- stats::reformulate(paste0("(", vapply(bars, deparse1, ""), ")"))
-  Zt <- parse_formula(re_formula, joint)$re_cov_terms$Zt
-  Zt <- Zt[, nrow(data) + seq_len(nrow(nd)), drop = FALSE]
-  if (length(new_level_rows)) Zt[, new_level_rows] <- 0
-  Zt
-}
-
 # Mesh basis at the unique locations of `newdata` (in order of first
-# appearance) and each row's zero-based index into them.
+# appearance) and each row's zero-based index into them. Matching each
+# coordinate and combining the indices gives an exact key; this is about twice
+# as fast as dplyr::distinct() + left_join().
 .project_unique_locations <- function(mesh, newdata, xy_cols) {
-  xy <- newdata[, xy_cols, drop = FALSE]
-  if (requireNamespace("dplyr", quietly = TRUE)) { # much faster
-    unique_xy <- dplyr::distinct(xy)
-    unique_xy[[".sdm_id"]] <- seq_len(nrow(unique_xy))
-    index <- dplyr::left_join(xy, unique_xy, by = xy_cols)[[".sdm_id"]]
-    unique_xy[[".sdm_id"]] <- NULL
-  } else {
-    key <- paste(xy[[1L]], xy[[2L]], sep = "\r")
-    first <- !duplicated(key)
-    unique_xy <- xy[first, , drop = FALSE]
-    index <- match(key, key[first])
-  }
+  x <- newdata[[xy_cols[[1]]]]
+  y <- newdata[[xy_cols[[2]]]]
+  ux <- unique(x)
+  key <- match(x, ux) + (match(y, unique(y)) - 1) * length(ux)
+  first <- !duplicated(key)
   list(
-    A = fmesher::fm_basis(mesh, loc = as.matrix(unique_xy)),
-    index = index - 1L
+    A = fmesher::fm_basis(mesh, loc = cbind(x[first], y[first])),
+    index = match(key, key[first]) - 1L
   )
 }

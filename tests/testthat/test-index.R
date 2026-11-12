@@ -82,6 +82,10 @@ test_that("get_index_sims() roughly matches get_index()", {
   expect_gt(cor(ind_sim$est, ind$est), 0.9)
   expect_gt(cor(ind_sim$lwr, ind$lwr), 0.9)
   expect_gt(cor(ind_sim$upr, ind$upr), 0.9)
+  expect_equal(exp(ind_sim$log_est), ind_sim$est)
+  ind_mean <- get_index_sims(predict(m, newdata = nd, nsim = 100L),
+    est_function = mean)
+  expect_equal(exp(ind_mean$log_est), ind_mean$est)
 })
 
 test_that("get_index works with offsets and splits", {
@@ -135,9 +139,9 @@ test_that("index errors are returned as needed", {
       spatial = "off", spatiotemporal = "off",
       family = tweedie(link = "log"),
       time = "year",
-      predict_args = list(newdata = g),
-      index_args = list(area = 1)
-    ), regexp = "do_index" # missing!
+      do_index = TRUE,
+      predict_args = list(newdata = g)
+    ), class = "defunctError"
   )
 
   fit <- sdmTMB(
@@ -150,7 +154,8 @@ test_that("index errors are returned as needed", {
     p1 <- predict(fit, newdata = NULL, return_tmb_object = TRUE),
     "return_tmb_object"
   )
-  expect_error(get_index(p1), "newdata") # missing!
+  expect_error(get_index(fit), "newdata` is required")
+  expect_error(get_cog(fit), "newdata` is required")
 
   suppressMessages(
     i <- get_index(fit, newdata = g, bias_correct = FALSE)
@@ -202,28 +207,6 @@ test_that("get_index() can override the derived response link for cloglog binomi
     derived_link = "log"
   )
   expect_equal(idx_log, idx_split)
-
-  do_index_fit <- function(index_args) {
-    lifecycle::expect_deprecated(fit <- sdmTMB(
-      prop ~ 0 + as.factor(time),
-      data = d,
-      family = binomial(link = "cloglog"),
-      weights = d$trials,
-      spatial = "off",
-      spatiotemporal = "off",
-      time = "time",
-      do_index = TRUE,
-      predict_args = list(newdata = nd),
-      index_args = index_args
-    ), "do_index")
-    fit
-  }
-  m_do_index <- do_index_fit(list(area = n_trials, derived_link = "log"))
-  expect_equal(get_index(m_do_index, bias_correct = FALSE)$est, idx_log$est)
-  m_do_index_default <- do_index_fit(list(area = n_trials))
-  idx_fit_override <- get_index(m_do_index_default, bias_correct = FALSE,
-    derived_link = "log")
-  expect_equal(idx_fit_override$est, idx_log$est)
 })
 
 test_that("get_cog works with subsets of years", {
@@ -417,84 +400,33 @@ test_that("get_index() etc. errors if the data have been subset after predicting
   expect_error(get_index(p), regexp = "data")
 })
 
-test_that("index functions work directly on do_index = TRUE fits", {
-  skip_on_cran()
-
-  pcod_spde <- make_mesh(pcod, c("X", "Y"), n_knots = 50, type = "kmeans")
-  nd <- replicate_df(qcs_grid, "year", unique(pcod$year))
-  lifecycle::expect_deprecated(m <- sdmTMB(
-    data = pcod,
-    formula = density ~ 0 + as.factor(year),
-    spatiotemporal = "off", # speed
-    time = "year", mesh = pcod_spde,
-    family = tweedie(link = "log"),
-    do_index = TRUE,
-    predict_args = list(newdata = nd),
-    index_args = list(area = 1)
-  ), "do_index")
-
-  # precomputed fast path still used when nothing is overridden:
-  ind <- get_index(m, bias_correct = FALSE)
-  ind_nd <- get_index(m, newdata = nd, bias_correct = FALSE)
-  expect_equal(ind$est, ind_nd$est, tolerance = 1e-6)
-  expect_equal(ind$se, ind_nd$se, tolerance = 1e-6)
-
-  # an explicit `area` must be honoured, not silently ignored:
-  ind4 <- get_index(m, area = 4, bias_correct = FALSE)
-  expect_equal(ind4$est, 4 * ind$est, tolerance = 1e-6)
-  ind4_nd <- get_index(m, newdata = nd, area = 4, bias_correct = FALSE)
-  expect_equal(ind4$est, ind4_nd$est, tolerance = 1e-6)
-
-  # derived quantities on the bare fit match the newdata path:
-  eao <- get_eao(m, bias_correct = FALSE)
-  eao_nd <- get_eao(m, newdata = nd, bias_correct = FALSE)
-  expect_equal(eao$est, eao_nd$est, tolerance = 1e-6)
-
-  wa <- get_weighted_average(m, vector = nd$depth, bias_correct = FALSE)
-  wa_nd <- get_weighted_average(m, newdata = nd, vector = nd$depth,
-    bias_correct = FALSE)
-  expect_equal(wa$est, wa_nd$est, tolerance = 1e-6)
-
-  cog <- get_cog(m, bias_correct = FALSE)
-  cog_nd <- get_cog(m, newdata = nd, bias_correct = FALSE)
-  expect_equal(cog$est, cog_nd$est, tolerance = 1e-6)
-  cog_wide <- get_cog(m, bias_correct = FALSE, format = "wide")
-  expect_s3_class(cog_wide, "data.frame")
-  expect_true(all(c("est_x", "est_y", "year") %in% names(cog_wide)))
-})
-
 test_that("get_eao() weights by area", {
   skip_on_cran()
-  for (backend in c("tmb", "rtmb")) {
-    m <- sdmTMB(density ~ depth_scaled, data = pcod_2011, spatial = "off",
-      family = tweedie(), time = "year", mesh = pcod_mesh_2011,
-      control = sdmTMBcontrol(backend = backend))
-    nd <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
-    nd$depth_scaled <- (log(nd$depth) - mean(log(pcod_2011$depth))) /
-      sd(log(pcod_2011$depth))
-    set.seed(1)
-    nd$area <- runif(nrow(nd), 1, 5)
-    eao <- get_eao(m, newdata = nd, area = nd$area, bias_correct = FALSE)
-    p <- predict(m, newdata = nd, type = "response")
-    expected <- vapply(split(p, p$year),
-      function(x) sum(x$area * x$est)^2 / sum(x$area * x$est^2), numeric(1))
-    expect_equal(eao$est, unname(expected), label = backend)
-  }
+  m <- sdmTMB(density ~ depth_scaled, data = pcod_2011, spatial = "off",
+    family = tweedie(), time = "year", mesh = pcod_mesh_2011)
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
+  nd$depth_scaled <- (log(nd$depth) - mean(log(pcod_2011$depth))) /
+    sd(log(pcod_2011$depth))
+  set.seed(1)
+  nd$area <- runif(nrow(nd), 1, 5)
+  eao <- get_eao(m, newdata = nd, area = nd$area, bias_correct = FALSE)
+  p <- predict(m, newdata = nd, type = "response")
+  expected <- vapply(split(p, p$year),
+    function(x) sum(x$area * x$est)^2 / sum(x$area * x$est^2), numeric(1))
+  expect_equal(eao$est, unname(expected))
 })
 
 test_that("get_index() honours re_form for single and delta models", {
   skip_on_cran()
   nd <- index_grid()
-  for (backend in c("tmb", "rtmb")) {
-    for (family in list(tweedie(), delta_gamma())) {
-      m <- sdmTMB(density ~ 0 + as.factor(year), data = pcod_2011,
-        mesh = pcod_mesh_2011, time = "year", spatiotemporal = "off",
-        family = family, control = sdmTMBcontrol(backend = backend))
-      ind <- get_index(m, newdata = nd, bias_correct = FALSE,
-        predict_args = list(re_form = NA))
-      p <- predict(m, newdata = nd, re_form = NA, type = "response")
-      expect_equal(ind$est, as.numeric(tapply(p$est, p$year, sum)),
-        label = paste(backend, family$family[[1]]))
-    }
+  for (family in list(tweedie(), delta_gamma())) {
+    m <- sdmTMB(density ~ 0 + as.factor(year), data = pcod_2011,
+      mesh = pcod_mesh_2011, time = "year", spatiotemporal = "off",
+      family = family)
+    ind <- get_index(m, newdata = nd, bias_correct = FALSE,
+      predict_args = list(re_form = NA))
+    p <- predict(m, newdata = nd, re_form = NA, type = "response")
+    expect_equal(ind$est, as.numeric(tapply(p$est, p$year, sum)),
+      label = family$family[[1]])
   }
 })

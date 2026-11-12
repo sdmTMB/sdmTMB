@@ -77,7 +77,7 @@ install.packages("sdmTMB", dependencies = TRUE)
 
 We recommend the development version, which has the latest features and
 bug fixes. Prebuilt binaries (tracking `main`) are available from
-r-universe and do not require a C++ compiler:
+r-universe:
 
 ``` r
 install.packages(
@@ -87,9 +87,7 @@ install.packages(
 )
 ```
 
-Alternatively, if you have a [C++
-compiler](https://support.posit.co/hc/en-us/articles/200486498-Package-Development-Prerequisites)
-installed, you can build the development version from source:
+Alternatively, you can install the development version from GitHub:
 
 ``` r
 # install.packages("pak")
@@ -327,8 +325,8 @@ fit
 #> sdepth          0.62    2.53
 #> 
 #> Smooth terms:
-#>              Std. Dev.
-#> sd__s(depth)     13.93
+#>              Std. Dev.  EDF
+#> sd__s(depth)     13.93 6.12
 #> 
 #> Dispersion parameter: 12.69
 #> Tweedie p: 1.58
@@ -363,14 +361,14 @@ tidy(fit)
 #> 1 (Intercept)     2.37     0.215     1.95      2.79
 #> 2 sdepth          0.62     2.53     -4.34      5.58
 tidy(fit, effects = "ran_pars")
-#> # A tibble: 5 × 5
-#>   term         estimate std.error conf.low conf.high
-#>   <chr>           <dbl>     <dbl>    <dbl>     <dbl>
-#> 1 range           16.4    4.47        9.60     28.0 
-#> 2 phi             12.7    0.406      11.9      13.5 
-#> 3 sigma_O          1.86   0.218       1.48      2.34
-#> 4 tweedie_p        1.58   0.00998     1.56      1.60
-#> 5 sd__s(depth)    13.9   NA           7.54     25.7
+#> # A tibble: 5 × 6
+#>   term         estimate std.error conf.low conf.high   edf
+#>   <chr>           <dbl>     <dbl>    <dbl>     <dbl> <dbl>
+#> 1 range           16.4    4.47        9.60     28.0  NA   
+#> 2 phi             12.7    0.406      11.9      13.5  NA   
+#> 3 sigma_O          1.86   0.218       1.48      2.34 NA   
+#> 4 tweedie_p        1.58   0.00998     1.56      1.60 NA   
+#> 5 sd__s(depth)    13.9   NA           7.54     25.7   6.12
 ```
 
 ### Check the model

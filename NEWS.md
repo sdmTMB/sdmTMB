@@ -1,5 +1,244 @@
 # sdmTMB (development version)
 
+* Smoothers with `by` variables now have linear terms named like
+  `sdepth:fyear2011` in `tidy()` and `print()` instead of
+  `sdepth):fyear2011`.
+
+* Fix the names of smoothers' linear terms in `tidy()` and `print()` when
+  a model has a `by` smoother and a cyclic (`bs = "cc"`) or shrinkage
+  (`bs = "cs"`) smoother. They fell back to generic `scovariate-*` names or
+  could be attached to the wrong rows.
+
+* The components of delta models can now have different smoothers (and
+  different parametric terms with smoothers). Previously, both formulas had
+  to be identical if either included a smoother.
+
+* `visreg_delta(model = 1)` now works when the second component uses
+  variables the first doesn't (e.g., `list(y ~ depth, y ~ depth + year)`).
+
+* `get_index_sims()` now returns `log_est` as `log(est)`. It was the mean of
+  the log draws while `est` was their median (by default), so
+  `exp(log_est)` did not equal `est`.
+
+* `sdmTMB_simulate()` no longer draws random smoother wiggles that the user
+  could not control. Previously, `s()` terms got penalized coefficients drawn
+  with SD 1 on every call. They are now 0 unless the new `sigma_smooth`
+  argument is supplied, and `B` now also takes the coefficients of the
+  smoothers' linear parts (e.g., `sx`), in the order `tidy()` lists them.
+
+* `sdmTMB_simulate(df = )` now sets the Student-t degrees of freedom. It was
+  silently ignored, so simulations used the `df` from `student()` (or 3).
+  Supplying `df` with a non-Student family is now an error.
+
+* Add `strip_sdmTMB()` to shrink a fitted model before saving it. It removes
+  the cached Cholesky factor and the handle to the in-memory RTMB tape, which
+  sdmTMB rebuilds as needed, and optionally the joint precision matrix. For
+  the `pcod` spatiotemporal example this cuts the saved file roughly in half.
+
+* `spread_sims()` and `gather_sims()` now recompute the joint precision
+  matrix if the fit doesn't have it (as `predict(..., nsim = )` already did),
+  and now work for models without random effects by sampling from the
+  fixed-effect covariance matrix.
+
+* Fitted models no longer carry the environment they were fit in. Formulas
+  and terms kept a reference to the calling frame, so a model fit inside a
+  function, loop, or `lapply()` call saved everything in that frame (data,
+  other fits) along with it. The stored formulas now keep only the non-data
+  objects they refer to (e.g., `k` in `poly(x, k)`). `emmeans()` now uses
+  the data stored in the fit instead of looking up the `data` argument again.
+
+* Add `breakpt(x, positive = TRUE)` to constrain a break-point slope to be
+  positive. The slope is estimated in log space, but `tidy()`,
+  `profile_breakpt()`, priors, and `sdmTMB_simulate(threshold_coefs = )` use
+  the slope itself. Existing `breakpt(x)` models are unchanged.
+  With `positive = TRUE`, `profile_breakpt()` refits any profile fit whose
+  slope ends up near 0 or very large, starting from a moderate slope, and
+  keeps the better fit. Otherwise a fit with a slope near 0 could be carried
+  from one cutpoint to the next and hide a better fit with a positive slope.
+
+* **The C++ TMB backend has been removed; all models use RTMB**, which has been
+  the default since 1.2.0. sdmTMB no longer contains compiled code, so
+  installing it from source no longer needs a C++ compiler, and it installs
+  much faster. Results on the default path don't change.
+  `sdmTMBcontrol(backend = )` and `sdmTMBcontrol(normalize = )` are deprecated
+  and ignored (with a warning), and `options(sdmTMB.backend = "tmb")` is
+  ignored with a warning. Models saved after being fit with the TMB backend
+  can no longer be used and give an error asking you to refit them; models
+  fit with RTMB still load. To compare against the TMB backend, use sdmTMB
+  1.2.0.
+
+* Models with penalized smoothers now store the effective degrees of freedom
+  (EDF) of each smoother, calculated as in mgcv, in `fit$smooth_edf`. They're
+  shown in `print()` and in a new `edf` column of `tidy(fit, "ran_pars")`. The
+  calculation reuses the inner-problem Cholesky factor, so it costs roughly one
+  inner Newton step plus two gradient evaluations per linear coefficient.
+  `print()` now always shows them and no longer has an `edf` argument, which
+  previously showed `cAIC(fit, what = "EDF")`. Unlike those values, these
+  include the smoother's unpenalized null space and integrate over the fixed
+  effects, and so match `mgcv::gam()`.
+
+* Fix `make_mesh()` with `cutoff` and `convex` or `concave`, which built the
+  mesh from the boundary only and dropped the data locations. Meshes built with
+  these arguments will change. Also fix the documented default `fmesher_func`
+  and a stale error message about `n_knots`.
+
+* `make_mesh()` now warns if any data locations fall outside the mesh. Those
+  observations get no spatial or spatiotemporal random effect. This can happen
+  with a supplied `mesh` that doesn't cover the data, but also with coarse
+  meshes from `make_mesh()` itself (e.g., few k-means knots or a large
+  `cutoff`), since the mesh only spans the convex hull of its vertices.
+
+* `make_mesh()` with `type = "kmeans"` now caps `n_knots` at the number of
+  unique locations, avoiding a `kmeans()` error with repeated locations, and no
+  longer changes the global random seed.
+
+* `make_mesh()` now checks `xy_cols` up front and warns about large negative
+  coordinates as well as large positive ones.
+
+* `sanity()` now sets `range_ok = FALSE` if a range is less than half the median
+  triangle edge length near the data, since the mesh can't resolve such a field.
+  The existing check for overly large ranges now also applies to `range_min` and
+  `range_max` with `anisotropy = TRUE`, where it was previously skipped. Either
+  can change `all_ok` for existing models.
+
+* `cAIC()` can now compare several models, like `AIC()`: `cAIC(fit1, fit2)`
+  returns a data frame with the effective degrees of freedom and cAIC for each
+  model. `what` now comes after `...` and must be named, e.g.
+  `cAIC(fit, what = "EDF")`. `cAIC()` also works on `profile_breakpt()`
+  output, counting the profiled cutpoint as a parameter.
+
+* Fix `cAIC()` with `sdmTMBcontrol(profile = TRUE)`, which left the profiled
+  fixed effects out of the degrees of freedom, and evaluate `cAIC()` at the
+  mode rather than wherever the objective was last evaluated, which could
+  change the result after other calls on the fit.
+
+* Model fits saved with sdmTMB versions before 1.2.0 are no longer supported.
+  `predict()`, `residuals()`, `tidy()`, `print()`, `get_index()`, and other
+  methods now give an error asking you to refit.
+
+* `sdmTMB(do_index = TRUE)`, and its `predict_args` and `index_args`, are now
+  defunct and give an error. Fit the model and then pass it with `newdata` to
+  `get_index()`, `get_cog()`, `get_eao()`, or `get_weighted_average()`.
+  `newdata` is now required when these functions are given a fitted model,
+  including models fit earlier with `do_index = TRUE`.
+
+* Fix `b` priors in delta models with a list of formulas. The priors were
+  sized from the first component but also applied to the second, which
+  crashed R (TMB backend) or gave an obscure error (RTMB backend) when the
+  second component had fewer coefficients, and silently applied priors to
+  the wrong coefficients when the components had different covariates.
+  Since `b` priors apply to both components, `sdmTMB()` now gives an error
+  unless both components have the same fixed-effect columns. For priors on
+  one component's coefficients, use `sdmTMBpriors(custom = )` with
+  `par$b_j` or `par$b_j2`.
+
+* Fix threshold terms being matched by substring. A covariate whose name
+  contained `breakpt` or `logistic` (e.g., `logistic_x`) was treated as a
+  threshold term, and combining `breakpt()` with `logistic()` silently
+  dropped one of them. Only `breakpt()` and `logistic()` calls are now
+  threshold terms, and more than one threshold term is an error.
+
+* Fix threshold terms in delta models with a list of formulas. Only the
+  first formula's threshold term was read, so a threshold term in only the
+  second formula was dropped, a threshold term in only the first was also
+  applied to the second, and a different threshold covariate in the second
+  formula was ignored. Every component must now have the same threshold
+  term; otherwise `sdmTMB()` gives an error.
+
+* Fix the refit after `collapse_spatial_variance` or
+  `collapse_spatiotemporal_ar1` collapses a field when rows with missing
+  values were omitted. `weights`, `offset`, and a vector `censored_upper`
+  were not subset to the remaining rows, so they were misaligned with the
+  data (or, for `censored_upper`, the refit failed).
+
+* `multiphase = TRUE` (the default) now respects `control$map` and
+  `control$start`. Previously, the first phase ignored them, so a parameter
+  fixed with `map` but not given a `start` value was fixed at its
+  first-phase estimate rather than 0, and the first phase didn't start from
+  the `start` values. User `start` values still take precedence over
+  first-phase estimates. The first phase also now handles `profile = TRUE`
+  correctly.
+
+* Fix starting values for models with an inverse link (`gaussian()`,
+  `Gamma()`, or `student()`) that include smoothers or random intercepts,
+  which previously failed with an error.
+
+* `sdmTMB()` now gives a clear error when `formula`, `spatial`,
+  `spatiotemporal`, or `share_range` is a list whose length doesn't match
+  the number of model components. Previously, extra elements were silently
+  ignored or the error was cryptic.
+
+* Add `profile_breakpt()` to estimate the cutpoint of a `breakpt()` term by
+  profile likelihood, with a confidence interval, and refit the model at the
+  best cutpoint. Estimating the cutpoint directly with `sdmTMB()` can stop at
+  the wrong cutpoint while reporting convergence, and its standard error for
+  the cutpoint is not reliable, because the likelihood is not smooth in the
+  cutpoint. `plot()` on the output shows the profile likelihood and interval,
+  and `AIC()` on the output counts the cutpoint as a parameter.
+  `sdmTMB()` now points to `profile_breakpt()` with a message whenever it
+  estimates a `breakpt()` cutpoint directly, and `sanity()` flags such fits.
+  `profile_breakpt()` doesn't support delta models, so for them the message
+  and `sanity()` give other advice.
+
+* Warn about a mismatch between the sdmTMB version a model was fit with and the
+  installed version whenever a saved model is reloaded (e.g., by `print()`,
+  `tidy()`, or `simulate()`), not only in `predict()`. #534
+
+* `mesh` can now be omitted from `sdmTMB()` (or set to `NULL`), in which case
+  `spatial` and `spatiotemporal` default to `"off"`. Models with only fixed
+  effects, smoothers, random intercepts, or time-varying coefficients no
+  longer need `spatial = "off"` and `spatiotemporal = "off"` or a placeholder
+  mesh. Explicitly requesting spatial, spatiotemporal, or spatially varying
+  fields without a mesh is an error. This also lets `sdmTMB_cv()` run without
+  a mesh.
+
+* Fix a segfault when using `sdmTMB_cv()` fold models (e.g., via
+  `print(cv)`) after running in parallel with a `future::plan()` or after
+  saving and reloading the cross-validation object. Reloaded models are now
+  retaped before being evaluated.
+
+* `compare_deviance()` now accepts a sequence of models, ordered from most to
+  least complex, and reports the deviance explained by each relative to the
+  last model plus the gain over the next simpler model (e.g., the gain from
+  adding a spatial random field). The output now has one row per model
+  (columns `model`, `deviance`, `deviance_explained`, `gain`), and the
+  refitted reduced model is no longer returned as an attribute. Models after
+  the first can be set up with `do_fit = FALSE` to avoid fitting them twice,
+  and refits are warm started from each model's estimates.
+
+* Add the `compois()` Conway-Maxwell-Poisson family, parameterized by its
+  mean, for underdispersed (or overdispersed) counts.
+
+* `dharma_residuals()` now passes the mean of the simulations as the
+  predicted response to DHARMa by default rather than `fitted()`. With
+  `type = "mle-mvn"` simulations, `fitted()` conditions on the random effect
+  modes rather than the sampled draw, which made `DHARMa::testDispersion()`
+  indicate underdispersion for correct models. #554
+
+* `sdmTMB()` now warns about non-integer responses for count families
+  including the positive component of delta models.
+
+* `sdmTMB()` now warns when `time_varying_type = "rw"` (the default) is
+  combined with `time_varying` terms that overlap with the fixed effects in
+  `formula`, which makes the model unidentifiable. This includes implicit
+  overlaps such as `formula = y ~ 0 + factor(x)` with `time_varying = ~ 1`.
+  The warning suggests `time_varying_type = "rw0"`.
+
+* `predict(..., nsim = n, allow_new_levels = "sample")` draws the random
+  effects of IID grouping levels not seen in fitting from their estimated
+  (multivariate) normal distribution in each draw, so predictions can include
+  variation among levels (e.g., a new site). Fitted levels keep their usual
+  draws. #553
+
+* Predicting with a new level of one IID random effect grouping factor no
+  longer drops the other grouping factors' random effects for those rows
+  (e.g., a new `site` with a fitted `year` in `(1 | site) + (1 | year)`). #558
+
+* `predict()` with `newdata` now uses the fitted random effects when a grouping
+  column was not a factor in fitting (e.g., `(1 | year)` with an integer `year`).
+  These rows previously all got a random effect value of 0 with a warning.
+  Grouping columns in `newdata` must still be factors.
+
 * Fix the anisotropic ranges reported by `print()`, `tidy()` (`range_min`,
   `range_max`), and `plot_anisotropy()`, and the arrows in
   `plot_anisotropy2()`. These scaled the range by the eigenvalues of `H`
@@ -11,7 +250,15 @@
   backend, by the delta method on the log scale. They are unreliable when the
   anisotropy is weakly identified and `NA` at exact isotropy.
 
-* Add experimental joint preferential-sampling models (RTMB backend only):
+* `offset` in `predict.sdmTMB()` and `get_index()` can now be a single value
+  that is recycled across all rows of `newdata`.
+
+* The message when predicting on `newdata` from a model fit with an offset
+  but without supplying `offset` has been clarified and is now shown once per
+  session. It is no longer triggered by `get_index()`, which uses an offset of
+  0 by default. Set `offset = 0` to silence it.
+
+* Add experimental joint preferential-sampling models:
   `sdmTMB(..., preferential = preferential_sampling(...))`. A Bernoulli
   model for which cells of an eligible sampling frame were sampled is linked
   to the main model's spatial and spatiotemporal fields (by default; or to

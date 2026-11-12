@@ -246,7 +246,6 @@ test_that("prepare_spatial_domain returns areal domain pieces", {
   expect_s4_class(out$W_ss, "dgCMatrix")
   expect_equal(dim(out$W_ss), c(2L, 2L))
   expect_equal(as.matrix(out$W_ss), as.matrix(d$W))
-  expect_identical(out$normalize_in_r, 0L)
   expect_identical(out$barrier, 0L)
   expect_identical(out$anisotropy, 0L)
 })
@@ -536,7 +535,7 @@ test_that("spread_sims uses areal field-scale transform when areal flag is set",
     X = stats::runif(60),
     Y = stats::runif(60)
   )
-  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.2)
+  mesh <- make_mesh(dat, xy_cols = c("X", "Y"), cutoff = 0.1)
   fit_spde <- sdmTMB(
     y ~ x,
     data = dat,

@@ -4,19 +4,24 @@
 \alias{cAIC}
 \title{Calculate conditional AIC}
 \usage{
-cAIC(object, what = c("cAIC", "EDF"), ...)
+cAIC(object, ..., what = c("cAIC", "EDF"))
 }
 \arguments{
-\item{object}{Output from \code{\link[=sdmTMB]{sdmTMB()}}.}
+\item{object}{Output from \code{\link[=sdmTMB]{sdmTMB()}} or \code{\link[=profile_breakpt]{profile_breakpt()}}.}
+
+\item{...}{Optionally, more fitted models from \code{\link[=sdmTMB]{sdmTMB()}} or
+\code{\link[=profile_breakpt]{profile_breakpt()}} to compare, as with \code{\link[=AIC]{AIC()}}.}
 
 \item{what}{Whether to return the cAIC or the effective degrees of freedom
-(EDF) for each group of random effects.}
-
-\item{...}{Other arguments for specific methods. Not used.}
+(EDF) for each group of random effects. Must be named. \code{"EDF"} is only
+available for a single model.}
 }
 \value{
-Either the cAIC or the effective degrees of freedom (EDF) by group
-of random effects depending on the argument \code{what}.
+For a single model, either the cAIC or the effective degrees of freedom
+(EDF) by group of random effects depending on the argument \code{what}. For
+several models, a data frame with a row per model and columns \code{df} (the
+effective degrees of freedom: fixed effects plus total EDF) and \code{cAIC}, as
+with \code{\link[=AIC]{AIC()}}.
 }
 \description{
 Calculates the conditional Akaike Information criterion (cAIC).
@@ -42,6 +47,14 @@ Both cAIC and EDF are calculated using Eq. 6 of Zheng, Cadigan, and Thorson
 
 For models that include profiled fixed effects, these profiles are turned
 off.
+
+When comparing several models, models without random effects contribute
+their marginal AIC, which is what cAIC reduces to with no random effects.
+
+For output \code{p} from \code{\link[=profile_breakpt]{profile_breakpt()}}, cAIC uses the final fit and counts
+the profiled cutpoint as one more fixed effect, as \code{AIC(p)} does. Use
+\code{cAIC(p)}, not \code{cAIC(p$fit)}: \code{p$fit} holds the cutpoint fixed, so it isn't
+counted. The EDF (\code{what = "EDF"}) are those of \code{p$fit}.
 }
 \examples{
 mesh <- make_mesh(dogfish, c("X", "Y"), cutoff = 15)
@@ -58,6 +71,9 @@ fit <- sdmTMB(catch_weight ~ s(log(depth)),
 cAIC(fit)
 cAIC(fit, what = "EDF")
 AIC(fit)
+
+fit2 <- update(fit, catch_weight ~ 1)
+cAIC(fit, fit2)
 }
 \references{
 \strong{Deriving the general approximation to cAIC used here:}

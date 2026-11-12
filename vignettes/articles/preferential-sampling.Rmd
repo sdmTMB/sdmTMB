@@ -23,7 +23,7 @@ knitr::opts_chunk$set(
 )
 ```
 
-**This feature is experimental.** It requires the RTMB backend, and its
+**This feature is experimental.** Its
 interface and supported models may change.
 
 Fishery-dependent data are rarely collected at random locations. Fishers
@@ -209,8 +209,7 @@ mesh <- make_mesh(catches, c("X", "Y"), mesh = mesh_grid$mesh)
 fit_catch <- sdmTMB(
   catch ~ 0 + factor(year) + s(depth) + gear + (1 | vessel),
   data = catches, mesh = mesh, time = "year", family = nbinom2(),
-  offset = log(catches$effort),
-  control = sdmTMBcontrol(backend = "rtmb")
+  offset = log(catches$effort)
 )
 ```
 
@@ -418,7 +417,7 @@ $\eta_2$ only.
   sampling locations. Residuals check the catch model only.
   `simulate(re_form = NA)`, `project()`, and `sdmTMB_cv()` aren't supported.
   `predict_sampling()` covers the fitted frame only.
-* **Currently supported.** The RTMB backend; single log-link Poisson, NB2,
+* **Currently supported.** Single log-link Poisson, NB2,
   Gamma, Tweedie, lognormal, or generalized gamma families, or delta-gamma,
   delta-lognormal, and delta-generalized-gamma with default links (standard or Poisson-link); univariate `s()` smoothers; IID random intercepts
   (excluded, or included at known levels); ordinary isotropic spatial and

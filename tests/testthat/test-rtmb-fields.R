@@ -23,7 +23,7 @@ rtmb_areal_data <- function() {
   list(data = d, domain = domain)
 }
 
-test_that("RTMB isotropic SPDE matches the canonical TMB objective", {
+test_that("RTMB isotropic SPDE matches frozen TMB values", {
   set.seed(35)
   n <- 48L
   observed <- data.frame(x = runif(n), y = runif(n), z = rnorm(n))
@@ -33,30 +33,14 @@ test_that("RTMB isotropic SPDE matches the canonical TMB objective", {
   fit <- sdmTMB(response ~ z, data = observed, mesh = mesh,
     spatial = "on", spatiotemporal = "off", family = gaussian(),
     control = sdmTMBcontrol(multiphase = FALSE), do_fit = FALSE)
-  d <- fit$tmb_data
-  d$normalize_in_r <- 0L
   p <- fit$tmb_params
   p$b_j[] <- c(0.4, -0.2)
   p$ln_phi[] <- log(0.7)
   p$ln_tau_O[] <- 0.15
   p$ln_kappa[] <- -0.1
   p$omega_s[] <- seq(-0.1, 0.1, length.out = length(p$omega_s))
-  cpp <- make_sdmTMB_adfun(d, p, fit$tmb_map, random = "omega_s")
-  rt <- make_sdmTMB_adfun(d, p, fit$tmb_map, random = "omega_s",
-    backend = "rtmb")
-  expect_equal(rt$fn(rt$par), cpp$fn(cpp$par), tolerance = 1e-7)
-  expect_equal(rt$gr(rt$par), cpp$gr(cpp$par),
-    ignore_attr = TRUE, tolerance = 1e-6)
-  cpp$fn(cpp$par)
-  rt$fn(rt$par)
-  actual <- rt$report(rt$env$last.par.best)
-  expected <- cpp$report(cpp$env$last.par.best)
-  for (name in c("sigma_O", "sigma_E", "range", "eta_i", "omega_s_A",
-                 "jnll_obs", "re_cov_pars", "re_b_pars",
-                 "covariate_diffusion_values")) {
-    expect_equal(actual[[name]], expected[[name]], tolerance = 1e-6,
-      info = name)
-  }
+  expect_frozen_objective("fields isotropic spde", fit$tmb_data, p,
+    fit$tmb_map, random = "omega_s")
 })
 
 test_that("RTMB spatial Gaussian fit predicts and simulates", {
@@ -64,41 +48,21 @@ test_that("RTMB spatial Gaussian fit predicts and simulates", {
   n <- 80L
   d <- data.frame(x = runif(n), y = runif(n), z = rnorm(n))
   d$response <- 0.3 + 0.4 * d$z + rnorm(n, sd = 0.2)
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 20L, type = "kmeans")
-  common <- list(formula = response ~ z, data = d, mesh = mesh,
-    spatial = "on", spatiotemporal = "off", family = gaussian())
-  cpp <- do.call(sdmTMB, c(common,
-    list(control = sdmTMBcontrol(multiphase = FALSE, backend = "tmb"))))
-  rt <- do.call(sdmTMB, c(common,
-    list(control = sdmTMBcontrol(multiphase = FALSE, backend = "rtmb"))))
-  expect_equal(rt$model$par, cpp$model$par, tolerance = 1e-5)
-  expect_equal(rt$model$objective, cpp$model$objective, tolerance = 1e-6)
-  expect_sdreport_matches(rt, cpp)
+  mesh <- suppressWarnings(
+    make_mesh(d, c("x", "y"), n_knots = 20L, type = "kmeans"),
+    classes = "sdmTMB_mesh_outside_warning"
+  )
+  rt <- sdmTMB(response ~ z, data = d, mesh = mesh, spatial = "on",
+    spatiotemporal = "off", family = gaussian(),
+    control = sdmTMBcontrol(multiphase = FALSE))
+  expect_true(rt$sd_report$pdHess)
   projection_offset <- rep(0.2, 4L)
-  expected <- suppressMessages(predict(cpp, newdata = d[1:4, ],
+  p <- suppressMessages(predict(rt, newdata = d[1:4, ],
     offset = projection_offset, se_fit = TRUE))
-  actual <- suppressMessages(predict(rt, newdata = d[1:4, ],
-    offset = projection_offset, se_fit = TRUE))
-  expect_equal(actual$est, expected$est, tolerance = 1e-5)
-  expect_equal(actual$omega_s, expected$omega_s, tolerance = 1e-5)
-  expect_equal(actual$est_se, expected$est_se, tolerance = 1e-5)
-  population_cpp <- predict(cpp, newdata = d[1:4, ],
+  expect_true(all(is.finite(p$est_se)))
+  population <- predict(rt, newdata = d[1:4, ],
     offset = projection_offset, pop_pred = TRUE)
-  population_rt <- predict(rt, newdata = d[1:4, ],
-    offset = projection_offset, pop_pred = TRUE)
-  expect_equal(population_rt$est, population_cpp$est, tolerance = 1e-6)
-  projection_data <- predict(rt, newdata = d[1:4, ],
-    offset = projection_offset, return_tmb_data = TRUE)
-  report_cpp <- make_sdmTMB_adfun(projection_data, cpp$tmb_params,
-    cpp$tmb_map, cpp$tmb_random)$report()
-  report_rt <- make_sdmTMB_adfun(projection_data, rt$tmb_params,
-    rt$tmb_map, rt$tmb_random, backend = "rtmb")$report()
-  expect_setequal(names(report_rt), names(report_cpp))
-  report_names <- sort(names(report_cpp))
-  expect_equal(lapply(report_rt[report_names], dim),
-    lapply(report_cpp[report_names], dim))
-  expect_equal(report_rt$proj_rw_i, report_cpp$proj_rw_i)
-  expect_equal(report_rt$proj_iid_re_i, report_cpp$proj_iid_re_i)
+  expect_true(all(is.finite(population$est)))
   held <- simulate(rt, nsim = 2L, observation_error = FALSE, silent = TRUE)
   expect_equal(as.numeric(held[, 1L]),
     as.numeric(predict(rt, type = "response")$est), tolerance = 1e-6)
@@ -111,7 +75,7 @@ test_that("RTMB spatial Gaussian fit predicts and simulates", {
     tolerance = 1e-6)
 })
 
-test_that("RTMB isotropic IID, AR1, and RW fields match TMB", {
+test_that("RTMB isotropic IID, AR1, and RW fields match frozen TMB values", {
   set.seed(37)
   n <- 50L
   d <- data.frame(x = runif(n), y = runif(n), z = rnorm(n),
@@ -127,31 +91,8 @@ test_that("RTMB isotropic IID, AR1, and RW fields match TMB", {
     p$ln_kappa[] <- 0.1
     p$ar1_phi[] <- 0.4
     p$epsilon_st[] <- seq(-0.12, 0.17, length.out = length(p$epsilon_st))
-    joint_cpp <- TMB::MakeADFun(fit$tmb_data, p, map = fit$tmb_map,
-      DLL = "sdmTMB", silent = TRUE)
-    joint_rt <- RTMB::MakeADFun(
-      rtmb_make_objective(rtmb_prepare(fit$tmb_data)), p,
-      map = fit$tmb_map, silent = TRUE)
-    expect_equal(joint_rt$fn(joint_rt$par), joint_cpp$fn(joint_cpp$par),
-      tolerance = 1e-7, info = field_type)
-    expect_equal(joint_rt$gr(joint_rt$par), joint_cpp$gr(joint_cpp$par),
-      ignore_attr = TRUE, tolerance = 1e-6, info = field_type)
-    cpp <- make_sdmTMB_adfun(fit$tmb_data, p, fit$tmb_map, fit$tmb_random)
-    rt <- make_sdmTMB_adfun(fit$tmb_data, p, fit$tmb_map, fit$tmb_random,
-      backend = "rtmb")
-    expect_equal(rt$fn(rt$par), cpp$fn(cpp$par), tolerance = 1e-7,
-      info = field_type)
-    expect_equal(rt$gr(rt$par), cpp$gr(cpp$par),
-      ignore_attr = TRUE, tolerance = 1e-6, info = field_type)
-    cpp$fn(cpp$par)
-    rt$fn(rt$par)
-    actual <- rt$report(rt$env$last.par.best)
-    expected <- cpp$report(cpp$env$last.par.best)
-    for (name in c("sigma_O", "sigma_E", "range", "rho", "eta_i",
-                   "epsilon_st_A_vec", "jnll_obs")) {
-      expect_equal(actual[[name]], expected[[name]], tolerance = 1e-6,
-        info = paste(field_type, name))
-    }
+    expect_frozen_objective(paste("fields spatiotemporal", field_type),
+      fit$tmb_data, p, fit$tmb_map, fit$tmb_random)
   }
 })
 
@@ -174,8 +115,7 @@ test_that("RTMB temporal field simulation retains selected time steps", {
     data <- fit$tmb_data
     data$sim_re[[2L]] <- 1L
     data$simulate_t <- c(0L, 1L, 0L, 1L, 0L)
-    obj <- make_sdmTMB_adfun(data, p, fit$tmb_map, fit$tmb_random,
-      backend = "rtmb")
+    obj <- make_sdmTMB_adfun(data, p, fit$tmb_map, fit$tmb_random)
     draw <- obj$simulate()
     for (t in c(1L, 3L, 5L)) {
       expect_equal(draw$epsilon_st[, t, 1L], p$epsilon_st[, t, 1L],
@@ -192,10 +132,10 @@ test_that("RTMB temporal field simulation retains selected time steps", {
   }
 })
 
-test_that("RTMB anisotropic fields match every TMB report and sdreport row", {
+test_that("RTMB anisotropic fields match frozen TMB values", {
   d <- rtmb_spatial_data()
   d$response[[5L]] <- NA
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 20L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 30L, type = "kmeans")
   newdata <- d[c(1, 40, 90), ]
   cases <- list(
     ar1 = list(gaussian ~ z, family = gaussian(), time = "time",
@@ -208,17 +148,17 @@ test_that("RTMB anisotropic fields match every TMB report and sdreport row", {
     args <- c(cases[[name]], list(data = d, mesh = mesh, anisotropy = TRUE,
       do_fit = FALSE))
     fit <- do.call(sdmTMB, args)
-    expect_rtmb_fit_data_matches(fit, newdata, info = name)
+    expect_frozen_fit_data("fields", fit, newdata, info = name)
   }
 
   large_mesh <- make_mesh(d, c("x", "y"), n_knots = 60L,
     type = "kmeans")
   large_fit <- sdmTMB(gaussian ~ z, data = d, mesh = large_mesh,
     anisotropy = TRUE, do_fit = FALSE)
-  expect_rtmb_fit_data_matches(large_fit, newdata, info = "large anisotropy")
+  expect_frozen_fit_data("fields", large_fit, newdata, info = "large anisotropy")
 })
 
-test_that("RTMB areal SAR and CAR fields match TMB", {
+test_that("RTMB areal SAR and CAR fields match frozen TMB values", {
   skip_if_not_installed("igraph")
   for (spatial_model in c("sar", "car")) {
     areal <- rtmb_areal_data()
@@ -227,16 +167,16 @@ test_that("RTMB areal SAR and CAR fields match TMB", {
     fit <- sdmTMB(y ~ z, data = d, mesh = areal$domain,
       spatial_model = spatial_model, family = poisson(), time = "time",
       spatiotemporal = "iid", spatial_varying = ~ 0 + z, do_fit = FALSE)
-    expect_rtmb_fit_data_matches(fit, d[c(1, 12, 30), ], info = spatial_model)
+    expect_frozen_fit_data("fields", fit, d[c(1, 12, 30), ], info = spatial_model)
     fit <- sdmTMB(y ~ z, data = d, mesh = areal$domain,
       spatial_model = spatial_model,
       family = delta_gamma(type = "poisson-link"), time = "time", spatiotemporal = list("ar1", "off"), do_fit = FALSE)
-    expect_rtmb_fit_data_matches(fit, d[c(1, 12, 30), ],
+    expect_frozen_fit_data("fields", fit, d[c(1, 12, 30), ],
       info = paste(spatial_model, "delta"))
   }
 })
 
-test_that("RTMB barrier fields match TMB", {
+test_that("RTMB barrier fields match frozen TMB values", {
   skip_if_not_installed("sdmTMBextra")
   skip_if_not_installed("INLAspacetime")
   skip_if_not_installed("sf")
@@ -251,107 +191,20 @@ test_that("RTMB barrier fields match TMB", {
   fit <- sdmTMB(gaussian ~ z, data = d, mesh = mesh, time = "time",
     spatiotemporal = "rw", spatial_varying = ~ 0 + z, share_range = FALSE,
     do_fit = FALSE)
-  expect_rtmb_fit_data_matches(fit, d[c(1, 40, 90), ], info = "barrier")
+  expect_frozen_fit_data("fields", fit, d[c(1, 40, 90), ], info = "barrier")
 
   # The comparison with INLAspacetime's barrier precision is in
   # tests/optional/, since INLAspacetime is not in Suggests.
-
-  fitted <- function(backend) sdmTMB(gaussian ~ z, data = d, mesh = mesh,
-    spatial_varying = ~ 0 + z,
-    control = sdmTMBcontrol(backend = backend))
-  cpp <- fitted("tmb")
-  rt <- fitted("rtmb")
-  expect_equal(rt$model$par, cpp$model$par, tolerance = 1e-3)
-  expect_equal(rt$model$objective, cpp$model$objective, tolerance = 1e-6)
-  expect_equal(predict(rt, newdata = d[1:5, ])$est,
-    predict(cpp, newdata = d[1:5, ])$est, tolerance = 1e-5)
 })
 
-test_that("RTMB restricted spatial regression matches TMB", {
+test_that("RTMB restricted spatial regression matches frozen TMB values", {
   d <- rtmb_spatial_data()
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 20L, type = "kmeans")
+  mesh <- make_mesh(d, c("x", "y"), n_knots = 30L, type = "kmeans")
   fit <- sdmTMB(gaussian ~ z, data = d, mesh = mesh, time = "time",
     spatiotemporal = "iid", spatial_varying = ~ 0 + z,
     control = sdmTMBcontrol(get_rsr = TRUE), do_fit = FALSE)
-  expect_rtmb_fit_data_matches(fit, d, info = "rsr", project = FALSE)
+  expect_frozen_fit_data("fields", fit, d, info = "rsr", project = FALSE)
   fit <- sdmTMB(response ~ z, data = d, mesh = mesh, family = delta_gamma(),
     control = sdmTMBcontrol(get_rsr = TRUE), do_fit = FALSE)
-  expect_rtmb_fit_data_matches(fit, d, info = "rsr delta", project = FALSE)
-})
-
-test_that("RTMB anisotropic and areal fits match TMB", {
-  skip_on_cran()
-  skip_if_not_installed("igraph")
-  d <- rtmb_spatial_data()
-  mesh <- make_mesh(d, c("x", "y"), n_knots = 20L, type = "kmeans")
-  areal <- rtmb_areal_data()
-  fits <- list(
-    anisotropy = function(backend) {
-      sdmTMB(gaussian ~ z, data = d, mesh = mesh, anisotropy = TRUE,
-        control = sdmTMBcontrol(backend = backend, get_rsr = TRUE))
-    },
-    car = function(backend) {
-      sdmTMB(y ~ z, data = areal$data, mesh = areal$domain,
-        spatial_model = "car", family = poisson(),
-        control = sdmTMBcontrol(backend = backend))
-    },
-    sar = function(backend) {
-      sdmTMB(y ~ z, data = areal$data, mesh = areal$domain,
-        spatial_model = "sar", family = poisson(),
-        control = sdmTMBcontrol(backend = backend))
-    }
-  )
-  for (name in names(fits)) {
-    cpp <- fits[[name]]("tmb")
-    rt <- fits[[name]]("rtmb")
-    expect_equal(rt$model$par, cpp$model$par, tolerance = 1e-5, info = name)
-    expect_sdreport_matches(rt, cpp, tolerance = 1e-4, info = name)
-    # Only RTMB has standard errors for the anisotropic axis ranges.
-    tidy_rt <- tidy(rt, "ran_pars")
-    tidy_cpp <- tidy(cpp, "ran_pars")
-    axis <- tidy_rt$term %in% c("range_min", "range_max")
-    tidy_rt[axis, c("std.error", "conf.low", "conf.high")] <- NA_real_
-    expect_equal(tidy_rt, tidy_cpp, tolerance = 1e-4, info = name)
-    expect_equal(predict(rt)$est, predict(cpp)$est, tolerance = 1e-5,
-      info = name)
-    # Unconditional draws resample the fields from their precision.
-    moments <- function(fit) {
-      s <- simulate(fit, nsim = 500L, seed = 1, re_form = NA)
-      c(mean(s), mean(apply(s, 1L, stats::var)))
-    }
-    expect_equal(moments(rt), moments(cpp), tolerance = 0.05, info = name)
-  }
-})
-
-test_that("TMB and RTMB simulate AR1 and RW barrier fields at the same scale", {
-  skip_on_cran()
-  skip_if_not_installed("sdmTMBextra")
-  skip_if_not_installed("INLAspacetime")
-  skip_if_not_installed("sf")
-  d <- rtmb_spatial_data()
-  mesh <- make_mesh(d, c("x", "y"), cutoff = 0.7)
-  barrier <- sf::st_sf(id = 1L, geometry = sf::st_sfc(sf::st_polygon(list(
-    matrix(c(2.3, -0.2, 2.7, -0.2, 2.7, 5.2, 2.3, 5.2, 2.3, -0.2),
-      ncol = 2, byrow = TRUE)))))
-  mesh <- suppressMessages(suppressWarnings(
-    sdmTMBextra::add_barrier_mesh(mesh, barrier, range_fraction = 0.2,
-      plot = FALSE)))
-  sim_sd <- function(st, backend) {
-    fit <- sdmTMB(gaussian ~ 1, data = d, mesh = mesh, time = "time",
-      spatial = "off", spatiotemporal = st, do_fit = FALSE,
-      control = sdmTMBcontrol(backend = backend))
-    dat <- fit$tmb_data
-    dat$sim_re <- c(rep(1L, 5L), 0L)
-    obj <- make_sdmTMB_adfun(data = dat, map = fit$tmb_map,
-      random = fit$tmb_random, parameters = fit$tmb_params, backend = backend)
-    p <- obj$env$par
-    p[names(p) == "ln_tau_E"] <- -1
-    p[names(p) == "ln_kappa"] <- 0.5
-    set.seed(1)
-    mean(replicate(50, sd(obj$simulate(p)$epsilon_st)))
-  }
-  for (st in c("ar1", "rw")) {
-    expect_equal(sim_sd(st, "tmb"), sim_sd(st, "rtmb"), tolerance = 0.1,
-      info = st)
-  }
+  expect_frozen_fit_data("fields", fit, d, info = "rsr delta", project = FALSE)
 })

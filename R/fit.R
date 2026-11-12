@@ -1,6 +1,3 @@
-#' @useDynLib sdmTMB, .registration = TRUE
-NULL
-
 #' Fit a spatial or spatiotemporal GLMM with TMB
 #'
 #' Fit a spatial or spatiotemporal generalized linear mixed effects model (GLMM)
@@ -26,7 +23,9 @@ NULL
 #'   before fitting, as with `na.action = na.omit` in [stats::glm()]. The
 #'   rows used are stored in the returned object as `data`.
 #' @param mesh An object from [make_mesh()] for `spatial_model = "spde"` or
-#'   from [make_areal_domain()] for `"sar"` or `"car"`.
+#'   from [make_areal_domain()] for `"sar"` or `"car"`. Can be omitted for a
+#'   model without spatial or spatiotemporal random fields, in which case
+#'   `spatial` and `spatiotemporal` default to `'off'`.
 #' @param time An optional time column name (as character). Can be left as
 #'   `NULL` for a model with only spatial random fields; however, if the data
 #'   are actually spatiotemporal and you wish to calculate derived quantities
@@ -41,12 +40,14 @@ NULL
 #'   vignette](https://sdmTMB.github.io/sdmTMB/articles/multi-family.html) for
 #'   supported combinations.
 #' @param spatial Estimate spatial random fields? Options are `'on'` / `'off'`
-#'   or equivalently `TRUE` / `FALSE`. Optionally, a list for delta models,
+#'   or equivalently `TRUE` / `FALSE`. Defaults to `'on'` if `mesh` is supplied
+#'   and `'off'` otherwise. Optionally, a list for delta models,
 #'   e.g. `list('on', 'off')`.
 #' @param spatiotemporal Estimate the spatiotemporal random fields as `'iid'`
 #'   (independent and identically distributed; default), stationary `'ar1'`
 #'   (first-order autoregressive), a random walk (`'rw'`), or fixed at 0
-#'   `'off'`. Will be set to `'off'` if `time = NULL`. If a delta model, can be
+#'   `'off'`. Will be set to `'off'` if `time = NULL` or, by default, if `mesh`
+#'   is not supplied. If a delta model, can be
 #'   a list. E.g., `list('off', 'ar1')`. Guidance: Use `'iid'` if spatiotemporal
 #'   correlation is negligible or already accounted for in fixed effects; `'ar1'`
 #'   if correlation between consecutive time steps decays gradually; `'rw'` if
@@ -138,8 +139,7 @@ NULL
 #'   Defaults to `NULL`, in which case `data` is used.
 #' @param preferential `r lifecycle::badge("experimental")` An optional
 #'   preferential-sampling specification from [preferential_sampling()].
-#'   Requires the RTMB backend (the default). The sampling
-#'   indicators are then modeled jointly with the catch data.
+#'   The sampling indicators are then modeled jointly with the catch data.
 #' @param knots Optional named list containing knot values to be used for basis
 #'   construction of smoothing terms. See [mgcv::gam()] and [mgcv::gamm()].
 #'   E.g., `s(x, bs = 'cc', k = 4), knots = list(x = c(1, 2, 3, 4))`
@@ -178,20 +178,14 @@ NULL
 #'   fitting (`FALSE`)?
 #' @param experimental A named list for esoteric or in-development options. Here
 #'   be dragons.
-#' @param do_index `r lifecycle::badge("deprecated")` Do index
-#'   standardization calculations while fitting? Instead, fit the model and
-#'   then pass the fitted model and `newdata` directly to [get_index()],
-#'   [get_cog()], [get_eao()], or [get_weighted_average()]. If `TRUE`, then
-#'   `predict_args` must have a `newdata` element supplied and `area` can be
-#'   supplied to `index_args`.
-#' @param predict_args `r lifecycle::badge("deprecated")` A list of arguments
-#'   to pass to [predict.sdmTMB()] **if** `do_index = TRUE`.
-#' @param index_args `r lifecycle::badge("deprecated")` A list of arguments to
-#'   pass to [get_index()] **if** `do_index = TRUE`. Currently, `area` and
-#'   `derived_link` are supported.
+#' @param do_index,predict_args,index_args `r lifecycle::badge("defunct")`
+#'   Index calculations while fitting are no longer supported. Instead, fit the
+#'   model and then pass it with `newdata` directly to [get_index()],
+#'   [get_cog()], [get_eao()], or [get_weighted_average()].
 #' @importFrom methods as is
 #' @importFrom cli cli_abort cli_warn cli_inform
 #' @importFrom mgcv s t2
+#' @importFrom rlang %||%
 #' @importFrom stats gaussian model.frame model.matrix as.formula
 #' @importFrom stats model.response terms model.offset
 #' @importFrom lifecycle deprecated is_present deprecate_warn
@@ -200,16 +194,15 @@ NULL
 #' An object (list) of class `sdmTMB`. Useful elements include:
 #'
 #' * `model`: output from [stats::nlminb()]
-#' * `sd_report`: output from [TMB::sdreport()] or [RTMB::sdreport()]
+#' * `sd_report`: output from [RTMB::sdreport()]
 #' * `gradients`: gradients of the marginal log likelihood with respect to
 #'   each fixed effect
 #' * `data`: the data used in fitting (rows with missing values removed)
 #' * `spde`: the object supplied to `mesh`
 #' * `family`: the family object, including the inverse link function
 #'   `family$linkinv()`
-#' * `backend`: `"rtmb"` or `"tmb"`; see [sdmTMBcontrol()]
-#' * `tmb_obj`: the objective function object from [TMB::MakeADFun()] or
-#'   [RTMB::MakeADFun()]
+#' * `backend`: always `"rtmb"`; kept for compatibility
+#' * `tmb_obj`: the objective function object from [RTMB::MakeADFun()]
 #' * `tmb_data`, `tmb_params`, `tmb_map`: the data, parameter, and map lists
 #'   passed to `MakeADFun()`
 #'
@@ -254,7 +247,17 @@ NULL
 #' A linear break-point relationship for a covariate can be included via
 #' `+ breakpt(variable)` in the formula, where `variable` is a single covariate
 #' corresponding to a column in `data`. In this case, the relationship is linear
-#' up to a point and then constant (hockey-stick shaped).
+#' up to a point and then constant (hockey-stick shaped). The likelihood is not
+#' smooth in the cutpoint, so a fit can stop at the wrong cutpoint while
+#' reporting convergence, and its standard error for the cutpoint is not
+#' reliable. [profile_breakpt()] estimates the cutpoint and a confidence interval
+#' by profile likelihood instead.
+#'
+#' Use `+ breakpt(variable, positive = TRUE)` to constrain the slope to be
+#' positive. The slope is then estimated in log space, so any `b_threshold`
+#' starting value for it in [sdmTMBcontrol()] must be `log(slope)`, but [tidy()],
+#' [profile_breakpt()], priors, and the `threshold_coefs` argument of
+#' [sdmTMB_simulate()] use the slope itself.
 #'
 #' Similarly, a logistic-function threshold model can be included via
 #' `+ logistic(variable)`. This option models the relationship as a logistic
@@ -329,8 +332,7 @@ NULL
 #'
 #' Censored families treat some observations as known only to lie within a
 #' range, e.g., catch counts on longlines where competition for hooks hides
-#' the true number caught. Supply the bounds with `censored_upper`. All but
-#' [censored_poisson()] need the RTMB backend (the default). See [Families]
+#' the true number caught. Supply the bounds with `censored_upper`. See [Families]
 #' and the [hook competition
 #' vignette](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html).
 #'
@@ -674,17 +676,34 @@ sdmTMB <- function(
     do_index = FALSE,
     predict_args = NULL,
     index_args = NULL) {
+  if (!isFALSE(do_index) || !is.null(predict_args) || !is.null(index_args)) {
+    lifecycle::deprecate_stop(
+      "1.2.0",
+      "sdmTMB(do_index = )",
+      details = paste(
+        "Fit the model and then pass it with `newdata` directly to `get_index()`,",
+        "`get_cog()`, `get_eao()`, or `get_weighted_average()`."
+      )
+    )
+  }
+
+  assert_that(class(formula) %in% c("formula", "list"))
+  assert_that(inherits(data, "data.frame"))
+  if (!is.null(time)) assert_that(is.character(time))
   nonlocal_data_arg <- nonlocal_data
-  mesh_missing <- missing(mesh)
+  mesh_missing <- missing(mesh) || is.null(mesh)
   spatial_model <- match.arg(tolower(spatial_model[1L]), c("spde", "sar", "car"))
   if (mesh_missing && spatial_model %in% c("sar", "car")) {
     cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain supplied to `mesh`.")
   }
-  is_areal <- spatial_model %in% c("sar", "car")
   if (!inherits(dispformula, "formula") || length(dispformula) != 2L) {
     cli_abort("`dispformula` must be a one-sided formula such as `~ 1`.")
   }
   censored_upper <- .censored_upper_arg(censored_upper, data)
+  # The unfiltered row inputs, for the refit after collapsing spatial fields
+  refit_inputs <- list(data = data, mesh = if (!mesh_missing) mesh, weights = weights,
+    offset = offset, censored_upper = censored_upper, experimental = experimental,
+    control = control)
   # Omit rows with missing values in any variable the model uses, as with
   # `na.action = na.omit` in glm(). Doing this before anything is built from
   # `data` keeps the stored data, mesh rows, and post-fit methods aligned.
@@ -712,12 +731,12 @@ sdmTMB <- function(
     if (!mesh_missing) mesh <- .subset_mesh_rows(mesh, rows, n)
   }
   data <- droplevels(data) # if data was subset, strips absent factors
-  is_intercept_only_dispformula <- function(f) {
-    tt <- stats::terms(f)
-    length(attr(tt, "term.labels")) == 0L && isTRUE(attr(tt, "intercept") == 1L)
-  }
-  dispformula_is_intercept_only <- is_intercept_only_dispformula(dispformula)
-  has_dispformula <- !dispformula_is_intercept_only
+  # Drop columns that older versions of sdmTMB and predict() added, in case the
+  # data came from an earlier fit or prediction
+  data$sdm_x <- data$sdm_y <- data$sdm_orig_id <- data$sdm_spatial_id <- NULL
+  data$sdmTMB_X_ <- data$sdmTMB_Y_ <- NULL
+  disp_terms <- stats::terms(dispformula)
+  has_dispformula <- length(attr(disp_terms, "term.labels")) > 0L || attr(disp_terms, "intercept") != 1L
 
   family_spec <- .compile_family_spec(
     family = family,
@@ -728,6 +747,10 @@ sdmTMB <- function(
   family <- family_spec$family
   has_two_components <- .family_spec_has_two_components(family_spec)
   n_m <- family_spec$n_m
+  check_component_list(formula, n_m, "formula")
+  check_component_list(if (!missing(spatial)) spatial, n_m, "spatial")
+  check_component_list(if (!missing(spatiotemporal)) spatiotemporal, n_m, "spatiotemporal")
+  check_component_list(share_range, n_m, "share_range", vector_ok = TRUE)
   if (is_multi_family && has_dispformula) {
     cli_abort("`dispformula` is not supported for multi-family models yet. Use `dispformula = ~ 1`.")
   }
@@ -736,49 +759,18 @@ sdmTMB <- function(
     if (has_dispformula && !.family_metadata(disp_family)$uses_phi) {
       cli_warn("`dispformula` ignored because this family has no dispersion parameter.")
       dispformula <- ~ 1
-      dispformula_is_intercept_only <- TRUE
       has_dispformula <- FALSE
     }
-    if (has_dispformula && disp_family %in% c("truncated_nbinom1", "truncated_nbinom2")) {
+    if (has_dispformula && .family_has(disp_family, "truncated")) {
       cli_abort("`dispformula` is not supported for truncated negative-binomial families yet.")
     }
   }
 
-  if ((!is.null(predict_args) || !is.null(index_args)) && isFALSE(do_index)) {
-    cli_abort(c(
-      "`predict_args` and/or `index_args` were set but `do_index` was FALSE.",
-      "`do_index` must be TRUE for these arguments to take effect."
-    ))
-  }
-  if (do_index && .family_spec_is_multi_family(family_spec)) {
-    cli_abort("`do_index = TRUE` is not yet supported for multi-family models.")
-  }
-  if (isTRUE(do_index)) {
-    lifecycle::deprecate_soft(
-      "1.2.0",
-      "sdmTMB(do_index = )",
-      details = paste(
-        "Fit the model and then pass it with `newdata` directly to `get_index()`,",
-        "`get_cog()`, `get_eao()`, or `get_weighted_average()`."
-      )
-    )
-  }
+  # one formula per component from here on
+  formula <- lapply(.formula_list(formula), normalize_bar_only_formula)
+  if (length(formula) == 1L) formula <- rep(formula, n_m)
 
-  if (inherits(formula, "formula")) {
-    formula <- normalize_bar_only_formula(formula)
-  } else {
-    formula <- lapply(formula, normalize_bar_only_formula)
-  }
-
-  if (!missing(spatial)) {
-    if (length(spatial) > 1 && !is.list(spatial)) {
-      cli_abort("`spatial` should be a single value or a list")
-    }
-  }
   if (!missing(spatiotemporal)) {
-    if (length(spatiotemporal) > 1 && !is.list(spatiotemporal)) {
-      cli_abort("`spatiotemporal` should be a single value or a list")
-    }
     if (has_two_components && !is.list(spatiotemporal)) {
       spatiotemporal <- rep(spatiotemporal[[1]], 2L)
     }
@@ -792,45 +784,36 @@ sdmTMB <- function(
       FUN.VALUE = character(1L)
     )
   } else {
-    if (is.null(time)) {
+    if (is.null(time) || mesh_missing) {
       spatiotemporal <- rep("off", n_m)
     } else {
       spatiotemporal <- rep("iid", n_m)
     }
   }
 
-  if (is.null(time)) {
-    spatial_only <- rep(TRUE, n_m)
-  } else {
-    spatial_only <- ifelse(spatiotemporal == "off", TRUE, FALSE)
-  }
-
+  if (missing(spatial) && mesh_missing) spatial <- "off"
   if (is.list(spatial)) {
     spatial <- vapply(spatial, parse_spatial_arg, FUN.VALUE = character(1L))
   } else {
     spatial <- rep(parse_spatial_arg(spatial), n_m)
   }
-  include_spatial <- "on" %in% spatial
   spatial_user <- spatial  # preserve user's specification before internal modification
 
-  if (!include_spatial && !is.null(spatial_varying)) {
-    # spatial = "off" + SVC: keep SPDE infrastructure alive so SVC fields can
-    # estimate range and marginal SD, but omega_s is omitted from the linear
-    # predictor downstream (see the TMB template).
-    omit_spatial_intercept <- TRUE
-    include_spatial <- TRUE
+  # spatial = "off" + SVC: keep SPDE infrastructure alive so SVC fields can
+  # estimate range and marginal SD, but omega_s is omitted from the linear
+  # predictor downstream (see the TMB template).
+  omit_spatial_intercept <- all(spatial == "off") && !is.null(spatial_varying)
+  if (omit_spatial_intercept) {
     spatial <- rep("on", length(spatial)) # internal only; spatial_user retains "off"
-  } else {
-    omit_spatial_intercept <- FALSE
   }
 
-  if (!include_spatial && all(spatiotemporal == "off") || !include_spatial && all(spatial_only)) {
-    no_spatial <- TRUE
-    if (mesh_missing) {
-      mesh <- sdmTMB::pcod_mesh_2011 # internal data; fake!
-    }
-  } else {
-    no_spatial <- FALSE
+  no_spatial <- all(spatial == "off") && all(spatiotemporal == "off")
+  if (no_spatial && mesh_missing) mesh <- sdmTMB::pcod_mesh_2011 # internal data; fake!
+  if (!no_spatial && mesh_missing) {
+    cli_abort(c(
+      "`mesh` must be supplied for spatial, spatiotemporal, or spatially varying fields.",
+      "i" = "Create one with `make_mesh()` or set `spatial = \"off\"` and `spatiotemporal = \"off\"`."
+    ))
   }
 
   share_range <- unlist(share_range)
@@ -839,80 +822,33 @@ sdmTMB <- function(
   share_range[spatiotemporal == "off"] <- TRUE
   share_range[spatial == "off"] <- TRUE
 
-  spde <- mesh
-  if (!mesh_missing && spatial_model == "spde" && is_areal_domain(spde)) {
-    cli_abort("`spatial_model = \"spde\"` requires an SPDE mesh from `make_mesh()`. Use `spatial_model = \"sar\"` or `\"car\"` with an areal domain.")
-  }
-  if (!mesh_missing && spatial_model %in% c("sar", "car") && !is_areal_domain(spde)) {
-    cli_abort("`spatial_model = \"{spatial_model}\"` requires an areal domain from `make_areal_domain()`.")
-  }
   if (any(c("epsilon_model", "epsilon_predictor") %in% names(experimental))) {
     cli_abort("`experimental$epsilon_model` and `experimental$epsilon_predictor` have been removed.")
   }
 
-  normalize <- control$normalize
-  backend <- control$backend
-  if (backend == "rtmb" && isTRUE(normalize)) {
-    cli_abort("`normalize = TRUE` is unavailable with the RTMB backend; its densities are fully normalized.")
+  if (isTRUE(control$profile)) {
+    control$profile <- if (has_two_components) c("b_j", "b_j2") else "b_j"
+  } else if (!is.character(control$profile)) {
+    control$profile <- NULL
   }
-  nlminb_loops <- control$nlminb_loops
-  newton_loops <- control$newton_loops
-  quadratic_roots <- control$quadratic_roots
-  start <- control$start
-  multiphase <- control$multiphase
-  getsd <- control$getsd
-  map <- control$map
-  lower <- control$lower
-  upper <- control$upper
-  get_joint_precision <- control$get_joint_precision
-  upr <- censored_upper
-  suppress_nlminb_warnings <- control$suppress_nlminb_warnings
-  collapse_spatial_variance <- control$collapse_spatial_variance
-  collapse_spatial_variance_threshold <- control$collapse_spatial_variance_threshold
-  collapse_spatiotemporal_ar1 <- control$collapse_spatiotemporal_ar1
-  collapse_ar1_threshold <- control$collapse_ar1_threshold
-  sar_weight_style <- control$sar_weight_style
-  do_rsr <- as.integer(isTRUE(control$get_rsr))
+  # options that aren't sdmTMBcontrol() arguments go to nlminb(); "newton_steps"
+  # and "mgcv" are in controls saved by old versions
+  sdmTMB_only <- c(setdiff(names(formals(sdmTMBcontrol)), c("eval.max", "iter.max", "...")),
+    "newton_steps", "mgcv")
+  .control <- control[setdiff(names(control), sdmTMB_only)]
 
-  dot_checks <- c(
-    "lower", "upper", "profile", "parallel", "getsd",
-    "nlminb_loops", "newton_steps", "mgcv", "quadratic_roots", "multiphase",
-    "newton_loops", "start", "map", "get_joint_precision", "normalize",
-    "suppress_nlminb_warnings", "collapse_spatial_variance",
-    "collapse_spatial_variance_threshold",
-    "collapse_spatiotemporal_ar1", "collapse_ar1_threshold",
-    "sar_weight_style", "get_rsr", "backend", "censored_method"
-  )
-  .control <- control
-  # FIXME; automate this from sdmTMcontrol args?
-  for (i in dot_checks) .control[[i]] <- NULL # what's left should be for nlminb
-
-  ar1_fields <- spatiotemporal == "ar1"
-  rw_fields <- spatiotemporal == "rw"
   assert_that(
     is.logical(reml), is.logical(anisotropy), is.logical(share_range),
-    is.logical(silent), is.logical(multiphase), is.logical(normalize)
+    is.logical(silent), is.logical(control$multiphase)
   )
 
   if (!is.null(spatial_varying)) assert_that(class(spatial_varying) %in% c("formula", "list"))
   if (!is.null(time_varying)) assert_that(class(time_varying) %in% c("formula", "list"))
   if (!is.null(previous_fit)) assert_that(identical(class(previous_fit), "sdmTMB"))
   assert_that(is.list(priors))
-  priors_custom <- custom_prior_spec(priors, backend)
+  priors_custom <- custom_prior_spec(priors)
   assert_that(is.list(.control))
-  if (!is.null(time)) assert_that(is.character(time))
-  if (is_areal) {
-    assert_that(inherits(spde, "sdmTMBareal"))
-  } else {
-    assert_that(inherits(spde, "sdmTMBmesh"))
-  }
-  assert_that(class(formula) %in% c("formula", "list"))
-  assert_that(inherits(data, "data.frame"))
   time_varying_type <- match.arg(time_varying_type)
-  # if (!is.null(map) && length(map) != length(start)) {
-  #   cli_warn(c("`length(map) != length(start)`.",
-  #     "You likely want to specify `start` values if you are setting the `map` argument."))
-  # }
 
   if (!is.null(time)) {
     assert_that(time %in% names(data),
@@ -922,12 +858,7 @@ sdmTMB <- function(
       msg = "Specified `time` column can't be coerced to a numeric value or contains NAs. Please remove any NAs in the time column."
     )
     if (!is.null(extra_time)) { # 320 protect against factor(time), extra_time clash
-      if (!is.list(formula)) {
-        .form <- list(formula)
-      } else {
-        .form <- formula
-      }
-      x <- unlist(lapply(.form, \(x) attr(stats::terms(x), "term.labels")))
+      x <- unlist(lapply(formula, \(x) attr(stats::terms(x), "term.labels")))
       xf <- x[grep("factor\\(", x)]
       if (any(c(grep(time, xf), grep(paste0("^", time, "$"), x)))) {
         cli::cli_warn("Detected potential formula-time column clash. E.g., assuming 'year' is your time column: `formula = ... + factor(year)` combined with `time = 'year'`, and 'extra_time' specified. This can produce a non-identiable model because extra factor levels for the missing time slices will be created. To avoid this, rename your factor time column used in your formula. E.g. create a new column 'year_factor' in your data and use that in the formula. See issue https://github.com/sdmTMB/sdmTMB/issues/320.")
@@ -960,69 +891,54 @@ sdmTMB <- function(
   if (is.null(time)) {
     time <- "_sdmTMB_time"
     data[[time]] <- 0L
-  } else {
-    if (sum(is.na(data[[time]])) > 1) {
-      cli_abort("There is at least one NA value in the time column. Please remove it.")
-    }
-  }
-  if (is.factor(data[[time]])) {
-    if (length(levels(data[[time]])) > length(unique(data[[time]]))) {
-      cli_abort(
-        "The time column is a factor and there are extra factor levels. ",
-        "Please remove these or turn your time column into an integer."
-      )
-    }
   }
 
   time_df <- make_time_lu(data[[time]], full_time_vec = union(data[[time]], extra_time))
   n_t <- nrow(time_df)
-  year_i_data <- time_df$year_i[match(data[[time]], time_df$time_from_data)]
-
-  nonlocal_grid_supplied <- !is.null(nonlocal_data_arg)
-  if (nonlocal_grid_supplied) {
-    nonlocal_grid_inputs <- .prepare_nonlocal_grid_inputs(
-      grid = nonlocal_data_arg,
-      nonlocal_formula = nonlocal_formula_parsed,
-      mesh = spde$mesh,
-      xy_cols = spde$xy_cols,
-      time = time,
-      time_df = time_df,
-      full_time_vec = time_df$time_from_data,
-      time_indexed = nonlocal_time_indexed
-    )
-  }
+  year_i_data <- time_index(time_df, data[[time]])
 
   if (!is.null(preferential)) {
     .validate_preferential_scope(
       spec = preferential, formula = formula, delta = has_two_components,
-      multi_family = is_multi_family, family = family, areal = is_areal,
-      mesh = spde,
+      multi_family = is_multi_family, family = family,
+      areal = spatial_model %in% c("sar", "car"), mesh = mesh,
       mesh_missing = mesh_missing, anisotropy = anisotropy,
       spatial_varying = spatial_varying,
-      nonlocal_formula = nonlocal_formula_parsed, normalize = normalize,
-      backend = backend, no_spatial = no_spatial
+      nonlocal_formula = nonlocal_formula_parsed, no_spatial = no_spatial
     )
   }
 
   domain <- prepare_spatial_domain(
-    mesh = spde,
+    mesh = mesh,
     data = data,
     mesh_missing = mesh_missing,
     share_range = share_range,
     anisotropy = anisotropy,
     nonlocal_formula = nonlocal_formula_parsed,
     priors = priors,
-    normalize = normalize,
     share_range_user = share_range_user,
     spatial_model = spatial_model,
-    sar_weight_style = sar_weight_style
+    sar_weight_style = control$sar_weight_style
   )
   is_areal <- identical(domain$type, "areal")
+
+  # Validate the nonlocal grid early; data-based terms are built further down
+  nonlocal_grid_supplied <- !is.null(nonlocal_data_arg)
+  if (nonlocal_grid_supplied) {
+    nonlocal_parsed <- .nonlocal_from_grid(
+      grid = nonlocal_data_arg,
+      nonlocal_formula = nonlocal_formula_parsed,
+      mesh = mesh,
+      time = time,
+      time_lu = time_df,
+      time_indexed = nonlocal_time_indexed
+    )
+  }
 
   # Covariate diffusion also maps observations to the mesh by row
   uses_mesh_rows <- !no_spatial || !is.null(nonlocal_formula_parsed)
   if (uses_mesh_rows && !is_areal) {
-    if (!identical(nrow(spde$loc_xy), nrow(data))) {
+    if (!identical(nrow(mesh$loc_xy), nrow(data))) {
       msg <- c(
         "Number of x-y coordinates in `mesh` does not match `nrow(data)`.",
         "Is it possible you passed a different data frame to `make_mesh()` and `sdmTMB()`?" # discussion 137
@@ -1030,38 +946,16 @@ sdmTMB <- function(
       cli::cli_abort(msg)
     }
   }
-  # FIXME parallel setup here?
 
-  rtmb_only <- intersect(family_spec$components$family_name, c("censored_nbinom1",
-    "censored_nbinom2", "censored_binomial", "censored_betabinomial"))
-  if (length(rtmb_only) && backend != "rtmb") {
-    cli_abort("`{rtmb_only[[1]]}()` needs `sdmTMBcontrol(backend = \"rtmb\")`.")
+  family_names <- unique(family_spec$components$family_name)
+  if (any(.family_has(family_names, "censored")) && is.null(censored_upper)) {
+    cli_abort("`censored_upper` must be supplied to use a censored family.")
   }
-  uses_censored <- any(family_spec$components$family_name %in%
-    c("censored_poisson", "censored_nbinom1", "censored_nbinom2",
-      "censored_binomial", "censored_betabinomial"))
-  if (uses_censored) {
-    if (is.null(upr)) cli_abort("`censored_upper` must be supplied to use a censored family.")
-  }
-  if (is.null(upr)) upr <- Inf
+  if (is.null(censored_upper)) censored_upper <- Inf
 
-  # thresholds not yet enabled for delta model, where formula is a list
-  if (inherits(formula, "formula")) {
-    original_formula <- replicate(n_m, list(formula))
-    thresh <- list(check_and_parse_thresh_params(formula, data))
-    if (has_two_components) {
-      formula <- list(thresh[[1]]$formula, thresh[[1]]$formula)
-    } else {
-      formula <- list(thresh[[1]]$formula)
-    }
-  } else {
-    original_formula <- formula
-    thresh <- list(
-      check_and_parse_thresh_params(formula[[1]], data),
-      check_and_parse_thresh_params(formula[[2]], data)
-    )
-    formula <- list(thresh[[1]]$formula, thresh[[2]]$formula)
-  }
+  original_formula <- formula
+  thresh <- parse_thresholds(original_formula, data)
+  formula <- thresh$formulas
 
   if (is.character(offset)) {
     offset <- data[[offset]]
@@ -1115,62 +1009,40 @@ sdmTMB <- function(
         "To use the ordinary spatial field as the reference-level field instead (same resulting model), set `spatial = \"on\"`."
       ))
     }
-    spatial_varying <- colnames(z_i)
     svc_design$spec$columns <- colnames(z_i)
   } else {
     z_i <- matrix(0, nrow(data), 0L)
     svc_design <- NULL
+    svc_omega_is_intercept <- FALSE
   }
   n_z <- ncol(z_i)
+  # `~ 1` with `spatial = "on"` leaves no SVC columns, so no SVC fields
+  has_svc <- n_z > 0L
+  svc_cols <- if (has_svc) colnames(z_i)
 
   if (any(grepl("offset\\(", formula))) {
     cli_abort("Detected `offset()` in formula. Offsets in sdmTMB must be specified via the `offset` argument.")
   }
-  contains_offset <- check_offset(formula[[1]]) # deprecated check
 
-  # the default `~ 1` is created in this frame; don't capture (and serialize) it
-  if (identical(environment(dispformula), environment())) {
-    environment(dispformula) <- globalenv()
-  }
   disp_design <- .make_design(dispformula, data, "`dispformula`")
   Xdisp_ij <- disp_design$X
 
   split_formula <- list() # passed to out structure, not TMB
   X_ij <- list() # main effects, passed into TMB
   mf <- list()
-  mt <- list()
-  sm <- list()
 
   for (ii in seq_along(formula)) {
-    contains_offset <- check_offset(formula[[ii]])
+    check_offset(formula[[ii]])
 
-    # RE_names is either the names of the groups OR a character w/length 0 if none exist
-    # anything in a list here needs to be saved for tmb data
+    # random effects parsed into data structures (smoothers removed):
+    split_formula[[ii]] <- parse_formula(remove_s_and_t2(formula[[ii]]), data)
 
-    # smoothers removed, but random effects remain:
-    formula_no_sm <- remove_s_and_t2(formula[ii][[1]])
-    # random effects parsed into data structures:
-    split_formula[[ii]] <- parse_formula(formula_no_sm, data)
-
-    # save formula with no bars (but with smoothers)
-    formula_no_bars <- reformulas::nobars(formula[ii][[1]])
-    formula_no_bars_no_sm <- remove_s_and_t2(formula_no_bars)
-    X_ij[[ii]] <- model.matrix(formula_no_bars_no_sm, data)
-    mf[[ii]] <- model.frame(formula_no_bars_no_sm, data)
-    vars <- colnames(mf[[ii]])
-    for (g in seq_along(vars)) {
-      if (any(is.infinite(mf[[ii]][, g, drop = TRUE]))) {
-        cli_abort("Column `{vars[g]}` had an Inf/-Inf value. Please remove this before fitting the model.")
-      }
+    mf[[ii]] <- model.frame(remove_s_and_t2(reformulas::nobars(formula[[ii]])), data)
+    X_ij[[ii]] <- model.matrix(attr(mf[[ii]], "terms"), mf[[ii]])
+    is_inf <- vapply(mf[[ii]], function(x) any(is.infinite(x)), logical(1))
+    if (any(is_inf)) {
+      cli_abort("Column `{names(mf[[ii]])[is_inf][1]}` had an Inf/-Inf value. Please remove this before fitting the model.")
     }
-
-    mt[[ii]] <- attr(mf[[ii]], "terms")
-    # parse everything mgcv + smoothers:
-    sm[[ii]] <- parse_smoothers(formula = formula_no_bars, data = data, knots = knots)
-    sm[[ii]]$split_formula <- split_formula
-    sm[[ii]]$formula_no_sm <- formula_no_sm
-    sm[[ii]]$formula_no_bars <- formula_no_bars
-    sm[[ii]]$formula_no_bars_no_sm <- formula_no_bars_no_sm
   }
 
   if (has_two_components) {
@@ -1185,80 +1057,30 @@ sdmTMB <- function(
     }
   }
 
-  # random slopes and intercepts --------------------------------------------
-  # bind the elements of split_formula[[ii]] together to pass into TMB
-  # add a new column to each dataframe storing the model number (1, 2, ...)
-  split_formula_dfs <- add_model_index(split_formula, "re_df")
-  re_cov_df <- do.call(rbind, split_formula_dfs) # bind all dataframes together
+  re <- re_tmb_data(split_formula) # random intercepts and slopes
 
-  re_cov_term_dfs <- add_model_index(split_formula, "re_cov_term_map")
-  re_cov_df_map <- do.call(rbind, re_cov_term_dfs)
-
-  re_b_dfs <- add_model_index(split_formula, "re_b_df")
-  re_b_df <- do.call(rbind, re_b_dfs)
-
-  re_b_map_dfs <- add_model_index(split_formula, "re_b_map")
-  re_b_map <- do.call(rbind, re_b_map_dfs)
-
-  n_re_groups <- rep(0, length(formula)) # integer array of number of groups per model
-  Zt_list <- list() # list of sparse matrices for random effects
-  n_re_betas <- rep(0, length(formula))
-  n_re_cov <- rep(0, length(formula))
-  for (ii in seq_len(length(formula))) {
-    n_re_groups[ii] <- length(which(re_cov_df_map$model == ii))
-    if (n_re_groups[ii] > 0) {
-      # transpose of matrix, so cols = observation, row = REs:
-      Zt_list[[ii]] <- split_formula[[ii]]$re_cov_terms$Zt
-      # number of unique random effect deviations being estimated:
-      n_re_betas[ii] <- max(re_b_df$end[which(re_b_df$model == ii)])
-      # number of unique random effect variances being estimated:
-      n_re_cov[ii] <- max(re_cov_df_map$end[which(re_cov_df_map$model == ii)])
-    }
-  }
-  max_re_betas <- max(n_re_betas) + 1 # most number of estimated betas across all models
-  max_re_cov <- max(n_re_cov) + 1
-
-  var_indx_matrix <- matrix(0, nrow = max_re_betas, ncol = length(formula))
-  for (i in seq_len(length(formula))) {
-    sd_vec <- split_formula[[ii]]$var_indx_vector
-    if (n_re_groups[ii] > 0) var_indx_matrix[seq_along(sd_vec), i] <- sd_vec
-  }
-
-  if (has_two_components) {
-    if (any(unlist(lapply(sm, `[[`, "has_smooths")))) {
-      if (original_formula[[1]] != original_formula[[2]]) {
-        msg <- paste0(
-          "For now, if delta models contain smoothers, both components ",
-          "must have the same main-effects formula."
-        )
-        cli_abort(msg)
-      }
-    }
-  }
-
-  # always shared; only keep track of one:
-  sm <- sm[[1]]
-
-  if (!is.null(time_varying)) {
-    tv_design <- .make_design(time_varying, data, "`time_varying`")
-    X_rw_ik <- tv_design$X
+  smooth_terms <- lapply(formula, function(f) {
+    trms <- all_terms(reformulas::nobars(f))
+    trms[get_smooth_terms(trms)]
+  })
+  # Components share one set of smoother bases (the union of their smoothers),
+  # and a component's unused smoothers are mapped off (see `smooth_active`):
+  all_smooth_terms <- unique(unlist(smooth_terms))
+  formula_no_bars <- if (length(all_smooth_terms)) {
+    stats::reformulate(all_smooth_terms)
   } else {
-    X_rw_ik <- matrix(0, nrow = nrow(data), ncol = 1)
-    tv_design <- NULL
+    reformulas::nobars(formula[[1]])
   }
-
-  preferential_prep <- if (!is.null(preferential)) {
-    .prepare_preferential(
-      preferential,
-      model = list(
-        split_formula = split_formula, terms = mt,
-        xlevels = lapply(seq_along(mf), function(i) stats::.getXlevels(mt[[i]], mf[[i]])),
-        contrasts = lapply(X_ij, attr, which = "contrasts"),
-        smoothers = sm, data = data
-      ),
-      X_ij = X_ij, tv_spec = tv_design$spec, mesh = spde, time = time,
-      time_df = time_df
+  sm <- parse_smoothers(formula = formula_no_bars, data = data, knots = knots)
+  sm$formula_no_sm <- remove_s_and_t2(formula[[1]])
+  sm$formula_no_bars <- formula_no_bars
+  if (sm$has_smooths) {
+    basis_active <- matrix(
+      vapply(smooth_terms, function(x) sm$xf_term %in% x, logical(length(sm$xf_term))),
+      ncol = n_m
     )
+    sm$block_active <- basis_active[sm$zs_basis, , drop = FALSE]
+    sm$col_active <- basis_active[rep(seq_along(sm$xf_dims), sm$xf_dims), , drop = FALSE]
   }
 
   y_i <- model.response(mf[[1]], "any")
@@ -1278,11 +1100,11 @@ sdmTMB <- function(
     }
   }
 
-  response <- .prepare_family_response(y_i, weights, family_spec, upr)
+  response <- .prepare_family_response(y_i, weights, family_spec, censored_upper)
   y_i <- response$y_i
   size <- response$size
   weights <- response$weights
-  if (!is.null(response$upr)) upr <- response$upr
+  if (!is.null(response$upr)) censored_upper <- response$upr
 
   likelihood_weights <- if (!is.null(weights)) weights else rep(1, NROW(y_i))
   if (!is.null(cv_fold_weights)) {
@@ -1292,7 +1114,7 @@ sdmTMB <- function(
   if (identical(family$link[1], "log") && min(y_i, na.rm = TRUE) < 0 && !has_two_components) {
     cli_abort("`link = 'log'` but the reponse data include values < 0.")
   }
-  if (!has_two_components && family$family[1] %in% c("truncated_nbinom1", "truncated_nbinom2") &&
+  if (!has_two_components && .family_has(family$family[1], "truncated") &&
     any(y_i < 1, na.rm = TRUE)) {
     cli_abort(c(
       "`{family$family[1]}()` requires a response > 0.",
@@ -1303,6 +1125,46 @@ sdmTMB <- function(
   assert_that(length(offset) == length(y_i), msg = "Offset doesn't match length of data")
   if (nrow(Xdisp_ij) != length(y_i)) {
     cli_abort("Internal error: `dispformula` model matrix rows do not match response length.")
+  }
+
+  if (!is.null(time_varying)) {
+    tv_design <- .make_design(time_varying, data, "`time_varying`")
+    X_rw_ik <- tv_design$X
+    if (time_varying_type == "rw") {
+      X_fixed <- if (sm$has_smooths) {
+        lapply(seq_len(n_m), function(m) {
+          cbind(X_ij[[m]], sm$Xs[, sm$col_active[, m], drop = FALSE])
+        })
+      } else {
+        X_ij
+      }
+      confounded <- vapply(X_fixed, rw_confounded, logical(1), X_rw = X_rw_ik)
+      if (any(confounded)) {
+        cli_warn(c(
+          "The `time_varying` terms overlap with the fixed effects in `formula`, so the model is likely not identifiable with `time_varying_type = 'rw'`.",
+          "i" = "Use `time_varying_type = 'rw0'` (or 'ar1') and keep the terms in `formula`, or remove the overlapping terms from `formula`.",
+          "i" = "This includes implicit intercepts, e.g., `formula = y ~ 0 + factor(x)` with `time_varying = ~ 1`."
+        ))
+      }
+    }
+  } else {
+    X_rw_ik <- matrix(0, nrow = nrow(data), ncol = 1)
+    tv_design <- NULL
+  }
+
+  preferential_prep <- if (!is.null(preferential)) {
+    .prepare_preferential(
+      preferential,
+      model = list(
+        formula = formula, terms = lapply(mf, attr, which = "terms"),
+        xlevels = lapply(mf, function(x) stats::.getXlevels(attr(x, "terms"), x)),
+        contrasts = lapply(X_ij, attr, which = "contrasts"),
+        smoothers = sm, data = data,
+        tmb_data = list(X_ij = X_ij, n_re_groups = re$n_re_groups)
+      ),
+      X_ij = X_ij, tv_spec = tv_design$spec, mesh = mesh, time = time,
+      time_df = time_df
+    )
   }
 
   n_s <- domain$n_s
@@ -1316,73 +1178,37 @@ sdmTMB <- function(
   }
   estimate_student_df <- has_student_family && is.null(student_df_fixed)
 
-  priors_b <- priors$b
-  priors_sigma_V <- priors$sigma_V
   .priors <- priors
-  .priors$b <- NULL # removes this in the list, so not passed in as data
-  .priors$sigma_V <- NULL # removes this in the list, so not passed in as data
+  .priors$b <- .priors$sigma_V <- NULL # passed in as their own data
   .priors$custom <- .priors$custom_log_jacobian <- NULL # passed separately
-  if (nrow(priors_b) == 1L && ncol(X_ij[[1]]) > 1L) { # TODO change hard coded index on X_ij
-    if (!is.na(priors_b[[1]])) {
-      message("Expanding `b` priors to match model matrix.")
-    }
-    # replicate the single prior (or NA for no prior) for each coefficient
-    n_b <- ncol(X_ij[[1]]) # TODO change hard coded index on X_ij
-    dist <- attr(priors_b, "dist")
-    priors_b <- normal(rep(priors_b[1, 1], n_b), rep(priors_b[1, 2], n_b))
-    if (dist == "mvnormal") { # scale is a variance
-      priors_b <- mvnormal(priors_b[, 1], diag(priors_b[, 2], nrow = n_b))
-    }
+  # Both templates apply the `b` priors to `b_j` and `b_j2` alike:
+  if (has_two_components && !all(is.na(priors$b[, 1])) &&
+    !identical(colnames(X_ij[[1]]), colnames(X_ij[[2]]))) {
+    cli_abort(c(
+      "`priors$b` applies to both delta components, so they must have the same fixed-effect columns.",
+      i = "Use the same main-effects formula in both components, or drop the `b` priors.",
+      i = "For priors on one component's coefficients, use `sdmTMBpriors(custom = )` with `par$b_j` or `par$b_j2`."
+    ))
   }
-  # ncol(X_ij) may occur if time varying model, no intercept
-  if (ncol(X_ij[[1]]) > 0 & !identical(nrow(priors_b), ncol(X_ij[[1]]))) { # TODO change hard coded index on X_ij
-    cli_abort("The number of 'b' priors does not match the model matrix.")
-  }
-  if (ncol(priors_b) == 2 && attributes(priors_b)$dist == "normal") {
-    # normal priors passed in by user; change to MVN diagonal matrix
-    # as.numeric() here prevents diag(NA) taking on factor
-    if (length(priors_b[, 2]) == 1L) {
-      if (is.na(priors_b[, 2])) priors_b[, 2] <- 1
-    }
-    priors_b <- mvnormal(location = priors_b[, 1], scale = diag(as.numeric(priors_b[, 2])^2, ncol = nrow(priors_b)))
-  }
-  # in some cases, priors_b will be a mix of NAs (no prior) and numeric values
-  # easiest way to deal with this is to subset the Sigma matrix
-  not_na <- which(!is.na(priors_b[, 1]))
-  if (length(not_na) == 0L) {
-    priors_b_Sigma <- diag(2) # TMB can't handle 0-dim matrix
-  } else {
-    Sigma <- as.matrix(priors_b[, -1])
-    priors_b_Sigma <- as.matrix(Sigma[not_na, not_na])
-  }
-
-  # expand sigma_V priors if needed
-  if (nrow(priors_sigma_V) == 1L && ncol(X_rw_ik) > 1L) {
-    priors_sigma_V <- t(replicate(ncol(X_rw_ik), priors_sigma_V, simplify = "matrix"))
-  }
-  if (nrow(priors_sigma_V) != ncol(X_rw_ik)) {
-    cli_abort("sigma_V (time-varying SD) priors do not match the fitted model.")
-  }
-  # third column: 0 = gamma, 1 = lognormal
-  priors_sigma_V <- cbind(priors_sigma_V,
-    as.numeric(identical(attr(priors$sigma_V, "dist"), "lognormal")))
+  priors_b_tmb <- b_priors_tmb(priors$b, ncol(X_ij[[1]]))
 
   A_st <- domain$A_st
   A_spatial_index <- domain$A_spatial_index
-  y_i <- response$response
   family_tmb <- .as_tmb_family_data(family_spec)
   fit_poisson_link_delta <- identical(family_spec$families$combine_kind[[1]], "poisson_link_delta") &&
     family_spec$n_f == 1L
 
-  nonlocal_parsed <- .build_nonlocal_tmb_data(
-    nonlocal_formula = nonlocal_formula_parsed,
-    data = if (nonlocal_grid_supplied) nonlocal_grid_inputs$data else data,
-    A_st = if (nonlocal_grid_supplied) nonlocal_grid_inputs$A_st else A_st,
-    A_spatial_index = if (nonlocal_grid_supplied) nonlocal_grid_inputs$A_spatial_index else A_spatial_index,
-    year_i = if (nonlocal_grid_supplied) nonlocal_grid_inputs$year_i else year_i_data,
-    n_t = n_t,
-    time_values = time_df$time_from_data
-  )
+  if (!nonlocal_grid_supplied) {
+    nonlocal_parsed <- .build_nonlocal_tmb_data(
+      nonlocal_formula = nonlocal_formula_parsed,
+      data = data,
+      A_st = A_st,
+      A_spatial_index = A_spatial_index,
+      year_i = year_i_data,
+      n_t = n_t,
+      time_values = time_df$time_from_data
+    )
+  }
 
   if (!is.null(nonlocal_parsed)) {
     for (m in seq_len(n_m)) {
@@ -1391,37 +1217,8 @@ sdmTMB <- function(
         coef_names = nonlocal_parsed$term_coef_name
       )
     }
-    nonlocal_n_terms <- as.integer(nonlocal_parsed$n_terms)
-    nonlocal_n_covariates <- as.integer(nonlocal_parsed$n_covariates)
-    nonlocal_covariate_vertex_time <- nonlocal_parsed$covariate_vertex_time
-    nonlocal_covariate_has_spatial <- as.integer(nonlocal_parsed$covariate_has_spatial)
-    nonlocal_covariate_has_temporal <- as.integer(nonlocal_parsed$covariate_has_temporal)
-    nonlocal_term_component <- as.integer(nonlocal_parsed$term_component_id - 1L)
-    nonlocal_term_covariate <- as.integer(nonlocal_parsed$term_covariate_index0)
-    nonlocal_term_start <- as.integer(nonlocal_parsed$term_start)
-  } else {
-    nonlocal_n_terms <- 0L
-    nonlocal_n_covariates <- 0L
-    nonlocal_covariate_vertex_time <- array(0, dim = c(1L, 1L, 1L))
-    nonlocal_covariate_has_spatial <- integer(0)
-    nonlocal_covariate_has_temporal <- integer(0)
-    nonlocal_term_component <- integer(0)
-    nonlocal_term_covariate <- integer(0)
-    nonlocal_term_start <- integer(0)
   }
-  nonlocal_tmb <- list(
-    n_terms = nonlocal_n_terms,
-    n_covariates = nonlocal_n_covariates,
-    covariate_vertex_time = nonlocal_covariate_vertex_time,
-    proj_covariate_vertex_time = array(0, dim = c(1L, 1L, 1L)),
-    term_component = nonlocal_term_component,
-    term_covariate = nonlocal_term_covariate,
-    term_start = nonlocal_term_start
-  )
-
-  # TODO: make this cleaner
-  X_ij_list <- list()
-  for (i in seq_len(n_m)) X_ij_list[[i]] <- X_ij[[i]]
+  nonlocal_tmb <- .nonlocal_tmb_slots(nonlocal_parsed)
 
   random_walk <- if (!is.null(time_varying)) {
     switch(time_varying_type,
@@ -1433,7 +1230,7 @@ sdmTMB <- function(
     0L
   }
   tmb_data <- list(
-    y_i = y_i,
+    y_i = response$response,
     n_t = n_t,
     z_i = z_i,
     offset_i = offset,
@@ -1447,10 +1244,10 @@ sdmTMB <- function(
     A_spatial_index = A_spatial_index,
     year_i = year_i_data,
     covariate_diffusion = nonlocal_tmb,
-    ar1_fields = ar1_fields,
+    ar1_fields = spatiotemporal == "ar1",
     simulate_t = rep(1L, n_t),
-    rw_fields = rw_fields,
-    X_ij = X_ij_list,
+    rw_fields = spatiotemporal == "rw",
+    X_ij = X_ij,
     Xdisp_ij = Xdisp_ij,
     X_rw_ik = X_rw_ik,
     Zs = sm$Zs, # optional smoother basis function matrices
@@ -1458,32 +1255,25 @@ sdmTMB <- function(
     proj_Zs = list(),
     proj_Xs = matrix(nrow = 0L, ncol = 0L),
     b_smooth_start = sm$b_smooth_start,
-    proj_lon = 0,
-    proj_lat = 0,
+    smooth_active = if (sm$has_smooths) sm$block_active * 1L else array(0L),
     proj_vector = matrix(0),
     do_predict = 0L,
-    do_rsr = do_rsr,
+    do_rsr = as.integer(isTRUE(control$get_rsr)),
     calc_se = 0L,
     pop_pred = 0L,
     short_newdata = 0L,
     weights_i = if (!is.null(weights)) weights else rep(1, NROW(y_i)),
     area_i = rep(1, NROW(y_i)),
-    normalize_in_r = 0L, # not used first time
-    flag = 1L, # part of TMB::normalize()
     calc_index_totals = 0L,
     calc_cog = 0L,
     calc_eao = 0L,
     calc_weighted_avg = 0L,
     random_walk = random_walk,
     ar1_time = as.integer(!is.null(time_varying) && time_varying_type == "ar1"),
-    priors_b_n = length(not_na),
-    priors_b_index = not_na - 1L,
-    priors_b_mean = priors_b[not_na, 1],
-    priors_b_Sigma = priors_b_Sigma,
-    priors_sigma_V = priors_sigma_V,
+    priors_sigma_V = sigma_V_priors_tmb(priors$sigma_V, ncol(X_rw_ik)),
     priors = as.numeric(unlist(.priors)),
     share_range = as.integer(if (length(share_range) == 1L) rep(share_range, 2L) else share_range),
-    include_spatial = as.integer(include_spatial), # changed later
+    include_spatial = as.integer(spatial == "on"),
     omit_spatial_intercept = as.integer(omit_spatial_intercept),
     proj_mesh = if (is_areal) dummy_sparse_1x1() else Matrix::Matrix(c(0, 0, 2:0), 3, 5), # dummy
     proj_X_ij = list(matrix(0, ncol = 1, nrow = 1)), # dummy
@@ -1505,37 +1295,29 @@ sdmTMB <- function(
     # `derived_link` does not alter the likelihood link.
     link_pred = family_tmb$link_code[1L, 1L],
     size = c(size),
-    spatial_only = as.integer(spatial_only),
-    spatial_covariate = as.integer(!is.null(spatial_varying)),
-    calc_quadratic_range = as.integer(quadratic_roots),
-    X_threshold = thresh[[1]]$X_threshold, # TODO: don't hardcode index thresh[[1]]
+    spatial_only = as.integer(spatiotemporal == "off"),
+    spatial_covariate = as.integer(has_svc),
+    calc_quadratic_range = as.integer(control$quadratic_roots),
+    X_threshold = thresh$X_threshold,
     proj_X_threshold = 0, # dummy
-    threshold_func = thresh[[1]]$threshold_func, # TODO: don't hardcode index thresh[[1]]
+    threshold_func = thresh$threshold_func,
     has_smooths = as.integer(sm$has_smooths),
     has_dispersion_model = as.integer(has_dispformula),
-    upr = upr,
+    upr = censored_upper,
     cens_direct = .censored_direct_init(weights, NROW(y_i), control$censored_method),
     lwr = 0L, # in case we want to reintroduce this
     stan_flag = as.integer(bayesian),
     no_spatial = no_spatial,
-    re_cov_df_map = as.matrix(re_cov_df_map), # dataframe used to map parameters to cov matrices,
-    re_cov_df = as.matrix(re_cov_df),
-    n_re_groups = c(n_re_groups),
-    re_b_df = as.matrix(re_b_df[, c("start", "end", "group_indices", "model")]),
-    re_b_map = as.matrix(re_b_map),
-    var_indx_matrix = var_indx_matrix,
-    Zt_list = Zt_list, # list of RE matrices
     Zt_list_proj = list(),
     exclude_RE = 0L
   )
+  tmb_data <- c(tmb_data, re, priors_b_tmb)
   # R functions, so RTMB only; kept in the data list so every rebuilt
   # objective (prediction, index, simulation, saved fits) includes them
   tmb_data$priors_custom <- priors_custom
   tmb_data <- c(tmb_data, family_tmb)
   tmb_data$preferential <- preferential_prep$data
   tmb_data$poisson_link_delta <- as.integer(fit_poisson_link_delta)
-  b_thresh <- matrix(0, 2L, n_m)
-  if (thresh[[1]]$threshold_func == 2L) b_thresh <- matrix(0, 3L, n_m) # logistic #TODO: change hard coding on index of thresh[[1]]
   family_params <- .family_parameter_values(
     family_spec,
     estimate_student_df = estimate_student_df,
@@ -1544,17 +1326,16 @@ sdmTMB <- function(
 
   tmb_params <- list(
     ln_H_input = matrix(0, nrow = 2L, ncol = n_m),
-    b_j = rep(0, ncol(X_ij[[1]])), # TODO: verify ok
-    b_j2 = if (has_two_components) rep(0, ncol(X_ij[[2]])) else numeric(0), # TODO: verify ok
+    b_j = rep(0, ncol(X_ij[[1]])),
+    b_j2 = if (has_two_components) rep(0, ncol(X_ij[[2]])) else numeric(0),
     b_disp_k = rep(0, ncol(Xdisp_ij)),
     bs = if (sm$has_smooths) matrix(0, nrow = ncol(sm$Xs), ncol = n_m) else array(0),
     ln_tau_O = rep(0, n_m),
     ln_tau_Z = matrix(0, n_z, n_m),
     ln_tau_E = rep(0, n_m),
     ln_kappa = matrix(0, 2L, n_m),
-    log_kappaS_nl = .nonlocal_log_kappaS_start(spde$loc_xy, nonlocal_n_covariates),
-    log_kappaT_nl = numeric(nonlocal_n_covariates),
-    # ln_kappa   = rep(log(sqrt(8) / median(stats::dist(spde$mesh$loc))), 2),
+    log_kappaS_nl = .nonlocal_log_kappaS_start(mesh$loc_xy, nonlocal_tmb$n_covariates),
+    log_kappaT_nl = numeric(nonlocal_tmb$n_covariates),
     thetaf = family_params$thetaf,
     ln_student_df = family_params$ln_student_df,
     gengamma_Q = family_params$gengamma_Q,
@@ -1566,13 +1347,13 @@ sdmTMB <- function(
     rho_time_unscaled = matrix(0, ncol(X_rw_ik), n_m),
     ar1_phi = rep(0, n_m),
     logit_rho_sar = if (is_areal) rep(0, n_m) else numeric(0),
-    re_cov_pars = matrix(0, max_re_cov, n_m), # defined above, mapping off pars as needed
-    re_b_pars = matrix(0, max_re_betas, n_m), # defined above, mapping off pars as needed
+    re_cov_pars = matrix(0, max(c(0, re$re_cov_df_map[, "end"])) + 1, n_m),
+    re_b_pars = matrix(0, nrow(re$var_indx_matrix), n_m),
     b_rw_t = array(0, dim = c(tmb_data$n_t, ncol(X_rw_ik), n_m)),
     omega_s = matrix(0, if (!omit_spatial_intercept) n_s else 0L, n_m),
     zeta_s = array(0, dim = c(n_s, n_z, n_m)),
     epsilon_st = array(0, dim = c(n_s, tmb_data$n_t, n_m)),
-    b_threshold = if (thresh[[1]]$threshold_func == 2L) matrix(0, 3L, n_m) else matrix(0, 2L, n_m),
+    b_threshold = if (thresh$threshold_func == 2L) matrix(0, 3L, n_m) else matrix(0, 2L, n_m),
     b_smooth = if (sm$has_smooths) matrix(0, sum(sm$sm_dims), n_m) else array(0),
     ln_smooth_sigma = if (sm$has_smooths) matrix(0, length(sm$sm_dims), n_m) else array(0)
   )
@@ -1580,8 +1361,11 @@ sdmTMB <- function(
   if (family_spec$n_f == 1L && identical(family$link, "inverse") && family$family[1] %in% c("Gamma", "gaussian", "student") && !has_two_components) {
     fam <- family
     if (family$family == "student") fam <- stats::gaussian(link = "inverse")
-    temp <- mgcv::gam(formula = formula[[1]], data = data, family = fam)
-    tmb_params$b_j <- stats::coef(temp)
+    # fit the design matrix already built; NA coefficients (e.g., the all-zero
+    # nonlocal columns) start at 0
+    cf <- suppressWarnings(stats::glm.fit(X_ij[[1]], c(tmb_data$y_i),
+      weights = c(tmb_data$weights_i), offset = c(tmb_data$offset_i), family = fam)$coefficients)
+    tmb_params$b_j <- ifelse(is.na(cf), 0, unname(cf))
   }
 
   # Map off parameters not needed
@@ -1591,36 +1375,16 @@ sdmTMB <- function(
   # coefficient, sampling field, and temporal processes wait for the catch
   # fields (below).
   tmb_map$gamma_pref <- NULL
-  if (!is_multi_family && has_dispformula) {
-    tmb_map <- unmap(tmb_map, "b_disp_k")
-  } else {
-    tmb_map$b_disp_k <- factor(rep(NA, length(tmb_params$b_disp_k)))
-  }
-  .make_nonlocal_kappa_map <- function(has_component) {
-    if (!length(has_component)) {
-      return(factor(integer(0)))
-    }
-    out <- seq_along(has_component)
-    out[!as.logical(has_component)] <- NA_integer_
-    factor(out)
-  }
+  if (!is_multi_family && has_dispformula) tmb_map <- unmap(tmb_map, "b_disp_k")
   if (has_two_components) tmb_map$b_j2 <- NULL
   tmb_map <- .map_family_parameters(
     tmb_map, tmb_params,
     has_dispformula = has_dispformula,
     estimate_student_df = estimate_student_df
   )
-  if (!is.null(thresh[[1]]$threshold_parameter)) tmb_map$b_threshold <- NULL
 
-  if (multiphase && is.null(previous_fit) && do_fit) {
-    tmb_params <- fit_first_phase(tmb_data, tmb_params, tmb_map,
-      profile = control$profile, backend = backend, lower = lower, upper = upper,
-      mesh = if (is_areal) NULL else spde$mesh, nlminb_control = .control,
-      silent = silent, suppress_warnings = isTRUE(suppress_nlminb_warnings))
-  }
-
-  tmb_map$log_kappaS_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_spatial)
-  tmb_map$log_kappaT_nl <- .make_nonlocal_kappa_map(nonlocal_covariate_has_temporal)
+  tmb_map$log_kappaS_nl <- .make_nonlocal_kappa_map(nonlocal_parsed$covariate_has_spatial)
+  tmb_map$log_kappaT_nl <- .make_nonlocal_kappa_map(nonlocal_parsed$covariate_has_temporal)
 
   tmb_random <- c()
   if (any(spatial == "on") && !omit_spatial_intercept) {
@@ -1631,7 +1395,16 @@ sdmTMB <- function(
     tmb_random <- c(tmb_random, "epsilon_st")
     tmb_map <- unmap(tmb_map, c("ln_tau_E", "epsilon_st"))
   }
-  if (!is.null(spatial_varying)) {
+  # a delta model can turn a field off in one component only
+  if (has_two_components && "off" %in% spatiotemporal) {
+    tmb_map$epsilon_st <- map_off_components(tmb_params$epsilon_st, spatiotemporal == "off")
+    tmb_map$ln_tau_E <- map_off_components(tmb_params$ln_tau_E, spatiotemporal == "off")
+  }
+  if (has_two_components && "off" %in% spatial) {
+    tmb_map$omega_s <- map_off_components(tmb_params$omega_s, spatial == "off")
+    tmb_map$ln_tau_O <- map_off_components(tmb_params$ln_tau_O, spatial == "off")
+  }
+  if (has_svc) {
     tmb_random <- c(tmb_random, "zeta_s")
     tmb_map <- unmap(tmb_map, c("zeta_s", "ln_tau_Z"))
   }
@@ -1644,37 +1417,30 @@ sdmTMB <- function(
     }
   }
 
-  tmb_map$ar1_phi <- as.numeric(tmb_map$ar1_phi) # strip factors
-  for (i in seq_along(spatiotemporal)) {
-    if (spatiotemporal[i] == "ar1") tmb_map$ar1_phi[i] <- i
-  }
-  tmb_map$ar1_phi <- as.factor(as.integer(as.factor(tmb_map$ar1_phi)))
-  if (sum(n_re_groups) > 0) {
+  is_ar1 <- spatiotemporal == "ar1"
+  tmb_map$ar1_phi <- factor(ifelse(is_ar1, cumsum(is_ar1), NA))
+  if (sum(re$n_re_groups) > 0) {
     tmb_random <- c(tmb_random, "re_b_pars")
-    tmb_map <- unmap(tmb_map, c("re_cov_pars", "re_b_pars"))
-
-    # map off pars not being estimated
-    tmb_map$re_b_pars <- matrix(NA, max_re_betas, n_m)
-    tmb_map$re_cov_pars <- matrix(NA, max_re_cov, n_m)
-    for (m in seq_len(n_m)) {
-      tmb_map$re_b_pars[seq(1, n_re_betas[m] + 1), m] <- 0 # these are estimated
-      tmb_map$re_cov_pars[seq(1, n_re_cov[m] + 1), m] <- 0 # these are estimated
-    }
-    # turn non-NA values into sequence of integers
-    non_nas <- which(!is.na(c(tmb_map$re_b_pars)))
-    tmb_map$re_b_pars[non_nas] <- seq(1, length(non_nas))
-    non_nas <- which(!is.na(c(tmb_map$re_cov_pars)))
-    tmb_map$re_cov_pars[non_nas] <- seq(1, length(non_nas))
-    tmb_map$re_b_pars <- as.factor(tmb_map$re_b_pars)
-    tmb_map$re_cov_pars <- as.factor(tmb_map$re_cov_pars)
+    # components share their random effects, so every row is estimated
+    tmb_map$re_b_pars <- factor(seq_along(tmb_params$re_b_pars))
+    tmb_map$re_cov_pars <- factor(seq_along(tmb_params$re_cov_pars))
   }
-  if (reml) tmb_random <- c(tmb_random, "b_j")
-  if (reml && has_two_components) tmb_random <- c(tmb_random, "b_j2")
+  # fixed effects that REML integrates out; logLik() still counts them
+  reml_random <- NULL
+  if (reml) reml_random <- c(reml_random, "b_j")
+  if (reml && has_two_components) reml_random <- c(reml_random, "b_j2")
+  if (reml && sm$has_smooths) reml_random <- c(reml_random, "bs")
+  tmb_random <- c(tmb_random, reml_random)
 
   if (sm$has_smooths) {
-    if (reml) tmb_random <- c(tmb_random, "bs")
     tmb_random <- c(tmb_random, "b_smooth") # smooth random effects
     tmb_map <- unmap(tmb_map, c("b_smooth", "ln_smooth_sigma", "bs"))
+    if (!all(sm$block_active)) {
+      coef_active <- sm$block_active[rep(seq_along(sm$sm_dims), sm$sm_dims), , drop = FALSE]
+      tmb_map$b_smooth <- map_active(coef_active)
+      tmb_map$ln_smooth_sigma <- map_active(sm$block_active)
+      tmb_map$bs <- map_active(sm$col_active)
+    }
   }
   if (!is.null(preferential_prep)) {
     tmb_map <- unmap(tmb_map, names(preferential_prep$parameters))
@@ -1682,181 +1448,96 @@ sdmTMB <- function(
     tmb_random <- c(tmb_random, preferential_prep$random)
   }
 
-  if (!is.null(previous_fit)) {
-    tmb_params <- previous_fit$tmb_obj$env$parList()
-  }
-
-  tmb_data$normalize_in_r <- domain$normalize_in_r
-  tmb_data$include_spatial <- as.integer(spatial == "on")
-
-  if (!is.null(previous_fit)) tmb_map <- previous_fit$tmb_map
-
-  # this is complex; pulled it out into own function:
   # SVC fields use the spatial range of every component:
-  kappa_spatial <- if (is.null(spatial_varying)) spatial else rep("on", n_m)
+  kappa_spatial <- if (has_svc) rep("on", n_m) else spatial
   tmb_map$ln_kappa <- get_kappa_map(n_m = n_m, spatial = kappa_spatial, spatiotemporal = spatiotemporal, share_range = share_range)
   if (is_areal) {
     tmb_map$ln_kappa <- factor(rep(NA_integer_, length(tmb_params$ln_kappa)))
     areal_field_active <- any(spatial == "on" & !omit_spatial_intercept) ||
       !all(spatiotemporal == "off") ||
-      !is.null(spatial_varying)
+      has_svc
     if (areal_field_active) {
       tmb_map <- unmap(tmb_map, "logit_rho_sar")
     }
   }
 
-  .validate_nonlocal_control_length <- function(x, param_name, control_name) {
-    if (length(x) == nonlocal_n_covariates) return(invisible(NULL))
-    cov_text <- if (nonlocal_n_covariates > 0L) {
-      paste(nonlocal_parsed$covariates, collapse = ", ")
-    } else {
-      "<none>"
-    }
-    cli_abort(c(
-      paste0(
-        "`control$", control_name, "$", param_name, "` must have length ",
-        nonlocal_n_covariates, "."
-      ),
-      "i" = paste0("Nonlocal covariates (in order): ", cov_text, ".")
-    ))
-  }
-  nl_param_names <- c("log_kappaS_nl", "log_kappaT_nl")
-  for (param_name in nl_param_names) {
-    if (param_name %in% names(start)) {
-      .validate_nonlocal_control_length(start[[param_name]], param_name, "start")
-    }
-    if (param_name %in% names(map)) {
-      .validate_nonlocal_control_length(map[[param_name]], param_name, "map")
-    }
-  }
-  for (i in seq_along(start)) {
-    cli_inform(c(
-      i = paste0(
-        "Initiating `", names(start)[i],
-        "` at specified starting value(s) of:"
-      ),
-      paste0("  ", paste(round(start[[i]], 3), collapse = ", "))
-    ))
-    tmb_params[[names(start)[i]]] <- start[[i]]
-  }
-
-  if (!is.matrix(tmb_params[["ln_kappa"]]) && "ln_kappa" %in% names(start)) {
-    msg <- c(
-      "Note that `ln_kappa` must be a matrix of nrow 2 and ncol models (regular=1, delta=2).",
-      "It should be the same value in each row if `share_range = TRUE`."
-    )
-    cli_abort(msg)
-  }
-  if (nrow(tmb_params[["ln_kappa"]]) != 2L && "ln_kappa" %in% names(start)) {
-    msg <- c(
-      "Note that `ln_kappa` must be a matrix of nrow 2 and ncol models (regular=1, delta=2).",
-      "It should be the same value in each row if `share_range = TRUE`."
-    )
-    cli_abort(msg)
-  }
-
-  data$sdm_x <- data$sdm_y <- data$sdm_orig_id <- data$sdm_spatial_id <- NULL
-  data$sdmTMB_X_ <- data$sdmTMB_Y_ <- NULL
-
-  # delta spatiotemporal mapping:
-  if (has_two_components && "off" %in% spatiotemporal) {
-    tmb_map$epsilon_st <- array(
-      seq_len(length(tmb_params$epsilon_st)),
-      dim = dim(tmb_params$epsilon_st)
-    )
-    tmb_map$ln_tau_E <- seq_len(length(tmb_params$ln_tau_E))
-    for (i in which(spatiotemporal == "off")) {
-      tmb_map$epsilon_st[, , i] <- NA
-      tmb_map$ln_tau_E[i] <- NA
-    }
-    tmb_map$epsilon_st <- as.factor(tmb_map$epsilon_st)
-    tmb_map$ln_tau_E <- as.factor(tmb_map$ln_tau_E)
-  }
-  # delta spatial mapping:
-  if (has_two_components && "off" %in% spatial) {
-    tmb_map$omega_s <- array(
-      seq_len(length(tmb_params$omega_s)),
-      dim = dim(tmb_params$omega_s)
-    )
-    tmb_map$ln_tau_O <- seq_len(length(tmb_params$ln_tau_O))
-    for (i in which(spatial == "off")) {
-      tmb_map$omega_s[, i] <- NA
-      tmb_map$ln_tau_O[i] <- NA
-    }
-    tmb_map$omega_s <- as.factor(tmb_map$omega_s)
-    tmb_map$ln_tau_O <- as.factor(tmb_map$ln_tau_O)
-  }
-
-  if (isTRUE(domain$anisotropy == 1L) && has_two_components && !"ln_H_input" %in% names(map)) {
+  if (isTRUE(domain$anisotropy == 1L) && has_two_components) {
     tmb_map$ln_H_input <- factor(c(1, 2, 1, 2)) # share anisotropy as in VAST
   }
 
-  # Handle mixture models
-  if (family_spec$n_f == 1L && family$family[[1]] %in% c("gamma_mix", "lognormal_mix", "nbinom2_mix")) {
-    fixed_p_extreme <- family$p_extreme
-
-    if (!is.null(fixed_p_extreme)) {
-      # Fix logit_p_extreme at the user-specified value
-      tmb_map$logit_p_extreme <- factor(NA)
-      tmb_params$logit_p_extreme <- log(fixed_p_extreme/(1-fixed_p_extreme))
-      tmb_map$log_ratio_mix <- NULL
-    } else {
-      tmb_map$log_ratio_mix <- NULL
+  if (family_spec$n_f == 1L && family$family[[n_m]] %in% rtmb_mixture_families) {
+    p_extreme <- (if (has_two_components) family[[2]]$p_extreme) %||% family$p_extreme
+    tmb_map$log_ratio_mix <- NULL
+    if (is.null(p_extreme)) {
       tmb_map$logit_p_extreme <- NULL
-    }
-  }
-  # delta mixture models
-  if (family_spec$n_f == 1L && has_two_components) {
-    if (family$family[[2]] %in% c("gamma_mix", "lognormal_mix", "nbinom2_mix")) {
-      fixed_p_extreme <- family[[2]]$p_extreme
-      if (is.null(fixed_p_extreme)) fixed_p_extreme <- family$p_extreme
-
-      if (!is.null(fixed_p_extreme)) {
-        # Fix logit_p_extreme at the user-specified value
-        tmb_map$logit_p_extreme <- factor(NA)
-        tmb_params$logit_p_extreme <- log(fixed_p_extreme/(1-fixed_p_extreme))
-        tmb_map$log_ratio_mix <- NULL
-      } else {
-        tmb_map$log_ratio_mix <- NULL
-        tmb_map$logit_p_extreme <- NULL
-      }
+    } else {
+      tmb_map$logit_p_extreme <- factor(NA)
+      tmb_params$logit_p_extreme <- stats::qlogis(p_extreme)
     }
   }
 
   if (tmb_data$threshold_func > 0) tmb_map$b_threshold <- NULL
 
-  for (i in seq_along(map)) { # user supplied
-    cli_inform(c(i = paste0("Fixing or mirroring `", names(map)[i], "`")))
-    # ,
-    #   "` at specified starting value(s) of:"),
-    #   paste0("  ",
-    #     paste(round(tmb_params[[names(map)[i]]], 3), collapse = ", "))))
+  # `previous_fit` replaces the parameters and map built above; the
+  # user's `control$start` and `control$map` then apply on top
+  if (!is.null(previous_fit)) {
+    tmb_params <- previous_fit$parlist %||% previous_fit$tmb_params
+    tmb_map <- previous_fit$tmb_map
   }
-  tmb_map <- c(map, tmb_map) # add user-supplied mapping
 
-  if (isTRUE(control$profile)) {
-    prof <- c("b_j")
-    if (has_two_components) prof <- c(prof, "b_j2")
-    control$profile <- prof
-  } else if (is.character(control$profile)) {
-    prof <- control$profile
-    control$profile <- prof
-  } else {
-    control$profile <- NULL
+  .validate_nonlocal_control(control, nonlocal_parsed)
+  for (nm in names(control$start)) {
+    cli_inform(c(
+      i = paste0("Initiating `", nm, "` at specified starting value(s) of:"),
+      paste0("  ", paste(round(control$start[[nm]], 3), collapse = ", "))
+    ))
+  }
+  tmb_params[names(control$start)] <- control$start
+
+  if ("ln_kappa" %in% names(control$start) &&
+      (!is.matrix(tmb_params[["ln_kappa"]]) || nrow(tmb_params[["ln_kappa"]]) != 2L)) {
+    msg <- c(
+      "Note that `ln_kappa` must be a matrix of nrow 2 and ncol models (regular=1, delta=2).",
+      "It should be the same value in each row if `share_range = TRUE`."
+    )
+    cli_abort(msg)
+  }
+
+  for (nm in names(control$map)) cli_inform(c(i = paste0("Fixing or mirroring `", nm, "`")))
+  tmb_map[names(control$map)] <- control$map
+
+  # profile_breakpt() maps b_threshold to fix the cutpoint, so it doesn't trigger this
+  if (do_fit && tmb_data$threshold_func %in% c(1L, 3L) && is.null(control$map$b_threshold)) {
+    cli_inform(class = "sdmTMB_breakpt_message", c(
+      i = paste0("The likelihood of a `breakpt()` model isn't smooth in the cutpoint, ",
+        "so the fit can stop at the wrong cutpoint while reporting convergence, ",
+        "and the cutpoint's standard error isn't reliable."),
+      i = breakpt_advice(has_two_components)
+    ))
+  }
+
+  # Phase 1 runs on the full map and starting values, so user `map` and
+  # `start` are respected; the user's `start` values always win
+  if (control$multiphase && is.null(previous_fit) && do_fit) {
+    tmb_params <- fit_first_phase(tmb_data, tmb_params, tmb_map,
+      profile = control$profile, lower = control$lower, upper = control$upper,
+      mesh = if (is_areal) NULL else mesh$mesh, nlminb_control = .control,
+      silent = silent, suppress_warnings = isTRUE(control$suppress_nlminb_warnings))
+    tmb_params[names(control$start)] <- control$start
   }
 
   out_structure <- structure(
     list(
       data = data,
       offset = offset,
-      spde = spde,
+      spde = mesh,
       formula = original_formula,
       dispformula = dispformula,
       has_dispformula = has_dispformula,
       split_formula = split_formula,
       time_varying = time_varying,
-      threshold_parameter = thresh[[1]]$threshold_parameter,
-      threshold_function = thresh[[1]]$threshold_func,
+      threshold_parameter = thresh$threshold_parameter,
+      threshold_function = thresh$threshold_func,
       time = time,
       time_lu = time_df,
       # Keep the public field faithful to the user's input. Internal code uses
@@ -1866,13 +1547,14 @@ sdmTMB <- function(
       distribution_column = family_spec$distribution_column,
       likelihood_weights = likelihood_weights,
       smoothers = sm,
-      response = y_i,
+      response = response$response,
       tmb_data = tmb_data,
       tmb_params = tmb_params,
       tmb_map = tmb_map,
       tmb_random = tmb_random,
-      backend = backend,
-      spatial_varying = spatial_varying,
+      reml_random = reml_random,
+      backend = "rtmb", # read by sdmTMBextra
+      spatial_varying = svc_cols,
       nonlocal_formula = nonlocal_formula,
       nonlocal_formula_parsed = nonlocal_formula_parsed,
       nonlocal_parsed = nonlocal_parsed,
@@ -1881,7 +1563,7 @@ sdmTMB <- function(
       spatial = spatial_user,
       spatiotemporal = spatiotemporal,
       spatial_varying_formula = spatial_varying_formula,
-      svc_omega_is_intercept = if (!is.null(spatial_varying_formula)) svc_omega_is_intercept else FALSE,
+      svc_omega_is_intercept = svc_omega_is_intercept,
       reml = reml,
       priors = priors,
       nlminb_control = .control,
@@ -1896,80 +1578,41 @@ sdmTMB <- function(
       terms = lapply(mf, attr, which = "terms"),
       extra_time = extra_time,
       fitted_time = sort(unique(data[[time]])),
-      xlevels = lapply(seq_along(mf), function(i) stats::.getXlevels(mt[[i]], mf[[i]])),
+      xlevels = lapply(mf, function(x) stats::.getXlevels(attr(x, "terms"), x)),
       call = match.call(expand.dots = TRUE),
       version = utils::packageVersion("sdmTMB"),
       experimental = experimental
     ),
     class = "sdmTMB"
   )
-
-  if (do_index) {
-    args <- list(object = out_structure, return_tmb_data = TRUE)
-    args <- c(args, predict_args)
-    if (!"newdata" %in% names(predict_args)) {
-      cli_warn("`newdata` must be supplied if `do_index = TRUE`.")
-    }
-    tmb_data <- do.call(predict.sdmTMB, args)
-    if ("bias_correct" %in% names(index_args)) {
-      cli_warn("`bias_correct` must be done later with `get_index(..., bias_correct = TRUE)`.")
-      index_args$bias_correct <- NULL
-    }
-    if ("derived_link" %in% names(index_args)) {
-      tmb_data$link_pred <- .resolve_link_pred(out_structure, tmb_data, index_args[["derived_link"]])
-      index_args$derived_link <- NULL
-    }
-    if (!"area" %in% names(index_args)) {
-      cli_warn("`area` not supplied to `index_args` but `do_index = TRUE`. Using `area = 1`.")
-      if (is.null(index_args)) index_args <- list()
-      index_args[["area"]] <- 1
-    }
-    if (length(index_args$area) == 1L) {
-      tmb_data$area_i <- rep(index_args[["area"]], length(tmb_data$proj_year)) # proj_year includes padded extra_time! otherwise, crash
-    } else {
-      if (length(index_args$area) != nrow(predict_args[["newdata"]])) {
-        cli_abort("`area` length does not match `nrow(newdata)`.")
-      }
-      tmb_data$area_i <- index_args[["area"]]
-    }
-    tmb_data$calc_index_totals <- 1L
-    tmb_params[["eps_index"]] <- numeric(0) # for bias correction
-    out_structure$do_index <- TRUE
-    do_index_time_missing_from_nd <-
-      out_structure$do_index_time_missing_from_nd <-
-      setdiff(data[[time]], predict_args$newdata[[time]])
-  } else {
-    out_structure$do_index <- FALSE
-  }
+  out_structure <- rehome_formula_envs(out_structure, data_cols = names(data))
 
   tmb_obj <- make_sdmTMB_adfun(
     data = tmb_data, parameters = tmb_params, map = tmb_map,
     profile = control$profile,
-    random = tmb_random, backend = backend, silent = silent
+    random = tmb_random, silent = silent
   )
   lim <- set_limits(tmb_obj,
-    lower = lower, upper = upper,
-    mesh = if (is_areal) NULL else spde$mesh,
+    lower = control$lower, upper = control$upper,
+    mesh = if (is_areal) NULL else mesh$mesh,
     spatial_model = tmb_data$spatial_model,
     silent = FALSE
   )
 
   out_structure$tmb_obj <- tmb_obj
-  out_structure$tmb_data <- tmb_data
-  out_structure$tmb_params <- tmb_params
   out_structure$lower <- lim$lower
   out_structure$upper <- lim$upper
 
   if (!do_fit) {
+    # Starting values stand in for fitted ones, e.g., for predict() with
+    # `mcmc_samples` from sampling this unfit model.
+    out_structure$parlist <- tmb_obj$env$parList(par = tmb_obj$env$par)
+    out_structure$last.par.best <- tmb_obj$env$par
     return(out_structure)
   }
 
-  if (isTRUE(domain$normalize_in_r == 1L) && normalize) {
-    tmb_obj <- TMB::normalize(tmb_obj, flag = "flag", value = 0)
-  }
-
   if (length(tmb_obj$par)) {
-    tmb_opt <- maybe_suppress_warnings(suppress_nlminb_warnings)(stats::nlminb(
+    tmb_opt <- maybe_suppress_warnings(control$suppress_nlminb_warnings)(stats::nlminb(
       start = tmb_obj$par, objective = tmb_obj$fn, gradient = tmb_obj$gr,
       lower = lim$lower, upper = lim$upper, control = .control
     ))
@@ -1978,15 +1621,15 @@ sdmTMB <- function(
   }
 
   tmb_opt <- run_nlminb_loops(
-    nlminb_loops = nlminb_loops - 1, opt = tmb_opt, obj = tmb_obj,
+    nlminb_loops = control$nlminb_loops - 1, opt = tmb_opt, obj = tmb_obj,
     lower = lim$lower, upper = lim$upper, control = .control,
-    silent = silent, suppress_warnings = isTRUE(suppress_nlminb_warnings)
+    silent = silent, suppress_warnings = isTRUE(control$suppress_nlminb_warnings)
   )
 
   if ("censored_betabinomial" %in% family_spec$components$family_name) {
     refit <- refit_censored_betabinomial(tmb_obj, tmb_opt, tmb_data, tmb_map,
       tmb_random, lim, .control, profile = control$profile, silent = silent,
-      suppress_warnings = isTRUE(suppress_nlminb_warnings))
+      suppress_warnings = isTRUE(control$suppress_nlminb_warnings))
     tmb_obj <- out_structure$tmb_obj <- refit$obj
     tmb_data <- out_structure$tmb_data <- refit$data
     tmb_opt <- refit$opt
@@ -1995,7 +1638,7 @@ sdmTMB <- function(
   check_bounds(tmb_opt$par, lim$lower, lim$upper)
 
   # Check fields before Newton steps to avoid Hessian issues after collapse
-  if ((collapse_spatial_variance || collapse_spatiotemporal_ar1) &&
+  if ((control$collapse_spatial_variance || control$collapse_spatiotemporal_ar1) &&
       length(tmb_obj$par) > 0) {
     report_vals <- tmb_obj$report()
     collapse_result <- check_and_collapse_spatial_fields(
@@ -2005,63 +1648,47 @@ sdmTMB <- function(
       n_m = n_m,
       n_t = n_t,
       omit_spatial_intercept = omit_spatial_intercept,
-      collapse_spatial_variance = collapse_spatial_variance,
-      collapse_spatial_variance_threshold = collapse_spatial_variance_threshold,
-      collapse_spatiotemporal_ar1 = collapse_spatiotemporal_ar1,
-      collapse_ar1_threshold = collapse_ar1_threshold,
+      collapse_spatial_variance = control$collapse_spatial_variance,
+      collapse_spatial_variance_threshold = control$collapse_spatial_variance_threshold,
+      collapse_spatiotemporal_ar1 = control$collapse_spatiotemporal_ar1,
+      collapse_ar1_threshold = control$collapse_ar1_threshold,
       has_two_components = has_two_components,
       silent = silent
     )
     if (collapse_result$do_refit) {
       if (!silent) {
         cli_inform(c(
-          "i" = "Refitting model with collapsed spatial field(s) using update()..."
+          "i" = "Refitting model with collapsed spatial field(s)..."
         ))
       }
 
-      updated_call <- update(
-        out_structure,
-        spatial = collapse_result$spatial_arg,
-        spatiotemporal = collapse_result$spatiotemporal_arg,
-        do_fit = TRUE,
-        silent = silent,
-        evaluate = FALSE
-      )
-      return(eval(updated_call, envir = parent.frame()))
+      # Re-run the original call with only the field arguments changed. The
+      # row inputs go in as values, not the caller's expressions: missing-value
+      # rows are then omitted once, from the original inputs, and the refit
+      # doesn't depend on those expressions resolving in `parent.frame()`
+      # (e.g., `...` forwarded through a wrapper such as profile_breakpt()).
+      call <- out_structure$call
+      call$spatial <- collapse_result$spatial_arg
+      call$spatiotemporal <- collapse_result$spatiotemporal_arg
+      refit_call <- call
+      for (nm in names(refit_inputs)) refit_call[nm] <- list(refit_inputs[[nm]])
+      refit <- eval(refit_call, envir = parent.frame())
+      # store the caller's expressions (e.g., `data = d`), not the inlined
+      # values, so print() names the objects and the call stays small
+      refit$call <- call
+      return(refit)
     }
   }
 
   # We only end up here if no collapse was detected
   tmb_opt <- run_newton_loops(
-    newton_loops = newton_loops, tmb_opt, tmb_obj, silent,
+    newton_loops = control$newton_loops, tmb_opt, tmb_obj, silent,
     lower = lim$lower, upper = lim$upper
   )
 
-  if (!silent && getsd) cli_inform("running TMB sdreport\n")
-  if (getsd) {
-    sd_report <- sdreport_sdmTMB(tmb_obj, getJointPrecision = get_joint_precision)
-    conv <- get_convergence_diagnostics(sd_report)
-  } else {
-    sd_report <- NULL
-    conv <- NULL
-  }
-
-  out_structure$tmb_obj <- tmb_obj
-  out <- c(out_structure, list(
-    model = tmb_opt,
-    sd_report = sd_report,
-    parlist = tmb_obj$env$parList(par = tmb_obj$env$last.par.best),
-    last.par.best = tmb_obj$env$last.par.best,
-    gradients = conv$final_grads,
-    bad_eig = conv$bad_eig,
-    pos_def_hessian = sd_report$pdHess
-  ))
-  out <- `class<-`(out, "sdmTMB")
-  # if (out$tmb_data$has_smooths) {
-  #   edf <- suppressMessages(cAIC(out, what = "EDF"))
-  #   out$edf <- edf
-  # }
-  out
+  if (!silent && control$getsd) cli_inform("running TMB sdreport\n")
+  set_fit_results(out_structure, tmb_obj, tmb_opt, getsd = control$getsd,
+    get_joint_precision = control$get_joint_precision)
 }
 
 check_bounds <- function(.par, lower, upper) {
@@ -2096,13 +1723,8 @@ check_and_collapse_spatial_fields <- function(
     collapse_spatial_variance_threshold,
     collapse_spatiotemporal_ar1,
     collapse_ar1_threshold,
-    has_two_components = NULL,
-    silent = FALSE,
-    delta = NULL) {
-
-  if (is.null(has_two_components)) {
-    has_two_components <- isTRUE(delta)
-  }
+    has_two_components = FALSE,
+    silent = FALSE) {
 
   do_refit <- FALSE
   spatial_updated <- spatial
@@ -2277,7 +1899,6 @@ set_limits <- function(tmb_obj, lower, upper, mesh = NULL, spatial_model = 0L,
 }
 
 check_spatiotemporal_arg <- function(x, time, .which = 1) {
-  sp_len <- length(x)
   .spatiotemporal <- tolower(as.character(x[[.which]]))
   assert_that(.spatiotemporal %in% c("iid", "ar1", "rw", "off", "true", "false"),
     msg = "`spatiotemporal` argument value not valid"
@@ -2285,7 +1906,7 @@ check_spatiotemporal_arg <- function(x, time, .which = 1) {
   if (.spatiotemporal == "true") .spatiotemporal <- "iid"
   if (.spatiotemporal == "false") .spatiotemporal <- "off"
   .spatiotemporal <- match.arg(tolower(.spatiotemporal), choices = c("iid", "ar1", "rw", "off"))
-  if (is.null(time) && .spatiotemporal != "off" && sp_len >= 1) {
+  if (is.null(time) && .spatiotemporal != "off") {
     cli_abort("`spatiotemporal` is set but the `time` argument is missing.")
   }
   .spatiotemporal
@@ -2293,7 +1914,6 @@ check_spatiotemporal_arg <- function(x, time, .which = 1) {
 
 map_all_params <- function(x) {
   m <- list()
-  nm <- names(x)
   for (i in seq_along(x)) {
     m[[i]] <- factor(rep(NA, length(x[[i]])))
   }
@@ -2310,6 +1930,15 @@ parse_spatial_arg <- function(spatial) {
     spatial <- "off"
   }
   spatial
+}
+
+# With `time_varying_type = "rw"` the first time slice is unconstrained, so any
+# combination of `time_varying` columns that lies in the span of the fixed
+# effects (e.g., `~ 0 + factor(x)` with `time_varying = ~ 1`) is not identified.
+rw_confounded <- function(X, X_rw) {
+  if (!ncol(X) || !ncol(X_rw)) return(FALSE)
+  rank <- function(x) qr(x)$rank
+  rank(cbind(X, X_rw)) < rank(X) + rank(X_rw)
 }
 
 check_irregalar_time <- function(data, time, spatiotemporal, time_varying, extra_time,
@@ -2360,6 +1989,21 @@ find_missing_time <- function(x) {
 unmap <- function(x, v) {
   for (i in v) x[[i]] <- NULL
   x
+}
+
+# Map off the elements of a parameter where logical matrix `active` is FALSE
+map_active <- function(active) {
+  m <- seq_along(active)
+  m[!active] <- NA
+  factor(m)
+}
+
+# Map off the slices of parameter `x` (last dimension = model component) for
+# the components in logical vector `off`
+map_off_components <- function(x, off) {
+  m <- matrix(seq_along(x), ncol = length(off))
+  m[, off] <- NA
+  factor(m)
 }
 
 get_spde_matrices <- function(x) {

@@ -28,7 +28,7 @@
 #' @references Code adapted from VAST R package
 #' @importFrom rlang .data
 #' @examplesIf ggplot2_installed()
-#' mesh <- make_mesh(pcod_2011, c("X", "Y"), n_knots = 80, type = "kmeans")
+#' mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 15)
 #' fit <- sdmTMB(
 #'   data = pcod_2011,
 #'   formula = density ~ 1,

@@ -16,3 +16,17 @@ test_that("Prediction works with missing time", {
   expect_equal(p1$year, p2$year)
   expect_equal(p1, p2)
 })
+
+test_that("predict() reports NA and new time values in newdata", {
+  skip_on_cran()
+  fit <- sdmTMB(
+    density ~ 1,
+    data = pcod_2011, mesh = pcod_mesh_2011, time = "year",
+    family = tweedie(link = "log"), spatiotemporal = "off"
+  )
+  nd <- pcod_2011[1:5, ]
+  nd$year[2] <- NA
+  expect_error(predict(fit, newdata = nd), regexp = "NA value in the time column")
+  nd$year[2] <- 2099L
+  expect_error(predict(fit, newdata = nd), regexp = "new time values")
+})

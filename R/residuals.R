@@ -163,6 +163,24 @@ qres_nbinom1 <- function(object, y, mu, ...) {
   stats::qnorm(u)
 }
 
+# No closed form, so sum the mass function; nu = 1 / phi
+pcompois2 <- function(q, mu, nu) {
+  vapply(seq_along(q), function(i) {
+    if (q[i] < 0) return(0)
+    sum(RTMB::dcompois2(0:q[i], mu[i], nu[i]))
+  }, numeric(1))
+}
+
+qres_compois <- function(object, y, mu, ...) {
+  theta <- get_pars(object)
+  nu <- rep_len(1 / exp(theta[["ln_phi"]]), length(y))
+  mu <- rep_len(mu, length(y))
+  a <- pcompois2(y - 1, mu, nu)
+  b <- pcompois2(y, mu, nu)
+  u <- stats::runif(n = length(y), min = a, max = b)
+  stats::qnorm(u)
+}
+
 ptruncated_nbinom2 <- function(q, mu, phi){
   p <- (stats::pnbinom(q, size = phi, mu = mu) - stats::pnbinom(0, size = phi, mu = mu))/(1 - stats::pnbinom(0, size = phi, mu = mu))
 }
@@ -414,10 +432,13 @@ qres_gengamma <- function(object, y, mu, ...) {
 #' distribution. In practice, the sample is obtained based on the mode and
 #' Hessian of the random effects taking advantage of sparsity in the Hessian for
 #' computational efficiency. This is the same sample as `obj$env$MC()`, where
-#' `obj` is the \pkg{TMB} object created with `TMB::MakeADFun()`. See Waagepetersen
+#' `obj` is the object created with `RTMB::MakeADFun()`. See Waagepetersen
 #' (2006) and the description in the source code for the internal \pkg{TMB}
-#' function `TMB:::oneSamplePosterior()`. Residuals are converted to randomized
-#' quantile residuals as described above.
+#' function `TMB:::oneSamplePosterior()`. With `reml = TRUE` or
+#' `sdmTMBcontrol(profile = TRUE)`, the fixed effects that are integrated out
+#' (`b_j`, plus smoother coefficients for REML) are part of the random effects
+#' and so are sampled along with them rather than held at their estimates.
+#' Residuals are converted to randomized quantile residuals as described above.
 #'
 #' **`mle-eb`**: Fixed effects are held at their MLEs and random effects are
 #' taken as their EB estimates. These used to be the default residual type in
@@ -572,6 +593,7 @@ residuals.sdmTMB <- function(object,
       Gamma    = qres_gamma,
       nbinom2  = qres_nbinom2,
       nbinom1  = qres_nbinom1,
+      compois  = qres_compois,
       censored_nbinom2 = qres_censored_nbinom2,
       censored_nbinom1 = qres_censored_nbinom1,
       truncated_nbinom2  = qres_truncated_nbinom2,
@@ -589,7 +611,6 @@ residuals.sdmTMB <- function(object,
     res_func <- qres_func
   }
 
-  if (!"offset" %in% names(object)) cli_abort("This model appears to have been fit with an older sdmTMB.")
   if (type %in% c("mle-eb", "response", "pearson")) {
     pred <- predict(object, newdata = object$data, offset = object$offset) # not newdata = NULL
     if (poisson_link_delta) {
@@ -597,8 +618,6 @@ residuals.sdmTMB <- function(object,
     } else {
       mu <- linkinv(pred[[est_column]])
     }
-  } else if (type == "mvn-laplace") {
-    mu <- linkinv(predict(object, nsim = 1L, model = model, offset = object$offset)[, 1L, drop = TRUE])
   } else if (type == "mle-mcmc") {
     if (is.null(mcmc_samples)) {
       msg <- c("As of sdmTMB 0.3.0, `mcmc_samples` must be supplied to use `type = 'mle-mcmc'`.",
@@ -680,21 +699,10 @@ residuals.sdmTMB <- function(object,
         cli_abort("Deviance residuals not implemented for binomial family with size > 1.")
       }
     }
-    if (backend_sdmTMB(object) == "tmb" && !is_delta(object) &&
-        object$family$family == "nbinom1") {
-      cli_abort(c(
-        "NB1 deviance residuals are not implemented for the TMB backend.",
-        "i" = "Refit with `sdmTMBcontrol(backend = \"rtmb\")`."
-      ))
-    }
     env <- object$tmb_obj$env
-    report <- if (backend_sdmTMB(object) == "rtmb") {
-      # Deviance residuals are left off the RTMB tape; evaluate them directly.
-      rtmb_report_values(object$tmb_data,
-        env$parList(par = env$last.par.best), deviance = TRUE)
-    } else {
-      object$tmb_obj$report(env$last.par.best)
-    }
+    # Deviance residuals are left off the tape; evaluate them directly.
+    report <- rtmb_report_values(object$tmb_data,
+      env$parList(par = env$last.par.best), deviance = TRUE)
     resids <- report$devresid[, model, drop = TRUE]
     if (all(resids == 0)) {
       cli_abort("Deviance residuals not implemented for this family.")
@@ -761,7 +769,9 @@ check_overdisp <- function(object) {
 
 # Returns a function that draws `n` full parameter vectors (as columns) with
 # the random effects sampled from their approximate MVN posterior,
-# N(u_hat, H_uu^-1), and the fixed effects at their MLEs. Equivalent to TMB's
+# N(u_hat, H_uu^-1), and the fixed effects at their MLEs. Under REML or
+# `profile`, `env$random` also holds the integrated-out fixed effects, so those
+# are sampled too (as in TMB:::oneSamplePosterior()). Equivalent to TMB's
 # `obj$env$MC()` samples but factors the inner Hessian only once and skips
 # MC()'s per-draw likelihood evaluations.
 .posterior_re_sampler <- function(object) {

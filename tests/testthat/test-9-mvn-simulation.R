@@ -272,26 +272,23 @@ test_that("non-spatial models return est_non_rf predictions and draws", {
   d <- data.frame(x = seq(-1, 1, length.out = 40))
   d$y <- 1 + 2 * d$x + rnorm(nrow(d), sd = 0.3)
 
-  for (backend in c("tmb", "rtmb")) {
-    fit <- sdmTMB(y ~ x, data = d, spatial = "off",
-      control = sdmTMBcontrol(backend = backend))
-    for (nd in list(NULL, d[c(3, 1, 7), ])) {
-      p <- predict(fit, newdata = nd)
-      expect_equal(p$est_non_rf, p$est, info = backend)
+  fit <- sdmTMB(y ~ x, data = d, spatial = "off")
+  for (nd in list(NULL, d[c(3, 1, 7), ])) {
+    p <- predict(fit, newdata = nd)
+    expect_equal(p$est_non_rf, p$est)
 
-      set.seed(1)
-      reports <- predict(fit, newdata = nd, nsim = 3,
-        return_tmb_report = TRUE)
-      expected <- do.call(cbind, lapply(reports, function(r) r$proj_fe[, 1]))
-      set.seed(1)
-      draws <- predict(fit, newdata = nd, nsim = 3, sims_var = "est_non_rf")
-      expect_equal(dim(draws), c(nrow(p), 3L))
-      expect_equal(draws, expected, info = backend)
-      expect_true(all(is.finite(draws)))
-    }
-    expect_error(predict(fit, nsim = 2, sims_var = "est_rf"),
-      'no "est_rf"')
+    set.seed(1)
+    reports <- predict(fit, newdata = nd, nsim = 3,
+      return_tmb_report = TRUE)
+    expected <- do.call(cbind, lapply(reports, function(r) r$proj_fe[, 1]))
+    set.seed(1)
+    draws <- predict(fit, newdata = nd, nsim = 3, sims_var = "est_non_rf")
+    expect_equal(dim(draws), c(nrow(p), 3L))
+    expect_equal(draws, expected)
+    expect_true(all(is.finite(draws)))
   }
+  expect_error(predict(fit, nsim = 2, sims_var = "est_rf"),
+    'no "est_rf"')
 })
 
 test_that("nsim with s() and no other random effects works", {
@@ -320,6 +317,17 @@ test_that("gather/spread sims work", {
   x <- gather_sims(m, nsim = 10)
   expect_true(ncol(x) == 3L)
   expect_s3_class(x, "data.frame")
+})
+
+test_that("spread_sims() works without random effects", {
+  skip_on_cran()
+  m <- sdmTMB(density ~ depth_scaled, data = pcod_2011, spatial = "off",
+    family = tweedie())
+  set.seed(1)
+  x <- spread_sims(m, nsim = 2000)
+  expect_equal(nrow(x), 2000L)
+  expect_equal(unname(sapply(x[2:3], sd)),
+    tidy(m)$std.error, tolerance = 0.05)
 })
 
 test_that("predict() can draw random effects only with sample_fe = FALSE", {

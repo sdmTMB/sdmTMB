@@ -96,7 +96,7 @@ test_that("dispformula works with simulation and index prediction pathways", {
   d1 <- pcod[pcod$year == 2003, ]
   d2 <- pcod[pcod$year == 2004, ]
   d <- rbind(d1[seq_len(60), ], d2[seq_len(60), ])
-  mesh <- make_mesh(d, c("X", "Y"), n_knots = 20)
+  mesh <- make_mesh(d, c("X", "Y"), n_knots = 30)
 
   fit <- sdmTMB(
     density ~ 1,

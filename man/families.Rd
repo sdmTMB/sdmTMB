@@ -29,6 +29,7 @@
 \alias{delta_truncated_nbinom1}
 \alias{delta_gamma_mix}
 \alias{delta_lognormal_mix}
+\alias{compois}
 \title{Additional families}
 \usage{
 student(link = "identity", df = NULL)
@@ -89,6 +90,8 @@ delta_lognormal_mix(
   type = c("standard", "poisson-link"),
   p_extreme = NULL
 )
+
+compois(link = "log")
 }
 \arguments{
 \item{link}{Link.}
@@ -168,8 +171,7 @@ no upper limit on the count; use an offset of log hooks for effort.
 trials (e.g., hooks) via \code{weights}, which caps the count.
 }
 
-All but \code{censored_poisson()} need the RTMB backend (the default). See
-\code{censored_method} in \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}} for how \code{censored_betabinomial()}
+See \code{censored_method} in \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}} for how \code{censored_betabinomial()}
 computes its likelihood, and the
 \href{https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html}{hook competition article}.
 
@@ -185,6 +187,11 @@ in as a proportion for these families.
 The default first-component link (\code{link1}) for delta models of
 \code{type = "standard"} is \code{"logit"}. For \code{type = "poisson-link"}, the
 default \code{link1} is \code{"log"}.
+
+The \code{compois} family is the Conway-Maxwell-Poisson distribution
+parameterized by its mean (Huang 2017), as in \pkg{glmmTMB}. It can model
+underdispersed (\code{phi < 1}) as well as overdispersed (\code{phi > 1}) counts, where
+\code{phi} = \code{1/nu} and the variance is approximately \code{mu * phi}.
 }
 \examples{
 student(link = "identity") # estimate df
@@ -215,6 +222,7 @@ delta_truncated_nbinom2()
 delta_truncated_nbinom1()
 delta_gamma_mix()
 delta_lognormal_mix()
+compois(link = "log")
 }
 \references{
 \emph{Generalized gamma family}:
@@ -260,4 +268,10 @@ Thorson, J.T. 2018. Three problems with the conventional delta-model for
 biomass sampling data, and a computationally efficient alternative. Canadian
 Journal of Fisheries and Aquatic Sciences, 75(9), 1369-1382.
 \doi{10.1139/cjfas-2017-0266}
+
+\emph{Conway-Maxwell-Poisson}:
+
+Huang, A. 2017. Mean-parametrized Conway–Maxwell–Poisson regression models
+for dispersed counts. Statistical Modelling 17(6): 359–380.
+\doi{10.1177/1471082X17697749}
 }

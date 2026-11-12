@@ -32,7 +32,7 @@ pref_fit <- fit_once(function() {
   dat <- pref_dat()
   sdmTMB(pref_formula,
     data = dat, mesh = pref_mesh(dat), time = "year", family = poisson(),
-    offset = log(dat$effort), control = sdmTMBcontrol(backend = "rtmb")
+    offset = log(dat$effort)
   )
 })
 
@@ -40,8 +40,6 @@ pref_fit <- fit_once(function() {
 # catch surface that generates catches at the sampled cells. `xi_sd > 0` adds
 # a sampling-only field. Catches exist only at sampled cells.
 pref_sim <- function(b = 0.8, xi_sd = 0, seed = 1) {
-  old <- options(sdmTMB.backend = "tmb")
-  on.exit(options(old))
   set.seed(seed)
   grid <- expand.grid(x = seq(0.25, 9.75, 0.5), y = seq(0.25, 9.75, 0.5),
     year = 1:3)
@@ -76,7 +74,7 @@ pref_joint <- function(sim, spatial = "off", control = list(),
     preferential = preferential_sampling(formula, data = sim$grid,
       spatial = spatial, coefficient = coefficient, baseline = baseline,
       target = target),
-    control = do.call(sdmTMBcontrol, c(list(backend = "rtmb"), control)), ...
+    control = do.call(sdmTMBcontrol, control), ...
   )
 }
 
@@ -138,22 +136,18 @@ test_that("preferential_sampling() validates its specification", {
   expect_error(preferential_sampling(sampled ~ 1, grid, spatial = "maybe"))
 })
 
-test_that("preferential sampling requires RTMB and rejects unsupported features", {
+test_that("preferential sampling rejects unsupported features", {
   skip_on_cran()
   dat <- pref_dat()
   mesh <- pref_mesh(dat)
   spec <- preferential_sampling(sampled ~ 0 + factor(year), data = pref_grid(), spatial = "off")
   build <- function(formula = catch ~ depth, family = poisson(),
-                    backend = "rtmb", preferential = spec, ...) {
+                    preferential = spec, ...) {
     sdmTMB(formula,
       data = dat, mesh = mesh, time = "year", family = family,
-      preferential = preferential,
-      control = sdmTMBcontrol(backend = backend), do_fit = FALSE, ...
+      preferential = preferential, do_fit = FALSE, ...
     )
   }
-  expect_error(build(backend = "tmb"),
-    "requires backend = \"rtmb\"; set control = sdmTMBcontrol(backend = \"rtmb\")",
-    fixed = TRUE)
   expect_error(build(preferential = list()), "preferential_sampling()", fixed = TRUE)
   expect_error(build(family = delta_gamma(link1 = "cloglog")), "delta models")
   expect_error(build(family = delta_truncated_nbinom2()), "delta models")
@@ -161,7 +155,7 @@ test_that("preferential sampling requires RTMB and rejects unsupported features"
   expect_error(build(catch ~ s(depth, x)), "univariate `s()`", fixed = TRUE)
   expect_error(build(catch ~ t2(depth, x)), "univariate `s()`", fixed = TRUE)
   expect_error(build(catch ~ breakpt(depth)), "threshold")
-  expect_silent(build(time_varying = ~depth))
+  expect_silent(build(time_varying = ~depth, time_varying_type = "rw0"))
   expect_error(build(spatial_varying = ~depth), "spatial_varying")
   expect_error(build(anisotropy = TRUE), "anisotropy")
   expect_error(build(family = gaussian()), "families other than")
@@ -180,8 +174,7 @@ test_that("preferential sampling requires RTMB and rejects unsupported features"
   expect_silent(build(catch ~ depth + (1 + depth | vessel)))
   expect_error(
     sdmTMB(catch ~ depth, data = dat, time = "year", family = poisson(),
-      spatial = "off", preferential = spec,
-      control = sdmTMBcontrol(backend = "rtmb"), do_fit = FALSE),
+      spatial = "off", preferential = spec, do_fit = FALSE),
     "mesh"
   )
 
@@ -202,32 +195,24 @@ test_that("preferential sampling requires RTMB and rejects unsupported features"
   expect_length(obj_xi$tmb_params$xi_s, mesh$mesh$n)
 })
 
-test_that("the TMB backend refuses preferential model data", {
+test_that("make_sdmTMB_adfun() accepts preferential model data", {
   skip_on_cran()
   fit <- pref_fit()
   prep <- prepare_for(fit, preferential_sampling(sampled ~ 0 + factor(year),
     pref_grid(), spatial = "off"))
   data <- fit$tmb_data
   data$preferential <- prep$data
-  expect_error(
-    make_sdmTMB_adfun(data, fit$tmb_params, fit$tmb_map, fit$tmb_random,
-      backend = "tmb"),
-    "requires backend = \"rtmb\"", fixed = TRUE
-  )
   obj <- make_sdmTMB_adfun(data, c(fit$tmb_params, prep$parameters),
-    fit$tmb_map, fit$tmb_random, backend = "rtmb")
+    fit$tmb_map, fit$tmb_random)
   expect_true(all(c("gamma_pref", "b_pref") %in% names(obj$par)))
 })
 
-test_that("update() keeps the preferential specification and rejects TMB", {
+test_that("update() keeps the preferential specification", {
   skip_on_cran()
   fit <- pref_joint_fit()
   spec <- fit$preferential$spec
   call <- update(fit, evaluate = FALSE)
   expect_identical(call$preferential, spec)
-  expect_identical(call$control$backend, "rtmb")
-  expect_error(update(fit, control = sdmTMBcontrol(backend = "tmb")),
-    "requires backend = \"rtmb\"", fixed = TRUE)
   refit <- update(fit)
   expect_equal(refit$model$objective, fit$model$objective, tolerance = 1e-6)
 })
@@ -325,8 +310,7 @@ test_that("preferential preparation records the frame and missing history", {
   # So is an unobserved `extra_time` step.
   dat <- pref_dat()
   fit_extra <- sdmTMB(catch ~ depth, data = dat, mesh = pref_mesh(dat),
-    time = "year", extra_time = 2021L, family = poisson(), do_fit = FALSE,
-    control = sdmTMBcontrol(backend = "rtmb"))
+    time = "year", extra_time = 2021L, family = poisson(), do_fit = FALSE)
   grid_extra <- rbind(grid, transform(grid[grid$year == 2020, ], year = 2021L,
     sampled = NA))
   expect_warning(prep_extra <- prepare_for(fit_extra,
@@ -390,8 +374,7 @@ test_that("the shared design reuses fitted bases and rejects recomputed ones", {
     depth = c(2, 4, 7, 9), sampled = c(0, 1, 0, 1))
   mesh <- make_mesh(dat, xy_cols = c("x", "y"), cutoff = 1)
   fit <- sdmTMB(catch ~ poly(depth, 2), data = dat, mesh = mesh,
-    time = "year", family = poisson(), do_fit = FALSE,
-    control = sdmTMBcontrol(backend = "rtmb"))
+    time = "year", family = poisson(), do_fit = FALSE)
   prep <- prepare_for(fit, preferential_sampling(sampled ~ 1, grid, spatial = "off"))
   fitted_terms <- stats::terms(stats::model.frame(catch ~ poly(depth, 2), dat))
   expected <- stats::model.matrix(stats::delete.response(fitted_terms), grid)
@@ -400,8 +383,7 @@ test_that("the shared design reuses fitted bases and rejects recomputed ones", {
   expect_gt(max(abs(prep$data$X_ij[[1]] - recomputed)), 0.1)
 
   fit_scale <- sdmTMB(catch ~ scale(depth), data = dat, mesh = mesh,
-    time = "year", family = poisson(), do_fit = FALSE,
-    control = sdmTMBcontrol(backend = "rtmb"))
+    time = "year", family = poisson(), do_fit = FALSE)
   expect_error(prepare_for(fit_scale, preferential_sampling(sampled ~ 1, grid, spatial = "off")),
     "Precompute")
 })
@@ -411,12 +393,11 @@ test_that("the shared design reuses fitted bases and rejects recomputed ones", {
 fixed_latent_objectives <- function(fit, par) {
   keep <- setdiff(names(par), pref_names)
   map <- fit$tmb_map
-  joint <- make_sdmTMB_adfun(fit$tmb_data, par, map, random = NULL,
-    backend = "rtmb")
+  joint <- make_sdmTMB_adfun(fit$tmb_data, par, map, random = NULL)
   data <- fit$tmb_data
   data$preferential <- NULL
   catch <- make_sdmTMB_adfun(data, par[keep], map[intersect(names(map), keep)],
-    random = NULL, backend = "rtmb")
+    random = NULL)
   list(joint = joint, catch = catch)
 }
 
@@ -518,16 +499,13 @@ test_that("the joint objective adds the Bernoulli and sampling-field terms", {
   expect_equal(as.vector(obj$gr(x))[check], numeric_gr, tolerance = 1e-5)
 })
 
-test_that("ordinary models get no preferential parameters on either backend", {
+test_that("ordinary models get no preferential parameters", {
   skip_on_cran()
   sim <- pref_sim()
-  for (backend in c("tmb", "rtmb")) {
-    fit <- sdmTMB(catch ~ 1, data = sim$dat, mesh = sim$mesh, time = "year",
-      family = poisson(), do_fit = FALSE,
-      control = sdmTMBcontrol(backend = backend))
-    expect_false(any(pref_names %in% names(fit$tmb_params)))
-    expect_null(fit$tmb_data$preferential)
-  }
+  fit <- sdmTMB(catch ~ 1, data = sim$dat, mesh = sim$mesh, time = "year",
+    family = poisson(), do_fit = FALSE)
+  expect_false(any(pref_names %in% names(fit$tmb_params)))
+  expect_null(fit$tmb_data$preferential)
 })
 
 test_that("a coupled simulation recovers the preference coefficient", {
@@ -615,7 +593,7 @@ test_that("with the preference coefficient fixed at 0 the models decouple", {
   expect_gt(as.numeric(logLik(pref_joint_fit())),
     as.numeric(logLik(joint)))
   catch <- sdmTMB(catch ~ 1, data = sim$dat, mesh = sim$mesh, time = "year",
-    family = poisson(), control = sdmTMBcontrol(backend = "rtmb"))
+    family = poisson())
   shared <- names(catch$model$par)
   expect_equal(joint$model$par[names(joint$model$par) %in% shared],
     catch$model$par, tolerance = 1e-4)
@@ -635,8 +613,7 @@ test_that("a fields-only target multiplies only the random fields", {
     sdmTMB(catch ~ depth, data = sim$dat, mesh = sim$mesh, time = "year",
       family = poisson(),
       preferential = preferential_sampling(formula, data = sim$grid,
-        target = target, spatial = "off"),
-      control = sdmTMBcontrol(backend = "rtmb"))
+        target = target, spatial = "off"))
   }
   fields <- fit_target(sampled ~ 0 + factor(year), "fields")
   expected <- fit_target(sampled ~ 0 + factor(year), "expected")
@@ -657,8 +634,7 @@ test_that("a fields-only target multiplies only the random fields", {
   iid <- sdmTMB(catch ~ depth, data = sim$dat, mesh = sim$mesh,
     time = "year", family = poisson(),
     preferential = preferential_sampling(sampled ~ 0 + factor(year),
-      data = sim$grid, target = "fields", coefficient = "iid", spatial = "off"),
-    control = sdmTMBcontrol(backend = "rtmb"))
+      data = sim$grid, target = "fields", coefficient = "iid", spatial = "off"))
   ps <- predict_sampling(iid)
   b_t <- tidy(iid, "ran_vals", model = "sampling")$estimate
   expect_equal(ps$est_preference,
@@ -674,8 +650,7 @@ test_that("a spatial-only model without time fits", {
   fit <- sdmTMB(catch ~ 1, data = dat,
     mesh = make_mesh(dat, c("x", "y"), mesh = sim$mesh$mesh),
     family = poisson(),
-    preferential = preferential_sampling(sampled ~ 1, data = grid, spatial = "off"),
-    control = sdmTMBcontrol(backend = "rtmb"))
+    preferential = preferential_sampling(sampled ~ 1, data = grid, spatial = "off"))
   expect_true(fit$pos_def_hessian)
   expect_true("b_pref" %in% names(fit$model$par))
 })
@@ -697,7 +672,7 @@ test_that("smoothers and included IID intercepts match ordinary prediction", {
   dat <- pref_dat()
   fit <- sdmTMB(catch ~ s(depth, k = 5) + gear + (1 | vessel),
     data = dat, mesh = pref_mesh(dat), time = "year", family = poisson(),
-    offset = log(dat$effort), control = sdmTMBcontrol(backend = "rtmb"))
+    offset = log(dat$effort))
   grid <- pref_grid()
   grid$vessel <- factor(rep(c("b", "d"), length.out = nrow(grid)),
     levels = levels(dat$vessel))
@@ -759,11 +734,10 @@ test_that("the delta target is the log of the combined expected catch", {
   fits <- list(
     sdmTMB(list(catch ~ depth + gear, catch ~ gear), data = dat, mesh = mesh,
       time = "year", family = delta_gamma(), spatial = list("on", "off"),
-      spatiotemporal = list("off", "iid"), offset = log(dat$effort),
-      control = sdmTMBcontrol(backend = "rtmb")),
+      spatiotemporal = list("off", "iid"), offset = log(dat$effort)),
     sdmTMB(catch ~ s(depth, k = 4) + gear, data = dat, mesh = mesh,
       time = "year", family = delta_lognormal(), spatiotemporal = "off",
-      offset = log(dat$effort), control = sdmTMBcontrol(backend = "rtmb"))
+      offset = log(dat$effort))
   )
   for (fit in fits) {
     expect_true(fit$pos_def_hessian)
@@ -815,7 +789,7 @@ test_that("the Poisson-link delta target is the sum of the predictors", {
   fit <- sdmTMB(list(catch ~ depth + gear, catch ~ gear), data = dat,
     mesh = pref_mesh(dat), time = "year",
     family = delta_lognormal(type = "poisson-link"), spatiotemporal = "off",
-    offset = log(dat$effort), control = sdmTMBcontrol(backend = "rtmb"))
+    offset = log(dat$effort))
   expect_true(fit$pos_def_hessian)
   family <- rtmb_prepare(fit$tmb_data)$families[[1]]
   # As in prediction, the offset enters component 2 only, and h is the log
@@ -854,17 +828,14 @@ test_that("generalized gamma targets are the log of the expected catch", {
   fits <- list(
     sdmTMB(catch ~ gear, data = dat, mesh = pref_mesh(dat), time = "year",
       family = delta_gengamma(), spatiotemporal = "off",
-      offset = log(dat$effort), preferential = spec,
-      control = sdmTMBcontrol(backend = "rtmb")),
+      offset = log(dat$effort), preferential = spec),
     sdmTMB(list(catch ~ depth + gear, catch ~ gear), data = dat,
       mesh = pref_mesh(dat), time = "year",
       family = delta_gengamma(type = "poisson-link"), spatiotemporal = "off",
-      offset = log(dat$effort), preferential = spec,
-      control = sdmTMBcontrol(backend = "rtmb")),
+      offset = log(dat$effort), preferential = spec),
     sdmTMB(catch ~ gear, data = pos, mesh = pref_mesh(pos), time = "year",
       family = gengamma(), spatiotemporal = "off",
-      offset = log(pos$effort), preferential = spec,
-      control = sdmTMBcontrol(backend = "rtmb"))
+      offset = log(pos$effort), preferential = spec)
   )
   for (fit in fits) {
     expect_true(fit$pos_def_hessian)
@@ -886,8 +857,7 @@ test_that("joint fits work with delta families, smoothers, and IID effects", {
     mesh = pref_mesh(dat), time = "year", family = delta_gamma(),
     spatiotemporal = "off", offset = log(dat$effort),
     preferential = preferential_sampling(sampled ~ 0 + factor(year),
-      data = grid, re_form_iid = NULL, target = "expected", spatial = "off"),
-    control = sdmTMBcontrol(backend = "rtmb"))
+      data = grid, re_form_iid = NULL, target = "expected", spatial = "off"))
   expect_true(fit$pos_def_hessian)
   expect_lt(max(abs(fit$gradients)), 1e-3)
 
@@ -902,8 +872,7 @@ test_that("joint fits work with delta families, smoothers, and IID effects", {
   data <- predict(fit, newdata = grid, re_form = NA, re_form_iid = NA,
     offset = rep(0, nrow(grid)), return_tmb_data = TRUE)
   expect_identical(data$exclude_RE, 1L)
-  obj <- make_sdmTMB_adfun(data, get_pars(fit), fit$tmb_map, fit$tmb_random,
-    backend = "rtmb")
+  obj <- make_sdmTMB_adfun(data, get_pars(fit), fit$tmb_map, fit$tmb_random)
   expect_equal(obj$fn(fit$model$par), fit$model$objective, tolerance = 1e-6,
     ignore_attr = TRUE)
   expect_equal(tidy(fit, model = "sampling")$term,
@@ -913,8 +882,7 @@ test_that("joint fits work with delta families, smoothers, and IID effects", {
   # central differences when the latent effects are held fixed.
   par <- fit$tmb_obj$env$parList(par = fit$tmb_obj$env$last.par.best)
   par$b_pref <- 0.5
-  obj <- make_sdmTMB_adfun(fit$tmb_data, par, fit$tmb_map, random = NULL,
-    backend = "rtmb")
+  obj <- make_sdmTMB_adfun(fit$tmb_data, par, fit$tmb_map, random = NULL)
   x <- obj$par
   check <- which(names(x) %in% c("b_j", "b_j2", "bs", "b_pref", "gamma_pref"))
   check <- c(check, which(names(x) %in% c("b_smooth", "re_b_pars",
@@ -1004,7 +972,7 @@ test_that("catch predictions and indices keep the joint likelihood", {
       return_tmb_data = TRUE)
     data$calc_index_totals <- 1L
     obj <- make_sdmTMB_adfun(data, get_pars(fit), fit$tmb_map,
-      fit$tmb_random, backend = "rtmb")
+      fit$tmb_random)
     expect_equal(obj$fn(fit$model$par), fit$model$objective,
       tolerance = 1e-6, ignore_attr = TRUE)
     expect_true(all(c("gamma_pref", "b_pref") %in% names(obj$par)))
@@ -1027,8 +995,7 @@ test_that("unsupported post-fit operations error for preferential fits", {
     sdmTMB_cv(catch ~ 1, data = sim$dat, mesh = sim$mesh, time = "year",
       family = poisson(), k_folds = 2,
       preferential = preferential_sampling(sampled ~ 0 + factor(year),
-        data = sim$grid, spatial = "off"),
-      control = sdmTMBcontrol(backend = "rtmb")),
+        data = sim$grid, spatial = "off")),
     "Cross-validation is not supported"
   )
 })
@@ -1038,7 +1005,7 @@ test_that("interactions and no-intercept designs match ordinary prediction", {
   dat <- pref_dat()
   fit <- sdmTMB(catch ~ 0 + gear * depth, data = dat, mesh = pref_mesh(dat),
     time = "year", family = poisson(), spatiotemporal = "off",
-    offset = log(dat$effort), control = sdmTMBcontrol(backend = "rtmb"))
+    offset = log(dat$effort))
   grid <- pref_grid()
   lp <- shared_predictor(fit, prepare_for(fit,
     preferential_sampling(sampled ~ 0 + factor(year), data = grid, spatial = "off")))
@@ -1052,14 +1019,9 @@ test_that("interactions and no-intercept designs match ordinary prediction", {
   expect_false(isTRUE(all.equal(slope(lp), slope(lp_c))))
 })
 
-test_that("the TMB guard covers constructions without random effects", {
+test_that("a single-phase fit reaches the multiphase optimum", {
   skip_on_cran()
   fit <- pref_joint_fit()
-  expect_error(
-    make_sdmTMB_adfun(fit$tmb_data, get_pars(fit), fit$tmb_map, random = NULL,
-      backend = "tmb"),
-    "requires backend = \"rtmb\"", fixed = TRUE
-  )
   # A fit without the multiphase start reaches the same optimum.
   single <- pref_joint(pref_sim(), control = list(multiphase = FALSE))
   expect_equal(single$model$objective, fit$model$objective, tolerance = 1e-6)
@@ -1071,8 +1033,7 @@ test_that("a joint fit with only a spatiotemporal shared field works", {
   fit <- pref_joint_fit()
   st_only <- sdmTMB(catch ~ 1, data = fit$data, mesh = fit$spde,
     time = "year", family = poisson(), spatial = "off",
-    preferential = fit$preferential$spec,
-    control = sdmTMBcontrol(backend = "rtmb"))
+    preferential = fit$preferential$spec)
   expect_true(st_only$pos_def_hessian)
   expect_false("sigma_O" %in% tidy(st_only, "ran_pars")$term)
   r <- st_only$tmb_obj$report(st_only$tmb_obj$env$last.par.best)
@@ -1089,8 +1050,6 @@ pref_sim_catchability <- function(b = 0.8, seed = 5) {
   set.seed(seed)
   grid <- sim$grid
   grid$depth <- 50 + 30 * sin(grid$x / 3) + 10 * cos(grid$y / 2)
-  old <- options(sdmTMB.backend = "tmb")
-  on.exit(options(old))
   field <- sdmTMB_simulate(~1, data = grid,
     mesh = make_mesh(grid, c("x", "y"), mesh = sim$mesh$mesh), time = "year",
     family = poisson(), range = 4, sigma_O = 0.6, sigma_E = 0.2, B = 0,
@@ -1115,8 +1074,7 @@ test_that("a coupled fit with a smoother, standardized gear, and excluded vessel
   fit <- sdmTMB(catch ~ s(depth, k = 5) + gear + (1 | vessel),
     data = sim$dat, mesh = sim$mesh, time = "year", family = poisson(),
     preferential = preferential_sampling(sampled ~ 0 + factor(year),
-      data = sim$grid, re_form_iid = NA, spatial = "off"),
-    control = sdmTMBcontrol(backend = "rtmb"))
+      data = sim$grid, re_form_iid = NA, spatial = "off"))
   expect_true(fit$pos_def_hessian)
   expect_lt(max(abs(fit$gradients)), 1e-3)
   td <- tidy(fit, model = "sampling")
@@ -1144,8 +1102,7 @@ test_that("temporal processes check the time grid and sampling design", {
       mesh = make_mesh(dat, c("x", "y"), mesh = sim$mesh$mesh), time = "year",
       family = poisson(), extra_time = extra, do_fit = FALSE,
       preferential = do.call(preferential_sampling,
-        c(list(formula, data = grid), args)),
-      control = sdmTMBcontrol(backend = "rtmb"))
+        c(list(formula, data = grid), args)))
   }
 
   # Parameters, map, and random effects.
@@ -1169,8 +1126,7 @@ test_that("temporal processes check the time grid and sampling design", {
     mesh = make_mesh(dat1, c("x", "y"), mesh = sim$mesh$mesh),
     family = poisson(), do_fit = FALSE,
     preferential = preferential_sampling(sampled ~ 1, grid1,
-      coefficient = "iid", spatial = "off"),
-    control = sdmTMBcontrol(backend = "rtmb")), "at least two time steps")
+      coefficient = "iid", spatial = "off")), "at least two time steps")
 
   # A random walk needs equally spaced time steps; IID doesn't.
   gap_grid <- sim$grid
@@ -1228,8 +1184,7 @@ test_that("the joint objective adds centered temporal deviations and their densi
       family = poisson(), extra_time = 4L, do_fit = FALSE,
       preferential = preferential_sampling(cfg$formula, data = grid,
         coefficient = cfg$coefficient, baseline = cfg$baseline,
-        target = cfg$target, spatial = "off"),
-      control = sdmTMBcontrol(backend = "rtmb"))
+        target = cfg$target, spatial = "off"))
     par <- fit$tmb_params
     set.seed(4)
     par$b_j <- c(1.1, 0.8)
@@ -1300,8 +1255,7 @@ test_that("the joint objective adds centered temporal deviations and their densi
       preferential = preferential_sampling(cfg$formula,
         data = grid[rev(seq_len(nrow(grid))), ],
         coefficient = cfg$coefficient, baseline = cfg$baseline,
-        target = cfg$target, spatial = "off"),
-      control = sdmTMBcontrol(backend = "rtmb"))
+        target = cfg$target, spatial = "off"))
     expect_equal(fixed_latent_objectives(perm, par)$joint$fn(obj$joint$par),
       obj$joint$fn(obj$joint$par), tolerance = 1e-8)
 
@@ -1324,9 +1278,7 @@ test_that("the joint objective adds centered temporal deviations and their densi
 # year.
 pref_sim_temporal <- function(b_t = c(0.3, 0.5, 0.8, 1.1, 0.9, 0.6, 0.4, 0.7),
                               gamma_t = seq(-2, -1, length.out = 8),
-                              seed = 1) {
-  old <- options(sdmTMB.backend = "tmb")
-  on.exit(options(old))
+                              seed = 2) {
   set.seed(seed)
   s <- seq(0.25, 9.75, length.out = 20)
   grid <- expand.grid(x = s, y = s, year = seq_along(b_t))
@@ -1428,8 +1380,7 @@ pref_tv_joint <- function(dat, grid, family = poisson(), target = "expected",
     data = dat, mesh = pref_mesh(dat), time = "year", family = family,
     time_varying = ~ 0 + depth_scaled, time_varying_type = "rw0",
     preferential = preferential_sampling(sampled ~ 0 + factor(year),
-      data = grid, target = target, coefficient = coefficient),
-    control = sdmTMBcontrol(backend = "rtmb"), ...
+      data = grid, target = target, coefficient = coefficient), ...
   )
 }
 
@@ -1455,8 +1406,7 @@ test_that("time-varying fits decouple with the preference coefficient at 0", {
   joint <- pref_tv_joint(dat, pref_tv_dat(pref_grid()), coefficient = "zero")
   catch <- sdmTMB(catch ~ gear,
     data = dat, mesh = pref_mesh(dat), time = "year", family = poisson(),
-    time_varying = ~ 0 + depth_scaled, time_varying_type = "rw0",
-    control = sdmTMBcontrol(backend = "rtmb"))
+    time_varying = ~ 0 + depth_scaled, time_varying_type = "rw0")
   shared <- names(catch$model$par)
   expect_equal(joint$model$par[names(joint$model$par) %in% shared],
     catch$model$par, tolerance = 1e-4)
@@ -1486,8 +1436,7 @@ test_that("the sampling frame must support the time-varying design", {
       data = dat, mesh = pref_mesh(dat), time = "year", family = poisson(),
       time_varying = time_varying, time_varying_type = "rw0",
       preferential = preferential_sampling(sampled ~ 0 + factor(year),
-        data = grid),
-      control = sdmTMBcontrol(backend = "rtmb"), do_fit = FALSE)
+        data = grid), do_fit = FALSE)
   }
   expect_error(build(grid[, names(grid) != "depth_scaled"]),
     "Missing: depth_scaled")

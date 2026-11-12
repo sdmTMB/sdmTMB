@@ -478,6 +478,37 @@ censored_poisson <- function(link = "log") {
     linkinv = stats$linkinv), class = "family")
 }
 
+#' @details
+#' The `compois` family is the Conway-Maxwell-Poisson distribution
+#' parameterized by its mean (Huang 2017), as in \pkg{glmmTMB}. It can model
+#' underdispersed (`phi < 1`) as well as overdispersed (`phi > 1`) counts, where
+#' `phi` = `1/nu` and the variance is approximately `mu * phi`.
+#' @references
+#' *Conway-Maxwell-Poisson*:
+#'
+#' Huang, A. 2017. Mean-parametrized Conway–Maxwell–Poisson regression models
+#' for dispersed counts. Statistical Modelling 17(6): 359–380.
+#' \doi{10.1177/1471082X17697749}
+#' @export
+#' @examples
+#' compois(link = "log")
+#' @rdname families
+#' @order 28
+compois <- function(link = "log") {
+  linktemp <- substitute(link)
+  if (!is.character(linktemp))
+    linktemp <- deparse(linktemp)
+  okLinks <- c("log")
+  if (linktemp %in% okLinks)
+    stats <- stats::make.link(linktemp)
+  else if (is.character(link)) {
+    stats <- stats::make.link(link)
+    linktemp <- link
+  }
+  x <- c(list(family = "compois", link = linktemp), stats)
+  add_to_family(x)
+}
+
 #' @param link1 Link for first part of delta/hurdle model. Defaults to `"logit"`
 #'  for `type = "standard"` and `"log"` for `type = "poisson-link"`.
 #' @param link2 Link for second part of delta/hurdle model.
@@ -684,8 +715,7 @@ betabinomial <- function(link = "logit") {
 #' * `censored_binomial()` and `censored_betabinomial()` take the number of
 #'   trials (e.g., hooks) via `weights`, which caps the count.
 #'
-#' All but `censored_poisson()` need the RTMB backend (the default). See
-#' `censored_method` in [sdmTMBcontrol()] for how `censored_betabinomial()`
+#' See `censored_method` in [sdmTMBcontrol()] for how `censored_betabinomial()`
 #' computes its likelihood, and the
 #' [hook competition article](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html).
 #' @export

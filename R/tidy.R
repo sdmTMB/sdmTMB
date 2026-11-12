@@ -48,14 +48,26 @@
 #' `time_varying_type = "ar1"`, correlation (`rho_time`) are returned with
 #' `effects = "ran_pars"`.
 #'
+#' For models with penalized smoothers, `effects = "ran_pars"` includes an `edf`
+#' column with the effective degrees of freedom of each smoother (`NA` for
+#' other parameters). As in \pkg{mgcv}, this counts the unpenalized null space
+#' of the smoother (e.g., 1 for the linear component of `s(x)`) plus the
+#' effective number of penalized coefficients, integrating over the fixed and
+#' random effects and conditioning on the variance parameters. With `t2()`, the
+#' smoother's null space is added to its first penalized component so the
+#' components sum to the \pkg{mgcv} term EDF. These are computed when the
+#' model is fit, typically at a small fraction of the fitting time. They differ from
+#' `cAIC(fit, what = "EDF")`, which conditions on the fixed effects and excludes
+#' the null space.
+#'
 #' With `anisotropy = TRUE`, `effects = "ran_pars"` reports `range_min` and
 #' `range_max`, the ranges along the minor and major axes, in place of `range`.
-#' Their geometric mean is `range`. With the RTMB backend, their standard
+#' Their geometric mean is `range`. Their standard
 #' errors are from the delta method and their confidence intervals are Wald
 #' intervals on the log scale. These intervals are unreliable when the
 #' anisotropy is weakly identified, such as when `range_max / range_min` is
 #' close to 1, because the axis ranges have no derivative at isotropy. They are
-#' `NA` at exact isotropy and with the TMB backend.
+#' `NA` at exact isotropy.
 #'
 #' Standard errors for spatial variance terms fit in log space (e.g., variance
 #' terms, range, or parameters associated with the observation error) are
@@ -231,7 +243,6 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   # grab fixed effects:
   .formula <- x$split_formula[[model]]$form_no_bars
   .formula <- remove_s_and_t2(.formula)
-  if (!"mgcv" %in% names(x)) x[["mgcv"]] <- FALSE
   fe_names <- colnames(model.matrix(.formula, x$data))
   if (!is.null(x$nonlocal_parsed)) {
     fe_names <- c(fe_names, x$nonlocal_parsed$term_coef_name)
@@ -243,10 +254,14 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   out <- data.frame(term = fe_names, estimate = b_j, std.error = b_j_se, stringsAsFactors = FALSE)
 
   if (x$tmb_data$threshold_func > 0) {
-    if (x$threshold_function == 1L) {
+    if (x$threshold_function %in% c(1L, 3L)) {
       par_name <- paste0(x$threshold_parameter, c("-slope", "-breakpt"))
       estimates <- est$b_threshold[,model,drop=TRUE]
       ses <- se$b_threshold[,model,drop=TRUE]
+      if (x$threshold_function == 3L) { # the slope, not the estimated log(slope)
+        estimates[1L] <- est$s_slope[model]
+        ses[1L] <- se$s_slope[model]
+      }
     } else {
       par_name <- paste0(x$threshold_parameter, c("-s50", "-s95", "-smax"))
       estimates <- c(est$s50[model], est$s95[model], est$s_max[model])
@@ -261,9 +276,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     )
   }
 
-  if (x$tmb_data$has_smooths) {
-    p <- print_smooth_effects(x, silent = FALSE, m = model)
-    mm <- p$smooth_effects
+  sm_p <- if (x$tmb_data$has_smooths) print_smooth_effects(x, silent = FALSE, m = model)
+  if (!is.null(sm_p$smooth_effects)) {
+    mm <- sm_p$smooth_effects
     out <- rbind(
       out,
       data.frame(
@@ -320,12 +335,6 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
 
   j <- 0
-  expects_range <- !is_areal &&
-    (x$tmb_data$include_spatial[model] || !x$tmb_data$spatial_only[model])
-  if (expects_range && !"log_range" %in% names(est)) {
-    cli_warn("This model was fit with an old version of sdmTMB. Some parameters may not be available to the tidy() method. Re-fit the model with the current version of sdmTMB if you need access to any missing parameters.")
-  }
-
   for (i in name) {
     j <- j + 1
     if (i %in% names(est)) {
@@ -575,9 +584,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
 
   # optional smooth SDs models with smooths
-  if (x$tmb_data$has_smooths) {
-    p <- print_smooth_effects(x, m = model, silent = TRUE)
-    ln_sds <- p$ln_sd_estimates
+  sm_p <- if (x$tmb_data$has_smooths) print_smooth_effects(x, m = model, silent = TRUE)
+  if (!is.null(sm_p$ln_sd_estimates)) {
+    ln_sds <- sm_p$ln_sd_estimates
     # Convert from log-scale to natural scale and update term names
     term_names <- gsub("^ln_SD_s\\(", "sd__s(", row.names(ln_sds))
     term_names <- gsub("^ln_SD_t2\\(", "sd__t2(", term_names)
@@ -594,6 +603,10 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     }
     row.names(ln_sds_df) <- NULL
     if (!"group_name" %in% names(out_re)) out_re$group_name <- rep(NA, nrow(out_re))
+    if (!is.null(x$smooth_edf)) {
+      out_re$edf <- rep(NA_real_, nrow(out_re))
+      ln_sds_df$edf <- as.numeric(x$smooth_edf[smooth_rows_active(x, model, "block_active"), model])
+    }
     out_re <- rbind(out_re, ln_sds_df)
   }
   # optional time-varying random components
@@ -636,6 +649,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     new_names <- c("group_name", "term", "estimate", "std.error")
   }
   if(conf.int) new_names <- c(new_names, "conf.low", "conf.high")
+  new_names <- c(new_names, "edf")
   new_names <- new_names[new_names %in% names(out_re)]
   out_re <- out_re[, new_names]
   # remove group_name if not used for simplicity:
@@ -737,7 +751,6 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
 
   .formula <- x$split_formula[[model]]$form_no_bars
   .formula <- remove_s_and_t2(.formula)
-  if (!"mgcv" %in% names(x)) x[["mgcv"]] <- FALSE
   fe_names <- colnames(model.matrix(.formula, x$data))
   fe_names <- fe_names[!fe_names == "offset"]
 

@@ -23,7 +23,8 @@
 #   number of simulated replicated. Any simulated quantiles of 1 (no
 #   simulations were larger than the observation) are set to an arbitrary value
 #   of `1 - 1/(n*10)`. These points are shown with crosses overlaid.
-#' @param ... Other arguments to pass to [DHARMa::createDHARMa()].
+#' @param ... Other arguments to pass to [DHARMa::createDHARMa()]. By default,
+#'   `fittedPredictedResponse` is the mean of the simulations.
 #'
 #' @details
 #'
@@ -46,6 +47,7 @@
 #' Note that \pkg{DHARMa} returns residuals that are uniform(0, 1) if the data
 #' are consistent with the model whereas randomized quantile residuals from
 #' [residuals.sdmTMB()] are expected to be normal(0, 1).
+#'
 # An experimental option
 # `expected_distribution` is included to transform the distributions to
 # a normal(0, 1) expectation.
@@ -80,19 +82,19 @@
 #'
 #' # not great:
 #' set.seed(123)
-#' simulate(fit, nsim = 100, type = "mle-mvn") |>
+#' simulate(fit, nsim = 200, type = "mle-mvn") |>
 #'   dharma_residuals(fit)
 #'
 #' \donttest{
 #' # delta-lognormal looks better:
 #' set.seed(123)
 #' fit_dl <- update(fit, family = delta_lognormal())
-#' simulate(fit_dl, nsim = 100, type = "mle-mvn") |>
-#'   dharma_residuals(fit)
+#' simulate(fit_dl, nsim = 200, type = "mle-mvn") |>
+#'   dharma_residuals(fit_dl)
 #'
 #' # or skip the pipe:
 #' set.seed(123)
-#' s <- simulate(fit_dl, nsim = 100, type = "mle-mvn")
+#' s <- simulate(fit_dl, nsim = 200, type = "mle-mvn")
 #' # and manually plot it:
 #' r <- dharma_residuals(s, fit_dl, plot = FALSE)
 #' head(r)
@@ -100,12 +102,12 @@
 #' abline(0, 1)
 #'
 #' # return the DHARMa object and work with the DHARMa methods
-#' ret <- simulate(fit_dl, nsim = 100, type = "mle-mvn") |>
-#'   dharma_residuals(fit, return_DHARMa = TRUE)
+#' ret <- simulate(fit_dl, nsim = 200, type = "mle-mvn") |>
+#'   dharma_residuals(fit_dl, return_DHARMa = TRUE)
 #' plot(ret)
 #
 # # try normal(0, 1) residuals:
-# s <- simulate(fit_dl, nsim = 100, type = "mle-mvn")
+# s <- simulate(fit_dl, nsim = 200, type = "mle-mvn")
 # dharma_residuals(s, fit, expected_distribution = "normal")
 # # note the points in the top right corner that had Inf quantiles
 # # because of pnorm(1)
@@ -131,19 +133,13 @@ dharma_residuals <- function(simulated_response, object, plot = TRUE,
   }
   family_spec <- .object_family_spec(object, caller = "`dharma_residuals()`")
   y <- .family_spec_observed_response(object$response, family_spec)
-  if (!is.null(object)) {
-    fitted <- fitted(object)
-  } else {
-    fitted <- NULL
+  args <- list(simulatedResponse = simulated_response, observedResponse = y, ...)
+  # the simulation mean matches the random effect draw(s) used to simulate
+  # whereas fitted(object) does not for type = "mle-mvn"
+  if (!"fittedPredictedResponse" %in% names(args)) {
+    args$fittedPredictedResponse <- rowMeans(simulated_response)
   }
-  suppressMessages(
-    res <- DHARMa::createDHARMa(
-      simulatedResponse = simulated_response,
-      observedResponse = y,
-      fittedPredictedResponse = fitted,
-      ...
-    )
-  )
+  suppressMessages(res <- do.call(DHARMa::createDHARMa, args))
   if (return_DHARMa) return(res)
   u <- res$scaledResiduals
   # if (expected_distribution == "uniform") {

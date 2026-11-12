@@ -272,8 +272,9 @@ sanity <- function(object, big_sd_log10 = 2, gradient_thresh = 0.001, silent = F
     r1 <- diff(range(object$data[[object$spde$xy_cols[1]]]))
     r2 <- diff(range(object$data[[object$spde$xy_cols[2]]]))
     r <- max(r1, r2)
-    if ("range" %in% b$term) {
-      if (max(b$estimate[b$term == "range"]) > r * 1.5) {
+    ranges <- b$estimate[b$term %in% c("range", "range_min", "range_max")]
+    if (length(ranges)) {
+      if (max(ranges) > r * 1.5) {
         msg <- "A `range` parameter looks fairly large (> 1.5 the greatest distance in data)"
         if (!silent) {
           cli::cli_alert_danger(msg)
@@ -288,12 +289,37 @@ sanity <- function(object, big_sd_log10 = 2, gradient_thresh = 0.001, silent = F
         if (nr > 1L) msg <- "Range parameters don't look unreasonably large"
         if (!silent) cli::cli_alert_success(msg)
       }
+      if (isTRUE(min(ranges) < 0.5 * stats::median(mesh_edge_lengths(object$spde)))) {
+        msg <- "A `range` parameter is small relative to the mesh (< 0.5 the median triangle edge length near the data)"
+        if (!silent) {
+          cli::cli_alert_danger(msg)
+          cli::cli_alert_info("The mesh can't resolve a field this fine: try a finer mesh and check whether the estimates change", wrap = TRUE)
+          cat("\n")
+        }
+        range_ok <- FALSE
+      }
     }
+  }
+
+  # a breakpt() cutpoint estimated with the other parameters, rather than fixed
+  # (as profile_breakpt() does) or mapped by the user
+  breakpt_ok <- TRUE
+  if (object$tmb_data$threshold_func %in% c(1L, 3L) &&
+    is.null(object$control$map$b_threshold)) {
+    if (!silent) {
+      cli::cli_alert_danger("The `breakpt()` cutpoint was estimated directly")
+      cli::cli_alert_info(paste0("The likelihood isn't smooth in the cutpoint, so the fit ",
+        "can stop at the wrong cutpoint while reporting convergence, and the cutpoint's ",
+        "standard error isn't reliable"), wrap = TRUE)
+      cli::cli_alert_info(breakpt_advice(NCOL(object$tmb_params$b_threshold) > 1L), wrap = TRUE)
+      cat("\n")
+    }
+    breakpt_ok <- FALSE
   }
 
   ret <- named_list(
     hessian_ok, eigen_values_ok, nlminb_ok, range_ok,
-    gradients_ok, se_magnitude_ok, se_na_ok, sigmas_ok
+    gradients_ok, se_magnitude_ok, se_na_ok, sigmas_ok, breakpt_ok
   )
   all_ok <- all(unlist(ret))
   ret <- c(ret, all_ok = all_ok)

@@ -421,14 +421,32 @@ time_lag <- function(x, start = c("stationary", "zero")) {
   )
 }
 
-.prepare_nonlocal_grid_inputs <- function(grid,
-                                                     nonlocal_formula,
-                                                     mesh,
-                                                     xy_cols,
-                                                     time,
-                                                     time_df,
-                                                     full_time_vec,
-                                                     time_indexed = FALSE) {
+# Validate a user-supplied nonlocal grid and build the covariate field from it.
+# Used by `sdmTMB(nonlocal_data = )` and `predict(nonlocal_newdata = )`.
+.nonlocal_from_grid <- function(grid, nonlocal_formula, mesh, time, time_lu,
+                                time_indexed = FALSE) {
+  inputs <- .prepare_nonlocal_grid_inputs(
+    grid = grid,
+    nonlocal_formula = nonlocal_formula,
+    mesh = mesh$mesh,
+    xy_cols = mesh$xy_cols,
+    time = time,
+    time_df = time_lu,
+    time_indexed = time_indexed
+  )
+  .build_nonlocal_tmb_data(
+    nonlocal_formula = nonlocal_formula,
+    data = inputs$data,
+    A_st = inputs$A_st,
+    A_spatial_index = inputs$A_spatial_index,
+    year_i = inputs$year_i,
+    n_t = nrow(time_lu),
+    time_values = time_lu$time_from_data
+  )
+}
+
+.prepare_nonlocal_grid_inputs <- function(grid, nonlocal_formula, mesh, xy_cols,
+                                          time, time_df, time_indexed = FALSE) {
   if (!inherits(grid, "data.frame")) {
     cli_abort("The nonlocal grid data must be `NULL` or a data frame.")
   }
@@ -479,14 +497,14 @@ time_lag <- function(x, start = c("stationary", "zero")) {
     if (!time %in% names(grid)) {
       cli_abort("The nonlocal grid data is missing the time column {.code {time}}.")
     }
-    missing_slices <- setdiff(full_time_vec, grid[[time]])
+    missing_slices <- setdiff(time_df$time_from_data, grid[[time]])
     if (length(missing_slices)) {
       cli_abort(c(
         "The nonlocal grid data does not cover all fitted (+ `extra_time`) time slices.",
         "x" = "Missing time slice(s): {.code {paste(missing_slices, collapse = ', ')}}"
       ))
     }
-    year_i <- time_df$year_i[match(grid[[time]], time_df$time_from_data)]
+    year_i <- time_index(time_df, grid[[time]])
   } else {
     year_i <- rep(0L, nrow(grid))
   }
@@ -498,13 +516,12 @@ time_lag <- function(x, start = c("stationary", "zero")) {
     data = grid,
     A_st = A_st,
     A_spatial_index = A_spatial_index,
-    year_i = year_i,
-    n_t = nrow(time_df)
+    year_i = year_i
   )
 }
 
-# `time_lag(start = )` codes, matching `CovariateDiffusionStart` in
-# `src/covariate-diffusion.h`.
+# `time_lag(start = )` codes: 0 = "zero", 1 = "stationary" (read by
+# `R/rtmb-diffusion.R`).
 .nonlocal_start_code <- function(start) {
   as.integer(match(start, c("zero", "stationary")) - 1L)
 }
@@ -1352,4 +1369,51 @@ plot_nonlocal_kernel <- function(object,
     xlab = ctx$xlab,
     ylab = ctx$ylab
   )
+}
+
+# The `covariate_diffusion` TMB data slots; `x` is from
+# `.build_nonlocal_tmb_data()` and is NULL without nonlocal terms
+.nonlocal_tmb_slots <- function(x) {
+  out <- list(
+    n_terms = 0L,
+    n_covariates = 0L,
+    covariate_vertex_time = array(0, dim = c(1L, 1L, 1L)),
+    proj_covariate_vertex_time = array(0, dim = c(1L, 1L, 1L)),
+    term_component = integer(0),
+    term_covariate = integer(0),
+    term_start = integer(0)
+  )
+  if (is.null(x)) return(out)
+  out$n_terms <- as.integer(x$n_terms)
+  out$n_covariates <- as.integer(x$n_covariates)
+  out$covariate_vertex_time <- x$covariate_vertex_time
+  out$term_component <- as.integer(x$term_component_id - 1L)
+  out$term_covariate <- as.integer(x$term_covariate_index0)
+  out$term_start <- as.integer(x$term_start)
+  out
+}
+
+# Estimate log_kappaS_nl or log_kappaT_nl only for covariates whose terms use it
+.make_nonlocal_kappa_map <- function(has_component) {
+  out <- seq_along(has_component)
+  out[!as.logical(has_component)] <- NA_integer_
+  factor(out)
+}
+
+# `control$start` and `control$map` entries for the nonlocal kappas need one
+# value per nonlocal covariate
+.validate_nonlocal_control <- function(control, nonlocal_parsed) {
+  n <- nonlocal_parsed$n_covariates %||% 0L
+  cov_text <- if (n > 0L) paste(nonlocal_parsed$covariates, collapse = ", ") else "<none>"
+  for (param_name in c("log_kappaS_nl", "log_kappaT_nl")) {
+    for (control_name in c("start", "map")) {
+      x <- control[[control_name]]
+      if (param_name %in% names(x) && length(x[[param_name]]) != n) {
+        cli_abort(c(
+          paste0("`control$", control_name, "$", param_name, "` must have length ", n, "."),
+          "i" = paste0("Nonlocal covariates (in order): ", cov_text, ".")
+        ))
+      }
+    }
+  }
 }

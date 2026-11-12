@@ -182,8 +182,7 @@ test_that("Truncated NB2, truncated NB1, and regular NB1 fit", {
 
   # tolerance below is loose enough to allow for the small (~1e-5 relative)
   # cross-package convergence differences between sdmTMB (via nlminb) and
-  # glmmTMB's own optimizer, confirmed identical between the TMB and RTMB
-  # backends on the same data
+  # glmmTMB's own optimizer
   m_sdmTMB <- sdmTMB(data = s, formula = observed ~ 1,
     mesh = spde, family = nbinom1(),
     spatial = "off")
@@ -221,6 +220,69 @@ test_that("Poisson fits", {
   )
   expect_true(all(!is.na(summary(m$sd_report)[,"Std. Error"])))
   expect_length(residuals(m), nrow(pcod))
+})
+
+test_that("Non-integer count responses warn", {
+  skip_on_cran()
+  d <- data.frame(y = c(0, 1.5, 2, 3, 0, 4))
+  expect_warning(sdmTMB(y ~ 1, data = d, spatial = "off",
+    family = poisson(), do_fit = FALSE), "Non-integer")
+  expect_warning(sdmTMB(y ~ 1, data = d, spatial = "off",
+    family = delta_truncated_nbinom2(), do_fit = FALSE), "Non-integer")
+  d$y <- round(d$y)
+  expect_no_warning(sdmTMB(y ~ 1, data = d, spatial = "off",
+    family = poisson(), do_fit = FALSE))
+})
+
+test_that("Conway-Maxwell-Poisson fits underdispersed counts", {
+  skip_on_cran()
+  set.seed(1)
+  loc <- data.frame(x = stats::runif(500), y = stats::runif(500))
+  mesh <- make_mesh(loc, c("x", "y"), cutoff = 0.1)
+  s <- sdmTMB_simulate(~ 1, loc, mesh = mesh, family = compois(),
+    B = 1.5, phi = 0.4, range = 0.5, sigma_O = 0.3, seed = 1)
+
+  m_glmmTMB <- glmmTMB::glmmTMB(observed ~ 1, data = s,
+    family = glmmTMB::compois())
+  m_ns <- sdmTMB(observed ~ 1, data = s, family = compois(), spatial = "off")
+  expect_equal(unname(m_ns$model$par), unname(m_glmmTMB$fit$par),
+    tolerance = 1e-4)
+
+  m <- sdmTMB(observed ~ 1, data = s, mesh = mesh, family = compois())
+  expect_equal(sigma(m), 0.4, tolerance = 0.2)
+  expect_equal(tidy(m, "ran_pars")$estimate[[3]], 0.3, tolerance = 0.3)
+
+  sims <- simulate(m, nsim = 50, type = "mle-mvn")
+  expect_equal(dim(sims), c(nrow(s), 50L))
+  expect_true(all(sims == round(sims)))
+  r <- dharma_residuals(sims, m, plot = FALSE, return_DHARMa = TRUE)
+  expect_s3_class(r, "DHARMa")
+
+  set.seed(1)
+  res <- residuals(m, type = "mle-eb")
+  expect_length(res, nrow(s))
+  expect_true(all(is.finite(res)))
+  expect_equal(mean(res), 0, tolerance = 0.1)
+  expect_equal(stats::sd(res), 1, tolerance = 0.1)
+  expect_gt(stats::shapiro.test(res)$p.value, 0.01)
+  # with nu = 1 the CDF is Poisson
+  expect_equal(pcompois2(0:10, rep(3, 11), rep(1, 11)), stats::ppois(0:10, 3))
+})
+
+test_that("Conway-Maxwell-Poisson draws match the exact moments", {
+  skip_on_ci()
+  skip_on_cran()
+  # includes nu * mean > 700, where TMB's rcompois2() is biased
+  set.seed(1)
+  for (p in list(c(0.5, 0.2), c(3, 3), c(200, 10))) {
+    k <- 0:1000
+    prob <- RTMB::dcompois2(k, p[1], p[2])
+    ex_mean <- sum(k * prob)
+    ex_var <- sum((k - ex_mean)^2 * prob)
+    x <- rtmb_rcompois2(rep(p[1], 1e4), p[2])
+    expect_equal(mean(x), ex_mean, tolerance = 0.05)
+    expect_equal(stats::var(x), ex_var, tolerance = 0.1)
+  }
 })
 
 test_that("Binomial fits", {
@@ -281,7 +343,7 @@ test_that("Censored Poisson fits", {
   set.seed(1)
 
   predictor_dat <- data.frame(X = runif(300), Y = runif(300))
-  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.2)
+  mesh <- make_mesh(predictor_dat, xy_cols = c("X", "Y"), cutoff = 0.1)
   sim_dat <- sdmTMB_simulate(
     formula = ~1,
     data = predictor_dat,
@@ -392,7 +454,7 @@ test_that("censored_upper accepts a column name", {
   # Random folds stratified by time reorder the data; the bounds must follow.
   cv <- function(...) {
     set.seed(2)
-    sdmTMB_cv(y ~ x, data = d, mesh = make_mesh(d, c("X", "Y"), cutoff = 0.2),
+    sdmTMB_cv(y ~ x, data = d, mesh = make_mesh(d, c("X", "Y"), cutoff = 0.1),
       time = "year", spatial = "off", spatiotemporal = "off",
       family = censored_poisson(), k_folds = 3, predictive = "mle-eb", ...)
   }
@@ -404,7 +466,6 @@ test_that("censored_upper accepts a column name", {
 })
 
 test_that("Censored beta-binomial family works", {
-  local_rtmb_backend()
   set.seed(1)
   n <- 200L
   d <- data.frame(year = factor(rep(1:2, each = n / 2)),
@@ -470,7 +531,6 @@ test_that("Censored beta-binomial family works", {
 })
 
 test_that("Censored binomial family works", {
-  local_rtmb_backend()
   set.seed(1)
   n <- 200L
   d <- data.frame(year = factor(rep(1:2, each = n / 2)),
@@ -532,10 +592,6 @@ test_that("Censored binomial family works", {
     spatial = "off", family = censored_binomial(),
     censored_upper = d$y),
     NA)
-  expect_error(sdmTMB(y ~ 0 + year, data = d, weights = d$hooks,
-    spatial = "off", family = censored_binomial(),
-    censored_upper = upr, control = sdmTMBcontrol(backend = "tmb")),
-    regexp = "backend")
   expect_error(censored_binomial(link = "log"), regexp = "not available")
   lk <- "cloglog"
   expect_identical(censored_binomial(link = lk)$link, "cloglog")
@@ -544,7 +600,6 @@ test_that("Censored binomial family works", {
 })
 
 test_that("Censored negative binomial families work", {
-  local_rtmb_backend()
   set.seed(2)
   n <- 200L
   d <- data.frame(year = factor(rep(1:2, each = n / 2)),
@@ -580,10 +635,6 @@ test_that("Censored negative binomial families work", {
   expect_error(sdmTMB(y ~ 0 + year, data = transform(d, y = y + 0.5),
     spatial = "off", family = censored_nbinom2(), censored_upper = rep(Inf, n)),
     regexp = "whole-number")
-  expect_error(sdmTMB(y ~ 0 + year, data = d, spatial = "off",
-    family = censored_nbinom1(), censored_upper = upr,
-    control = sdmTMBcontrol(backend = "tmb")),
-    regexp = "backend")
 })
 
 test_that("Censored Poisson upper limit function works", {
@@ -827,4 +878,18 @@ test_that("Generalized gamma matches Gamma when Q = sigma", {
   expect_equal(b$b_j[1], 1, tolerance = 0.01)
   expect_equal(b$b_j[2], 1.8, tolerance = 0.01)
 
+})
+
+test_that("Inverse-link starting values work with smoothers and random intercepts", {
+  skip_on_cran()
+  set.seed(1)
+  d <- pcod_2011
+  d$y <- 1 / (2 + 0.3 * d$depth_scaled) + rnorm(nrow(d), sd = 0.02)
+  d$fyear <- as.factor(d$year)
+  fit <- sdmTMB(y ~ s(depth_scaled), data = d, spatial = "off",
+    family = gaussian(link = "inverse"))
+  expect_true(all(is.finite(fit$model$par)))
+  fit <- sdmTMB(y ~ depth_scaled + (1 | fyear), data = d, spatial = "off",
+    family = gaussian(link = "inverse"))
+  expect_true(all(is.finite(fit$model$par)))
 })

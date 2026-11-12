@@ -199,3 +199,22 @@ test_that("RW with mean-zero (rw0) time-varying works", {
   expect_gt(cor(B, s$b_rw_t[,,1]), 0.99)
   expect_equal(round(mean(sigma_V_hats), 2L), sigma_true)
 })
+
+test_that("rw time-varying terms confounded with formula warn", {
+  d <- pcod_2011
+  d$f <- factor(d$depth > 100)
+  fit_rw <- function(formula, time_varying, type = "rw", family = gaussian()) {
+    sdmTMB(formula, data = d, mesh = pcod_mesh_2011, time = "year", spatial = "off",
+      time_varying = time_varying, time_varying_type = type,
+      family = family, do_fit = FALSE)
+  }
+  expect_warning(fit_rw(density ~ 0 + f, ~ 1), "rw0")
+  expect_warning(fit_rw(density ~ 1, ~ 1), "rw0")
+  expect_warning(fit_rw(density ~ depth_scaled, ~ 0 + depth_scaled), "rw0")
+  expect_warning(fit_rw(density ~ 1 + s(depth_scaled), ~ 0 + depth_scaled), "rw0")
+  expect_warning(fit_rw(density ~ 0 + f, ~ 1, family = delta_gamma()), "rw0")
+  expect_no_warning(fit_rw(density ~ 0 + depth_scaled, ~ 1))
+  expect_no_warning(fit_rw(density ~ 1, ~ 0 + depth_scaled))
+  expect_no_warning(fit_rw(density ~ 0 + f, ~ 1, type = "rw0"))
+  expect_no_warning(fit_rw(density ~ 0 + f, ~ 1, type = "ar1"))
+})

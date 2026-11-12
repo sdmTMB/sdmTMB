@@ -27,7 +27,7 @@
 #'
 #' @return
 #' `make_mesh()`: A list of class `sdmTMBmesh`. The element `mesh` is the output
-#' from `fmesher_func` (default is [fmesher::fm_mesh_2d_inla()]). See
+#' from `fmesher_func` (default is [fmesher::fm_rcdt_2d_inla()]). See
 #' `mesh$mesh$n` for the number of vertices.
 #'
 #' @export
@@ -35,10 +35,6 @@
 #' @examples
 #' # Extremely simple cutoff:
 #' mesh <- make_mesh(pcod, c("X", "Y"), cutoff = 5, type = "cutoff")
-#' plot(mesh)
-#'
-#' # Using a k-means algorithm to assign vertices:
-#' mesh <- make_mesh(pcod, c("X", "Y"), n_knots = 50, type = "kmeans")
 #' plot(mesh)
 #'
 #' \donttest{
@@ -88,15 +84,27 @@ make_mesh <- function(data, xy_cols,
     cli_abort(msg)
   }
 
+  if (!is.character(xy_cols) || length(xy_cols) != 2L) {
+    cli_abort("`xy_cols` must be a character vector of two column names.")
+  }
+  missing_cols <- setdiff(xy_cols, names(data))
+  if (length(missing_cols)) {
+    cli_abort("Column{?s} {.val {missing_cols}} in `xy_cols` {?is/are} not in `data`.")
+  }
+  non_numeric <- xy_cols[!vapply(xy_cols, function(x) is.numeric(data[[x]]), logical(1L))]
+  if (length(non_numeric)) {
+    cli_abort("Column{?s} {.val {non_numeric}} in `xy_cols` must be numeric.")
+  }
+
   all_x_non_na <- sum(is.na(data[[xy_cols[[1]]]])) == 0L
   all_y_non_na <- sum(is.na(data[[xy_cols[[2]]]])) == 0L
   if (!all_x_non_na || !all_y_non_na) {
-    msg <- c("Some coordinates in `xy_cols` were NA.", "
-      Remove or fix these rows before proceeding.")
+    msg <- c("Some coordinates in `xy_cols` were NA.",
+      "Remove or fix these rows before proceeding.")
     cli_abort(msg)
   }
 
-  if (max(data[[xy_cols[1]]] > 1e4) || max(data[[xy_cols[2]]] > 1e4)) {
+  if (max(abs(data[[xy_cols[1]]])) > 1e4 || max(abs(data[[xy_cols[2]]])) > 1e4) {
     msg <- paste0(
       "The x or y column values are fairly large. ",
       "This can cause estimation problems since the spatial range ",
@@ -109,10 +117,9 @@ make_mesh <- function(data, xy_cols,
   type <- match.arg(type)
   if (!missing(n_knots) && type == "cutoff") {
     msg <- paste0(
-      "`n_knots` specified but `type = 'cutoff'. ",
-      "The default mesh type now uses a `cutoff` ",
-      "intead of the number of knots. You can obtain the previous default ",
-      "mesh type with `type = 'kmeans'`."
+      "`n_knots` specified but `type = 'cutoff'`. ",
+      "Use `cutoff` with `type = 'cutoff'` or use `n_knots` with ",
+      "`type = 'kmeans'`."
       )
     cli_abort(msg)
   }
@@ -131,14 +138,14 @@ make_mesh <- function(data, xy_cols,
 
   if (is.null(mesh)) {
     if (type == "kmeans") {
-      if (n_knots >= nrow(loc_xy)) {
+      n_unique <- nrow(unique(loc_xy))
+      if (n_knots >= n_unique) {
         cli_warn(
-          "Reducing `n_knots` to be one less than the number of data points."
+          "Reducing `n_knots` to be one less than the number of unique locations."
         )
-        n_knots <- nrow(loc_xy) - 1
+        n_knots <- n_unique - 1
       }
-      set.seed(seed)
-      knots <- stats::kmeans(x = loc_xy, centers = n_knots)
+      knots <- with_seed(seed, stats::kmeans(x = loc_xy, centers = n_knots))
       loc_centers <- knots$centers
       if (!is.null(convex) || !is.null(concave)) {
         nch <- fmesher::fm_nonconvex_hull(loc_xy, convex = convex, concave = concave)
@@ -149,7 +156,7 @@ make_mesh <- function(data, xy_cols,
     } else if (type == "cutoff") {
       if (!is.null(convex) || !is.null(concave)) {
         nch <- fmesher::fm_nonconvex_hull(loc_xy, convex = convex, concave = concave)
-        mesh <- fmesher_func(loc_centers, refine = list(), cutoff = cutoff, boundary = nch, extend = list(), ...)
+        mesh <- fmesher_func(loc_xy, refine = list(), cutoff = cutoff, boundary = nch, extend = list(), ...)
       } else {
         mesh <- fmesher_func(loc_xy, refine = list(), cutoff = cutoff, extend = list(), ...)
       }
@@ -167,6 +174,14 @@ make_mesh <- function(data, xy_cols,
   # identical(as.matrix(spde2$g1), as.matrix(spde_inla$param.inla$M1))
   # identical(as.matrix(spde2$g2), as.matrix(spde_inla$param.inla$M2))
   A <- fmesher::fm_basis(mesh, loc = loc_xy)
+  n_outside <- sum(Matrix::rowSums(A) == 0)
+  if (n_outside > 0L) {
+    msg <- c(
+      "{n_outside} of {nrow(loc_xy)} data location{?s} {?is/are} outside the mesh.",
+      "i" = "These observations will have no spatial or spatiotemporal random effect. Use a mesh that covers all of the data."
+    )
+    cli_warn(msg, class = "sdmTMB_mesh_outside_warning")
+  }
 
   fake_data <- data
   fake_data[["sdm_spatial_id"]] <- seq(1, nrow(fake_data))
@@ -186,6 +201,23 @@ make_mesh <- function(data, xy_cols,
     loc_centers = loc_centers, A_st = A,
     sdm_spatial_id = fake_data$sdm_spatial_id
   ), class = "sdmTMBmesh")}
+
+# like withr::with_seed(): evaluate `code` with a seed, then restore the
+# caller's RNG state (or its absence)
+with_seed <- function(seed, code) {
+  env <- globalenv()
+  had_seed <- exists(".Random.seed", envir = env, inherits = FALSE)
+  if (had_seed) old_seed <- get(".Random.seed", envir = env, inherits = FALSE)
+  on.exit({
+    if (had_seed) {
+      assign(".Random.seed", old_seed, envir = env)
+    } else if (exists(".Random.seed", envir = env, inherits = FALSE)) {
+      rm(".Random.seed", envir = env)
+    }
+  })
+  set.seed(seed)
+  code
+}
 
 binary_search_knots <- function(loc_xy,
                                 n_knots,
@@ -218,6 +250,16 @@ binary_search_knots <- function(loc_xy,
   }
   cat("cutoff =", pretty_cutoff, "| knots =", mesh$n, "\n")
   mesh
+}
+
+# edge lengths between vertices that receive data; ignores any outer buffer
+mesh_edge_lengths <- function(spde) {
+  tv <- spde$mesh$graph$tv
+  used <- Matrix::colSums(spde$A_st) > 0
+  e <- rbind(tv[, 1:2], tv[, 2:3], tv[, c(3, 1)])
+  e <- e[used[e[, 1]] & used[e[, 2]], , drop = FALSE]
+  loc <- spde$mesh$loc[, 1:2, drop = FALSE]
+  sqrt(rowSums((loc[e[, 1], , drop = FALSE] - loc[e[, 2], , drop = FALSE])^2))
 }
 
 #' @param x Output from [make_mesh()].

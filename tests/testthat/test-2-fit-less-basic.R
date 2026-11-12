@@ -188,7 +188,7 @@ test_that("profile option works", {
 test_that("The mapping off spatial and spatiotemporal fields works.", {
   skip_on_cran()
   d <- subset(pcod, year >= 2013)
-  pcod_spde <- make_mesh(d, c("X", "Y"), cutoff = 50)
+  pcod_spde <- make_mesh(d, c("X", "Y"), cutoff = 30)
   m <- sdmTMB(density ~ 0 + as.factor(year),
     data = d, time = "year", mesh = pcod_spde,
     family = tweedie(link = "log")
@@ -207,7 +207,7 @@ test_that("The mapping off spatial and spatiotemporal fields works.", {
 
   # basic lm test:
   dpos <- d[d$density > 0, ]
-  pcod_spde <- make_mesh(dpos, c("X", "Y"), cutoff = 50)
+  pcod_spde <- make_mesh(dpos, c("X", "Y"), cutoff = 30)
   m.sdmTMB.map <- sdmTMB(log(density) ~ depth, data = dpos,
     family = gaussian(), spatial = "off", spatiotemporal = "off",
     mesh = pcod_spde)
@@ -221,7 +221,7 @@ test_that("The mapping off spatial and spatiotemporal fields works.", {
   # Bernoulli:
   pcod_binom <- pcod_2011
   pcod_binom$present <- ifelse(pcod_binom$density > 0, 1L, 0L)
-  pcod_spde <- make_mesh(pcod_binom, c("X", "Y"), cutoff = 50)
+  pcod_spde <- make_mesh(pcod_binom, c("X", "Y"), cutoff = 30)
   m.sdmTMB.map <- sdmTMB(present ~ depth, data = pcod_binom,
     family = binomial(link = "logit"), spatial = "off", spatiotemporal = "off", mesh = pcod_spde)
   m.stats.glm <- stats::glm(present ~ depth, data = pcod_binom,
@@ -634,4 +634,13 @@ test_that("Prediction outside fitted coordinates gets warned about #285", {
   nd <- qcs_grid_small
   nd$Y <- nd$Y * 10
   expect_warning(p <- predict(fit, newdata = nd), regexp = "coordinates")
+})
+
+test_that("previous_fit starts from the previous estimates", {
+  skip_on_cran()
+  fit <- sdmTMB(density ~ depth_scaled, data = pcod_2011, mesh = pcod_mesh_2011,
+    family = tweedie())
+  fit2 <- update(fit, previous_fit = fit)
+  expect_equal(logLik(fit2), logLik(fit))
+  expect_lte(fit2$model$iterations, 2L)
 })

@@ -11,8 +11,6 @@ on:
         - 'macos'
         - 'linux'
         - 'windows'
-        - 'valgrind'
-        - 'clang-asan'
 
 jobs:
   check:

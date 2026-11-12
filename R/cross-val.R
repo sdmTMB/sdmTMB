@@ -444,7 +444,7 @@ sdmTMB_cv <- function(
       mesh_train <- do.call(make_mesh, mesh_args)
       mesh_args[["data"]] <- data
       mesh_args[["mesh"]] <- mesh_train$mesh
-      mesh <- do.call(make_mesh, mesh_args)
+      mesh <- make_mesh_quietly(mesh_args)
     } else {
       mesh <- spde
     }
@@ -485,7 +485,7 @@ sdmTMB_cv <- function(
         mesh_train <- do.call(make_mesh, mesh_args)
         mesh_args[["data"]] <- data
         mesh_args[["mesh"]] <- mesh_train$mesh
-        mesh <- do.call(make_mesh, mesh_args)
+        mesh <- make_mesh_quietly(mesh_args)
       } else {
         mesh <- spde
       }
@@ -503,7 +503,9 @@ sdmTMB_cv <- function(
         data = data, formula = formula, time = time, mesh = mesh, offset = .offset,
         weights = user_weights, previous_fit = if (use_initial_fit) fit1 else NULL
       ), dot_args)
-      object <- do.call(sdmTMB, args)
+      # point to profile_breakpt() once (from the first fold), not for every fold
+      object <- withCallingHandlers(do.call(sdmTMB, args),
+        sdmTMB_breakpt_message = function(cnd) if (k > 1L) invokeRestart("muffleMessage"))
     }
 
     # rows `sdmTMB()` omitted for missing values are not validated
@@ -568,7 +570,6 @@ sdmTMB_cv <- function(
       parameters = get_pars(object),
       map = object$tmb_map,
       random = object$tmb_random,
-      backend = backend_sdmTMB(object),
       silent = TRUE
     )
     r <- scoring_obj$report(object$tmb_obj$env$last.par.best)
@@ -672,7 +673,7 @@ cv_param_sampler <- function(object, predictive) {
   sdr <- object$sd_report
   if (has_re) {
     if (is.null(sdr[["jointPrecision"]])) {
-      sdr <- sdreport_sdmTMB(obj, getJointPrecision = TRUE)
+      sdr <- RTMB::sdreport(obj, getJointPrecision = TRUE)
     }
     return(function(n) rmvnorm_prec(par_best, sdr, n))
   }
@@ -920,4 +921,13 @@ cv_to_waywiser <- function(object,
   points <- sf::st_transform(points, utm_crs)
 
   points
+}
+
+# held-out points can fall outside a mesh built on the training data; that's
+# expected in cross-validation, so don't warn every fold
+make_mesh_quietly <- function(mesh_args) {
+  withCallingHandlers(
+    do.call(make_mesh, mesh_args),
+    sdmTMB_mesh_outside_warning = function(w) invokeRestart("muffleWarning")
+  )
 }

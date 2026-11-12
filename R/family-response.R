@@ -84,7 +84,7 @@
 }
 
 # Censored binomial and beta-binomial counts, trials, and bounds on the count scale, as
-# exact integers that both backends can use directly. Values within
+# exact integers. Values within
 # floating-point error of an integer (e.g., proportions times trials) are
 # snapped to it. Otherwise counts and trials must be integers. A bound `U`
 # can be any real number and means the integer count `floor(U)`; `NA`
@@ -148,6 +148,16 @@
   censored_nb <- single & family_name %in% c("censored_nbinom1", "censored_nbinom2")
   if (any(y_i[censored_nb] != round(y_i[censored_nb]), na.rm = TRUE)) {
     cli_abort("Censored negative binomial rows must have whole-number counts.")
+  }
+  # As glm() and glmmTMB, warn rather than abort; includes delta positive parts
+  count_families <- c("poisson", "censored_poisson", "nbinom1", "nbinom2",
+    "truncated_nbinom1", "truncated_nbinom2", "compois")
+  component2 <- family_spec$components[family_spec$components$component == 2L, ]
+  family_name2 <- component2$family_name[match(row_family, component2$family_id)]
+  count <- (single & family_name %in% count_families) |
+    (!single & y_i > 0 & family_name2 %in% count_families)
+  if (any(!.is_whole_number(y_i[count]), na.rm = TRUE)) {
+    cli_warn("Non-integer values in a count response.")
   }
   invisible(NULL)
 }

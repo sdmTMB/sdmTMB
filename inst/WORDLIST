@@ -219,6 +219,7 @@ tvc
 umbers
 un
 unsampled
+underdispersed
 valgrind
 visreg
 warmup
@@ -233,3 +234,5 @@ nonlocal
 untruncated
 neighbour
 neighbours
+NLL
+cutpoint's

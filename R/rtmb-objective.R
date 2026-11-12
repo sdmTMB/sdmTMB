@@ -20,8 +20,8 @@
 #   parameter would be fixed at whatever its value was at taping time.
 #   Data-dependent cases (e.g. y == 0) use logical indexing on data, not
 #   if/else on AD values.
-# - `par` keeps the C++ parameter names and shapes, so `map`, `random`,
-#   starting values, and post-fit methods work the same with either backend.
+# - `par` keeps the parameter names and shapes of the removed C++ template, so
+#   `map`, `random`, starting values, and saved fits keep working.
 #   `theta` (from rtmb_transform()) holds natural-scale versions, computed
 #   once per evaluation.
 # - Matrices of rows: rows are observations (`_i`) or vertices (`_s`),
@@ -39,8 +39,9 @@
 #   work for both AD and plain numbers. Base R random generators are fine
 #   in simulation paths.
 #
-# Checking changes: the RTMB tests compare against the C++ template with
-# expect_rtmb_matches_tmb(); `make reference-check` compares saved reference
+# Checking changes: the tests compare against objective values frozen from
+# the removed C++ template (expect_frozen_snapshot() in
+# tests/testthat/helper-rtmb.R); `make reference-check` compares saved reference
 # fits.
 
 # The objective as a closure over `prepared` alone, built in its own frame so
@@ -67,10 +68,13 @@ rtmb_objective <- function(par, prepared, adreport = NULL) {
 # plain numbers. Equivalent to `obj$report()` without building (taping) an AD
 # object, which for large prediction grids dominates time and memory.
 # `deviance = TRUE` also computes deviance residuals (`devresid`), which are
-# otherwise reported as zeros.
-rtmb_report_values <- function(data, par, deviance = FALSE) {
+# otherwise reported as zeros. `likelihood = FALSE` skips the observation
+# densities (reporting `jnll_obs` as zeros; `jnll` then omits them), which
+# prediction does not need.
+rtmb_report_values <- function(data, par, deviance = FALSE, likelihood = TRUE) {
   prepared <- rtmb_prepare(data)
-  prepared$deviance <- deviance
+  prepared$deviance <- deviance && likelihood
+  prepared$likelihood <- likelihood
   rtmb_evaluate(par, prepared)$reports
 }
 
@@ -188,11 +192,12 @@ rtmb_transform <- function(par, prepared) {
     # Time-varying coefficients
     sigma_V = sigma_V,
     rho_time = rho_time,
-    # Threshold covariate: breakpoint slope and cut, or logistic s50, s95,
-    # and maximum, with s95 > s50.
+    # Threshold covariate: breakpoint slope (positive if estimated in log
+    # space) and cut, or logistic s50, s95, and maximum, with s95 > s50.
     threshold = switch(prepared$threshold,
       none = list(),
       breakpt = list(s_slope = b[1L, ], s_cut = b[2L, ]),
+      positive_breakpt = list(s_slope = exp(b[1L, ]), s_cut = b[2L, ]),
       logistic = list(s50 = b[1L, ], s95 = b[1L, ] + exp(b[2L, ]),
         s_max = b[3L, ])),
     # Observation families

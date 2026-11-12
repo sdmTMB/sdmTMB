@@ -20,10 +20,7 @@ test_that("collapsing spatial and spatiotemporal fields works", {
     phi = 0.2,
     sigma_O = 0,
     seed = 7,
-    B = c(0.2, -0.4), # B0 = intercept, B1 = a1 slope
-    # TMB and RTMB draw different Tweedie values from the same seed; pin the
-    # backend so the data (and whether fields collapse) don't depend on it
-    control = sdmTMBcontrol(backend = "rtmb")
+    B = c(0.2, -0.4) # B0 = intercept, B1 = a1 slope
   )
   # create some fake 0s
   sim_dat$observed[sample(1:500, size = 50, replace = FALSE)] <- 0
@@ -121,8 +118,7 @@ test_that("custom collapse threshold works", {
   )
 
   # With a threshold comfortably above the fitted sigma_E, should collapse.
-  # The fitted sigma_E itself is not asserted: TMB and RTMB `simulate()`
-  # consume the RNG stream in different orders, so it varies by backend.
+  # The fitted sigma_E itself is not asserted: it depends on the simulated draw.
   sigma_E_est <- tidy(fit_default, "ran_pars")$estimate[
     tidy(fit_default, "ran_pars")$term == "sigma_E"]
 
@@ -216,7 +212,7 @@ test_that("collapse checks ignore disabled delta fields", {
     collapse_spatial_variance_threshold = 0.01,
     collapse_spatiotemporal_ar1 = FALSE,
     collapse_ar1_threshold = 0.01,
-    delta = TRUE,
+    has_two_components = TRUE,
     silent = TRUE
   )
 
@@ -242,7 +238,7 @@ test_that("collapse checks can disable one delta field", {
     collapse_spatial_variance_threshold = 0.01,
     collapse_spatiotemporal_ar1 = FALSE,
     collapse_ar1_threshold = 0.01,
-    delta = TRUE,
+    has_two_components = TRUE,
     silent = TRUE
   )
 
@@ -275,7 +271,7 @@ test_that("spatiotemporal AR1 collapse respects rho boundaries", {
     collapse_spatial_variance_threshold = 0.01,
     collapse_spatiotemporal_ar1 = TRUE,
     collapse_ar1_threshold = 0.01,
-    delta = FALSE,
+    has_two_components = FALSE,
     silent = TRUE
   )
 
@@ -321,7 +317,7 @@ test_that("spatiotemporal AR1 collapse handles delta components", {
     collapse_spatial_variance_threshold = 0.01,
     collapse_spatiotemporal_ar1 = TRUE,
     collapse_ar1_threshold = 0.01,
-    delta = TRUE,
+    has_two_components = TRUE,
     silent = TRUE
   )
 
@@ -355,7 +351,7 @@ test_that("variance collapse takes precedence over AR1 collapse", {
     collapse_spatial_variance_threshold = 0.01,
     collapse_spatiotemporal_ar1 = TRUE,
     collapse_ar1_threshold = 0.01,
-    delta = FALSE,
+    has_two_components = FALSE,
     silent = TRUE
   )
 
@@ -379,7 +375,7 @@ test_that("spatiotemporal AR1 collapse ignores unavailable rho estimates", {
     collapse_spatial_variance_threshold = 0.01,
     collapse_spatiotemporal_ar1 = TRUE,
     collapse_ar1_threshold = 0.01,
-    delta = TRUE,
+    has_two_components = TRUE,
     silent = TRUE
   )
 
@@ -425,4 +421,41 @@ test_that("spatiotemporal AR1 collapse refits and predicts", {
   fit_rw <- fit_at_rho(0.99)
   expect_identical(fit_rw$spatiotemporal, "rw")
   expect_equal(nrow(predict(fit_rw)), nrow(pcod_2011))
+})
+
+test_that("collapse refit keeps row vectors aligned after omitting NA rows", {
+  skip_on_cran()
+  d <- pcod_2011
+  d$depth_scaled[c(3, 10)] <- NA
+  mesh <- make_mesh(d, c("X", "Y"), cutoff = 20)
+  w <- rep(c(1, 2), length.out = nrow(d))
+  fit <- sdmTMB(density ~ depth_scaled, data = d, mesh = mesh, family = tweedie(),
+    weights = w, control = sdmTMBcontrol(collapse_spatial_variance = TRUE,
+      collapse_spatial_variance_threshold = 100))
+  expect_identical(fit$spatial, "off")
+  expect_equal(nrow(fit$data), nrow(d) - 2L)
+  expect_equal(c(fit$tmb_data$weights_i), w[-c(3, 10)])
+  # the stored call keeps the caller's expressions, not the refit's inlined values
+  expect_identical(fit$call$data, quote(d))
+  expect_identical(fit$call$mesh, quote(mesh))
+  expect_identical(fit$call$weights, quote(w))
+  expect_identical(fit$call$spatial, "off")
+  expect_match(capture.output(print(fit)), "^Data: d$", all = FALSE)
+})
+
+test_that("collapse refit works with arguments forwarded through `...`", {
+  skip_on_cran()
+  inner <- function(...) sdmTMB(density ~ depth_scaled, ...)
+  outer <- function(...) inner(...)
+  fit <- local({
+    dl <- pcod_2011
+    ml <- make_mesh(dl, c("X", "Y"), cutoff = 20)
+    fam <- tweedie()
+    ctl <- sdmTMBcontrol(collapse_spatial_variance = TRUE,
+      collapse_spatial_variance_threshold = 100)
+    outer(data = dl, mesh = ml, family = fam, control = ctl)
+  })
+  expect_identical(fit$spatial, "off")
+  expect_equal(nrow(fit$data), nrow(pcod_2011))
+  expect_lt(nchar(deparse1(fit$call)), 500L)
 })

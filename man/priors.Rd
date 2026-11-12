@@ -57,7 +57,11 @@ the parameter has support \verb{-1 < ar1_rho < 1}.}
 \item{tweedie_p}{A \code{normal()} prior for the Tweedie power parameter. Note the
 parameter has support \verb{1 < tweedie_p < 2} so choose a mean appropriately.}
 
-\item{b}{\code{normal()} priors for the main population-level 'beta' effects.}
+\item{b}{\code{normal()} priors for the main population-level 'beta' effects.
+In delta models, the priors apply to both components, so both components
+must then have the same fixed-effect columns. For priors on one
+component's coefficients, use \code{custom} with \code{par$b_j} (first component)
+or \code{par$b_j2} (second component).}
 
 \item{sigma_V}{\code{gamma_cv()} or \code{lognormal_prior()} priors for any
 time-varying parameter SDs. Supply a single prior to apply it to all
@@ -65,7 +69,8 @@ time-varying coefficients or a vector with one element per coefficient
 (\code{NA} for no prior). In delta models, the priors apply to both components.}
 
 \item{threshold_breakpt_slope}{A \code{normal()} prior for the slope of the
-linear (hockey stick) function.}
+linear (hockey stick) function. With \code{breakpt(positive = TRUE)}, this
+applies to the positive slope, not its log.}
 
 \item{threshold_breakpt_cut}{A \code{normal()} prior for the cutoff of the
 linear (hockey stick) function.}
@@ -80,7 +85,7 @@ f(x) = 0.95.}
 f(x) is maximized.}
 
 \item{custom}{Optional function of \verb{(par, theta)} returning one or more log
-density contributions (RTMB backend only; see \strong{Custom priors} below).}
+density contributions (see \strong{Custom priors} below).}
 
 \item{custom_log_jacobian}{Optional function of \verb{(par, theta)} returning the
 log absolute Jacobian for \code{custom}. Only used if \code{bayesian = TRUE}. Requires
@@ -153,7 +158,7 @@ as \code{\link[stats:dlnorm]{stats::dlnorm()}}. The median is \code{exp(meanlog)
 }
 \section{Custom priors}{
 
-With the RTMB backend (the default), \code{custom} adds arbitrary log densities
+\code{custom} adds arbitrary log densities
 to the joint objective. The function is called as \code{custom(par, theta)}, where
 \code{par} is the list of raw (internal) parameters and \code{theta} is a list of
 natural-scale versions of them. See \code{\link[=get_prior_parameters]{get_prior_parameters()}} for their

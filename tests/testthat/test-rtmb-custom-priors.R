@@ -1,4 +1,4 @@
-rtmb_ctl <- function(...) sdmTMBcontrol(backend = "rtmb", ...)
+rtmb_ctl <- function(...) sdmTMBcontrol(...)
 
 custom_prior_data <- function(n = 60, seed = 1) {
   set.seed(seed)
@@ -15,12 +15,6 @@ test_that("custom prior arguments are validated", {
     "requires `custom`")
   expect_null(sdmTMBpriors()$custom)
   d <- custom_prior_data()
-  expect_error(
-    sdmTMB(y ~ x, data = d, spatial = "off", do_fit = FALSE,
-      control = sdmTMBcontrol(backend = "tmb"),
-      priors = sdmTMBpriors(custom = function(par, theta) 0)),
-    "rtmb"
-  )
   fit <- function(custom) {
     sdmTMB(y ~ x, data = d, spatial = "off", do_fit = FALSE,
       control = rtmb_ctl(), priors = sdmTMBpriors(custom = custom))
@@ -80,7 +74,10 @@ test_that("a custom normal prior on b matches the built-in prior", {
   c2 <- fit(custom)
   expect_equal(c2$model$par, b2$model$par, tolerance = 1e-6)
   expect_equal(c2$model$objective, b2$model$objective, tolerance = 1e-8)
-  expect_sdreport_matches(c2, b2)
+  for (type in c("fixed", "report")) {
+    expect_equal(summary(c2$sd_report, type), summary(b2$sd_report, type),
+      tolerance = 1e-5)
+  }
 
   terms <- get_prior_densities(c2)
   expect_equal(nrow(terms), 4L)
@@ -201,9 +198,6 @@ test_that("custom prior parameters are listed with labels and map status", {
   expect_equal(p$value[p$expression == "theta$sigma_O[1, 1]"], 0)
   expect_false(any(p$status == "fixed"))
   expect_error(get_prior_densities(m), "no custom priors")
-  expect_error(get_prior_parameters(
-    sdmTMB(y ~ x, data = d, spatial = "off", do_fit = FALSE,
-      control = sdmTMBcontrol(backend = "tmb"))), "rtmb")
 })
 
 test_that("custom priors persist through post-fit methods", {
@@ -252,7 +246,7 @@ test_that("cross-validation refits keep custom priors but scores exclude them", 
   d$fold <- rep(1:2, length.out = nrow(d))
   d$X <- stats::runif(nrow(d))
   d$Y <- stats::runif(nrow(d))
-  mesh <- make_mesh(d, c("X", "Y"), n_knots = 10, type = "kmeans")
+  mesh <- make_mesh(d, c("X", "Y"), n_knots = 30, type = "kmeans")
   cv <- function(priors = sdmTMBpriors()) {
     sdmTMB_cv(y ~ x, data = d, mesh = mesh, spatial = "off", fold_ids = d$fold,
       control = rtmb_ctl(), priors = priors, predictive = "mle-eb",
@@ -292,7 +286,7 @@ test_that("theta$sigma_E is zero without a spatiotemporal field", {
   expect_equal(m$fn(p) - base$fn(p), -stats::dnorm(0, 0, 0.1, log = TRUE),
     ignore_attr = TRUE)
   expect_equal(m$gr(p), base$gr(p))
-  # sigma_E is still reported, as with the TMB backend
+  # sigma_E is still reported
   expect_true(all(base$report(base$env$last.par)$sigma_E > 0))
 })
 
