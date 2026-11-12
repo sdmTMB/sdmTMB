@@ -161,6 +161,8 @@ caic_one <- function(object, what = c("caic", "edf"), table = FALSE) {
     return(invisible(NULL))
   }
 
+  # env$spHess() below doesn't retape a saved model's null pointer
+  reinitialize(object)
   tmb_data <- object$tmb_data
 
   ## Ensure profile = NULL
