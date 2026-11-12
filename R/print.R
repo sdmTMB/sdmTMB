@@ -139,7 +139,7 @@ print_smooth_effects <- function(x, m = 1, silent = FALSE) {
       if (grepl("^t2\\(", sm_names_orig[i])) {
         paste0("t2(", sm_names[i], ")")
       } else {
-        paste0("s", sm_names[i])
+        paste0("s", sub("\\):", ":", sm_names[i])) # `by` smooths: "s(x):f" to "sx:f"
       }
     })
     # class of each penalized block, from its term (a `by` term has several bases)

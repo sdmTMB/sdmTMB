@@ -519,6 +519,6 @@ test_that("smoother linear terms are named with by smooths and cyclic smooths", 
   # one linear column per `by` level, none for the cyclic smooth:
   expect_identical(
     tidy(fit)$term[-1],
-    c(paste0("sdepth_scaled):fyear", c(2011, 2013, 2015, 2017)), "sY")
+    c(paste0("sdepth_scaled:fyear", c(2011, 2013, 2015, 2017)), "sY")
   )
 })

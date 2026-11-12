@@ -1,5 +1,9 @@
 # sdmTMB (development version)
 
+* Smoothers with `by` variables now have linear terms named like
+  `sdepth:fyear2011` in `tidy()` and `print()` instead of
+  `sdepth):fyear2011`.
+
 * Fix the names of smoothers' linear terms in `tidy()` and `print()` when
   a model has a `by` smoother and a cyclic (`bs = "cc"`) or shrinkage
   (`bs = "cs"`) smoother. They fell back to generic `scovariate-*` names or
