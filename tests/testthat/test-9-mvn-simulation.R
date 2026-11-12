@@ -330,6 +330,25 @@ test_that("spread_sims() works without random effects", {
     tidy(m)$std.error, tolerance = 0.05)
 })
 
+test_that("spread_sims() labels draws when parameters precede b_j", {
+  skip_on_cran()
+  # ln_H_input comes before b_j in the parameter vector
+  m <- sdmTMB(density ~ depth_scaled, data = pcod_2011, mesh = pcod_mesh_2011,
+    family = tweedie(), anisotropy = TRUE)
+  set.seed(1)
+  x <- spread_sims(m, nsim = 2000)
+  expect_equal(unname(sapply(x[c("X.Intercept.", "depth_scaled")], sd)),
+    tidy(m)$std.error, tolerance = 0.1)
+
+  # smoother linear terms and mapped coefficients get their own names
+  m <- sdmTMB(density ~ depth_scaled + s(depth_scaled2, k = 4),
+    data = pcod_2011, spatial = "off", family = tweedie(),
+    control = sdmTMBcontrol(map = list(b_j = factor(c(1, NA)))))
+  x <- expect_no_warning(spread_sims(m, nsim = 2))
+  expect_true(all(c("X.Intercept.", "sdepth_scaled2") %in% names(x)))
+  expect_false("depth_scaled" %in% names(x))
+})
+
 test_that("predict() can draw random effects only with sample_fe = FALSE", {
   skip_on_cran()
   m <- sdmTMB(
