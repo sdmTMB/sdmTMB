@@ -142,7 +142,9 @@ print_smooth_effects <- function(x, m = 1, silent = FALSE) {
         paste0("s", sm_names[i])
       }
     })
-    sm_classes <- unlist(sm$classes)
+    # class of each penalized block, from its term (a `by` term has several bases)
+    basis_classes <- rep(unlist(sm$classes), lengths(sm$basis_out))
+    sm_classes <- basis_classes[sm$zs_basis]
 
     xx <- lapply(seq_along(sm_names_bs), function(i) {
       .x <- sm_names_bs[i]

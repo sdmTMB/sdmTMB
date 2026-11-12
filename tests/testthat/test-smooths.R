@@ -507,3 +507,18 @@ test_that("print works with t2()", {
   expect_true(any(grepl("^sd__s\\(year\\)$", ran_pars$term)))
   expect_true(any(grepl("^sd__t2\\(X,Y\\)_1$", ran_pars$term)))
 })
+
+test_that("smoother linear terms are named with by smooths and cyclic smooths", {
+  d <- pcod_2011
+  d$fyear <- factor(d$year)
+  fit <- sdmTMB(
+    density ~ s(depth_scaled, by = fyear, k = 4) + s(X, bs = "cc", k = 5) +
+      s(Y, k = 4),
+    data = d, spatial = "off", family = tweedie()
+  )
+  # one linear column per `by` level, none for the cyclic smooth:
+  expect_identical(
+    tidy(fit)$term[-1],
+    c(paste0("sdepth_scaled):fyear", c(2011, 2013, 2015, 2017)), "sY")
+  )
+})
