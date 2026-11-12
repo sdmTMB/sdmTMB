@@ -264,9 +264,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     )
   }
 
-  if (x$tmb_data$has_smooths) {
-    p <- print_smooth_effects(x, silent = FALSE, m = model)
-    mm <- p$smooth_effects
+  sm_p <- if (x$tmb_data$has_smooths) print_smooth_effects(x, silent = FALSE, m = model)
+  if (!is.null(sm_p$smooth_effects)) {
+    mm <- sm_p$smooth_effects
     out <- rbind(
       out,
       data.frame(
@@ -572,9 +572,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
 
   # optional smooth SDs models with smooths
-  if (x$tmb_data$has_smooths) {
-    p <- print_smooth_effects(x, m = model, silent = TRUE)
-    ln_sds <- p$ln_sd_estimates
+  sm_p <- if (x$tmb_data$has_smooths) print_smooth_effects(x, m = model, silent = TRUE)
+  if (!is.null(sm_p$ln_sd_estimates)) {
+    ln_sds <- sm_p$ln_sd_estimates
     # Convert from log-scale to natural scale and update term names
     term_names <- gsub("^ln_SD_s\\(", "sd__s(", row.names(ln_sds))
     term_names <- gsub("^ln_SD_t2\\(", "sd__t2(", term_names)
@@ -593,7 +593,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     if (!"group_name" %in% names(out_re)) out_re$group_name <- rep(NA, nrow(out_re))
     if (!is.null(x$smooth_edf)) {
       out_re$edf <- rep(NA_real_, nrow(out_re))
-      ln_sds_df$edf <- as.numeric(x$smooth_edf[, model])
+      ln_sds_df$edf <- as.numeric(x$smooth_edf[smooth_rows_active(x, model, "block_active"), model])
     }
     out_re <- rbind(out_re, ln_sds_df)
   }

@@ -1,7 +1,11 @@
 # sdmTMB (development version)
 
-* Delta models with smoothers can now have different parametric terms in
-  each component. The smoothers must still be the same in both components.
+* The components of delta models can now have different smoothers (and
+  different parametric terms with smoothers). Previously, both formulas had
+  to be identical if either included a smoother.
+
+* `visreg_delta(model = 1)` now works when the second component uses
+  variables the first doesn't (e.g., `list(y ~ depth, y ~ depth + year)`).
 
 * `get_index_sims()` now returns `log_est` as `log(est)`. It was the mean of
   the log draws while `est` was their median (by default), so

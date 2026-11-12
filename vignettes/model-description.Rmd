@@ -902,8 +902,6 @@ sdmTMB(
 
 All other arguments are shared between the linear predictors.
 
-Currently if delta models contain smoothers, both components must have the same smoothers (in the same order), although other terms can differ.
-
 # Optimization
 
 ## Optimization details

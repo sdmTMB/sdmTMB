@@ -213,16 +213,19 @@ caic_one <- function(object, what = c("caic", "edf"), table = FALSE) {
     ## Figure out group for each random-effect coefficient
     group <- names(object$last.par.best[obj$env$random])
 
+    # a name for each estimated b_smooth coefficient of component `model`
     convert_bsmooth2names <- function(object, model = 1) {
       sn <- row.names(print_smooth_effects(object, m = model, silent = TRUE)$smooth_sds)
       sn <- gsub("^sd", "", sn)
-      dms <- object$smoothers$sm_dims
+      dms <- object$smoothers$sm_dims[smooth_rows_active(object, model, "block_active")]
       unlist(lapply(seq_along(dms), \(i) rep(sn[i], dms[i])))
-
     }
     s_groups <- convert_bsmooth2names(object)
-    # smoothers always shared in delta models
-    if (.object_has_two_components(object, caller = "`cAIC()`")) s_groups <- c(paste0("1LP-", s_groups), paste0("2LP-", s_groups))
+    if (.object_has_two_components(object, caller = "`cAIC()`")) {
+      s_groups2 <- convert_bsmooth2names(object, model = 2)
+      s_groups <- c(if (length(s_groups)) paste0("1LP-", s_groups),
+        if (length(s_groups2)) paste0("2LP-", s_groups2))
+    }
     group[group == "b_smooth"] <- s_groups
     group <- factor(group)
 

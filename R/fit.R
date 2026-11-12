@@ -1048,18 +1048,25 @@ sdmTMB <- function(
     trms <- all_terms(reformulas::nobars(f))
     trms[get_smooth_terms(trms)]
   })
-  if (has_two_components && !identical(smooth_terms[[1]], smooth_terms[[2]])) {
-    cli_abort(paste0(
-      "For now, if delta models contain smoothers, both components ",
-      "must have the same smoothers (in the same order)."
-    ))
+  # Components share one set of smoother bases (the union of their smoothers),
+  # and a component's unused smoothers are mapped off (see `smooth_active`):
+  all_smooth_terms <- unique(unlist(smooth_terms))
+  formula_no_bars <- if (length(all_smooth_terms)) {
+    stats::reformulate(all_smooth_terms)
+  } else {
+    reformulas::nobars(formula[[1]])
   }
-
-  # smoothers are shared by all components, so parse them once:
-  formula_no_bars <- reformulas::nobars(formula[[1]])
   sm <- parse_smoothers(formula = formula_no_bars, data = data, knots = knots)
   sm$formula_no_sm <- remove_s_and_t2(formula[[1]])
   sm$formula_no_bars <- formula_no_bars
+  if (sm$has_smooths) {
+    basis_active <- matrix(
+      vapply(smooth_terms, function(x) sm$xf_term %in% x, logical(length(sm$xf_term))),
+      ncol = n_m
+    )
+    sm$block_active <- basis_active[sm$zs_basis, , drop = FALSE]
+    sm$col_active <- basis_active[rep(seq_along(sm$xf_dims), sm$xf_dims), , drop = FALSE]
+  }
 
   y_i <- model.response(mf[[1]], "any")
 
@@ -1109,7 +1116,13 @@ sdmTMB <- function(
     tv_design <- .make_design(time_varying, data, "`time_varying`")
     X_rw_ik <- tv_design$X
     if (time_varying_type == "rw") {
-      X_fixed <- if (sm$has_smooths) lapply(X_ij, cbind, sm$Xs) else X_ij
+      X_fixed <- if (sm$has_smooths) {
+        lapply(seq_len(n_m), function(m) {
+          cbind(X_ij[[m]], sm$Xs[, sm$col_active[, m], drop = FALSE])
+        })
+      } else {
+        X_ij
+      }
       confounded <- vapply(X_fixed, rw_confounded, logical(1), X_rw = X_rw_ik)
       if (any(confounded)) {
         cli_warn(c(
@@ -1212,6 +1225,7 @@ sdmTMB <- function(
     proj_Zs = list(),
     proj_Xs = matrix(nrow = 0L, ncol = 0L),
     b_smooth_start = sm$b_smooth_start,
+    smooth_active = if (sm$has_smooths) sm$block_active * 1L else array(0L),
     proj_vector = matrix(0),
     do_predict = 0L,
     do_rsr = as.integer(isTRUE(control$get_rsr)),
@@ -1385,6 +1399,12 @@ sdmTMB <- function(
   if (sm$has_smooths) {
     tmb_random <- c(tmb_random, "b_smooth") # smooth random effects
     tmb_map <- unmap(tmb_map, c("b_smooth", "ln_smooth_sigma", "bs"))
+    if (!all(sm$block_active)) {
+      coef_active <- sm$block_active[rep(seq_along(sm$sm_dims), sm$sm_dims), , drop = FALSE]
+      tmb_map$b_smooth <- map_active(coef_active)
+      tmb_map$ln_smooth_sigma <- map_active(sm$block_active)
+      tmb_map$bs <- map_active(sm$col_active)
+    }
   }
 
   # SVC fields use the spatial range of every component:
@@ -1927,6 +1947,13 @@ find_missing_time <- function(x) {
 unmap <- function(x, v) {
   for (i in v) x[[i]] <- NULL
   x
+}
+
+# Map off the elements of a parameter where logical matrix `active` is FALSE
+map_active <- function(active) {
+  m <- seq_along(active)
+  m[!active] <- NA
+  factor(m)
 }
 
 # Map off the slices of parameter `x` (last dimension = model component) for

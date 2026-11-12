@@ -112,6 +112,15 @@ print_main_effects <- function(x, m = 1) {
   mm
 }
 
+# Which smoother rows (`"block_active"`: penalized blocks, as in
+# `ln_smooth_sigma`; `"col_active"`: linear columns, as in `bs`) component `m`
+# uses. Fits from before components could have different smoothers use all.
+smooth_rows_active <- function(x, m, what) {
+  active <- x$smoothers[[what]]
+  if (is.null(active)) return(TRUE)
+  active[, m]
+}
+
 print_smooth_effects <- function(x, m = 1, silent = FALSE) {
   sr <- x$sd_report
   sr_se <- as.list(sr, "Std. Error")
@@ -119,7 +128,8 @@ print_smooth_effects <- function(x, m = 1, silent = FALSE) {
   if (x$tmb_data$has_smooths) {
     bs_se <- round(sr_se$bs[, m], 2L)
     bs <- round(sr_est$bs[, m], 2L)
-    sm <- parse_smoothers(formula = x$formula[[m]], data = x$data)
+    # names for all shared smoothers; rows a component doesn't use are dropped below
+    sm <- parse_smoothers(formula = x$smoothers$formula_no_bars, data = x$data)
     sm_names_orig <- unlist(lapply(sm$Zs, function(x) attr(x, "s.label")))
     sm_names <- gsub("s\\(", "", sm_names_orig)
     sm_names <- gsub("t2\\(", "", sm_names)
@@ -265,6 +275,15 @@ print_smooth_effects <- function(x, m = 1, silent = FALSE) {
 
     if (!is.null(x$smooth_edf)) {
       re_sm_mat <- cbind(re_sm_mat, EDF = round(x$smooth_edf[, m], 2L))
+    }
+    blocks <- smooth_rows_active(x, m, "block_active")
+    if (!any(blocks)) { # this component has no smoothers
+      return(list(smooth_effects = NULL, smooth_sds = NULL, ln_sd_estimates = NULL))
+    }
+    re_sm_mat <- re_sm_mat[blocks, , drop = FALSE]
+    ln_re_sm_mat <- ln_re_sm_mat[blocks, , drop = FALSE]
+    if (!is.null(mm_sm)) {
+      mm_sm <- mm_sm[smooth_rows_active(x, m, "col_active"), , drop = FALSE]
     }
   } else {
     re_sm_mat <- NULL

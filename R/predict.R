@@ -527,6 +527,16 @@ predict_visreg <- function(object, newdata, se_fit) {
     newdata[[object$time]] <- max(object$data[[object$time]], na.rm = TRUE)
   }
   model <- if ("visreg_model" %in% names(object)) object$visreg_model else 1L
+  if (!is.null(newdata)) {
+    # visreg supplies only this component's variables, but all components are
+    # predicted; fill the others' variables with any fitted value
+    vars <- unique(unlist(lapply(object$formula, function(f) {
+      all.vars(stats::delete.response(stats::terms(f)))
+    })))
+    for (v in setdiff(intersect(vars, names(object$data)), names(newdata))) {
+      newdata[[v]] <- object$data[[v]][[1L]]
+    }
+  }
   out <- predict_sdmTMB(object, newdata = newdata, se_fit = se_fit,
     re_form = NA, model = model)
   y_i <- object$tmb_data$y_i

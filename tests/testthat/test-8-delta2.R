@@ -302,25 +302,11 @@ test_that("delta models work with different main effects", {
   )
   expect_equal(fit$sd_report, fit2$sd_report)
 
-  # diff smoothers throw an error for now
-  expect_error(
-    {
-      fit <- sdmTMB(
-        formula = list(density ~ s(depth_scaled), density ~ s(year, k = 3)),
-        data = pcod_2011,
-        mesh = mesh,
-        spatial = "off",
-        family = delta_gamma()
-      )
-    },
-    regexp = "smooth"
-  )
-
-  # diff parametric terms with the same smoothers match separate fits; the
+  # diff smoothers and parametric terms match separate fits; the
   # zero-weighted Gamma fit builds the smoother basis from the same rows
   d <- pcod
-  f1 <- density ~ s(depth_scaled, k = 5) + depth_scaled2
-  f2 <- density ~ s(depth_scaled, k = 5) + as.factor(year)
+  f1 <- density ~ s(depth_scaled, k = 5)
+  f2 <- density ~ s(year, k = 4) + depth_scaled
   fit <- sdmTMB(list(f1, f2), data = d, spatial = "off",
     family = delta_gamma())
   d$present <- as.integer(d$density > 0)
@@ -334,6 +320,21 @@ test_that("delta models work with different main effects", {
   expect_equal(tidy(fit, model = 1)$estimate, tidy(fit1)$estimate,
     tolerance = 1e-6)
   expect_equal(tidy(fit, model = 2)$estimate, tidy(fit2)$estimate,
+    tolerance = 1e-6)
+  expect_equal(tidy(fit, "ran_pars", model = 1)[, -1], tidy(fit1, "ran_pars"),
+    tolerance = 1e-6)
+  expect_equal(tidy(fit, "ran_pars", model = 2)[, -1], tidy(fit2, "ran_pars"),
+    tolerance = 1e-6)
+  expect_equal(cAIC(fit), cAIC(fit1) + cAIC(fit2), tolerance = 1e-6)
+
+  # a component without smoothers
+  fit3 <- sdmTMB(list(density ~ depth_scaled, f2), data = d, spatial = "off",
+    family = delta_gamma())
+  expect_output(print(fit3), "sd__s\\(year\\)")
+  expect_equal(nrow(tidy(fit3, "ran_pars", model = 1)), 0L)
+  expect_equal(tidy(fit3, "ran_pars", model = 2)[, -1], tidy(fit2, "ran_pars"),
+    tolerance = 1e-6)
+  expect_equal(unname(cAIC(fit3, what = "edf")), unname(cAIC(fit2, what = "edf")),
     tolerance = 1e-6)
   nd <- d[1:20, ]
   p <- predict(fit, newdata = nd)
