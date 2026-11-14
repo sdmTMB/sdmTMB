@@ -9,6 +9,12 @@
 #' probability) or `model = 2` for the positive component (e.g., gamma for
 #' `delta_gamma()`). By default, `model = 1`.
 #'
+#' Estimated marginal means are population-level: they include fixed effects
+#' and smoothers but not random fields or random intercepts/slopes. They are
+#' for an offset of 0 unless the \pkg{emmeans} `offset` argument is supplied.
+#' Models with `breakpt()`, `logistic()`, `time_varying`, or covariate
+#' diffusion terms aren't supported.
+#'
 #' @name emmeans.sdmTMB
 #'
 #' @references
@@ -59,6 +65,16 @@
 #' emmeans::emmeans(fit_delta, ~ year, model = 1)
 #' # positive component (gamma):
 #' emmeans::emmeans(fit_delta, ~ year, model = 2)
+#'
+#' # smoothers:
+#' fit_sm <- sdmTMB(
+#'   present ~ as.factor(year) + s(depth_scaled),
+#'   data = pcod_2011, spatial = "off",
+#'   family = binomial()
+#' )
+#' emmeans::emmeans(fit_sm, ~ year, at = list(depth_scaled = 0))
+#' emmeans::emmeans(fit_sm, ~ depth_scaled,
+#'   at = list(depth_scaled = c(-1, 0, 1)))
 
 NULL # don't document functions below
 
@@ -71,76 +87,134 @@ recover_data.sdmTMB <- function(object, data = NULL, ...) {
   # use the stored data rather than re-evaluating `fcall$data`, which may not
   # resolve in the formula environment (e.g., a fit made inside a function)
   if (is.null(data)) data <- model.frame(object)
+  # emmeans would otherwise look for the `offset` argument in the call;
+  # EMMs are for an offset of 0 unless emmeans' own `offset` is supplied
+  fcall$offset <- NULL
   emmeans::recover_data(
-    fcall,
-    stats::delete.response(terms(object)),
+    fcall, emm_terms(object),
     attr(model.frame(object), "na.action"), data = data, ...
   )
+}
+
+# Terms spanning the predictors of all components, with each smoother's
+# covariates (and any `by` variable) as plain terms so they enter the
+# reference grid. Keeps the fitted `predvars` (e.g., `poly()` coefficients).
+emm_terms <- function(object) {
+  trms <- lapply(object$terms, stats::delete.response)
+  labels <- unlist(lapply(trms, attr, which = "term.labels"))
+  if (isTRUE(object$smoothers$has_smooths)) {
+    sm_vars <- lapply(unlist(object$smoothers$basis_out, recursive = FALSE),
+      function(b) c(b$term, if (b$by != "NA") b$by))
+    labels <- c(labels, unlist(sm_vars))
+  }
+  labels <- unique(labels)
+  if (!length(labels)) labels <- "1"
+  f <- stats::reformulate(labels, env = environment(object$terms[[1]]))
+  out <- stats::delete.response(stats::terms(f))
+  fitted_vars <- unlist(lapply(trms, function(x) as.list(attr(x, "variables"))[-1]))
+  fitted_predvars <- unlist(lapply(trms, function(x) {
+    pv <- attr(x, "predvars")
+    if (is.null(pv)) pv <- attr(x, "variables")
+    as.list(pv)[-1]
+  }))
+  vars <- as.list(attr(out, "variables"))[-1]
+  i <- match(vapply(vars, deparse1, ""), vapply(fitted_vars, deparse1, ""))
+  vars[!is.na(i)] <- fitted_predvars[i[!is.na(i)]]
+  attr(out, "predvars") <- as.call(c(quote(list), vars))
+  out
+}
+
+# Model terms that aren't linear in fixed and smoother coefficients
+emm_check_terms <- function(object) {
+  bad <- c(
+    "`breakpt()` or `logistic()`" = isTRUE(object$threshold_function > 0L),
+    "`time_varying`" = !is.null(object$time_varying),
+    "covariate diffusion" = !is.null(object$nonlocal_parsed)
+  )
+  if (any(bad)) {
+    cli_abort(c(
+      "`emmeans()` doesn't support models with {names(bad)[bad]} terms.",
+      "i" = "Consider `predict()` on a grid of covariate values instead."
+    ))
+  }
 }
 
 # with help from emm_basis.glmmTMB
 #' @exportS3Method NULL
 emm_basis.sdmTMB <- function(object, trms, xlev, grid, ...) {
   .check_family_capability(object, "emmeans", caller = "`emmeans()`")
-  # Extract model argument if present (defaults to 1)
+  emm_check_terms(object)
   dots <- list(...)
   model <- if ("model" %in% names(dots)) dots$model else 1L
-
-  # For delta models, we need to work with one component at a time
-  if (.object_is_delta(object, caller = "`emmeans()`")) {
+  is_delta <- .object_is_delta(object, caller = "`emmeans()`")
+  if (is_delta) {
     model <- as.integer(model)
     if (!model %in% c(1L, 2L)) {
       cli_abort("`model` must be 1 (binomial component) or 2 (positive component) for delta models.")
     }
-    # Get the appropriate formula for the delta component
-    if (!identical(object$formula[[1]], object$formula[[2]])) {
-      trms <- terms(object$formula[[model]])
-    }
-  }
-
-  V <- vcov(object, model = model)
-  misc <- list()
-
-  # Get the appropriate family for delta models
-  if (.object_is_delta(object, caller = "`emmeans()`")) {
     fam <- .object_family_spec(object, caller = "`emmeans()`")$family[[model]]
   } else {
+    model <- 1L
     fam <- family(object)
   }
-  misc <- emmeans::.std.link.labels(fam, misc)
+  misc <- emmeans::.std.link.labels(fam, list())
 
-  contrasts <- attr(model.matrix(object), "contrasts")
-  contrasts <- contrasts[names(contrasts) %in% all.vars(terms(object))]
-  m <- model.frame(trms, grid, na.action = stats::na.pass, xlev = xlev)
-  X <- model.matrix(trms, m, contrasts.arg = contrasts)
+  # parametric part:
+  m_trms <- stats::delete.response(object$terms[[model]])
+  mf <- model.frame(m_trms, grid, na.action = stats::na.pass, xlev = xlev)
+  X <- model.matrix(m_trms, mf, contrasts.arg = object$contrasts[[model]])
+  b_j <- if (model == 2L) "b_j2" else "b_j"
+  pos <- list(match(colnames(X), colnames(object$tmb_data$X_ij[[model]])))
+  names(pos) <- b_j
 
-  # Get coefficients using existing fixef method and filter to parametric terms only
-  # This fixes the issue with smoothers by only including parametric terms
-  if (.object_is_delta(object, caller = "`emmeans()`")) {
-    all_bhat <- fixef(object, model = model)
-  } else {
-    all_bhat <- fixef(object)
+  sm <- object$smoothers
+  if (isTRUE(sm$has_smooths) && any(sm$block_active[, model])) {
+    sm_new <- parse_smoothers(sm$formula_no_bars, data = object$data,
+      newdata = grid, basis_prev = sm$basis_out)
+    cols <- sm$col_active[, model]
+    blocks <- sm$block_active[, model]
+    Z <- do.call(cbind, sm_new$Zs[blocks])
+    X_sm <- cbind(sm_new$Xs[, cols, drop = FALSE], Z)
+    colnames(X_sm) <- paste0(".smooth", seq_len(ncol(X_sm)))
+    X <- cbind(X, X_sm)
+    pos$bs <- which(cols) + (model - 1L) * length(cols)
+    coef_active <- rep(blocks, sm$sm_dims)
+    pos$b_smooth <- which(coef_active) + (model - 1L) * length(coef_active)
   }
 
-  # Only keep coefficients that correspond to columns in the design matrix X
-  bhat <- all_bhat[names(all_bhat) %in% colnames(X)]
-  # Ensure coefficient order matches design matrix column order
-  bhat <- bhat[colnames(X)]
+  est <- emm_coefs(object, pos)
+  bhat <- stats::setNames(est$bhat, colnames(X))
+  V <- est$V
+  dimnames(V) <- list(colnames(X), colnames(X))
 
-  if (length(bhat) < ncol(X)) {
-    kept <- match(names(bhat), dimnames(X)[[2]])
-    full_bhat <- NA * X[1, ]
-    full_bhat[kept] <- bhat
-    bhat <- full_bhat
-    modmat <- model.matrix(
-      trms, model.frame(object),
-      contrasts.arg = contrasts
-    )
-    nbasis <- estimability::nonest.basis(modmat)
-  } else {
-    nbasis <- estimability::all.estble
-  }
   dfargs <- list(df = df.residual(object))
   dffun <- function(k, dfargs) dfargs$df
+  nbasis <- estimability::all.estble
   named_list(X, bhat, nbasis, V, dffun, dfargs, misc)
+}
+
+# Estimates and joint covariance of the elements `pos` (a list of positions
+# within each named parameter array). Mapped-off elements get zero variance.
+emm_coefs <- function(object, pos) {
+  env <- object$tmb_obj$env
+  par <- env$last.par.best
+  par_list <- env$parList(par = par)
+  bhat <- unlist(Map(function(p, i) as.vector(par_list[[p]])[i], names(pos), pos))
+  idx <- unlist(Map(function(p, i) {
+    map <- object$tmb_map[[p]]
+    k <- if (is.null(map)) i else as.integer(map)[i]
+    match(p, names(par)) - 1L + k
+  }, names(pos), pos))
+  ok <- !is.na(idx)
+  V <- matrix(0, length(idx), length(idx))
+  fixed <- match(idx, setdiff(seq_along(par), env$random))
+  if (all(!is.na(fixed[ok]))) {
+    V[ok, ok] <- object$sd_report$cov.fixed[fixed[ok], fixed[ok], drop = FALSE]
+  } else {
+    Q <- sd_report_joint(object)$jointPrecision
+    E <- Matrix::sparseMatrix(i = idx[ok], j = seq_len(sum(ok)),
+      x = 1, dims = c(nrow(Q), sum(ok)))
+    V[ok, ok] <- as.matrix(Matrix::solve(Q, E))[idx[ok], , drop = FALSE]
+  }
+  list(bhat = unname(bhat), V = V)
 }

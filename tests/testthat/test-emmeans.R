@@ -207,3 +207,91 @@ test_that("emmeans works with binomial family and smoothers", {
   expect_true(nrow(emm_summary) == 4)  # 4 years
   expect_true(all(c("year", "emmean") %in% names(emm_summary)))
 })
+test_that("emmeans with smoothers matches predict()", {
+  skip_on_cran()
+  skip_if_not_installed("emmeans")
+  yrs <- sort(unique(pcod_2011$year))
+  check <- function(fit, specs, at, nd, ...) {
+    e <- as.data.frame(emmeans::emmeans(fit, specs, at = at, ...))
+    p <- predict(fit, newdata = nd, se_fit = TRUE, re_form = NA, ...)
+    expect_equal(e$emmean, p$est, tolerance = 1e-6)
+    expect_equal(e$SE, p$est_se, tolerance = 1e-6)
+  }
+  fit <- sdmTMB(
+    present ~ as.factor(year) + s(depth_scaled),
+    data = pcod_2011, spatial = "off", family = binomial()
+  )
+  check(fit, ~ year, list(depth_scaled = 0.5),
+    data.frame(year = yrs, depth_scaled = 0.5))
+  # the smoothed covariate is in the reference grid:
+  check(fit, ~ depth_scaled | year, list(depth_scaled = c(-1, 1), year = 2013),
+    data.frame(year = 2013, depth_scaled = c(-1, 1)))
+
+  fit_by <- sdmTMB(
+    present ~ as.factor(year) + s(depth_scaled, by = as.factor(year), k = 5),
+    data = pcod_2011, spatial = "off", family = binomial()
+  )
+  check(fit_by, ~ year, list(depth_scaled = 0.5),
+    data.frame(year = yrs, depth_scaled = 0.5))
+
+  fit_delta <- sdmTMB(
+    density ~ as.factor(year) + s(depth_scaled, k = 5),
+    data = pcod_2011, spatial = "off", family = delta_gamma()
+  )
+  for (m in 1:2) {
+    check(fit_delta, ~ year, list(depth_scaled = 0.5),
+      data.frame(year = yrs, depth_scaled = 0.5), model = m)
+  }
+})
+
+test_that("emmeans handles poly(), offsets, and delta smoothers in one component", {
+  skip_on_cran()
+  skip_if_not_installed("emmeans")
+  d <- pcod_2011
+  d$fyear <- as.factor(d$year)
+  # poly() keeps its fitted coefficients and spans the same space as I():
+  fit_poly <- sdmTMB(present ~ fyear + poly(depth_scaled, 2),
+    data = d, spatial = "off", family = binomial())
+  fit_I <- sdmTMB(present ~ fyear + depth_scaled + I(depth_scaled^2),
+    data = d, spatial = "off", family = binomial())
+  e_poly <- as.data.frame(emmeans::emmeans(fit_poly, ~ fyear, at = list(depth_scaled = 0.5)))
+  e_I <- as.data.frame(emmeans::emmeans(fit_I, ~ fyear, at = list(depth_scaled = 0.5)))
+  expect_equal(e_poly$emmean, e_I$emmean, tolerance = 1e-5)
+  expect_equal(e_poly$SE, e_I$SE, tolerance = 1e-4)
+
+  # EMMs are for an offset of 0 unless emmeans' `offset` is given:
+  d$off <- log(seq(0.5, 2, length.out = nrow(d)))
+  fit_off <- sdmTMB(present ~ fyear, offset = "off",
+    data = d, spatial = "off", family = poisson())
+  e0 <- as.data.frame(emmeans::emmeans(fit_off, ~ fyear))
+  e2 <- as.data.frame(emmeans::emmeans(fit_off, ~ fyear, offset = log(2)))
+  nd <- data.frame(fyear = levels(d$fyear), year = 2011)
+  expect_equal(e0$emmean, predict(fit_off, newdata = nd)$est, tolerance = 1e-6)
+  expect_equal(e2$emmean, e0$emmean + log(2), tolerance = 1e-6)
+
+  # a smoother in only one delta component:
+  fit_delta <- sdmTMB(
+    list(density ~ fyear + s(depth_scaled, k = 5), density ~ fyear),
+    data = d, spatial = "off", family = delta_gamma()
+  )
+  nd <- data.frame(fyear = levels(d$fyear), year = 2011, depth_scaled = 0.5)
+  for (m in 1:2) {
+    e <- as.data.frame(emmeans::emmeans(fit_delta, ~ fyear,
+      at = list(depth_scaled = 0.5), model = m))
+    p <- predict(fit_delta, newdata = nd, se_fit = TRUE, model = m)
+    expect_equal(e$emmean, p$est, tolerance = 1e-6)
+    expect_equal(e$SE, p$est_se, tolerance = 1e-6)
+  }
+})
+
+test_that("emmeans errors on terms it can't represent", {
+  skip_on_cran()
+  skip_if_not_installed("emmeans")
+  fit <- sdmTMB(present ~ as.factor(year) + breakpt(depth_scaled),
+    data = pcod_2011, spatial = "off", family = binomial(), do_fit = FALSE)
+  expect_error(emmeans::emmeans(fit, ~ year), "breakpt")
+  fit <- sdmTMB(present ~ 0 + as.factor(year), time_varying = ~ 0 + depth_scaled,
+    time = "year", data = pcod_2011, spatial = "off", family = binomial(),
+    do_fit = FALSE)
+  expect_error(emmeans::emmeans(fit, ~ year), "time_varying")
+})

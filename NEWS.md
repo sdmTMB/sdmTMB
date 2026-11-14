@@ -1,5 +1,13 @@
 # sdmTMB (development version)
 
+* Fix `emmeans()` with smoothers in the formula. The smoothers were
+  previously dropped, so estimated marginal means and their standard errors
+  ignored them, and smoothed covariates couldn't be included in the
+  reference grid. Results now match `predict()`. `emmeans()` also now works
+  with an `offset` (EMMs are for an offset of 0 unless emmeans' `offset` is
+  given) and errors for `breakpt()`, `logistic()`, `time_varying`, and
+  covariate diffusion terms, which it previously silently ignored.
+
 * Smoothers with `by` variables now have linear terms named like
   `sdepth:fyear2011` in `tidy()` and `print()` instead of
   `sdepth):fyear2011`.
