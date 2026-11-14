@@ -94,3 +94,26 @@ test_that("Auxiliary prediction designs reuse the fitted encoding", {
 
   expect_frozen_fit_data("design", fit, as.data.frame(d[idx, ]), info = "design specs")
 })
+
+test_that("predict() uses fitted poly() and scale() terms on few newdata rows", {
+  skip_on_cran()
+  d <- pcod_2011
+  d$dz <- (d$depth - mean(d$depth)) / sd(d$depth)
+  fit_poly <- sdmTMB(present ~ poly(depth_scaled, 2),
+    data = d, spatial = "off", family = binomial())
+  fit_I <- sdmTMB(present ~ depth_scaled + I(depth_scaled^2),
+    data = d, spatial = "off", family = binomial())
+  nd <- data.frame(depth_scaled = 0.5)
+  expect_equal(predict(fit_poly, newdata = nd)$est,
+    predict(fit_I, newdata = nd)$est, tolerance = 1e-6)
+
+  fit_scale <- sdmTMB(present ~ scale(depth),
+    data = d, spatial = "off", family = binomial())
+  fit_dz <- sdmTMB(present ~ dz, data = d, spatial = "off", family = binomial())
+  expect_equal(predict(fit_scale, newdata = data.frame(depth = 150))$est,
+    predict(fit_dz, newdata = data.frame(dz = (150 - mean(d$depth)) / sd(d$depth)))$est,
+    tolerance = 1e-6)
+
+  expect_error(predict(fit_poly, newdata = data.frame(depth_scaled = NA)),
+    "Missing covariate")
+})

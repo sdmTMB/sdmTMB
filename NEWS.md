@@ -1,5 +1,10 @@
 # sdmTMB (development version)
 
+* Fix `predict()` erroring with data-dependent terms such as `poly()` or
+  `scale()` when `newdata` had too few distinct values (e.g., one row). The
+  missing-covariate check re-evaluated these terms on `newdata`; it now
+  checks the raw variables, as in fitting.
+
 * Fix `emmeans()` with smoothers in the formula. The smoothers were
   previously dropped, so estimated marginal means and their standard errors
   ignored them, and smoothed covariates couldn't be included in the
