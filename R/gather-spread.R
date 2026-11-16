@@ -36,28 +36,28 @@
 
 spread_sims <- function(object, nsim = 200) {
   .check_family_capability(object, "spread_sims")
-  if (!"jointPrecision" %in% names(object$sd_report)) {
-    cli_abort("TMB::sdreport() must be run with the joint precision returned.")
-  }
-
   if (.object_has_two_components(object, caller = "`spread_sims()`")) {
     cli_abort("This function isn't yet set up for delta models.")
   }
   n_sims <- nsim
-  tmb_sd <- object$sd_report
-  samps <- rmvnorm_prec(object$tmb_obj$env$last.par.best, tmb_sd, n_sims)
-  pars <- c(tmb_sd$par.fixed, tmb_sd$par.random)
-  pn <- names(pars)
-
-  pn <- c(pn[pn == "b_j"], pn[pn == "b_j2"], pn[!pn %in% c("b_j", "b_j2")]) # if REML, must move b_j to beginning:
-  par_fixed <- names(tmb_sd$par.fixed)
-  if (object$reml) par_fixed <- c("b_j", par_fixed)
-  pars <- pars[pn %in% par_fixed]
-  samps <- samps[pn %in% par_fixed, , drop = FALSE]
-  pn <- pn[pn %in% par_fixed]
-  fe_names <- tidy(object, silent = TRUE)$term
+  tmb_sd <- sd_report_joint(object)
+  samps <- draw_joint_pars(object, tmb_sd, n_sims)
+  # rows of `samps` follow `last.par.best`; keep the fixed effects, including
+  # those REML integrates out
+  pn <- names(object$tmb_obj$env$last.par.best)
+  keep <- !seq_along(pn) %in% object$tmb_obj$env$random |
+    (object$reml & pn %in% c("b_j", "bs"))
+  samps <- samps[keep, , drop = FALSE]
+  pn <- pn[keep]
+  # tidy() lists the b_j terms first, then any threshold and smoother terms
+  terms <- tidy(object, silent = TRUE)$term
+  b_names <- estimated_names(terms[seq_along(object$parlist$b_j)], object$tmb_map$b_j)
+  bs_names <- if (object$tmb_data$has_smooths) {
+    rownames(print_smooth_effects(object, silent = TRUE)$smooth_effects)
+  }
+  pn[pn == "b_j"] <- b_names
+  if (sum(pn == "bs") == length(bs_names)) pn[pn == "bs"] <- bs_names
   row.names(samps) <- pn
-  row.names(samps)[row.names(samps) == "b_j"] <- fe_names
   out <- as.data.frame(t(samps))
   is_areal <- is_areal_fit(object)
   is_car <- is_car_fit(object)
@@ -131,6 +131,37 @@ gather_sims <- function(object, nsim = 200) {
   out <- base::merge(out, par_names)
   out$variable_num <- NULL
   out[ , c(".iteration", ".variable", ".value"), drop = FALSE]
+}
+
+# Names of the estimated elements of a parameter given the names of all its
+# elements: a mapped parameter has one estimated element per `map` level
+estimated_names <- function(names, map) {
+  if (!length(map)) return(names)
+  names[match(seq_len(nlevels(map)), as.integer(map))]
+}
+
+# `object$sd_report`, recomputing the joint precision if it wasn't stored
+# (e.g., removed by strip_sdmTMB()). Fits without random effects have none.
+sd_report_joint <- function(object) {
+  sd_report <- object$sd_report
+  if (is.null(sd_report[["jointPrecision"]]) && !has_no_random_effects(object)) {
+    message("Rerunning RTMB::sdreport() with `getJointPrecision = TRUE`.")
+    reinitialize(object)
+    sd_report <- RTMB::sdreport(object$tmb_obj, getJointPrecision = TRUE)
+  }
+  sd_report
+}
+
+# Draws (parameters x draws) of all parameters around `last.par.best`: from
+# the joint precision, or from `cov.fixed` without random effects
+draw_joint_pars <- function(object, sd_report, n_sims) {
+  mu <- object$tmb_obj$env$last.par.best
+  if (!has_no_random_effects(object)) {
+    return(rmvnorm_prec(mu, sd_report, n_sims))
+  }
+  L <- t(chol(sd_report$cov.fixed))
+  z <- matrix(stats::rnorm(length(mu) * n_sims), ncol = n_sims)
+  mu + as.matrix(L %*% z)
 }
 
 rmvnorm_prec <- function(mu, tmb_sd, n_sims) {

@@ -62,11 +62,6 @@
     # Uses `censored_upper`:
     censored = grepl("^censored_", names(.valid_family)),
     truncated = grepl("^truncated_", names(.valid_family)),
-    # Implemented in the RTMB backend only:
-    needs_rtmb = names(.valid_family) %in% c(
-      "censored_nbinom1", "censored_nbinom2", "censored_binomial",
-      "censored_betabinomial", "compois"
-    ),
     stringsAsFactors = FALSE
   )
   registry$auxiliary[registry$family_name == "tweedie"] <- "thetaf"

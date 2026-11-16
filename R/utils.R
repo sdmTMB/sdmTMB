@@ -17,7 +17,7 @@
 #'   estimates.
 #' @param map A named list with factor `NA`s specifying parameter values that
 #'   should be fixed at a constant value. See the documentation in
-#'   [TMB::MakeADFun()]. This should usually be used with `start` to specify the
+#'   [RTMB::MakeADFun()]. This should usually be used with `start` to specify the
 #'   fixed value.
 #' @param start A named list specifying the starting values for parameters. You
 #'   can see the necessary structure by fitting the model once and inspecting
@@ -30,24 +30,17 @@
 #'   profile for depth, and depth and depth^2 are part of your formula, you need
 #'   to make sure these are listed first and that an intercept isn't included.
 #'   For example, `formula = cpue ~ 0 + depth + depth2 + as.factor(year)`.
-#' @param getsd Logical indicating whether to call [TMB::sdreport()].
-#' @param normalize Logical: use [TMB::normalize()] to normalize the process
-#'   likelihood using the Laplace approximation? Can result in a substantial
-#'   speed boost in some cases. This used to default to `FALSE` prior to
-#'   May 2021. Currently not working for models fit with REML or random intercepts.
-#' @param backend Model backend. `"rtmb"` is the default; set
-#'   `options(sdmTMB.backend = "tmb")` to use the C++ TMB template by default.
-#'   The `"rtmb"` backend currently supports all families, including delta and
-#'   multi-family models, with SPDE (isotropic, anisotropic, or barrier) and
-#'   areal SAR/CAR spatial and spatiotemporal fields, spatially and
-#'   time-varying coefficients, IID random effects, smoothers, threshold
-#'   terms, covariate diffusion, restricted spatial regression, priors, and
-#'   derived indices.
+#' @param getsd Logical indicating whether to call [RTMB::sdreport()].
+#' @param normalize `r lifecycle::badge("deprecated")` Ignored. This used
+#'   `TMB::normalize()` with the removed C++ TMB backend; the RTMB densities are
+#'   already fully normalized.
+#' @param backend `r lifecycle::badge("deprecated")` Ignored. The C++ TMB
+#'   backend was removed and all models use RTMB.
 #' @param multiphase Logical: estimate the fixed and random effects in phases?
 #'   Phases are usually faster and more stable.
 #' @param profile Logical: should population-level/fixed effects be profiled
 #'   out of the likelihood? These are then appended to the random effects
-#'   vector without the Laplace approximation. See [TMB::MakeADFun()]. *This
+#'   vector without the Laplace approximation. See [RTMB::MakeADFun()]. *This
 #'   can dramatically speed up model fit if there are many fixed effects but is
 #'   experimental at this stage.*
 #' @param lower An optional named list of lower bounds within the optimization.
@@ -65,13 +58,10 @@
 #'   applies at the estimate, so consider `"direct"` when evaluating the
 #'   likelihood far from it (e.g., MCMC sampling).
 #' @param get_joint_precision Logical. Passed to `getJointPrecision` in
-#'   [TMB::sdreport()]. Must be `TRUE` to use simulation-based methods in
+#'   [RTMB::sdreport()]. Must be `TRUE` to use simulation-based methods in
 #'   [predict.sdmTMB()] or [get_index_sims()]. If not needed, setting this to
 #'   `FALSE` will reduce object size.
-#' @param parallel Argument currently ignored. For parallel processing with 3
-#'   cores, as an example, use `TMB::openmp(n = 3, DLL = "sdmTMB")`. But be
-#'   careful, because it's not always faster with more cores and there is
-#'   definitely an upper limit.
+#' @param parallel Argument currently ignored.
 #' @param suppress_nlminb_warnings Suppress uninformative warnings
 #'   from [stats::nlminb()] arising when a function evaluation is `NA`, which
 #'   are then replaced with `Inf` and avoided during estimation?
@@ -138,7 +128,7 @@
 sdmTMBcontrol <- function(
   eval.max = 2e3L,
   iter.max = 1e3L,
-  normalize = FALSE,
+  normalize = deprecated(),
   nlminb_loops = 1L,
   newton_loops = 1L,
   getsd = TRUE,
@@ -160,8 +150,27 @@ sdmTMBcontrol <- function(
   collapse_ar1_threshold = 0.01,
   sar_weight_style = c("row", "raw"),
   get_rsr = FALSE,
-  backend = getOption("sdmTMB.backend", "rtmb"),
+  backend = deprecated(),
   ...) {
+
+  if (is_present(normalize)) {
+    deprecate_warn("1.2.0.9010", "sdmTMBcontrol(normalize = )",
+      details = "The RTMB densities are already fully normalized; the argument is ignored.")
+  }
+  if (is_present(backend)) {
+    deprecate_warn("1.2.0.9010", "sdmTMBcontrol(backend = )",
+      always = identical(backend, "tmb"), # the user asked for a different model
+      details = if (identical(backend, "tmb")) {
+        "The C++ TMB backend was removed; the model uses RTMB."
+      } else {
+        "RTMB is the only backend; the argument is ignored."
+      })
+  }
+  if (identical(getOption("sdmTMB.backend"), "tmb")) {
+    cli_warn(c("The C++ TMB backend was removed; `options(sdmTMB.backend = \"tmb\")` is ignored.",
+      "i" = "Models use RTMB."), .frequency = "once",
+      .frequency_id = "sdmTMB.backend.tmb")
+  }
 
   assert_that(is.numeric(nlminb_loops), is.numeric(newton_loops))
   assert_that(nlminb_loops >= 1L)
@@ -207,13 +216,10 @@ sdmTMBcontrol <- function(
   )
   sar_weight_style <- match.arg(sar_weight_style)
   censored_method <- match.arg(censored_method)
-  backend <- match.arg(backend, c("tmb", "rtmb"))
 
   out <- named_list(
     eval.max,
     iter.max,
-    normalize,
-    backend,
     nlminb_loops,
     newton_loops,
     getsd,
@@ -330,7 +336,7 @@ get_convergence_diagnostics <- function(sd_report) {
 # diagnostics, best parameters) in a fit. Used by sdmTMB() and
 # run_extra_optimization().
 set_fit_results <- function(object, obj, opt, getsd = TRUE, get_joint_precision = FALSE) {
-  sd_report <- if (getsd) sdreport_sdmTMB(obj, getJointPrecision = get_joint_precision)
+  sd_report <- if (getsd) RTMB::sdreport(obj, getJointPrecision = get_joint_precision)
   conv <- if (getsd) get_convergence_diagnostics(sd_report)
   lpb <- obj$env$last.par.best
   results <- list(
@@ -416,10 +422,25 @@ parse_threshold_term <- function(formula) {
     e <- str2lang(label)
     fns <- intersect(call_names(e), threshold_fns)
     if (!length(fns)) next
-    if (!(deparse(e[[1L]]) %in% threshold_fns && length(e) == 2L && is.name(e[[2L]]))) {
+    fn <- deparse(e[[1L]])
+    arg_names <- names(e) %||% character(length(e))
+    if (!(fn %in% threshold_fns && length(e) >= 2L && is.name(e[[2L]]) && arg_names[2L] == "")) {
       cli_abort(c(
         "`{fns[1]}()` takes a single column name and can't be used in an interaction or transformation.",
         i = "Found `{label}`. Create any transformed column in the data first."
+      ))
+    }
+    # breakpt() can also take `positive = TRUE` or `FALSE`
+    extra <- as.list(e)[-(1:2)]
+    if (length(extra) && !(fn == "breakpt" && identical(names(extra), "positive") &&
+      (isTRUE(extra[[1L]]) || isFALSE(extra[[1L]])))) {
+      cli_abort(c(
+        if (fn == "breakpt") {
+          "`breakpt()` takes a column name and, optionally, `positive = TRUE` or `FALSE`."
+        } else {
+          "`logistic()` takes only a column name."
+        },
+        i = "Found `{label}`."
       ))
     }
   }
@@ -429,11 +450,13 @@ parse_threshold_term <- function(formula) {
   }
   if (!any(is_thresh)) return(list(formula = formula, term = NULL))
   term <- labels[is_thresh]
+  e <- str2lang(term)
   list(
     formula = stats::update(formula, paste("~ . -", term)),
     term = term,
-    type = sub("\\(.*$", "", term),
-    parameter = sub("^[a-z]+\\((.*)\\)$", "\\1", term)
+    type = deparse(e[[1L]]),
+    parameter = as.character(e[[2L]]),
+    positive = isTRUE(e$positive)
   )
 }
 
@@ -460,8 +483,8 @@ parse_thresholds <- function(formulas, data, data_name = "data") {
       cli_abort("Threshold variable `{threshold_parameter}` is not a column in `{data_name}`.")
     }
     X_threshold <- as.numeric(data[[threshold_parameter]])
-    # 1 or 2; 0 tells TMB there is no threshold:
-    threshold_func <- match(p$type, c("breakpt", "logistic"))
+    # 0 = none, 1 = breakpt(), 2 = logistic(), 3 = breakpt(positive = TRUE)
+    threshold_func <- if (p$positive) 3L else match(p$type, c("breakpt", "logistic"))
   }
   list(
     formulas = lapply(parsed, `[[`, "formula"),
@@ -885,13 +908,20 @@ set_delta_model <- function(x, model = c(NA, 1, 2)) {
 }
 
 # Fits saved before sdmTMB 1.2.0 lack metadata that methods assume (e.g.,
-# `backend` and `design_specs`), so they need a refit.
+# `design_specs`), and fits with the removed C++ TMB backend can't rebuild their
+# objective, so both need a refit.
 check_fit_version <- function(object) {
   version <- object$version
   if (is.null(version) || package_version(version) < "1.2.0") {
     fitted <- if (is.null(version)) "an old version" else paste("version", version)
     cli_abort(c(
       "This model was fit with sdmTMB {fitted}; fits from before 1.2.0 are not supported.",
+      "i" = "Refit the model with the installed sdmTMB version."
+    ))
+  }
+  if (identical(object$backend, "tmb")) {
+    cli_abort(c(
+      "This model was fit with the C++ TMB backend, which has been removed.",
       "i" = "Refit the model with the installed sdmTMB version."
     ))
   }
@@ -922,7 +952,7 @@ reinitialize <- function(x) {
     check_sdmTMB_version(x$version)
     x$tmb_obj$env$beSilent()
     # retape before fn(): without a cached `L.created.by.newton` (dropped from
-    # saved cross-validation models), TMB's inner newton() evaluates the stale
+    # saved cross-validation models), the inner newton() evaluates the stale
     # Hessian pointer before fn() would retape
     x$tmb_obj$retape(set.defaults = FALSE)
     x$tmb_obj$fn(x$model$par)
@@ -1073,4 +1103,72 @@ make_category_svc <- function(data,
     svc_map = list(ln_tau_Z = svc_map),
     info = info
   ))
+}
+
+# Formulas and terms keep the environment they were created in, and saving a
+# fit serializes that environment. For a fit made inside a function, loop, or
+# lapply() callback, that's the whole calling frame (other fits, large data).
+# Give each such environment a small replacement holding only the symbols the
+# formulas reference that aren't data columns, parented at the first top-level
+# environment on the original chain (global, a namespace, or the search path)
+# so every symbol resolves as before. Formulas sharing an environment still
+# share one afterwards.
+rehome_formula_envs <- function(x, data_cols = character()) {
+  is_fml <- function(z) inherits(z, "formula")
+  is_top <- function(e) {
+    identical(e, emptyenv()) || identical(e, globalenv()) ||
+      identical(e, baseenv()) || isNamespace(e) || nzchar(environmentName(e))
+  }
+  walk <- function(z, f) {
+    if (is_fml(z)) return(f(z))
+    # .subset2() and unclass(): S3 `[[` methods can misbehave here (e.g.,
+    # a package_version's `[[` returns itself)
+    if (is.list(z) && !is.data.frame(z)) {
+      cl <- oldClass(z)
+      for (i in seq_along(z)) {
+        zi <- .subset2(z, i)
+        if (is.null(zi)) next
+        new <- walk(zi, f)
+        if (!identical(new, zi)) {
+          z <- unclass(z)
+          z[[i]] <- new
+          class(z) <- cl
+        }
+      }
+    }
+    z
+  }
+  envs <- list()
+  syms <- character()
+  walk(x, function(z) {
+    e <- environment(z)
+    if (!is.null(e) && !is_top(e)) {
+      if (!any(vapply(envs, identical, logical(1), e))) envs[[length(envs) + 1L]] <<- e
+      syms <<- union(syms, all.names(z))
+    }
+    z
+  })
+  if (!length(envs)) return(x)
+  syms <- setdiff(syms, data_cols)
+  new_envs <- lapply(envs, function(e) {
+    top <- e
+    while (!is_top(top)) top <- parent.env(top)
+    out <- new.env(parent = top)
+    for (s in syms) {
+      # tryCatch(): `s` may be bound to a missing argument
+      v <- tryCatch(get0(s, envir = e, ifnotfound = out), error = function(err) out)
+      if (!identical(v, out) && !identical(v, get0(s, envir = top, ifnotfound = out))) {
+        assign(s, v, envir = out)
+      }
+    }
+    out
+  })
+  walk(x, function(z) {
+    e <- environment(z)
+    if (!is.null(e)) {
+      j <- which(vapply(envs, identical, logical(1), e))
+      if (length(j)) environment(z) <- new_envs[[j]]
+    }
+    z
+  })
 }

@@ -104,7 +104,8 @@ rtmb_threshold <- function(x, threshold, type, m) {
   s <- lapply(threshold, `[[`, m)
   switch(type,
     # slope * min(x, cut)
-    breakpt = s$s_slope * (x + s$s_cut - abs(x - s$s_cut)) / 2,
+    breakpt = ,
+    positive_breakpt = s$s_slope * (x + s$s_cut - abs(x - s$s_cut)) / 2,
     logistic = s$s_max * RTMB::plogis(log(19) * (x - s$s50) / (s$s95 - s$s50)))
 }
 

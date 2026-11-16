@@ -46,7 +46,16 @@ rtmb_prepare <- function(data) {
     re_groups = lapply(components, function(m) rtmb_re_groups(data, m)),
     smooths = smooths,
     smooth_index = if (smooths) rtmb_smooth_index(data) else list(),
-    threshold = c("none", "breakpt", "logistic")[data$threshold_func + 1L],
+    # which smoothers enter each component (all of them in older fits)
+    smooth_active = if (smooths) {
+      if (is.null(data$smooth_active)) {
+        matrix(TRUE, length(data$Zs), n_m)
+      } else {
+        data$smooth_active == 1L
+      }
+    },
+    threshold = c("none", "breakpt", "logistic", "positive_breakpt")[
+      data$threshold_func + 1L],
     diffusion = rtmb_diffusion_inputs(data),
     priors = rtmb_prior_inputs(data),
 
@@ -219,7 +228,7 @@ rtmb_smooth_index <- function(data) {
 # Reject untranslated features before RTMB tapes an incomplete model.
 rtmb_validate <- function(data, prepared, parameters, random, ...) {
   if (!all(names(list(...)) %in% c("intern", "inner.control", "ADreport"))) {
-    cli::cli_abort("Additional MakeADFun options are not supported by the RTMB backend yet.")
+    cli::cli_abort("Only `intern`, `inner.control`, and `ADreport` can be passed to `RTMB::MakeADFun()`.")
   }
   # Random parameters must be translated effects. The first multiphase fit
   # integrates none of them.

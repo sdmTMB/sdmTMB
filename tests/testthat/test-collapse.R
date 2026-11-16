@@ -20,10 +20,7 @@ test_that("collapsing spatial and spatiotemporal fields works", {
     phi = 0.2,
     sigma_O = 0,
     seed = 7,
-    B = c(0.2, -0.4), # B0 = intercept, B1 = a1 slope
-    # TMB and RTMB draw different Tweedie values from the same seed; pin the
-    # backend so the data (and whether fields collapse) don't depend on it
-    control = sdmTMBcontrol(backend = "rtmb")
+    B = c(0.2, -0.4) # B0 = intercept, B1 = a1 slope
   )
   # create some fake 0s
   sim_dat$observed[sample(1:500, size = 50, replace = FALSE)] <- 0
@@ -121,8 +118,7 @@ test_that("custom collapse threshold works", {
   )
 
   # With a threshold comfortably above the fitted sigma_E, should collapse.
-  # The fitted sigma_E itself is not asserted: TMB and RTMB `simulate()`
-  # consume the RNG stream in different orders, so it varies by backend.
+  # The fitted sigma_E itself is not asserted: it depends on the simulated draw.
   sigma_E_est <- tidy(fit_default, "ran_pars")$estimate[
     tidy(fit_default, "ran_pars")$term == "sigma_E"]
 

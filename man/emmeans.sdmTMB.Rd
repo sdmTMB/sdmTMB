@@ -11,6 +11,12 @@ For delta/hurdle models, you can specify which component to analyze using the
 \code{model} argument: \code{model = 1} for the binomial component (encounter
 probability) or \code{model = 2} for the positive component (e.g., gamma for
 \code{delta_gamma()}). By default, \code{model = 1}.
+
+Estimated marginal means are population-level: they include fixed effects
+and smoothers but not random fields or random intercepts/slopes. They are
+for an offset of 0 unless the \pkg{emmeans} \code{offset} argument is supplied.
+Models with \code{breakpt()}, \code{logistic()}, \code{time_varying}, or covariate
+diffusion terms aren't supported.
 }
 \examples{
 \dontshow{if (require("emmeans", quietly = TRUE)) withAutoprint(\{ # examplesIf}
@@ -58,6 +64,16 @@ fit_delta <- sdmTMB(
 emmeans::emmeans(fit_delta, ~ year, model = 1)
 # positive component (gamma):
 emmeans::emmeans(fit_delta, ~ year, model = 2)
+
+# smoothers:
+fit_sm <- sdmTMB(
+  present ~ as.factor(year) + s(depth_scaled),
+  data = pcod_2011, spatial = "off",
+  family = binomial()
+)
+emmeans::emmeans(fit_sm, ~ year, at = list(depth_scaled = 0))
+emmeans::emmeans(fit_sm, ~ depth_scaled,
+  at = list(depth_scaled = c(-1, 0, 1)))
 \dontshow{\}) # examplesIf}
 }
 \references{

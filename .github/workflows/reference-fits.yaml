@@ -7,7 +7,6 @@ on:
     branches: [main, dev]
     paths:
       - 'R/**'
-      - 'src/**'
       - 'DESCRIPTION'
       - 'reference-fits/**'
       - '.github/workflows/reference-fits.yaml'
@@ -15,7 +14,6 @@ on:
     branches: [main, dev]
     paths:
       - 'R/**'
-      - 'src/**'
       - 'DESCRIPTION'
       - 'reference-fits/**'
       - '.github/workflows/reference-fits.yaml'
@@ -28,12 +26,7 @@ jobs:
     if: "! contains(github.event.head_commit.message, '[skip ci]')"
     runs-on: ubuntu-latest
 
-    name: reference fits (${{ matrix.backend }})
-
-    strategy:
-      fail-fast: false
-      matrix:
-        backend: [tmb, rtmb]
+    name: reference fits
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -52,12 +45,12 @@ jobs:
           needs: check
 
       - name: Check reference fits
-        run: Rscript reference-fits/run.R check --installed --backend ${{ matrix.backend }} --cores 1
+        run: Rscript reference-fits/run.R check --installed --cores 1
 
       - name: Upload comparison
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: reference-fits-${{ matrix.backend }}
-          path: reference-fits/check-${{ matrix.backend }}.csv
+          name: reference-fits
+          path: reference-fits/check.csv
           if-no-files-found: ignore

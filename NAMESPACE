@@ -108,6 +108,7 @@ export(sdmTMBpriors)
 export(set_delta_model)
 export(simulate_new)
 export(spread_sims)
+export(strip_sdmTMB)
 export(student)
 export(tidy)
 export(time_lag)
@@ -122,6 +123,7 @@ if(getRversion() >= "3.6.0") {
   export(Effect.sdmTMB)
 }
 import(methods)
+importFrom(TMB,runExample)
 importFrom(assertthat,assert_that)
 importFrom(cli,
   cli_abort,
@@ -180,4 +182,3 @@ importFrom(stats,
   update,
   vcov
 )
-useDynLib(sdmTMB, .registration = TRUE)

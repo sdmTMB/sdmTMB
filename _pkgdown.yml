@@ -79,6 +79,7 @@ reference:
   - predict.sdmTMB
   - residuals.sdmTMB
   - update.sdmTMB
+  - strip_sdmTMB
   - dharma_residuals
   - sdmTMBcontrol
   - run_extra_optimization

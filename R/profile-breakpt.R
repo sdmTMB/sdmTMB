@@ -26,8 +26,19 @@
 #'    [stats::optimize()].
 #'
 #' Each profile fit starts from the nearest finished fit and skips the extra
-#' optimization steps and [TMB::sdreport()] for speed.
+#' optimization steps and [RTMB::sdreport()] for speed.
 #' Only the final fit runs those.
+#'
+#' With `breakpt(x, positive = TRUE)`, the slope is estimated as log(slope),
+#' so the optimizer has almost no gradient to follow once the slope is near 0
+#' or so large that the bend acts as a step. A fit that starts from such a
+#' neighbour can stay there even where a moderate slope fits better. So if a
+#' profile fit ends with the slope more than a factor of `exp(2)` (about 7.4)
+#' from one unit on the link scale per standard deviation of `x`, it is
+#' refitted from that slope and the better of the two fits is kept. The first
+#' fit also starts from that slope, unless `control$start` sets `b_threshold`.
+#' Both depend on `x` only through its standard deviation, so they don't
+#' change with the units of `x`.
 #'
 #' The confidence interval runs from the lowest to the highest cutpoint within
 #' `qchisq(level, 1) / 2` NLL units of the best, with the ends interpolated
@@ -72,14 +83,17 @@
 #' @return A list of class `breakpt_profile` with:
 #' * `profile`: a data frame with one row per profile fit: the cutpoint
 #'   (`cut`), its NLL (`nll`, `NA` if the fit failed), NLL above the best
-#'   (`dnll`), the slope, the maximum absolute gradient, the convergence code,
+#'   (`dnll`), the slope (the slope itself, not its log, with
+#'   `breakpt(x, positive = TRUE)`), the maximum absolute gradient, the convergence code,
 #'   and the share of observations below the cutpoint.
 #' * `estimate`: a one-row data frame with the best cutpoint (`cut`), slope,
 #'   NLL, the final fit's NLL (`final_nll`, `NA` if `final = FALSE`), interval
 #'   (`lwr`, `upr`), AIC, numbers of observations below and above the
 #'   cutpoint, and flags for checking the result (see Warnings). If the final
 #'   fit improves on the profile fit at the same cutpoint, `nll`, `aic`, and the
-#'   profile use the final fit's NLL.
+#'   profile use the final fit's NLL. With `final = TRUE`, the slope (in
+#'   `estimate` and in that row of the profile) is the final fit's, as in
+#'   [tidy()] on `fit`.
 #' * `fit`: the [sdmTMB()] fit with the cutpoint fixed at `estimate$cut`, or
 #'   `NULL` if `final = FALSE`. Its stored call is the call you made, with your
 #'   `control`, so [update()] on it refits with the cutpoint estimated directly,
@@ -143,13 +157,13 @@ profile_breakpt <- function(formula, ..., control = sdmTMBcontrol(), cuts = NULL
   if (!(is.numeric(level) && length(level) == 1L && level > 0 && level < 1)) {
     cli_abort("`level` must be a single number between 0 and 1, e.g., 0.95.")
   }
-  control_build <- control
-  control_build$normalize <- FALSE # normalizing only saves time inside the inner problem
-  built <- suppressMessages(sdmTMB(formula, ..., control = control_build, do_fit = FALSE))
+  built <- suppressMessages(sdmTMB(formula, ..., control = control, do_fit = FALSE))
   obj <- built$tmb_obj
-  if (!identical(as.integer(built$tmb_data$threshold_func), 1L)) {
+  if (!built$tmb_data$threshold_func %in% c(1L, 3L)) {
     cli_abort("`formula` needs a `breakpt()` term.")
   }
+  # the slope is estimated as log(slope) with breakpt(positive = TRUE)
+  to_slope <- if (built$tmb_data$threshold_func == 3L) exp else identity
   ib <- which(names(obj$par) == "b_threshold")
   if (length(ib) != 2L) cli_abort("Delta models aren't supported.")
   # a prior on the cutpoint would add its penalty to the profile NLL, and so to logLik() and AIC()
@@ -159,6 +173,12 @@ profile_breakpt <- function(formula, ..., control = sdmTMBcontrol(), cuts = NULL
   i_slope <- ib[1]
   i_cut <- ib[2]
   x <- as.numeric(built$tmb_data$X_threshold)
+  positive <- built$tmb_data$threshold_func == 3L
+  # log(slope) for a change of one unit on the link scale per standard deviation of x,
+  # so the start and the retry rule below don't depend on the units of x
+  sd_x <- stats::sd(x)
+  slope_reset <- if (is.finite(sd_x) && sd_x > 0) -log(sd_x) else 0
+  if (positive && is.null(control$start$b_threshold)) obj$par[i_slope] <- slope_reset
   if (is.null(tol)) tol <- 0.025 * stats::sd(x)
   if (is.null(tol_coarse)) tol_coarse <- 4 * tol
   # otherwise refinement may never stop
@@ -209,14 +229,30 @@ profile_breakpt <- function(formula, ..., control = sdmTMBcontrol(), cuts = NULL
 
   done <- list()
   done_col <- function(name) vapply(done, `[[`, 0, name)
+  # With breakpt(positive = TRUE), the gradient in log(slope) is the slope times the gradient
+  # in the slope. It vanishes as the slope goes to 0, or grows so large that the bend acts as
+  # a step, so a fit that starts there can stay there even where a moderate slope fits better.
+  # Each fit starts from its neighbour, so one such fit would spread across the profile.
+  # Retry those fits from a moderate slope.
+  slope_extreme <- function(r) {
+    is.null(r) || abs(r$par[[i_slope]] - slope_reset) > 2
+  }
   # Start from the nearest fit that worked. A failed fit stays in `done` so it isn't retried.
   add_fit <- function(ct) {
     ok <- Filter(function(z) !is.null(z$par), done)
     if (length(ok)) {
       n <- ok[[which.min(abs(vapply(ok, `[[`, 0, "cut") - ct))]]
-      r <- fit_at(ct, n$par, n$last)
+      start <- n$par
+      start_last <- n$last
     } else {
-      r <- fit_at(ct, obj$par, obj$env$last.par.best)
+      start <- obj$par
+      start_last <- obj$env$last.par.best
+    }
+    r <- fit_at(ct, start, start_last)
+    if (positive && slope_extreme(r) && start[[i_slope]] != slope_reset) {
+      start[i_slope] <- slope_reset
+      r2 <- fit_at(ct, start, start_last)
+      if (!is.null(r2) && (is.null(r) || r2$nll < r$nll)) r <- r2
     }
     if (is.null(r)) {
       r <- list(cut = ct, nll = NA_real_, par = NULL, last = NULL,
@@ -293,18 +329,18 @@ profile_breakpt <- function(formula, ..., control = sdmTMBcontrol(), cuts = NULL
     cl[c("cuts", "within", "tol", "tol_coarse", "max_fits", "level", "final")] <- NULL
     fit$call <- cl
     final_nll <- fit$model$objective
-    # the final fit's extra optimization can improve on the profile fit at the same cutpoint
-    if (final_nll < best$nll) {
-      best$nll <- final_nll
-      best$par[i_slope] <- fit$tmb_obj$env$parList()$b_threshold[1L, 1L]
-      done[[best_i]] <- best
-    }
+    # report the final fit's slope, so it matches tidy(fit), and its NLL if the extra
+    # optimization improved on the profile fit at the same cutpoint. `tmb_obj$env$parList()`
+    # would give the last point evaluated, not the optimum.
+    best$par[i_slope] <- fit$model$par[["b_threshold"]]
+    best$nll <- min(best$nll, final_nll)
+    done[[best_i]] <- best
   }
 
   p <- data.frame(
     cut = done_col("cut"),
     nll = done_col("nll"),
-    slope = vapply(done, function(z) if (is.null(z$par)) NA_real_ else z$par[[i_slope]], 0),
+    slope = vapply(done, function(z) if (is.null(z$par)) NA_real_ else to_slope(z$par[[i_slope]]), 0),
     max_grad = done_col("max_grad"),
     convergence = vapply(done, function(z) as.integer(z$convergence), 0L)
   )

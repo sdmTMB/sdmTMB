@@ -82,6 +82,10 @@ test_that("get_index_sims() roughly matches get_index()", {
   expect_gt(cor(ind_sim$est, ind$est), 0.9)
   expect_gt(cor(ind_sim$lwr, ind$lwr), 0.9)
   expect_gt(cor(ind_sim$upr, ind$upr), 0.9)
+  expect_equal(exp(ind_sim$log_est), ind_sim$est)
+  ind_mean <- get_index_sims(predict(m, newdata = nd, nsim = 100L),
+    est_function = mean)
+  expect_equal(exp(ind_mean$log_est), ind_mean$est)
 })
 
 test_that("get_index works with offsets and splits", {
@@ -398,36 +402,31 @@ test_that("get_index() etc. errors if the data have been subset after predicting
 
 test_that("get_eao() weights by area", {
   skip_on_cran()
-  for (backend in c("tmb", "rtmb")) {
-    m <- sdmTMB(density ~ depth_scaled, data = pcod_2011, spatial = "off",
-      family = tweedie(), time = "year", mesh = pcod_mesh_2011,
-      control = sdmTMBcontrol(backend = backend))
-    nd <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
-    nd$depth_scaled <- (log(nd$depth) - mean(log(pcod_2011$depth))) /
-      sd(log(pcod_2011$depth))
-    set.seed(1)
-    nd$area <- runif(nrow(nd), 1, 5)
-    eao <- get_eao(m, newdata = nd, area = nd$area, bias_correct = FALSE)
-    p <- predict(m, newdata = nd, type = "response")
-    expected <- vapply(split(p, p$year),
-      function(x) sum(x$area * x$est)^2 / sum(x$area * x$est^2), numeric(1))
-    expect_equal(eao$est, unname(expected), label = backend)
-  }
+  m <- sdmTMB(density ~ depth_scaled, data = pcod_2011, spatial = "off",
+    family = tweedie(), time = "year", mesh = pcod_mesh_2011)
+  nd <- replicate_df(qcs_grid_small, "year", unique(pcod_2011$year))
+  nd$depth_scaled <- (log(nd$depth) - mean(log(pcod_2011$depth))) /
+    sd(log(pcod_2011$depth))
+  set.seed(1)
+  nd$area <- runif(nrow(nd), 1, 5)
+  eao <- get_eao(m, newdata = nd, area = nd$area, bias_correct = FALSE)
+  p <- predict(m, newdata = nd, type = "response")
+  expected <- vapply(split(p, p$year),
+    function(x) sum(x$area * x$est)^2 / sum(x$area * x$est^2), numeric(1))
+  expect_equal(eao$est, unname(expected))
 })
 
 test_that("get_index() honours re_form for single and delta models", {
   skip_on_cran()
   nd <- index_grid()
-  for (backend in c("tmb", "rtmb")) {
-    for (family in list(tweedie(), delta_gamma())) {
-      m <- sdmTMB(density ~ 0 + as.factor(year), data = pcod_2011,
-        mesh = pcod_mesh_2011, time = "year", spatiotemporal = "off",
-        family = family, control = sdmTMBcontrol(backend = backend))
-      ind <- get_index(m, newdata = nd, bias_correct = FALSE,
-        predict_args = list(re_form = NA))
-      p <- predict(m, newdata = nd, re_form = NA, type = "response")
-      expect_equal(ind$est, as.numeric(tapply(p$est, p$year, sum)),
-        label = paste(backend, family$family[[1]]))
-    }
+  for (family in list(tweedie(), delta_gamma())) {
+    m <- sdmTMB(density ~ 0 + as.factor(year), data = pcod_2011,
+      mesh = pcod_mesh_2011, time = "year", spatiotemporal = "off",
+      family = family)
+    ind <- get_index(m, newdata = nd, bias_correct = FALSE,
+      predict_args = list(re_form = NA))
+    p <- predict(m, newdata = nd, re_form = NA, type = "response")
+    expect_equal(ind$est, as.numeric(tapply(p$est, p$year, sum)),
+      label = family$family[[1]])
   }
 })

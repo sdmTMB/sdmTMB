@@ -2,14 +2,12 @@
 # `rf_dir` set to the reference-fits directory.
 #
 # Each case is a list with:
-#   args      arguments to sdmTMB() (backend and getsd are set by run.R)
+#   args      arguments to sdmTMB() (getsd and multiphase are set by run.R)
 #   newdata   prediction data
 #   pred_offset  newdata column used as the prediction offset, if any
 #   extras    optional extra metrics: "re_form_na", "index", "cog"
 #   tol       optional per-metric tolerance overrides, e.g. list(nll = c(rel = 1e-5))
 #   allow_sanity  sanity() checks allowed to fail when recording
-#   backends  backends the case runs on (default both; e.g., "rtmb" for
-#             RTMB-only families)
 
 read_fixture <- function(file) {
   utils::read.csv(file.path(rf_dir, "data", file), stringsAsFactors = FALSE)
@@ -47,12 +45,11 @@ ohio_domain <- make_areal_domain(
 
 cases <- list()
 add_case <- function(name, ..., newdata, pred_offset = NULL, extras = character(),
-                     tol = list(), allow_sanity = character(),
-                     backends = c("tmb", "rtmb")) {
+                     tol = list(), allow_sanity = character()) {
   if (!is.null(cases[[name]])) stop("Duplicate case name: ", name)
   cases[[name]] <<- list(args = list(...), newdata = newdata,
     pred_offset = pred_offset, extras = extras, tol = tol,
-    allow_sanity = allow_sanity, backends = backends)
+    allow_sanity = allow_sanity)
 }
 
 # Families and links (non-spatial) --------------------------------------------
@@ -108,14 +105,14 @@ for (l in c("logit", "cloglog")) {
     data = fam, family = betabinomial(link = l), spatial = "off",
     newdata = fam_nd)
 }
-# RTMB-only censored families. Bounds are columns of `fam`; the (beta-)binomial
+# Censored families. Bounds are columns of `fam`; the (beta-)binomial
 # ones take the number of hooks as trials via `weights`.
 for (f in c("nbinom2", "nbinom1")) {
   add_case(paste0("family/censored_", f, "_log"),
     formula = stats::as.formula(paste0("y_censored_", f, "_log ~ x")),
     data = fam, family = make_family(paste0("censored_", f), "log"),
     censored_upper = paste0("upr_censored_", f), spatial = "off",
-    newdata = fam_nd, backends = "rtmb")
+    newdata = fam_nd)
 }
 for (f in c("binomial", "betabinomial")) {
   for (l in c("logit", "cloglog")) {
@@ -124,7 +121,7 @@ for (f in c("binomial", "betabinomial")) {
       formula = stats::as.formula(paste0("y_", y, " ~ x")),
       data = fam, family = make_family(paste0("censored_", f), l),
       weights = fam$hooks, censored_upper = paste0("upr_", y),
-      spatial = "off", newdata = fam_nd, backends = "rtmb")
+      spatial = "off", newdata = fam_nd)
   }
 }
 add_case("family/censored_betabinomial_logit_direct",
@@ -132,7 +129,7 @@ add_case("family/censored_betabinomial_logit_direct",
   family = censored_betabinomial(), weights = fam$hooks,
   censored_upper = "upr_censored_betabinomial_logit", spatial = "off",
   control = sdmTMBcontrol(censored_method = "direct"),
-  newdata = fam_nd, backends = "rtmb")
+  newdata = fam_nd)
 # Poisson-lognormal per-hook catch rate via an observation-level intercept.
 fam_obs <- fam
 fam_obs$obs <- factor(seq_len(nrow(fam)))
@@ -142,7 +139,7 @@ add_case("family/censored_binomial_cloglog_obs_re",
   formula = y_censored_binomial_cloglog_re ~ x + (1 | obs), data = fam_obs,
   family = censored_binomial(link = "cloglog"), weights = fam$hooks,
   censored_upper = "upr_censored_binomial_cloglog_re", spatial = "off",
-  newdata = fam_obs_nd, extras = "re_form_na", backends = "rtmb")
+  newdata = fam_obs_nd, extras = "re_form_na")
 add_case("family/binomial_trials_cbind",
   formula = cbind(y_binomial_trials, size - y_binomial_trials) ~ x,
   data = fam, family = binomial(), spatial = "off", newdata = fam_nd)

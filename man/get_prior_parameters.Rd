@@ -10,7 +10,7 @@ get_prior_parameters(object, random = FALSE)
 get_prior_densities(object)
 }
 \arguments{
-\item{object}{An \code{\link[=sdmTMB]{sdmTMB()}} model fit with the RTMB backend. For
+\item{object}{An \code{\link[=sdmTMB]{sdmTMB()}} model fit. For
 \code{get_prior_densities()}, it must have custom priors.}
 
 \item{random}{Include the random effects (e.g., random field values)? There
@@ -63,7 +63,6 @@ sdmTMB. Check them with \code{get_prior_parameters()} when writing custom priors
 \examples{
 fit <- sdmTMB(density ~ depth_scaled, data = pcod_2011,
   family = tweedie(), mesh = pcod_mesh_2011,
-  control = sdmTMBcontrol(backend = "rtmb"),
   priors = sdmTMBpriors(custom = function(par, theta) {
     c(depth = RTMB::dnorm(par$b_j[2], 0, 1, log = TRUE))
   }))

@@ -59,14 +59,17 @@ A list of class \code{breakpt_profile} with:
 \itemize{
 \item \code{profile}: a data frame with one row per profile fit: the cutpoint
 (\code{cut}), its NLL (\code{nll}, \code{NA} if the fit failed), NLL above the best
-(\code{dnll}), the slope, the maximum absolute gradient, the convergence code,
+(\code{dnll}), the slope (the slope itself, not its log, with
+\code{breakpt(x, positive = TRUE)}), the maximum absolute gradient, the convergence code,
 and the share of observations below the cutpoint.
 \item \code{estimate}: a one-row data frame with the best cutpoint (\code{cut}), slope,
 NLL, the final fit's NLL (\code{final_nll}, \code{NA} if \code{final = FALSE}), interval
 (\code{lwr}, \code{upr}), AIC, numbers of observations below and above the
 cutpoint, and flags for checking the result (see Warnings). If the final
 fit improves on the profile fit at the same cutpoint, \code{nll}, \code{aic}, and the
-profile use the final fit's NLL.
+profile use the final fit's NLL. With \code{final = TRUE}, the slope (in
+\code{estimate} and in that row of the profile) is the final fit's, as in
+\code{\link[=tidy]{tidy()}} on \code{fit}.
 \item \code{fit}: the \code{\link[=sdmTMB]{sdmTMB()}} fit with the cutpoint fixed at \code{estimate$cut}, or
 \code{NULL} if \code{final = FALSE}. Its stored call is the call you made, with your
 \code{control}, so \code{\link[=update]{update()}} on it refits with the cutpoint estimated directly,
@@ -111,8 +114,19 @@ profile crosses the interval cutoff, continue until they are at most
 }
 
 Each profile fit starts from the nearest finished fit and skips the extra
-optimization steps and \code{\link[TMB:sdreport]{TMB::sdreport()}} for speed.
+optimization steps and \code{\link[RTMB:sdreport]{RTMB::sdreport()}} for speed.
 Only the final fit runs those.
+
+With \code{breakpt(x, positive = TRUE)}, the slope is estimated as log(slope),
+so the optimizer has almost no gradient to follow once the slope is near 0
+or so large that the bend acts as a step. A fit that starts from such a
+neighbour can stay there even where a moderate slope fits better. So if a
+profile fit ends with the slope more than a factor of \code{exp(2)} (about 7.4)
+from one unit on the link scale per standard deviation of \code{x}, it is
+refitted from that slope and the better of the two fits is kept. The first
+fit also starts from that slope, unless \code{control$start} sets \code{b_threshold}.
+Both depend on \code{x} only through its standard deviation, so they don't
+change with the units of \code{x}.
 
 The confidence interval runs from the lowest to the highest cutpoint within
 \code{qchisq(level, 1) / 2} NLL units of the best, with the ends interpolated

@@ -29,6 +29,7 @@ parse_smoothers <- function(formula, data, knots = NULL, newdata = NULL, basis_p
   Zs <- list()
   Xs <- list()
   zs_basis <- integer(0) # basis index for each penalized block in `Zs`
+  xf_term <- character(0) # smoother term label for each basis
   labels <- list()
   classes <- list()
   if (length(smooth_i) > 0) {
@@ -54,6 +55,7 @@ parse_smoothers <- function(formula, data, knots = NULL, newdata = NULL, basis_p
       }
       for (j in seq_along(basis[[i]])) { # elements > 1 with `by` terms
         ns_Xf <- ns_Xf + 1
+        xf_term[ns_Xf] <- smterms[i]
         rasm <- mgcv::smooth2random(basis[[i]][[j]], names(data), type = 2)
         if (!is.null(newdata)) {
           rasm <- s2rPred(basis[[i]][[j]], rasm, newdata)
@@ -80,7 +82,7 @@ parse_smoothers <- function(formula, data, knots = NULL, newdata = NULL, basis_p
   list(Xs = Xs, Zs = Zs, has_smooths = has_smooths, labels = labels,
     classes = classes, basis_out = basis_out,
     sm_dims = sm_dims, b_smooth_start = b_smooth_start,
-    xf_dims = xf_dims, zs_basis = zs_basis)
+    xf_dims = xf_dims, zs_basis = zs_basis, xf_term = xf_term)
 }
 
 # from mgcv docs ?mgcv::smooth2random

@@ -171,8 +171,7 @@ no upper limit on the count; use an offset of log hooks for effort.
 trials (e.g., hooks) via \code{weights}, which caps the count.
 }
 
-All but \code{censored_poisson()} need the RTMB backend (the default). See
-\code{censored_method} in \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}} for how \code{censored_betabinomial()}
+See \code{censored_method} in \code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}} for how \code{censored_betabinomial()}
 computes its likelihood, and the
 \href{https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html}{hook competition article}.
 
@@ -192,8 +191,7 @@ default \code{link1} is \code{"log"}.
 The \code{compois} family is the Conway-Maxwell-Poisson distribution
 parameterized by its mean (Huang 2017), as in \pkg{glmmTMB}. It can model
 underdispersed (\code{phi < 1}) as well as overdispersed (\code{phi > 1}) counts, where
-\code{phi} = \code{1/nu} and the variance is approximately \code{mu * phi}. It needs the
-RTMB backend (the default).
+\code{phi} = \code{1/nu} and the variance is approximately \code{mu * phi}.
 }
 \examples{
 student(link = "identity") # estimate df

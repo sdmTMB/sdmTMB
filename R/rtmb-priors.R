@@ -81,6 +81,11 @@ rtmb_prior_nll <- function(par, theta, prepared) {
       normal(threshold$s50[m], prior$threshold_logistic_s50) +
       normal(threshold$s95[m], prior$threshold_logistic_s95) +
       normal(threshold$s_max[m], prior$threshold_logistic_smax)
+    # Jacobian for s_slope = exp(b_threshold[1, ])
+    if (stan && prepared$threshold == "positive_breakpt" &&
+      !is.null(prior$threshold_breakpt_slope)) {
+      nll <- nll - par$b_threshold[1L, m]
+    }
     # Jacobian for s95 = s50 + exp(b_threshold[2, ])
     if (stan && length(threshold$s95) &&
       !is.null(prior$threshold_logistic_s95)) {
@@ -110,11 +115,8 @@ rtmb_prior_nll <- function(par, theta, prepared) {
 
 # The `custom` and `custom_log_jacobian` functions from `sdmTMBpriors()` as
 # they are stored in the data list, or NULL without them.
-custom_prior_spec <- function(priors, backend) {
+custom_prior_spec <- function(priors) {
   if (is.null(priors$custom)) return(NULL)
-  if (backend != "rtmb") {
-    cli_abort("Custom priors need `sdmTMBcontrol(backend = \"rtmb\")`.")
-  }
   list(density = priors$custom, log_jacobian = priors$custom_log_jacobian)
 }
 

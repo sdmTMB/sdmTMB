@@ -77,7 +77,7 @@ install.packages("sdmTMB", dependencies = TRUE)
 
 We recommend the development version, which has the latest features and
 bug fixes. Prebuilt binaries (tracking `main`) are available from
-r-universe and do not require a C++ compiler:
+r-universe:
 
 ``` r
 install.packages(
@@ -87,9 +87,7 @@ install.packages(
 )
 ```
 
-Alternatively, if you have a [C++
-compiler](https://support.posit.co/hc/en-us/articles/200486498-Package-Development-Prerequisites)
-installed, you can build the development version from source:
+Alternatively, you can install the development version from GitHub:
 
 ``` r
 # install.packages("pak")

@@ -16,7 +16,8 @@ is a list of these components.
 The following are licensed under GPL-3 as included for sdmTMB:
 
 1. VAST for the general structure of the original TMB model code
-   (heavily modified into src/sdmTMB.cpp), anisotropy plotting code (modified
+   (heavily modified into the original C++ template, since ported to the
+   RTMB objective in R/rtmb-*.R), anisotropy plotting code (modified
    into R/plot.R plot_anisotropy() and plot_anisotropy2()), approach to
    bias correction (R/index.R get_generic()), and approach to optimization
    (modified into R/extra-optimization.R)
@@ -28,13 +29,14 @@ The following are licensed under AGPL-3:
 
 1. glmmTMB for general approach to prediction (heavily modified into
    R/predict.R) selected parameterizations of the likelihood densities
-   (src/sdmTMB.cpp 'family' section: truncated distributions, nbinom1, Beta)
+   (the 'family' densities, now R/rtmb-obs-families.R: truncated distributions,
+   nbinom1, Beta)
    effects methods (R/methods.R Effect.sdmTMB()), and emmeans methods (emmeans.R).
 
 The following are licensed under GPL-2:
 
-1. SPDE barrier implementation (src/utils.h spde_barrier_t and R/mesh.R
-   make_barrier_spde())
+1. SPDE barrier implementation (originally in the C++ template, now
+   R/rtmb-precision.R, and R/mesh.R make_barrier_spde())
 
 2. Function to aid prediction from smooths from mgcv documentation
    smooth2random() (R/smoothers.R s2rPred())
@@ -43,7 +45,8 @@ The following are licensed under GPL-2:
    tools (modified into R/smoothers.R parse_smoothers())
 
 4. TMB anisotropy R implementation from TMB examples folder (R/mesh.R
-   make_anisotropy_spde()) and corresponding code in src/sdmTMB.cpp
+   make_anisotropy_spde()) and corresponding code in the RTMB objective
+   (originally the C++ template)
 
 The following data objects are derived from `geodaData::ohio_lung`:
 

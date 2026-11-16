@@ -1,5 +1,85 @@
 # sdmTMB (development version)
 
+* Fix `predict()` erroring with data-dependent terms such as `poly()` or
+  `scale()` when `newdata` had too few distinct values (e.g., one row). The
+  missing-covariate check re-evaluated these terms on `newdata`; it now
+  checks the raw variables, as in fitting.
+
+* Fix `emmeans()` with smoothers in the formula. The smoothers were
+  previously dropped, so estimated marginal means and their standard errors
+  ignored them, and smoothed covariates couldn't be included in the
+  reference grid. Results now match `predict()`. `emmeans()` also now works
+  with an `offset` (EMMs are for an offset of 0 unless emmeans' `offset` is
+  given) and errors for `breakpt()`, `logistic()`, `time_varying`, and
+  covariate diffusion terms, which it previously silently ignored.
+
+* Smoothers with `by` variables now have linear terms named like
+  `sdepth:fyear2011` in `tidy()` and `print()` instead of
+  `sdepth):fyear2011`.
+
+* Fix the names of smoothers' linear terms in `tidy()` and `print()` when
+  a model has a `by` smoother and a cyclic (`bs = "cc"`) or shrinkage
+  (`bs = "cs"`) smoother. They fell back to generic `scovariate-*` names or
+  could be attached to the wrong rows.
+
+* The components of delta models can now have different smoothers (and
+  different parametric terms with smoothers). Previously, both formulas had
+  to be identical if either included a smoother.
+
+* `visreg_delta(model = 1)` now works when the second component uses
+  variables the first doesn't (e.g., `list(y ~ depth, y ~ depth + year)`).
+
+* `get_index_sims()` now returns `log_est` as `log(est)`. It was the mean of
+  the log draws while `est` was their median (by default), so
+  `exp(log_est)` did not equal `est`.
+
+* `sdmTMB_simulate()` no longer draws random smoother wiggles that the user
+  could not control. Previously, `s()` terms got penalized coefficients drawn
+  with SD 1 on every call. They are now 0 unless the new `sigma_smooth`
+  argument is supplied, and `B` now also takes the coefficients of the
+  smoothers' linear parts (e.g., `sx`), in the order `tidy()` lists them.
+
+* `sdmTMB_simulate(df = )` now sets the Student-t degrees of freedom. It was
+  silently ignored, so simulations used the `df` from `student()` (or 3).
+  Supplying `df` with a non-Student family is now an error.
+
+* Add `strip_sdmTMB()` to shrink a fitted model before saving it. It removes
+  the cached Cholesky factor and the handle to the in-memory RTMB tape, which
+  sdmTMB rebuilds as needed, and optionally the joint precision matrix. For
+  the `pcod` spatiotemporal example this cuts the saved file roughly in half.
+
+* `spread_sims()` and `gather_sims()` now recompute the joint precision
+  matrix if the fit doesn't have it (as `predict(..., nsim = )` already did),
+  and now work for models without random effects by sampling from the
+  fixed-effect covariance matrix.
+
+* Fitted models no longer carry the environment they were fit in. Formulas
+  and terms kept a reference to the calling frame, so a model fit inside a
+  function, loop, or `lapply()` call saved everything in that frame (data,
+  other fits) along with it. The stored formulas now keep only the non-data
+  objects they refer to (e.g., `k` in `poly(x, k)`). `emmeans()` now uses
+  the data stored in the fit instead of looking up the `data` argument again.
+
+* Add `breakpt(x, positive = TRUE)` to constrain a break-point slope to be
+  positive. The slope is estimated in log space, but `tidy()`,
+  `profile_breakpt()`, priors, and `sdmTMB_simulate(threshold_coefs = )` use
+  the slope itself. Existing `breakpt(x)` models are unchanged.
+  With `positive = TRUE`, `profile_breakpt()` refits any profile fit whose
+  slope ends up near 0 or very large, starting from a moderate slope, and
+  keeps the better fit. Otherwise a fit with a slope near 0 could be carried
+  from one cutpoint to the next and hide a better fit with a positive slope.
+
+* **The C++ TMB backend has been removed; all models use RTMB**, which has been
+  the default since 1.2.0. sdmTMB no longer contains compiled code, so
+  installing it from source no longer needs a C++ compiler, and it installs
+  much faster. Results on the default path don't change.
+  `sdmTMBcontrol(backend = )` and `sdmTMBcontrol(normalize = )` are deprecated
+  and ignored (with a warning), and `options(sdmTMB.backend = "tmb")` is
+  ignored with a warning. Models saved after being fit with the TMB backend
+  can no longer be used and give an error asking you to refit them; models
+  fit with RTMB still load. To compare against the TMB backend, use sdmTMB
+  1.2.0.
+
 * Models with penalized smoothers now store the effective degrees of freedom
   (EDF) of each smoother, calculated as in mgcv, in `fit$smooth_edf`. They're
   shown in `print()` and in a new `edf` column of `tidy(fit, "ran_pars")`. The

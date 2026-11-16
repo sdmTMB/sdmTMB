@@ -42,7 +42,7 @@ predict_prepare <- function(object, req, tmb_data, nonlocal_newdata) {
   iid_re <- predict_iid_re_matrices(object, req, newdata, length(formula))
   proj_X_ij <- predict_fixed_matrices(object, newdata)
   proj_Xdisp_ij <- predict_disp_matrix(object, newdata)
-  # smoothers are shared by all components (checked when fitting):
+  # one set of smoothers (the union of all components' smoothers):
   sm <- parse_smoothers(object$smoothers$formula_no_bars, data = object$data,
     newdata = newdata, basis_prev = object$smoothers$basis_out)
   proj_X_rw_ik <- predict_tv_matrix(object, newdata)

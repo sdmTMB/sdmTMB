@@ -46,13 +46,8 @@ remake_tmb_obj <- function(object) {
     parameters = object$parlist,
     map = object$tmb_map,
     random = object$tmb_random,
-    backend = object$backend,
     profile = object$control$profile
   )
-  if (isTRUE(object$control$normalize) &&
-      isTRUE(object$tmb_data$normalize_in_r == 1L)) {
-    obj <- TMB::normalize(obj, flag = "flag", value = 0)
-  }
   obj$env$beSilent()
   obj$fn(object$model$par) # restores last.par.best etc.
   obj
@@ -67,7 +62,7 @@ maybe_suppress_warnings <- function(suppress) {
 # First of two phases: fit the fixed effects with random fields off (and
 # censored families as uncensored for stability), returning starting values
 # for the full model. Falls back to `tmb_params` if this phase fails.
-fit_first_phase <- function(tmb_data, tmb_params, tmb_map, profile, backend,
+fit_first_phase <- function(tmb_data, tmb_params, tmb_map, profile,
                             lower, upper, mesh, nlminb_control, silent,
                             suppress_warnings = FALSE) {
   tmb_data$no_spatial <- 1L
@@ -91,7 +86,7 @@ fit_first_phase <- function(tmb_data, tmb_params, tmb_map, profile, backend,
     tmb_map[[p]] <- factor(rep(NA, length(tmb_params[[p]])))
   }
   obj <- make_sdmTMB_adfun(data = tmb_data, parameters = tmb_params,
-    profile = profile, map = tmb_map, backend = backend, silent = silent)
+    profile = profile, map = tmb_map, silent = silent)
   lim <- set_limits(obj, lower = lower, upper = upper, mesh = mesh,
     spatial_model = tmb_data$spatial_model, silent = TRUE)
   opt <- tryCatch(

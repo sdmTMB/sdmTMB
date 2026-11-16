@@ -564,7 +564,6 @@ sdmTMB_cv <- function(
       parameters = get_pars(object),
       map = object$tmb_map,
       random = object$tmb_random,
-      backend = object$backend,
       silent = TRUE
     )
     r <- scoring_obj$report(object$tmb_obj$env$last.par.best)
@@ -668,7 +667,7 @@ cv_param_sampler <- function(object, predictive) {
   sdr <- object$sd_report
   if (has_re) {
     if (is.null(sdr[["jointPrecision"]])) {
-      sdr <- sdreport_sdmTMB(obj, getJointPrecision = TRUE)
+      sdr <- RTMB::sdreport(obj, getJointPrecision = TRUE)
     }
     return(function(n) rmvnorm_prec(par_best, sdr, n))
   }

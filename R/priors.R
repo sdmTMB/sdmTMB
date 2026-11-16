@@ -68,7 +68,8 @@
 #'   time-varying coefficients or a vector with one element per coefficient
 #'   (`NA` for no prior). In delta models, the priors apply to both components.
 #' @param threshold_breakpt_slope A `normal()` prior for the slope of the
-#'   linear (hockey stick) function.
+#'   linear (hockey stick) function. With `breakpt(positive = TRUE)`, this
+#'   applies to the positive slope, not its log.
 #' @param threshold_breakpt_cut A `normal()` prior for the cutoff of the
 #'   linear (hockey stick) function.
 #' @param threshold_logistic_s50 A `normal()` prior for the parameter at which
@@ -78,13 +79,13 @@
 #' @param threshold_logistic_smax A `normal()` prior for the parameter at which
 #'   f(x) is maximized.
 #' @param custom Optional function of `(par, theta)` returning one or more log
-#'   density contributions (RTMB backend only; see **Custom priors** below).
+#'   density contributions (see **Custom priors** below).
 #' @param custom_log_jacobian Optional function of `(par, theta)` returning the
 #'   log absolute Jacobian for `custom`. Only used if `bayesian = TRUE`. Requires
 #'   `custom`.
 #'
 #' @section Custom priors:
-#' With the RTMB backend (the default), `custom` adds arbitrary log densities
+#' `custom` adds arbitrary log densities
 #' to the joint objective. The function is called as `custom(par, theta)`, where
 #' `par` is the list of raw (internal) parameters and `theta` is a list of
 #' natural-scale versions of them. See [get_prior_parameters()] for their

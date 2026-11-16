@@ -10,38 +10,6 @@
   cli_abort("Expected a formula or a list of formulas.")
 }
 
-.covariate_model_frame <- function(formula, data) {
-  formula_no_smooths <- remove_s_and_t2(formula)
-  formula_no_response <- stats::formula(
-    stats::delete.response(
-      stats::terms(reformulas::subbars(formula_no_smooths))
-    )
-  )
-  mf <- stats::model.frame(
-    formula_no_response,
-    data = data,
-    na.action = stats::na.pass
-  )
-
-  # Smooth terms are removed before constructing the model frame because their
-  # values are not ordinary model-frame columns. Check their data variables
-  # directly so smooth covariates follow the same strict rule.
-  formula_no_response_full <- stats::formula(
-    stats::delete.response(stats::terms(formula))
-  )
-  smooth_vars <- setdiff(
-    all.vars(formula_no_response_full),
-    all.vars(stats::formula(stats::delete.response(stats::terms(formula_no_smooths))))
-  )
-  smooth_vars <- intersect(smooth_vars, names(data))
-  complete <- stats::complete.cases(mf)
-  for (variable in smooth_vars) {
-    complete <- complete & stats::complete.cases(data[[variable]])
-  }
-
-  complete
-}
-
 .check_no_missing_covariates <- function(
     data,
     formulas,
@@ -50,7 +18,9 @@
     stage = "data") {
   all_formulas <- c(.formula_list(formulas), .formula_list(shared_formulas))
   for (formula in all_formulas) {
-    complete <- .covariate_model_frame(formula, data)
+    # raw variables, as in fitting; evaluating terms such as poly() or
+    # scale() on `newdata` would recompute them from the prediction rows
+    complete <- .complete_model_rows(data, list(formula))
     if (any(!complete)) {
       rows <- which(!complete)
       cli_abort(c(

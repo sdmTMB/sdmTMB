@@ -482,8 +482,7 @@ censored_poisson <- function(link = "log") {
 #' The `compois` family is the Conway-Maxwell-Poisson distribution
 #' parameterized by its mean (Huang 2017), as in \pkg{glmmTMB}. It can model
 #' underdispersed (`phi < 1`) as well as overdispersed (`phi > 1`) counts, where
-#' `phi` = `1/nu` and the variance is approximately `mu * phi`. It needs the
-#' RTMB backend (the default).
+#' `phi` = `1/nu` and the variance is approximately `mu * phi`.
 #' @references
 #' *Conway-Maxwell-Poisson*:
 #'
@@ -716,8 +715,7 @@ betabinomial <- function(link = "logit") {
 #' * `censored_binomial()` and `censored_betabinomial()` take the number of
 #'   trials (e.g., hooks) via `weights`, which caps the count.
 #'
-#' All but `censored_poisson()` need the RTMB backend (the default). See
-#' `censored_method` in [sdmTMBcontrol()] for how `censored_betabinomial()`
+#' See `censored_method` in [sdmTMBcontrol()] for how `censored_betabinomial()`
 #' computes its likelihood, and the
 #' [hook competition article](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html).
 #' @export

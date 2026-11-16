@@ -1,6 +1,3 @@
-#' @useDynLib sdmTMB, .registration = TRUE
-NULL
-
 #' Fit a spatial or spatiotemporal GLMM with TMB
 #'
 #' Fit a spatial or spatiotemporal generalized linear mixed effects model (GLMM)
@@ -194,16 +191,15 @@ NULL
 #' An object (list) of class `sdmTMB`. Useful elements include:
 #'
 #' * `model`: output from [stats::nlminb()]
-#' * `sd_report`: output from [TMB::sdreport()] or [RTMB::sdreport()]
+#' * `sd_report`: output from [RTMB::sdreport()]
 #' * `gradients`: gradients of the marginal log likelihood with respect to
 #'   each fixed effect
 #' * `data`: the data used in fitting (rows with missing values removed)
 #' * `spde`: the object supplied to `mesh`
 #' * `family`: the family object, including the inverse link function
 #'   `family$linkinv()`
-#' * `backend`: `"rtmb"` or `"tmb"`; see [sdmTMBcontrol()]
-#' * `tmb_obj`: the objective function object from [TMB::MakeADFun()] or
-#'   [RTMB::MakeADFun()]
+#' * `backend`: always `"rtmb"`; kept for compatibility
+#' * `tmb_obj`: the objective function object from [RTMB::MakeADFun()]
 #' * `tmb_data`, `tmb_params`, `tmb_map`: the data, parameter, and map lists
 #'   passed to `MakeADFun()`
 #'
@@ -253,6 +249,12 @@ NULL
 #' reporting convergence, and its standard error for the cutpoint is not
 #' reliable. [profile_breakpt()] estimates the cutpoint and a confidence interval
 #' by profile likelihood instead.
+#'
+#' Use `+ breakpt(variable, positive = TRUE)` to constrain the slope to be
+#' positive. The slope is then estimated in log space, so any `b_threshold`
+#' starting value for it in [sdmTMBcontrol()] must be `log(slope)`, but [tidy()],
+#' [profile_breakpt()], priors, and the `threshold_coefs` argument of
+#' [sdmTMB_simulate()] use the slope itself.
 #'
 #' Similarly, a logistic-function threshold model can be included via
 #' `+ logistic(variable)`. This option models the relationship as a logistic
@@ -327,8 +329,7 @@ NULL
 #'
 #' Censored families treat some observations as known only to lie within a
 #' range, e.g., catch counts on longlines where competition for hooks hides
-#' the true number caught. Supply the bounds with `censored_upper`. All but
-#' [censored_poisson()] need the RTMB backend (the default). See [Families]
+#' the true number caught. Supply the bounds with `censored_upper`. See [Families]
 #' and the [hook competition
 #' vignette](https://sdmTMB.github.io/sdmTMB/articles/hook-competition.html).
 #'
@@ -821,10 +822,6 @@ sdmTMB <- function(
     cli_abort("`experimental$epsilon_model` and `experimental$epsilon_predictor` have been removed.")
   }
 
-  backend <- control$backend
-  if (backend == "rtmb" && isTRUE(control$normalize)) {
-    cli_abort("`normalize = TRUE` is unavailable with the RTMB backend; its densities are fully normalized.")
-  }
   if (isTRUE(control$profile)) {
     control$profile <- if (has_two_components) c("b_j", "b_j2") else "b_j"
   } else if (!is.character(control$profile)) {
@@ -838,14 +835,14 @@ sdmTMB <- function(
 
   assert_that(
     is.logical(reml), is.logical(anisotropy), is.logical(share_range),
-    is.logical(silent), is.logical(control$multiphase), is.logical(control$normalize)
+    is.logical(silent), is.logical(control$multiphase)
   )
 
   if (!is.null(spatial_varying)) assert_that(class(spatial_varying) %in% c("formula", "list"))
   if (!is.null(time_varying)) assert_that(class(time_varying) %in% c("formula", "list"))
   if (!is.null(previous_fit)) assert_that(identical(class(previous_fit), "sdmTMB"))
   assert_that(is.list(priors))
-  priors_custom <- custom_prior_spec(priors, backend)
+  priors_custom <- custom_prior_spec(priors)
   assert_that(is.list(.control))
   time_varying_type <- match.arg(time_varying_type)
 
@@ -904,7 +901,6 @@ sdmTMB <- function(
     anisotropy = anisotropy,
     nonlocal_formula = nonlocal_formula_parsed,
     priors = priors,
-    normalize = control$normalize,
     share_range_user = share_range_user,
     spatial_model = spatial_model,
     sar_weight_style = control$sar_weight_style
@@ -937,10 +933,6 @@ sdmTMB <- function(
   }
 
   family_names <- unique(family_spec$components$family_name)
-  rtmb_only <- family_names[.family_has(family_names, "needs_rtmb")]
-  if (length(rtmb_only) && backend != "rtmb") {
-    cli_abort("`{rtmb_only[[1]]}()` needs `sdmTMBcontrol(backend = \"rtmb\")`.")
-  }
   if (any(.family_has(family_names, "censored")) && is.null(censored_upper)) {
     cli_abort("`censored_upper` must be supplied to use a censored family.")
   }
@@ -1017,10 +1009,6 @@ sdmTMB <- function(
     cli_abort("Detected `offset()` in formula. Offsets in sdmTMB must be specified via the `offset` argument.")
   }
 
-  # the default `~ 1` is created in this frame; don't capture (and serialize) it
-  if (identical(environment(dispformula), environment())) {
-    environment(dispformula) <- globalenv()
-  }
   disp_design <- .make_design(dispformula, data, "`dispformula`")
   Xdisp_ij <- disp_design$X
 
@@ -1056,22 +1044,29 @@ sdmTMB <- function(
 
   re <- re_tmb_data(split_formula) # random intercepts and slopes
 
-  has_smooths <- vapply(formula, function(f) {
-    length(get_smooth_terms(all_terms(reformulas::nobars(f)))) > 0L
-  }, logical(1))
-  if (has_two_components && any(has_smooths) &&
-      original_formula[[1]] != original_formula[[2]]) {
-    cli_abort(paste0(
-      "For now, if delta models contain smoothers, both components ",
-      "must have the same main-effects formula."
-    ))
+  smooth_terms <- lapply(formula, function(f) {
+    trms <- all_terms(reformulas::nobars(f))
+    trms[get_smooth_terms(trms)]
+  })
+  # Components share one set of smoother bases (the union of their smoothers),
+  # and a component's unused smoothers are mapped off (see `smooth_active`):
+  all_smooth_terms <- unique(unlist(smooth_terms))
+  formula_no_bars <- if (length(all_smooth_terms)) {
+    stats::reformulate(all_smooth_terms)
+  } else {
+    reformulas::nobars(formula[[1]])
   }
-
-  # smoothers are shared by all components, so parse them once:
-  formula_no_bars <- reformulas::nobars(formula[[1]])
   sm <- parse_smoothers(formula = formula_no_bars, data = data, knots = knots)
   sm$formula_no_sm <- remove_s_and_t2(formula[[1]])
   sm$formula_no_bars <- formula_no_bars
+  if (sm$has_smooths) {
+    basis_active <- matrix(
+      vapply(smooth_terms, function(x) sm$xf_term %in% x, logical(length(sm$xf_term))),
+      ncol = n_m
+    )
+    sm$block_active <- basis_active[sm$zs_basis, , drop = FALSE]
+    sm$col_active <- basis_active[rep(seq_along(sm$xf_dims), sm$xf_dims), , drop = FALSE]
+  }
 
   y_i <- model.response(mf[[1]], "any")
 
@@ -1121,7 +1116,13 @@ sdmTMB <- function(
     tv_design <- .make_design(time_varying, data, "`time_varying`")
     X_rw_ik <- tv_design$X
     if (time_varying_type == "rw") {
-      X_fixed <- if (sm$has_smooths) lapply(X_ij, cbind, sm$Xs) else X_ij
+      X_fixed <- if (sm$has_smooths) {
+        lapply(seq_len(n_m), function(m) {
+          cbind(X_ij[[m]], sm$Xs[, sm$col_active[, m], drop = FALSE])
+        })
+      } else {
+        X_ij
+      }
       confounded <- vapply(X_fixed, rw_confounded, logical(1), X_rw = X_rw_ik)
       if (any(confounded)) {
         cli_warn(c(
@@ -1156,7 +1157,7 @@ sdmTMB <- function(
     cli_abort(c(
       "`priors$b` applies to both delta components, so they must have the same fixed-effect columns.",
       i = "Use the same main-effects formula in both components, or drop the `b` priors.",
-      i = "For priors on one component's coefficients, use `sdmTMBpriors(custom = )` with `par$b_j` or `par$b_j2` (RTMB backend)."
+      i = "For priors on one component's coefficients, use `sdmTMBpriors(custom = )` with `par$b_j` or `par$b_j2`."
     ))
   }
   priors_b_tmb <- b_priors_tmb(priors$b, ncol(X_ij[[1]]))
@@ -1224,6 +1225,7 @@ sdmTMB <- function(
     proj_Zs = list(),
     proj_Xs = matrix(nrow = 0L, ncol = 0L),
     b_smooth_start = sm$b_smooth_start,
+    smooth_active = if (sm$has_smooths) sm$block_active * 1L else array(0L),
     proj_vector = matrix(0),
     do_predict = 0L,
     do_rsr = as.integer(isTRUE(control$get_rsr)),
@@ -1232,8 +1234,6 @@ sdmTMB <- function(
     short_newdata = 0L,
     weights_i = if (!is.null(weights)) weights else rep(1, NROW(y_i)),
     area_i = rep(1, NROW(y_i)),
-    normalize_in_r = domain$normalize_in_r,
-    flag = 1L, # part of TMB::normalize()
     calc_index_totals = 0L,
     calc_cog = 0L,
     calc_eao = 0L,
@@ -1399,6 +1399,12 @@ sdmTMB <- function(
   if (sm$has_smooths) {
     tmb_random <- c(tmb_random, "b_smooth") # smooth random effects
     tmb_map <- unmap(tmb_map, c("b_smooth", "ln_smooth_sigma", "bs"))
+    if (!all(sm$block_active)) {
+      coef_active <- sm$block_active[rep(seq_along(sm$sm_dims), sm$sm_dims), , drop = FALSE]
+      tmb_map$b_smooth <- map_active(coef_active)
+      tmb_map$ln_smooth_sigma <- map_active(sm$block_active)
+      tmb_map$bs <- map_active(sm$col_active)
+    }
   }
 
   # SVC fields use the spatial range of every component:
@@ -1460,7 +1466,7 @@ sdmTMB <- function(
   tmb_map[names(control$map)] <- control$map
 
   # profile_breakpt() maps b_threshold to fix the cutpoint, so it doesn't trigger this
-  if (do_fit && identical(as.integer(tmb_data$threshold_func), 1L) && is.null(control$map$b_threshold)) {
+  if (do_fit && tmb_data$threshold_func %in% c(1L, 3L) && is.null(control$map$b_threshold)) {
     cli_inform(class = "sdmTMB_breakpt_message", c(
       i = paste0("The likelihood of a `breakpt()` model isn't smooth in the cutpoint, ",
         "so the fit can stop at the wrong cutpoint while reporting convergence, ",
@@ -1473,7 +1479,7 @@ sdmTMB <- function(
   # `start` are respected; the user's `start` values always win
   if (control$multiphase && is.null(previous_fit) && do_fit) {
     tmb_params <- fit_first_phase(tmb_data, tmb_params, tmb_map,
-      profile = control$profile, backend = backend, lower = control$lower, upper = control$upper,
+      profile = control$profile, lower = control$lower, upper = control$upper,
       mesh = if (is_areal) NULL else mesh$mesh, nlminb_control = .control,
       silent = silent, suppress_warnings = isTRUE(control$suppress_nlminb_warnings))
     tmb_params[names(control$start)] <- control$start
@@ -1506,7 +1512,7 @@ sdmTMB <- function(
       tmb_map = tmb_map,
       tmb_random = tmb_random,
       reml_random = reml_random,
-      backend = backend,
+      backend = "rtmb", # read by sdmTMBextra
       spatial_varying = svc_cols,
       nonlocal_formula = nonlocal_formula,
       nonlocal_formula_parsed = nonlocal_formula_parsed,
@@ -1537,11 +1543,12 @@ sdmTMB <- function(
     ),
     class = "sdmTMB"
   )
+  out_structure <- rehome_formula_envs(out_structure, data_cols = names(data))
 
   tmb_obj <- make_sdmTMB_adfun(
     data = tmb_data, parameters = tmb_params, map = tmb_map,
     profile = control$profile,
-    random = tmb_random, backend = backend, silent = silent
+    random = tmb_random, silent = silent
   )
   lim <- set_limits(tmb_obj,
     lower = control$lower, upper = control$upper,
@@ -1560,10 +1567,6 @@ sdmTMB <- function(
     out_structure$parlist <- tmb_obj$env$parList(par = tmb_obj$env$par)
     out_structure$last.par.best <- tmb_obj$env$par
     return(out_structure)
-  }
-
-  if (isTRUE(domain$normalize_in_r == 1L) && control$normalize) {
-    tmb_obj <- TMB::normalize(tmb_obj, flag = "flag", value = 0)
   }
 
   if (length(tmb_obj$par)) {
@@ -1944,6 +1947,13 @@ find_missing_time <- function(x) {
 unmap <- function(x, v) {
   for (i in v) x[[i]] <- NULL
   x
+}
+
+# Map off the elements of a parameter where logical matrix `active` is FALSE
+map_active <- function(active) {
+  m <- seq_along(active)
+  m[!active] <- NA
+  factor(m)
 }
 
 # Map off the slices of parameter `x` (last dimension = model component) for

@@ -409,7 +409,7 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
   obj <- new_tmb_obj
 
   if (req$se_fit) {
-    sr <- sdreport_sdmTMB(new_tmb_obj, bias.correct = FALSE)
+    sr <- RTMB::sdreport(new_tmb_obj, bias.correct = FALSE)
     sr_est <- as.list(sr, "Estimate", report = TRUE)
     sr_se <- as.list(sr, "Std. Error", report = TRUE)
   }
@@ -437,10 +437,9 @@ predict_sdmTMB <- function(object, newdata = NULL, type = "link",
 }
 
 # Whether predictions need only the model's reports at saved parameter values
-# (the fitted ones or draws), which the RTMB backend can evaluate without an
-# AD object.
+# (the fitted ones or draws), which can be evaluated without an AD object.
 predict_report_only <- function(object, req, return_tmb_object) {
-  object$backend == "rtmb" && !req$se_fit && !return_tmb_object
+  !req$se_fit && !return_tmb_object
 }
 
 # Reports at the parameter list `pars` (equivalently, the parameter vector
@@ -476,7 +475,6 @@ predict_objective <- function(object, tmb_data, n_new_re = 0L) {
     parameters = parameters,
     map = map,
     random = object$tmb_random,
-    backend = object$backend,
     silent = TRUE
   )
   obj
@@ -529,6 +527,16 @@ predict_visreg <- function(object, newdata, se_fit) {
     newdata[[object$time]] <- max(object$data[[object$time]], na.rm = TRUE)
   }
   model <- if ("visreg_model" %in% names(object)) object$visreg_model else 1L
+  if (!is.null(newdata)) {
+    # visreg supplies only this component's variables, but all components are
+    # predicted; fill the others' variables with any fitted value
+    vars <- unique(unlist(lapply(object$formula, function(f) {
+      all.vars(stats::delete.response(stats::terms(f)))
+    })))
+    for (v in setdiff(intersect(vars, names(object$data)), names(newdata))) {
+      newdata[[v]] <- object$data[[v]][[1L]]
+    }
+  }
   out <- predict_sdmTMB(object, newdata = newdata, se_fit = se_fit,
     re_form = NA, model = model)
   y_i <- object$tmb_data$y_i
@@ -776,14 +784,7 @@ predict_parameter_draws <- function(object, lp, req) {
     }
     return(t_draws)
   }
-  if (!"jointPrecision" %in% names(object$sd_report) && !has_no_random_effects(object)) {
-    message("Rerunning TMB::sdreport() with `getJointPrecision = TRUE`.")
-    reinitialize(object)
-    sd_report <- sdreport_sdmTMB(object$tmb_obj, getJointPrecision = TRUE)
-  } else {
-    sd_report <- object$sd_report
-  }
-  project_historical_draws(lp, sd_report, nsim,
+  project_historical_draws(lp, sd_report_joint(object), nsim,
     sample_fe = req$sample_fe, sample_historical_re = TRUE)
 }
 

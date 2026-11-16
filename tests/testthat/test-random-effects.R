@@ -235,9 +235,8 @@ test_that("Model with random intercepts fits appropriately.", {
   expect_equal(nrow(.t), 5)
 
   b <- as.list(m$sd_report, "Estimate")
-  # a recovery-quality check rather than exact values: `sdmTMB_simulate()`
-  # draws the spatial field via the active backend's `simulate()` method,
-  # and TMB/RTMB consume the RNG stream in a different order
+  # a recovery-quality check rather than exact values, which depend on the
+  # simulated draw
   .cor <- cor(c(RE_vals, RE_vals2), b$re_b_pars)
   expect_gt(c(.cor), 0.8)
 #

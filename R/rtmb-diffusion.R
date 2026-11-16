@@ -1,5 +1,5 @@
-# Covariate diffusion for the RTMB objective, following
-# `src/covariate-diffusion.h`. Each term transforms one covariate on mesh
+# Covariate diffusion for the RTMB objective (ported from the removed C++
+# `src/covariate-diffusion.h`). Each term transforms one covariate on mesh
 # vertices by time:
 #
 # - spatial: (M0 + kappaS^-2 M1) z_t = M0 x_t

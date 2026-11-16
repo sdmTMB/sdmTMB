@@ -217,3 +217,29 @@ test_that("visreg works with extra time #330", {
   v <- visreg::visreg(fit, "depth_scaled", plot = FALSE)
   expect_s3_class(v, 'visreg')
 })
+
+test_that("visreg_delta() works when components use different variables", {
+  skip_on_cran()
+  skip_if_not_installed("visreg")
+  d <- pcod
+  f1 <- density ~ s(depth_scaled, k = 5)
+  f2 <- density ~ s(year, k = 4) + depth_scaled
+  fit <- sdmTMB(list(f1, f2), data = d, spatial = "off",
+    family = delta_gamma())
+  d$present <- as.integer(d$density > 0)
+  d$dens_pos <- ifelse(d$density > 0, d$density, 1)
+  fit1 <- sdmTMB(update(f1, present ~ .), data = d, spatial = "off",
+    family = binomial())
+  fit2 <- sdmTMB(update(f2, dens_pos ~ .), data = d, spatial = "off",
+    family = Gamma(link = "log"), weights = d$present)
+  cols <- c("visreg_fit", "visreg_lwr", "visreg_upr")
+  # component 1 has no `year`, which component 2 needs:
+  v <- visreg_delta(fit, xvar = "depth_scaled", model = 1, plot = FALSE)
+  v1 <- visreg::visreg(fit1, xvar = "depth_scaled", plot = FALSE)
+  expect_equal(v$fit[cols], v1$fit[cols], tolerance = 1e-6)
+  v <- visreg_delta(fit, xvar = "year", model = 2, plot = FALSE,
+    cond = list(depth_scaled = 0))
+  v2 <- visreg::visreg(fit2, xvar = "year", plot = FALSE,
+    cond = list(depth_scaled = 0))
+  expect_equal(v$fit[cols], v2$fit[cols], tolerance = 1e-6)
+})

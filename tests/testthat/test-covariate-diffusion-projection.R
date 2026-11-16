@@ -257,11 +257,10 @@ test_that("joint R solver with a zero start matches Thorson et al. 2026", {
 
   expect_equal(actual, expected)
 
-  # This is the stationary operator used by spacetime_lag.cpp with
-  # options_z(0) = 1 and kappaST = 0:
+  # This is the stationary operator with kappaST = 0:
   # P = kappaS^-2 (I_T x P_S) + kappaT ((L - I_T) x I_S),
   # where P_S = -M0^-1 M1. R matrices are column-major, so the vectorized
-  # ordering is time slices of spatial vertices, as in the C++ template.
+  # ordering is time slices of spatial vertices, as in the objective.
   P_s <- -as.matrix(Matrix::solve(M0, M1))
   L <- matrix(0, nrow = ncol(x), ncol = ncol(x))
   L[row(L) == col(L) + 1L] <- 1
@@ -322,7 +321,7 @@ test_that("stationary start makes z shift with x and hold constants", {
     as.numeric(Matrix::solve(system, M0 %*% x[, 1L] + 1.5 * M0 %*% z0)))
 })
 
-test_that("fitted C++ start matches the R solver and is invariant to shifting x", {
+test_that("fitted start matches the standalone R solver and is invariant to shifting x", {
   skip_on_cran()
   set.seed(1)
   dat <- data.frame(
@@ -377,7 +376,7 @@ test_that("fitted C++ start matches the R solver and is invariant to shifting x"
   }
 })
 
-test_that("fitted and prediction C++ paths use the joint operator", {
+test_that("fitted and prediction paths use the joint operator", {
   skip_on_cran()
   set.seed(1)
   dat <- data.frame(
@@ -400,7 +399,7 @@ test_that("fitted and prediction C++ paths use the joint operator", {
     family = gaussian(),
     nonlocal_formula = ~ diffusion(x) + time_lag(x),
     nonlocal_data = grid,
-    # Fix the operator scales so this tests the R/C++ implementations rather
+    # Fix the operator scales so this tests the implementations rather
     # than numerical differences from an ill-conditioned, tiny-data fit.
     control = sdmTMBcontrol(
       newton_loops = 0,

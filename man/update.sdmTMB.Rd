@@ -27,10 +27,7 @@ from saved files.
 }
 \details{
 Unless \code{control} is supplied, the updated model reuses the fitted model's
-\code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}} settings, including its backend, regardless of the
-current \code{sdmTMB.backend} option. A supplied \code{control} replaces these
-settings, including the backend (e.g.,
-\code{update(fit, control = sdmTMBcontrol(backend = "rtmb"))}).
+\code{\link[=sdmTMBcontrol]{sdmTMBcontrol()}} settings. A supplied \code{control} replaces these settings.
 }
 \examples{
 mesh <- make_mesh(pcod_2011, c("X", "Y"), cutoff = 20)

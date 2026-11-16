@@ -8,7 +8,3 @@
     emmeans::.emm_register("sdmTMB", pkgname)
   }
 }
-
-.onUnload <- function(libpath) {
-  library.dynam.unload("sdmTMB", libpath)
-}

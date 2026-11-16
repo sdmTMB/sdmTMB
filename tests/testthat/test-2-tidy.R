@@ -238,7 +238,6 @@ test_that("tidy() works with delta model with random intercepts and AR1 time ser
 
 test_that("tidy() correctly handles anisotropic ranges", {
   skip_on_cran()
-  local_rtmb_backend()
   skip_on_ci()
 
   # Test 1: Spatial-only anisotropic model (should have range_min and range_max)
@@ -359,7 +358,6 @@ test_that("tidy() correctly handles anisotropic ranges", {
 
 test_that("tidy() anisotropic range SEs match the delta method", {
   skip_on_cran()
-  local_rtmb_backend()
   fit <- sdmTMB(density ~ 1, data = pcod_2011, mesh = pcod_mesh_2011,
     family = tweedie(), anisotropy = TRUE)
   td <- tidy(fit, "ran_pars", conf.int = TRUE)
@@ -381,12 +379,6 @@ test_that("tidy() anisotropic range SEs match the delta method", {
   expect_equal(td$std.error / td$estimate, log_se, tolerance = 1e-4)
   expect_equal(td$conf.high, exp(log_ranges(p) + stats::qnorm(0.975) * log_se),
     tolerance = 1e-4)
-
-  fit_tmb <- update(fit, control = sdmTMBcontrol(backend = "tmb"))
-  td_tmb <- tidy(fit_tmb, "ran_pars", conf.int = TRUE)
-  aniso_tmb <- td_tmb[td_tmb$term %in% c("range_min", "range_max"), ]
-  expect_equal(nrow(aniso_tmb), 2L)
-  expect_true(all(is.na(aniso_tmb$std.error)))
 })
 
 test_that("Anisotropic range intervals are NA at isotropy", {

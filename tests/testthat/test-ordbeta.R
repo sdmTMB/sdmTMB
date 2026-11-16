@@ -45,7 +45,7 @@ test_that("ordbeta() fit recovers parameters", {
   expect_equal(r$estimate[r$term == "phi"], phi, tolerance = 0.5)
 })
 
-test_that("ordbeta() simulation matches the distribution in both backends", {
+test_that("ordbeta() simulation matches the distribution", {
   # Two linear-predictor values; the first case has high mass at both
   # boundaries, which the old sequential zero/one draws got wrong.
   n <- 20000L
@@ -55,39 +55,37 @@ test_that("ordbeta() simulation matches the distribution in both backends", {
     list(b_j = c(0, 0), psi = c(-0.2, 0.2), phi = 10),
     list(b_j = c(0.3, -1.1), psi = c(-1, 1.2), phi = 5)
   )
-  for (backend in c("tmb", "rtmb")) {
-    obj <- sdmTMB(y ~ x, data = d, family = ordbeta(), spatial = "off",
-      do_fit = FALSE, control = sdmTMBcontrol(backend = backend))$tmb_obj
-    for (case in cases) {
-      par <- obj$par
-      par[names(par) == "b_j"] <- case$b_j
-      par[names(par) == "psi"] <- c(case$psi[1], log(diff(case$psi)))
-      par[names(par) == "ln_phi"] <- log(case$phi)
-      set.seed(1)
-      y <- obj$simulate(par)$y_i
-      for (x in c(0, 1)) {
-        info <- paste(backend, x, paste(case$b_j, collapse = ","))
-        yx <- y[d$x == x]
-        eta <- case$b_j[1] + case$b_j[2] * x
-        mu <- plogis(eta)
-        p0 <- plogis(case$psi[1] - eta)
-        p1 <- plogis(eta - case$psi[2])
-        pmid <- 1 - p0 - p1
-        # Tolerances are 5 Monte Carlo standard errors.
-        se_p <- function(p) 5 * sqrt(p * (1 - p) / length(yx))
-        expect_lt(abs(mean(yx == 0) - p0), se_p(p0), label = info)
-        expect_lt(abs(mean(yx == 1) - p1), se_p(p1), label = info)
-        mean_y <- p1 + pmid * mu
-        var_y <- p1 + pmid * mu * (1 - mu) / (case$phi + 1) +
-          pmid * mu^2 - mean_y^2
-        expect_lt(abs(mean(yx) - mean_y), 5 * sqrt(var_y / length(yx)),
-          label = info)
-        mid <- yx[yx > 0 & yx < 1]
-        var_mid <- mu * (1 - mu) / (case$phi + 1)
-        expect_lt(abs(mean(mid) - mu), 5 * sqrt(var_mid / length(mid)),
-          label = info)
-        expect_lt(abs(var(mid) - var_mid), 0.1 * var_mid, label = info)
-      }
+  obj <- sdmTMB(y ~ x, data = d, family = ordbeta(), spatial = "off",
+    do_fit = FALSE)$tmb_obj
+  for (case in cases) {
+    par <- obj$par
+    par[names(par) == "b_j"] <- case$b_j
+    par[names(par) == "psi"] <- c(case$psi[1], log(diff(case$psi)))
+    par[names(par) == "ln_phi"] <- log(case$phi)
+    set.seed(1)
+    y <- obj$simulate(par)$y_i
+    for (x in c(0, 1)) {
+      info <- paste(x, paste(case$b_j, collapse = ","))
+      yx <- y[d$x == x]
+      eta <- case$b_j[1] + case$b_j[2] * x
+      mu <- plogis(eta)
+      p0 <- plogis(case$psi[1] - eta)
+      p1 <- plogis(eta - case$psi[2])
+      pmid <- 1 - p0 - p1
+      # Tolerances are 5 Monte Carlo standard errors.
+      se_p <- function(p) 5 * sqrt(p * (1 - p) / length(yx))
+      expect_lt(abs(mean(yx == 0) - p0), se_p(p0), label = info)
+      expect_lt(abs(mean(yx == 1) - p1), se_p(p1), label = info)
+      mean_y <- p1 + pmid * mu
+      var_y <- p1 + pmid * mu * (1 - mu) / (case$phi + 1) +
+        pmid * mu^2 - mean_y^2
+      expect_lt(abs(mean(yx) - mean_y), 5 * sqrt(var_y / length(yx)),
+        label = info)
+      mid <- yx[yx > 0 & yx < 1]
+      var_mid <- mu * (1 - mu) / (case$phi + 1)
+      expect_lt(abs(mean(mid) - mu), 5 * sqrt(var_mid / length(mid)),
+        label = info)
+      expect_lt(abs(var(mid) - var_mid), 0.1 * var_mid, label = info)
     }
   }
 })
@@ -133,22 +131,19 @@ test_that("ordbeta() response means and indices include the point masses", {
   u <- runif(n); y <- rbeta(n, plogis(eta) * 5, (1 - plogis(eta)) * 5)
   y[u < p0] <- 0; y[u > 1 - p1] <- 1
   d <- data.frame(y = y, x = x, year = 1L)
-  for (backend in c("tmb", "rtmb")) {
-    fit <- sdmTMB(y ~ x, data = d, family = ordbeta(), spatial = "off",
-      time = "year", spatiotemporal = "off",
-      control = sdmTMBcontrol(backend = backend))
-    cuts <- ordbeta_cutpoints(get_pars(fit)$psi)
-    eta_hat <- predict(fit)$est
-    mean_y <- plogis(eta_hat - cuts[2]) +
-      (1 - plogis(cuts[1] - eta_hat) - plogis(eta_hat - cuts[2])) *
-      plogis(eta_hat)
-    p <- predict(fit, type = "response")
-    expect_equal(p$est, mean_y, tolerance = 1e-6)
-    expect_equal(residuals(fit, type = "response"), y - mean_y,
-      tolerance = 1e-6)
-    ind <- get_index(fit, newdata = d, area = 1 / n, bias_correct = FALSE)
-    expect_equal(ind$est, mean(mean_y), tolerance = 1e-6)
-  }
+  fit <- sdmTMB(y ~ x, data = d, family = ordbeta(), spatial = "off",
+    time = "year", spatiotemporal = "off")
+  cuts <- ordbeta_cutpoints(get_pars(fit)$psi)
+  eta_hat <- predict(fit)$est
+  mean_y <- plogis(eta_hat - cuts[2]) +
+    (1 - plogis(cuts[1] - eta_hat) - plogis(eta_hat - cuts[2])) *
+    plogis(eta_hat)
+  p <- predict(fit, type = "response")
+  expect_equal(p$est, mean_y, tolerance = 1e-6)
+  expect_equal(residuals(fit, type = "response"), y - mean_y,
+    tolerance = 1e-6)
+  ind <- get_index(fit, newdata = d, area = 1 / n, bias_correct = FALSE)
+  expect_equal(ind$est, mean(mean_y), tolerance = 1e-6)
 })
 
 test_that("ordbeta() likelihood matches glmmTMB exactly", {
@@ -204,14 +199,11 @@ test_that("ordbeta() is rejected in multi-family mode", {
 })
 
 test_that("ordbeta() cutpoints stay ordered for any parameter values", {
-  for (backend in c("tmb", "rtmb")) {
-    obj <- sdmTMB(y ~ 1, data = data.frame(y = c(0, 1)), family = ordbeta(),
-      spatial = "off", do_fit = FALSE,
-      control = sdmTMBcontrol(backend = backend))$tmb_obj
-    par <- obj$par
-    par[names(par) == "b_j"] <- 0
-    par[names(par) == "psi"] <- c(1, -5) # cutpoints 1 and 1 + exp(-5)
-    expect_equal(obj$fn(par),
-      -log(plogis(1)) - log(plogis(-(1 + exp(-5)))), label = backend)
-  }
+  obj <- sdmTMB(y ~ 1, data = data.frame(y = c(0, 1)), family = ordbeta(),
+    spatial = "off", do_fit = FALSE)$tmb_obj
+  par <- obj$par
+  par[names(par) == "b_j"] <- 0
+  par[names(par) == "psi"] <- c(1, -5) # cutpoints 1 and 1 + exp(-5)
+  expect_equal(obj$fn(par),
+    -log(plogis(1)) - log(plogis(-(1 + exp(-5)))))
 })

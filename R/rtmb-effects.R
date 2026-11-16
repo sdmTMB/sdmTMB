@@ -141,10 +141,12 @@ rtmb_iid_effects <- function(re_b_pars, par, groups, simulate, m) {
   list(nll = nll, value = re_b_pars)
 }
 
-# Penalized smoother coefficients `b_smooth`.
-rtmb_smooth_effects <- function(b_smooth, par, smooth_index, simulate, m) {
+# Penalized smoother coefficients `b_smooth`. Smoothers a component doesn't
+# use are mapped to 0 and have no density.
+rtmb_smooth_effects <- function(b_smooth, par, smooth_index, smooth_active,
+                                simulate, m) {
   nll <- 0
-  for (s in seq_along(smooth_index)) {
+  for (s in which(smooth_active[, m])) {
     index <- smooth_index[[s]]
     sd <- exp(par$ln_smooth_sigma[s, m])
     if (simulate) b_smooth[index, m] <- stats::rnorm(length(index), 0, sd)
@@ -217,7 +219,7 @@ rtmb_latent_effects <- function(par, theta, prepared, simulating) {
     }
     if (prepared$smooths) {
       add(rtmb_smooth_effects(effects$b_smooth, par, prepared$smooth_index,
-        simulate("b_smooth"), m), "b_smooth")
+        prepared$smooth_active, simulate("b_smooth"), m), "b_smooth")
     }
   }
   effects

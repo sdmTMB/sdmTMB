@@ -53,12 +53,12 @@
 #'
 #' With `anisotropy = TRUE`, `effects = "ran_pars"` reports `range_min` and
 #' `range_max`, the ranges along the minor and major axes, in place of `range`.
-#' Their geometric mean is `range`. With the RTMB backend, their standard
+#' Their geometric mean is `range`. Their standard
 #' errors are from the delta method and their confidence intervals are Wald
 #' intervals on the log scale. These intervals are unreliable when the
 #' anisotropy is weakly identified, such as when `range_max / range_min` is
 #' close to 1, because the axis ranges have no derivative at isotropy. They are
-#' `NA` at exact isotropy and with the TMB backend.
+#' `NA` at exact isotropy.
 #'
 #' Standard errors for spatial variance terms fit in log space (e.g., variance
 #' terms, range, or parameters associated with the observation error) are
@@ -242,10 +242,14 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   out <- data.frame(term = fe_names, estimate = b_j, std.error = b_j_se, stringsAsFactors = FALSE)
 
   if (x$tmb_data$threshold_func > 0) {
-    if (x$threshold_function == 1L) {
+    if (x$threshold_function %in% c(1L, 3L)) {
       par_name <- paste0(x$threshold_parameter, c("-slope", "-breakpt"))
       estimates <- est$b_threshold[,model,drop=TRUE]
       ses <- se$b_threshold[,model,drop=TRUE]
+      if (x$threshold_function == 3L) { # the slope, not the estimated log(slope)
+        estimates[1L] <- est$s_slope[model]
+        ses[1L] <- se$s_slope[model]
+      }
     } else {
       par_name <- paste0(x$threshold_parameter, c("-s50", "-s95", "-smax"))
       estimates <- c(est$s50[model], est$s95[model], est$s_max[model])
@@ -260,9 +264,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     )
   }
 
-  if (x$tmb_data$has_smooths) {
-    p <- print_smooth_effects(x, silent = FALSE, m = model)
-    mm <- p$smooth_effects
+  sm_p <- if (x$tmb_data$has_smooths) print_smooth_effects(x, silent = FALSE, m = model)
+  if (!is.null(sm_p$smooth_effects)) {
+    mm <- sm_p$smooth_effects
     out <- rbind(
       out,
       data.frame(
@@ -568,9 +572,9 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
   }
 
   # optional smooth SDs models with smooths
-  if (x$tmb_data$has_smooths) {
-    p <- print_smooth_effects(x, m = model, silent = TRUE)
-    ln_sds <- p$ln_sd_estimates
+  sm_p <- if (x$tmb_data$has_smooths) print_smooth_effects(x, m = model, silent = TRUE)
+  if (!is.null(sm_p$ln_sd_estimates)) {
+    ln_sds <- sm_p$ln_sd_estimates
     # Convert from log-scale to natural scale and update term names
     term_names <- gsub("^ln_SD_s\\(", "sd__s(", row.names(ln_sds))
     term_names <- gsub("^ln_SD_t2\\(", "sd__t2(", term_names)
@@ -589,7 +593,7 @@ tidy.sdmTMB <- function(x, effects = c("fixed", "ran_pars", "ran_vals", "ran_vco
     if (!"group_name" %in% names(out_re)) out_re$group_name <- rep(NA, nrow(out_re))
     if (!is.null(x$smooth_edf)) {
       out_re$edf <- rep(NA_real_, nrow(out_re))
-      ln_sds_df$edf <- as.numeric(x$smooth_edf[, model])
+      ln_sds_df$edf <- as.numeric(x$smooth_edf[smooth_rows_active(x, model, "block_active"), model])
     }
     out_re <- rbind(out_re, ln_sds_df)
   }

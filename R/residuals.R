@@ -432,10 +432,13 @@ qres_gengamma <- function(object, y, mu, ...) {
 #' distribution. In practice, the sample is obtained based on the mode and
 #' Hessian of the random effects taking advantage of sparsity in the Hessian for
 #' computational efficiency. This is the same sample as `obj$env$MC()`, where
-#' `obj` is the \pkg{TMB} object created with `TMB::MakeADFun()`. See Waagepetersen
+#' `obj` is the object created with `RTMB::MakeADFun()`. See Waagepetersen
 #' (2006) and the description in the source code for the internal \pkg{TMB}
-#' function `TMB:::oneSamplePosterior()`. Residuals are converted to randomized
-#' quantile residuals as described above.
+#' function `TMB:::oneSamplePosterior()`. With `reml = TRUE` or
+#' `sdmTMBcontrol(profile = TRUE)`, the fixed effects that are integrated out
+#' (`b_j`, plus smoother coefficients for REML) are part of the random effects
+#' and so are sampled along with them rather than held at their estimates.
+#' Residuals are converted to randomized quantile residuals as described above.
 #'
 #' **`mle-eb`**: Fixed effects are held at their MLEs and random effects are
 #' taken as their EB estimates. These used to be the default residual type in
@@ -615,8 +618,6 @@ residuals.sdmTMB <- function(object,
     } else {
       mu <- linkinv(pred[[est_column]])
     }
-  } else if (type == "mvn-laplace") {
-    mu <- linkinv(predict(object, nsim = 1L, model = model, offset = object$offset)[, 1L, drop = TRUE])
   } else if (type == "mle-mcmc") {
     if (is.null(mcmc_samples)) {
       msg <- c("As of sdmTMB 0.3.0, `mcmc_samples` must be supplied to use `type = 'mle-mcmc'`.",
@@ -698,21 +699,10 @@ residuals.sdmTMB <- function(object,
         cli_abort("Deviance residuals not implemented for binomial family with size > 1.")
       }
     }
-    if (object$backend == "tmb" && !is_delta(object) &&
-        object$family$family == "nbinom1") {
-      cli_abort(c(
-        "NB1 deviance residuals are not implemented for the TMB backend.",
-        "i" = "Refit with `sdmTMBcontrol(backend = \"rtmb\")`."
-      ))
-    }
     env <- object$tmb_obj$env
-    report <- if (object$backend == "rtmb") {
-      # Deviance residuals are left off the RTMB tape; evaluate them directly.
-      rtmb_report_values(object$tmb_data,
-        env$parList(par = env$last.par.best), deviance = TRUE)
-    } else {
-      object$tmb_obj$report(env$last.par.best)
-    }
+    # Deviance residuals are left off the tape; evaluate them directly.
+    report <- rtmb_report_values(object$tmb_data,
+      env$parList(par = env$last.par.best), deviance = TRUE)
     resids <- report$devresid[, model, drop = TRUE]
     if (all(resids == 0)) {
       cli_abort("Deviance residuals not implemented for this family.")
@@ -779,7 +769,9 @@ check_overdisp <- function(object) {
 
 # Returns a function that draws `n` full parameter vectors (as columns) with
 # the random effects sampled from their approximate MVN posterior,
-# N(u_hat, H_uu^-1), and the fixed effects at their MLEs. Equivalent to TMB's
+# N(u_hat, H_uu^-1), and the fixed effects at their MLEs. Under REML or
+# `profile`, `env$random` also holds the integrated-out fixed effects, so those
+# are sampled too (as in TMB:::oneSamplePosterior()). Equivalent to TMB's
 # `obj$env$MC()` samples but factors the inner Hessian only once and skips
 # MC()'s per-draw likelihood evaluations.
 .posterior_re_sampler <- function(object) {

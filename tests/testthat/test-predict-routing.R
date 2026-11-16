@@ -86,7 +86,7 @@ test_that("predict() standard errors are selected from sdreport() untransformed"
   nd <- pcod_2011[1:10, ]
   x <- predict_sdmTMB(fit, newdata = nd, re_form = NA, se_fit = TRUE,
     return_tmb_object = TRUE)
-  sr <- sdreport_sdmTMB(x$obj, bias.correct = FALSE)
+  sr <- RTMB::sdreport(x$obj, bias.correct = FALSE)
   se <- as.list(sr, "Std. Error", report = TRUE)
   expect_equal(x$data$est_se, as.numeric(se$proj_fe_combined))
   for (m in 1:2) {

@@ -43,8 +43,8 @@
 #' * `est`: estimate
 #' * `lwr`: lower confidence interval value
 #' * `upr`: upper confidence interval value
-#' * `log_est`: log estimate
-#' * `se`: standard error on the log estimate
+#' * `log_est`: log of `est`
+#' * `se`: standard deviation of the log draws (standard error on the log scale)
 #'
 #' If `return_sims = TRUE`, a long-format data frame of index draws:
 #'
@@ -131,12 +131,13 @@ get_index_sims <- function(obj,
     return(do.call("rbind", out2))
   } else {
     out <- lapply(out1, function(x) {
+      est <- est_function(x)
       data.frame(
-        est = est_function(x),
+        est = est,
         lwr = stats::quantile(x, probs = (1 - level) / 2),
         upr = stats::quantile(x, probs = 1 - (1 - level) / 2),
         se = stats::sd(log(x)),
-        log_est = mean(log(x))
+        log_est = log(est)
       )
     })
     out <- do.call("rbind", out)
