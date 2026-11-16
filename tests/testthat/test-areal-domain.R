@@ -430,8 +430,6 @@ test_that("set_limits applies default bounds for CAR alpha", {
 })
 
 build_predict_stub_with_areal_domain <- function(getsd = FALSE) {
-  skip_if_not_installed("TMB")
-
   set.seed(11)
   fit_dat <- data.frame(
     y = stats::rnorm(24),
@@ -526,8 +524,6 @@ test_that("areal tidy/print/sanity reporting paths avoid Matérn assumptions", {
 })
 
 test_that("spread_sims uses areal field-scale transform when areal flag is set", {
-  skip_if_not_installed("TMB")
-
   set.seed(21)
   dat <- data.frame(
     y = stats::rnorm(60),
@@ -585,8 +581,6 @@ build_areal_smoke_domain <- function() {
 }
 
 test_that("minimal areal do_fit FALSE model builds TMB object", {
-  skip_if_not_installed("TMB")
-
   smoke <- build_areal_smoke_domain()
   fit <- sdmTMB(
     y ~ 1,
@@ -603,8 +597,6 @@ test_that("minimal areal do_fit FALSE model builds TMB object", {
 })
 
 test_that("get_cog() errors for areal models", {
-  skip_if_not_installed("TMB")
-
   smoke <- build_areal_smoke_domain()
   smoke$data$year <- rep(1:2, 6)
   fit <- sdmTMB(
@@ -621,8 +613,6 @@ test_that("get_cog() errors for areal models", {
 })
 
 test_that("areal domains require explicit SAR or CAR spatial_model", {
-  skip_if_not_installed("TMB")
-
   smoke <- build_areal_smoke_domain()
   expect_error(
     sdmTMB(
@@ -653,8 +643,6 @@ test_that("areal domains require explicit SAR or CAR spatial_model", {
 })
 
 test_that("minimal Gaussian spatial-only areal SAR model fits", {
-  skip_if_not_installed("TMB")
-
   smoke <- build_areal_smoke_domain()
   fit <- sdmTMB(
     y ~ 1,
@@ -671,8 +659,6 @@ test_that("minimal Gaussian spatial-only areal SAR model fits", {
 })
 
 test_that("tidy reports SAR rho on transformed scale for areal models", {
-  skip_if_not_installed("TMB")
-
   smoke <- build_areal_smoke_domain()
   fit <- sdmTMB(
     y ~ 1,
@@ -713,8 +699,6 @@ test_that("areal SAR can use raw weights", {
 })
 
 test_that("minimal Gaussian spatial-only areal CAR model fits", {
-  skip_if_not_installed("TMB")
-
   smoke <- build_areal_smoke_domain()
   fit <- sdmTMB(
     y ~ 1,
@@ -732,8 +716,6 @@ test_that("minimal Gaussian spatial-only areal CAR model fits", {
 })
 
 test_that("tidy reports CAR alpha on transformed scale for areal models", {
-  skip_if_not_installed("TMB")
-
   smoke <- build_areal_smoke_domain()
   fit <- sdmTMB(
     y ~ 1,
@@ -755,8 +737,6 @@ test_that("tidy reports CAR alpha on transformed scale for areal models", {
 })
 
 test_that("areal share_range FALSE errors before TMB object construction", {
-  skip_if_not_installed("TMB")
-
   smoke <- build_areal_smoke_domain()
   expect_error(
     sdmTMB(
@@ -775,8 +755,6 @@ test_that("areal share_range FALSE errors before TMB object construction", {
 })
 
 test_that("no-spatial areal models do not estimate SAR rho", {
-  skip_if_not_installed("TMB")
-
   smoke <- build_areal_smoke_domain()
   fit <- sdmTMB(
     y ~ 1,
