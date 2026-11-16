@@ -19,7 +19,9 @@
   all_formulas <- c(.formula_list(formulas), .formula_list(shared_formulas))
   for (formula in all_formulas) {
     # raw variables, as in fitting; evaluating terms such as poly() or
-    # scale() on `newdata` would recompute them from the prediction rows
+    # scale() on `newdata` would recompute them from the prediction rows;
+    # the response is not a covariate, so drop it
+    if (length(formula) == 3L) formula <- formula[-2]
     complete <- .complete_model_rows(data, list(formula))
     if (any(!complete)) {
       rows <- which(!complete)
