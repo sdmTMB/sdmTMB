@@ -10,7 +10,11 @@ rtmb_diffusion_data <- function() {
 
 test_that("RTMB covariate diffusion matches every TMB report and sdreport row", {
   d <- rtmb_diffusion_data()
-  mesh <- make_mesh(d, c("X", "Y"), cutoff = 0.5)
+  # The regular grid has co-circular points, so fmesher's triangulation and
+  # vertex order vary by platform; use the mesh the snapshots were frozen on.
+  m <- readRDS(test_path("fixtures", "diffusion-mesh.rds"))
+  mesh <- make_mesh(d, c("X", "Y"),
+    mesh = fmesher::fm_rcdt_2d_inla(loc = m$loc, tv = m$tv))
   grid <- make_nl_covariate_grid(mesh, 1:5, c("x1", "x2"))
   newdata <- d[c(1, 20, 60), ]
   cases <- list(

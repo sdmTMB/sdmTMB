@@ -5,6 +5,7 @@ inst/doc
 .Rhistory
 prediction-grids/*
 *.rds
+!tests/testthat/fixtures/*.rds
 *.pdf
 .DS_Store
 sdmTMB.Rproj
